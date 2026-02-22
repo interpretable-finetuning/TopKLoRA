@@ -694,6 +694,7 @@ def load_top_activating_examples(
     hookpoint: str,
     latent_idx: int,
     n_examples: int = 10,
+    show_pad_tokens: bool = False,
 ) -> str:
     """Load and render top activating examples for a latent from delphi_cache.
 
@@ -845,6 +846,14 @@ def load_top_activating_examples(
         f"Latent: {latent_idx} | {tokenizer_status}</p>"
     ]
 
+    # Compute the global max activation across all displayed batches for
+    # relative color scaling (avoids the hardcoded /5.0 divisor).
+    global_max_act = max(
+        (act for _, positions_list in sorted_batches for _, act in positions_list),
+        default=1.0,
+    )
+    global_max_act = max(global_max_act, 1e-8)  # avoid division by zero
+
     for rank, (batch_idx, positions) in enumerate(sorted_batches):
         # Sort positions by activation within this batch
         positions.sort(key=lambda x: x[1], reverse=True)
@@ -860,9 +869,9 @@ def load_top_activating_examples(
         else:
             tokens = [f"tok_{tid}" for tid in token_ids.tolist()]
 
-        # Strip trailing pad tokens unless an activating position is a pad token
+        # Strip trailing pad tokens unless the user toggled them on
         n_pads_removed = 0
-        if tokenizer and tokenizer.pad_token_id is not None:
+        if not show_pad_tokens and tokenizer and tokenizer.pad_token_id is not None:
             pad_id = tokenizer.pad_token_id
             any_activating_pad = any(
                 token_ids[seq_idx].item() == pad_id for seq_idx, _ in positions
@@ -889,7 +898,7 @@ def load_top_activating_examples(
             if i in position_indices:
                 # Highlight this activating token
                 activation_val = position_indices[i]
-                intensity = min(activation_val / 5.0, 1.0)
+                intensity = min(activation_val / global_max_act, 1.0)
                 r = 255
                 g = int(255 * (1 - intensity))
                 b = int(255 * (1 - intensity))

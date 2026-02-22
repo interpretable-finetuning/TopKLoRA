@@ -167,12 +167,32 @@ def _on_cached_hookpoint_select(adapter_name, hookpoint):
     )
 
 
-def _on_show_cached_examples(adapter_name, hookpoint, latent_idx, n_examples, show_pad):
-    """Show top activating examples for a cached latent."""
-    if latent_idx is None:
-        return "<p>Enter a latent index.</p>"
+def _on_show_cached_examples(
+    adapter_name,
+    hookpoint,
+    latent_idx_dd,
+    latent_idx_tb,
+    last_input_source,
+    n_examples,
+    show_pad,
+):
+    """Show top activating examples for a cached latent.
+
+    Uses whichever input (dropdown or textbox) was last interacted with.
+    Returns (html, highlighted_dropdown_classes, highlighted_textbox_classes).
+    """
     if not adapter_name or not hookpoint:
         return "<p>Select an adapter and hookpoint first.</p>"
+
+    # Pick latent index from last-used source
+    if last_input_source == "textbox":
+        latent_idx = latent_idx_tb
+    else:
+        latent_idx = latent_idx_dd
+
+    if latent_idx is None:
+        return "<p>Enter a latent index.</p>"
+
     return load_top_activating_examples(
         adapter_name,
         hookpoint,
@@ -182,8 +202,11 @@ def _on_show_cached_examples(adapter_name, hookpoint, latent_idx, n_examples, sh
     )
 
 
-def _on_add_bookmark(adapter_name, hookpoint, latent_idx, note):
+def _on_add_bookmark(
+    adapter_name, hookpoint, latent_idx_dd, latent_idx_tb, last_input_source, note
+):
     """Add a bookmark and return updated table."""
+    latent_idx = latent_idx_tb if last_input_source == "textbox" else latent_idx_dd
     if not adapter_name or not hookpoint or latent_idx is None:
         return _bookmarks_to_df(adapter_name)
     add_bookmark(adapter_name, hookpoint, int(latent_idx), note or "")
@@ -204,11 +227,12 @@ def _on_delete_selected_bookmark(adapter_name, selected_row_idx, bookmarks_table
 
 def _on_load_selected_bookmark(adapter_name, selected_row_idx):
     """Load the selected bookmark's hookpoint and latent into the dropdowns and show examples."""
+    no_change = gr.update(), gr.update(), gr.update(), gr.update(), gr.update()
     if selected_row_idx is None or selected_row_idx < 0:
-        return gr.update(), gr.update(), gr.update()
+        return no_change
     rows = load_bookmarks(adapter_name)
     if selected_row_idx >= len(rows):
-        return gr.update(), gr.update(), gr.update()
+        return no_change
     row = rows[selected_row_idx]
     hookpoint = row["hookpoint"]
     latent_idx = int(row["latent_idx"])
@@ -232,7 +256,8 @@ def _on_load_selected_bookmark(adapter_name, selected_row_idx):
     # Also load top examples for the bookmarked latent
     examples_html = load_top_activating_examples(adapter_name, hookpoint, latent_idx)
 
-    return hookpoint_update, latent_update, examples_html
+    # Set source to dropdown since we're loading into the dropdown
+    return hookpoint_update, latent_update, examples_html, "dropdown", "← Dropdown"
 
 
 def _bookmarks_to_df(adapter_name: str | None = None) -> list[list]:
@@ -474,6 +499,9 @@ with gr.Blocks(title="TopKLoRA Dashboard", css=_chat_css) as demo:
                 choices=_initial_hookpoints,
                 value=_initial_hookpoints[0] if _initial_hookpoints else None,
             )
+        # Track which latent input was last used: "dropdown" or "textbox"
+        latent_input_source = gr.State("dropdown")
+
         with gr.Row():
             # Initialize latent choices from first hookpoint
             _initial_latent_choices = []
@@ -487,16 +515,30 @@ with gr.Blocks(title="TopKLoRA Dashboard", css=_chat_css) as demo:
             _latent_choices_values = [idx for _, idx in _initial_latent_choices]
 
             cached_latent_dd = gr.Dropdown(
-                label="Latent",
+                label="Latent (from stats)",
                 choices=list(zip(_latent_choices_display, _latent_choices_values))
                 if _latent_choices_values
                 else [],
                 value=_latent_choices_values[0] if _latent_choices_values else None,
+                scale=3,
             )
+            cached_latent_tb = gr.Number(
+                label="Latent ID (direct)",
+                value=None,
+                precision=0,
+                scale=1,
+            )
+        with gr.Row():
             cached_n_examples = gr.Number(
                 label="Number of Examples", value=10, precision=0
             )
             cached_show_pad = gr.Checkbox(label="Show pad tokens", value=False)
+            latent_source_indicator = gr.Textbox(
+                label="Active input",
+                value="← Dropdown",
+                interactive=False,
+                scale=1,
+            )
 
         show_examples_btn = gr.Button("Show Top Examples", variant="primary")
 
@@ -572,10 +614,24 @@ with gr.Blocks(title="TopKLoRA Dashboard", css=_chat_css) as demo:
             cached_adapter_dd,
             cached_hookpoint_dd,
             cached_latent_dd,
+            cached_latent_tb,
+            latent_input_source,
             cached_n_examples,
             cached_show_pad,
         ],
         outputs=[cached_examples_html],
+    )
+
+    # Track which latent input was last used
+    cached_latent_dd.change(
+        fn=lambda _: ("dropdown", "← Dropdown"),
+        inputs=[cached_latent_dd],
+        outputs=[latent_input_source, latent_source_indicator],
+    )
+    cached_latent_tb.change(
+        fn=lambda _: ("textbox", "Textbox →"),
+        inputs=[cached_latent_tb],
+        outputs=[latent_input_source, latent_source_indicator],
     )
 
     # -- Bookmark wiring --
@@ -585,6 +641,8 @@ with gr.Blocks(title="TopKLoRA Dashboard", css=_chat_css) as demo:
             cached_adapter_dd,
             cached_hookpoint_dd,
             cached_latent_dd,
+            cached_latent_tb,
+            latent_input_source,
             bookmark_note,
         ],
         outputs=[bookmarks_df],
@@ -604,7 +662,13 @@ with gr.Blocks(title="TopKLoRA Dashboard", css=_chat_css) as demo:
     bookmark_load_btn.click(
         fn=_on_load_selected_bookmark,
         inputs=[cached_adapter_dd, bookmark_selected_idx],
-        outputs=[cached_hookpoint_dd, cached_latent_dd, cached_examples_html],
+        outputs=[
+            cached_hookpoint_dd,
+            cached_latent_dd,
+            cached_examples_html,
+            latent_input_source,
+            latent_source_indicator,
+        ],
     )
 
     # Refresh bookmarks when adapter changes

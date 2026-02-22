@@ -170,14 +170,18 @@ def _on_cached_hookpoint_select(adapter_name, hookpoint):
     )
 
 
-def _on_show_cached_examples(adapter_name, hookpoint, latent_idx, n_examples):
+def _on_show_cached_examples(adapter_name, hookpoint, latent_idx, n_examples, show_pad):
     """Show top activating examples for a cached latent."""
     if latent_idx is None:
         return "<p>Enter a latent index.</p>"
     if not adapter_name or not hookpoint:
         return "<p>Select an adapter and hookpoint first.</p>"
     return load_top_activating_examples(
-        adapter_name, hookpoint, int(latent_idx), int(n_examples)
+        adapter_name,
+        hookpoint,
+        int(latent_idx),
+        int(n_examples),
+        show_pad_tokens=bool(show_pad),
     )
 
 
@@ -426,6 +430,7 @@ with gr.Blocks(title="TopKLoRA Dashboard", css=_chat_css) as demo:
             cached_n_examples = gr.Number(
                 label="Number of Examples", value=10, precision=0
             )
+            cached_show_pad = gr.Checkbox(label="Show pad tokens", value=False)
 
         show_examples_btn = gr.Button("Show Top Examples", variant="primary")
         cached_examples_html = gr.HTML(label="Top Activating Examples")
@@ -474,6 +479,7 @@ with gr.Blocks(title="TopKLoRA Dashboard", css=_chat_css) as demo:
             cached_hookpoint_dd,
             cached_latent_dd,
             cached_n_examples,
+            cached_show_pad,
         ],
         outputs=[cached_examples_html],
     )

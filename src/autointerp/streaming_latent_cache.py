@@ -32,6 +32,7 @@ class StreamingLatentCache(LatentCache):
         filters: dict[str, Float[Tensor, "indices"]] | None = None,  # noqa: F821
         log_path: Path | None = None,
         streaming: bool = False,
+        pad_token_id: int | None = None,
     ):
         super().__init__(
             model=model,
@@ -42,6 +43,7 @@ class StreamingLatentCache(LatentCache):
             log_path=log_path,
         )
         self.streaming = streaming
+        self.pad_token_id = pad_token_id
 
     def run(self, n_tokens: int, tokens: Tensor):
         token_batches = self.load_token_batches(n_tokens, tokens)
@@ -68,6 +70,9 @@ class StreamingLatentCache(LatentCache):
                             sae_latents = self.hookpoint_to_sparse_encode[hookpoint](
                                 latents
                             )
+                            if self.pad_token_id is not None:
+                                pad_mask = batch == self.pad_token_id
+                                sae_latents[pad_mask] = 0.0
                             self.cache.add(sae_latents, batch, batch_number, hookpoint)
                             firing_counts = (sae_latents > 0).sum((0, 1))
                             if self.width is None:
@@ -196,6 +201,7 @@ def make_latent_cache(
     filters: dict[str, Float[Tensor, "indices"]] | None = None,  # noqa: F821
     log_path: Path | None = None,
     streaming: bool = False,
+    pad_token_id: int | None = None,
 ) -> LatentCache:
     """Factory that returns a streaming-aware cache."""
     return StreamingLatentCache(
@@ -206,4 +212,5 @@ def make_latent_cache(
         filters=filters,
         log_path=log_path,
         streaming=streaming,
+        pad_token_id=pad_token_id,
     )

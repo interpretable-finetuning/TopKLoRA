@@ -13,7 +13,9 @@ Run from the repo root:
 import gradio as gr
 
 from dashboard.backend import (
+    add_bookmark,
     compute_token_activations,
+    delete_bookmark,
     discover_adapters,
     discover_base_models,
     discover_cached_adapters,
@@ -21,8 +23,8 @@ from dashboard.backend import (
     get_adapter_choices,
     get_adapter_info,
     get_cached_hookpoints,
-    get_cached_hookpoint_config,
     get_cached_latent_choices,
+    load_bookmarks,
     load_model,
     load_top_activating_examples,
     render_latent_from_cache,
@@ -151,20 +153,15 @@ def _on_cached_adapter_select(adapter_name):
 
 
 def _on_cached_hookpoint_select(adapter_name, hookpoint):
-    """When a cached hookpoint is selected, show its config and populate latent dropdown."""
+    """When a cached hookpoint is selected, populate latent dropdown."""
     if not adapter_name or not hookpoint:
-        return "Select an adapter and hookpoint", gr.update(choices=[])
+        return gr.update(choices=[])
 
-    config = get_cached_hookpoint_config(adapter_name, hookpoint)
-    width = config.get("width", "unknown")
-    config_text = f"Width (r): {width}"
-
-    # Load latent choices with p_active
     latent_choices = get_cached_latent_choices(adapter_name, hookpoint)
     choices_display = [display for display, _ in latent_choices]
     choices_values = [idx for _, idx in latent_choices]
 
-    return config_text, gr.update(
+    return gr.update(
         choices=list(zip(choices_display, choices_values)),
         value=choices_values[0] if choices_values else None,
     )
@@ -183,6 +180,75 @@ def _on_show_cached_examples(adapter_name, hookpoint, latent_idx, n_examples, sh
         int(n_examples),
         show_pad_tokens=bool(show_pad),
     )
+
+
+def _on_add_bookmark(adapter_name, hookpoint, latent_idx, note):
+    """Add a bookmark and return updated table."""
+    if not adapter_name or not hookpoint or latent_idx is None:
+        return _bookmarks_to_df(adapter_name)
+    add_bookmark(adapter_name, hookpoint, int(latent_idx), note or "")
+    return _bookmarks_to_df(adapter_name)
+
+
+def _on_delete_selected_bookmark(adapter_name, selected_row_idx, bookmarks_table):
+    """Delete a bookmark by the selected row index."""
+    if selected_row_idx is None or selected_row_idx < 0:
+        return _bookmarks_to_df(adapter_name)
+    rows = load_bookmarks(adapter_name)
+    if selected_row_idx >= len(rows):
+        return _bookmarks_to_df(adapter_name)
+    row = rows[selected_row_idx]
+    delete_bookmark(row["adapter"], row["hookpoint"], int(row["latent_idx"]))
+    return _bookmarks_to_df(adapter_name)
+
+
+def _on_load_selected_bookmark(adapter_name, selected_row_idx):
+    """Load the selected bookmark's hookpoint and latent into the dropdowns and show examples."""
+    if selected_row_idx is None or selected_row_idx < 0:
+        return gr.update(), gr.update(), gr.update()
+    rows = load_bookmarks(adapter_name)
+    if selected_row_idx >= len(rows):
+        return gr.update(), gr.update(), gr.update()
+    row = rows[selected_row_idx]
+    hookpoint = row["hookpoint"]
+    latent_idx = int(row["latent_idx"])
+
+    # Update hookpoint dropdown
+    hookpoints = get_cached_hookpoints(adapter_name)
+    hookpoint_update = gr.update(
+        choices=hookpoints, value=hookpoint if hookpoint in hookpoints else None
+    )
+
+    # Update latent dropdown
+    latent_choices = get_cached_latent_choices(adapter_name, hookpoint)
+    choices_pairs = [(display, idx) for display, idx in latent_choices]
+    latent_update = gr.update(
+        choices=choices_pairs,
+        value=latent_idx
+        if any(idx == latent_idx for _, idx in latent_choices)
+        else None,
+    )
+
+    # Also load top examples for the bookmarked latent
+    examples_html = load_top_activating_examples(adapter_name, hookpoint, latent_idx)
+
+    return hookpoint_update, latent_update, examples_html
+
+
+def _bookmarks_to_df(adapter_name: str | None = None) -> list[list]:
+    """Convert bookmarks to a list-of-lists for gr.Dataframe."""
+    rows = load_bookmarks(adapter_name)
+    return [[r["hookpoint"], r["latent_idx"], r["note"], r["created_at"]] for r in rows]
+
+
+def _on_bookmark_row_select(evt: gr.SelectData):
+    """Store the selected row index when a bookmark row is clicked."""
+    return evt.index[0] if evt.index is not None else -1
+
+
+def _refresh_bookmarks(adapter_name):
+    """Refresh the bookmarks table when adapter changes."""
+    return _bookmarks_to_df(adapter_name)
 
 
 # ------------------------------------------------------------------
@@ -387,8 +453,10 @@ with gr.Blocks(title="TopKLoRA Dashboard", css=_chat_css) as demo:
 
     # ---- Tab 4: Cached Activation Explorer ----
     with gr.Tab("Cached Activations"):
+        from dashboard.backend import CACHE_DIR as _cache_dir
+
         gr.Markdown(
-            "Explore top activating examples from cached activations in `delphi_cache/`. "
+            f"Explore top activating examples from cached activations in `{_cache_dir}`. "
             "No model loading required."
         )
         with gr.Row():
@@ -406,8 +474,6 @@ with gr.Blocks(title="TopKLoRA Dashboard", css=_chat_css) as demo:
                 choices=_initial_hookpoints,
                 value=_initial_hookpoints[0] if _initial_hookpoints else None,
             )
-        cached_config_info = gr.Textbox(label="Hookpoint Config", interactive=False)
-
         with gr.Row():
             # Initialize latent choices from first hookpoint
             _initial_latent_choices = []
@@ -433,6 +499,34 @@ with gr.Blocks(title="TopKLoRA Dashboard", css=_chat_css) as demo:
             cached_show_pad = gr.Checkbox(label="Show pad tokens", value=False)
 
         show_examples_btn = gr.Button("Show Top Examples", variant="primary")
+
+        # -- Bookmark controls --
+        with gr.Row():
+            bookmark_note = gr.Textbox(
+                label="Note",
+                placeholder="Why is this latent interesting?",
+                lines=1,
+                scale=3,
+            )
+            bookmark_btn = gr.Button("Bookmark This Latent", scale=1)
+
+        # -- Bookmarks browser --
+        with gr.Accordion("Bookmarked Latents", open=False):
+            _initial_bookmarks = _bookmarks_to_df(
+                _cached_adapters[0] if _cached_adapters else None
+            )
+            bookmark_selected_idx = gr.State(-1)
+            bookmarks_df = gr.Dataframe(
+                value=_initial_bookmarks,
+                headers=["Hookpoint", "Latent", "Note", "Date"],
+                datatype=["str", "number", "str", "str"],
+                interactive=False,
+                label="Bookmarks",
+            )
+            with gr.Row():
+                bookmark_load_btn = gr.Button("Load Selected", size="sm")
+                bookmark_delete_btn = gr.Button("Delete Selected", size="sm")
+
         cached_examples_html = gr.HTML(label="Top Activating Examples")
 
     # ---- Wiring ----
@@ -469,7 +563,7 @@ with gr.Blocks(title="TopKLoRA Dashboard", css=_chat_css) as demo:
     cached_hookpoint_dd.change(
         fn=_on_cached_hookpoint_select,
         inputs=[cached_adapter_dd, cached_hookpoint_dd],
-        outputs=[cached_config_info, cached_latent_dd],
+        outputs=[cached_latent_dd],
     )
 
     show_examples_btn.click(
@@ -482,6 +576,42 @@ with gr.Blocks(title="TopKLoRA Dashboard", css=_chat_css) as demo:
             cached_show_pad,
         ],
         outputs=[cached_examples_html],
+    )
+
+    # -- Bookmark wiring --
+    bookmark_btn.click(
+        fn=_on_add_bookmark,
+        inputs=[
+            cached_adapter_dd,
+            cached_hookpoint_dd,
+            cached_latent_dd,
+            bookmark_note,
+        ],
+        outputs=[bookmarks_df],
+    )
+
+    bookmarks_df.select(
+        fn=_on_bookmark_row_select,
+        outputs=[bookmark_selected_idx],
+    )
+
+    bookmark_delete_btn.click(
+        fn=_on_delete_selected_bookmark,
+        inputs=[cached_adapter_dd, bookmark_selected_idx, bookmarks_df],
+        outputs=[bookmarks_df],
+    )
+
+    bookmark_load_btn.click(
+        fn=_on_load_selected_bookmark,
+        inputs=[cached_adapter_dd, bookmark_selected_idx],
+        outputs=[cached_hookpoint_dd, cached_latent_dd, cached_examples_html],
+    )
+
+    # Refresh bookmarks when adapter changes
+    cached_adapter_dd.change(
+        fn=_refresh_bookmarks,
+        inputs=[cached_adapter_dd],
+        outputs=[bookmarks_df],
     )
 
 if __name__ == "__main__":

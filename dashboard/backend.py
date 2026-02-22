@@ -6,10 +6,12 @@ too large for gr.State).  All heavy lifting lives here; the Gradio UI
 in app.py only calls these functions.
 """
 
+import csv
 import gc
 import glob
 import json
 import logging
+from datetime import datetime, timezone
 from pathlib import Path
 
 import torch
@@ -24,6 +26,9 @@ logger = logging.getLogger(__name__)
 
 MODELS_DIR = Path("models")
 CACHE_DIR = Path("delphi_cache")
+BOOKMARKS_PATH = CACHE_DIR / "bookmarks.csv"
+
+_BOOKMARK_FIELDS = ["adapter", "hookpoint", "latent_idx", "note", "created_at"]
 
 
 # ---------------------------------------------------------------------------
@@ -1326,3 +1331,76 @@ def _render_activation_stats(
         f"</table>"
         f"</div>"
     )
+
+
+# ---------------------------------------------------------------------------
+# Latent bookmarks
+# ---------------------------------------------------------------------------
+def load_bookmarks(adapter_name: str | None = None) -> list[dict]:
+    """Read bookmarks CSV, optionally filtering by adapter name."""
+    if not BOOKMARKS_PATH.exists():
+        return []
+    try:
+        with open(BOOKMARKS_PATH, newline="") as f:
+            reader = csv.DictReader(f)
+            rows = list(reader)
+        if adapter_name:
+            rows = [r for r in rows if r.get("adapter") == adapter_name]
+        return rows
+    except Exception:
+        logger.warning("Failed to read bookmarks CSV", exc_info=True)
+        return []
+
+
+def add_bookmark(adapter: str, hookpoint: str, latent_idx: int, note: str) -> str:
+    """Append a bookmark row to the CSV. Creates the file if needed."""
+    try:
+        file_exists = BOOKMARKS_PATH.exists()
+        BOOKMARKS_PATH.parent.mkdir(parents=True, exist_ok=True)
+        with open(BOOKMARKS_PATH, "a", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=_BOOKMARK_FIELDS)
+            if not file_exists:
+                writer.writeheader()
+            writer.writerow(
+                {
+                    "adapter": adapter,
+                    "hookpoint": hookpoint,
+                    "latent_idx": int(latent_idx),
+                    "note": note,
+                    "created_at": datetime.now(timezone.utc).strftime(
+                        "%Y-%m-%d %H:%M:%S"
+                    ),
+                }
+            )
+        return f"Bookmarked latent {latent_idx} at {hookpoint}"
+    except Exception as exc:
+        logger.error("Failed to add bookmark: %s", exc, exc_info=True)
+        return f"Error: {exc}"
+
+
+def delete_bookmark(adapter: str, hookpoint: str, latent_idx: int) -> str:
+    """Remove a bookmark row matching (adapter, hookpoint, latent_idx)."""
+    if not BOOKMARKS_PATH.exists():
+        return "No bookmarks file found."
+    try:
+        with open(BOOKMARKS_PATH, newline="") as f:
+            reader = csv.DictReader(f)
+            rows = list(reader)
+        kept = [
+            r
+            for r in rows
+            if not (
+                r["adapter"] == adapter
+                and r["hookpoint"] == hookpoint
+                and int(r["latent_idx"]) == int(latent_idx)
+            )
+        ]
+        with open(BOOKMARKS_PATH, "w", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=_BOOKMARK_FIELDS)
+            writer.writeheader()
+            writer.writerows(kept)
+        removed = len(rows) - len(kept)
+        return f"Deleted {removed} bookmark(s)."
+    except Exception as exc:
+        logger.error("Failed to delete bookmark: %s", exc, exc_info=True)
+        return f"Error: {exc}"

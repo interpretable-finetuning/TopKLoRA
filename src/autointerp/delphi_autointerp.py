@@ -995,6 +995,7 @@ def delphi_collect_activations(cfg, model, tokenizer, wrapped_modules):
             batch_size=current_batch_size,
             transcode=False,
             streaming=streaming_cache,
+            pad_token_id=tokenizer.pad_token_id,
         )
 
         try:

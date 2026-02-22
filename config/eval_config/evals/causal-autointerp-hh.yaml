@@ -1,108 +1,147 @@
-name: causal-autointerp-framework # Eval name for logging/selection.
-# output_dir: eval_outputs/causal_autointerp_framework_mlp # Output folder for all artifacts.
-# output_dir: eval_outputs/causal_autointerp_framework_attn # Output folder for all artifacts.
-output_dir: eval_outputs/causal_autointerp_framework/${model.module_type.name}_k${model.k}_r${model.r}_reg${model.reg}_layer${model.layer} # Output folder for all artifacts.
+name: causal-autointerp-framework-v2
+output_dir: eval_outputs/causal_autointerp_framework_v2/${model.module_type.name}_k${model.k}_r${model.r}_reg${model.reg}_layer${model.layer}
 
-precached:
-  enabled: true
-  stats_dir: delphi_cache/${model.module_type.name}_k${model.k}_r${model.r}_reg${model.reg}_layer${model.layer}/stats
-  recompute_selection_from_stats: true # If true, ignore cached latent_selection.jsonl and recompute using latents.selection.
+resume: true
+fail_fast: true
+run_only: null
 
-dataset: # Prompt source configuration (HH-RLHF).
-  name: Anthropic/hh-rlhf # Hugging Face dataset ID.
-  buckets: # Subsets to sample prompts from.
-    - bucket: harmless # Label assigned to prompts from this subset.
-      data_dir: harmless-base # HH-RLHF subset directory.
-      split: train # Split to draw prompts from.
-      max_prompts: 200 # Cap on prompts pulled from this bucket.
-    - bucket: helpful # Label assigned to prompts from this subset.
-      data_dir: helpful-base # HH-RLHF subset directory.
-      split: train # Split to draw prompts from.
-      max_prompts: 200 # Cap on prompts pulled from this bucket.
-  split: # Analysis/eval split for prompts.
+dataset:
+  name: Anthropic/hh-rlhf
+  source_buckets:
+    - bucket: harmless
+      data_dir: harmless-base
+      split: train
+      max_prompts: 200
+    - bucket: helpful
+      data_dir: helpful-base
+      split: train
+      max_prompts: 200
+  control_prompts:
+    - "What is the capital of France?"
+    - "Write a Python function that reverses a string."
+    - "What is 127 * 43?"
+    - "Explain photosynthesis."
+    - "Summarize the plot of Pride and Prejudice in three sentences."
+    - "Name three key differences between TCP and UDP."
+    - "What is the derivative of x^2 + 3x + 1?"
+    - "Describe the water cycle."
+    - "Who wrote Hamlet?"
+    - "Translate 'good morning' into Spanish."
+  behav_prompts: []
+  split:
     seed: 42
-    analysis_frac: 0.8 # Fraction used for analysis; remainder is eval.
 
-latents: # Latent statistics collection settings.
-  quantiles: [0.5, 0.9, 0.99] # Quantiles to record per latent.
-  max_length: 2048 # Token limit when collecting stats.
-  selection:
+latents:
+  quantiles: [0.5, 0.9, 0.99]
+  max_length: 2048
+  quantile_samples: 2000
+  prompt_bucket_sizes:
+    high: 20
+    low: 20
+    behav: 10
+
+selection:
+  seed: 42
+  p_active_min: 0.01
+  p_active_max: 0.5
+  z_j_typical_min: 0.001
+  max_latents_main: 64
+  max_latents_cascade: 16
+
+generation:
+  max_new_tokens: 64
+  do_sample: true
+  temperature: 1.0
+  top_p: 0.9
+
+control_generation:
+  max_new_tokens: 64
+  do_sample: false
+  temperature: null
+  top_p: null
+
+policy:
+  policy_group_defaults:
+    ablation: flag_invalid_only
+    force_inject: backoff_retry
+    sweep: continue_regardless
+  backoff_factors: [1.0, 0.5, 0.25, 0.125]
+  b2_start_mode: min_amp5x_amp_safe
+  material_change_threshold: 0.15
+
+vllm:
+  base_url: "http://localhost:8080/v1"
+
+llm:
+  explainer:
     enabled: true
-    seed: 42
-    max_latents: 64
-    p_active_min: 0.01
-    p_active_max: 1.0
-    dead_p_active_max: 0.0099
-
-# evidence packs
-# train_per_latent is used for both train/eval unless overridden
-# target_kl picks the calibration entry to use
-# top_context_ratio chooses how many prompts from top activations
-
-evidence: # Evidence pack construction settings.
-  explainer:
-    per_latent: 10 # Prompts per latent for training evidence.
-    intervention_type: steer_with_alpha # steer_with_alpha or zero_ablate
-    alpha_mode: top_prompt_mean # fixed | mean_active | mean_unconditional | top_prompt_mean
-    alpha: 100 # Fixed steering alpha (calibration removed).
-    baseline_samples: 1
-    generation: # Text generation settings for evidence.
-      max_new_tokens: 64 # Max tokens to generate.
-      do_sample: false # Disable sampling for training evidence.
-      # temperature: 1.0  # Sampling temperature for training (if enabled).
-      # top_p: 0.9        # Nucleus sampling p for training (if enabled).
-
+    provider: vllm
+    model: Qwen/Qwen2.5-32B-Instruct-AWQ
+    temperature: 0.2
+    max_tokens: 512
+    evidence_per_latent: 8
+    include_antipredictions: true
   verifier:
-    per_latent: 10 # Prompts per latent for eval evidence.
-    intervention_type: zero_ablate # steer_with_alpha or zero_ablate
-    alpha_mode: fixed # Used only when intervention_type=steer_with_alpha
-    # alpha: 1 # Fixed steering alpha (calibration removed).
-    baseline_samples: 3
-    generation: # Text generation settings for evidence.
-      max_new_tokens: 64 # Max tokens to generate.
-      do_sample: true # Enable sampling for eval evidence.
-      temperature: 1.0 # Sampling temperature for eval (if enabled).
-      top_p: 0.9 # Nucleus sampling p for eval (if enabled).
+    enabled: true
+    provider: vllm
+    model: Qwen/Qwen2.5-32B-Instruct-AWQ
+    temperature: 0.0
+    max_tokens: 256
 
-vllm: # vLLM server settings for explainer/verifier.
-  base_url: "http://localhost:8080/v1" # OpenAI-compatible endpoint.
-  # To start the server: bash run_vllm_server.sh
+stage_configs:
+  phase0.amp_window_scan:
+    scan:
+      n_latents: 16
+      high_prompts_per_latent: 3
+      factors: [0.5, 1.0, 2.0, 5.0, 10.0]
+  phase1.a4_full_ablation:
+    harmless_n: 20
+    helpful_n: 20
+    control_n: 10
+  gate.control_window_prescreen_full:
+    experiments: ["B1", "B2", "C2", "C3"]
+  gate.control_window_prescreen_sft:
+    # B3_BEHAV reuses B3_HIGH windows inside stage logic.
+    experiments: ["B3_HIGH"]
+  phase4.a3_ablate_attn_observe_mlp:
+    sigma_threshold: 1.0
+    top_edges_per_source: 32
+  phase4.c1_cross_sublayer_cascade:
+    max_pairs: 32
+    functional_threshold: 0.05
+  phase6.c3_multi_inject:
+    max_pairs: 16
+  phase6.b4_beta_sweep:
+    factors: [0.1, 0.5, 1.0, 2.0, 5.0]
+  phase6.hypothesis_generation:
+    evidence_experiments: ["A1", "B1", "B2", "B3_HIGH", "B3_BEHAV"]
+  phase6.verification:
+    experiments: ["A1", "B1", "B2", "B3_HIGH", "B3_BEHAV"]
 
-llm: # Explainer/verifier model settings.
-  explainer:
-    enabled: true # Enable hypothesis generation.
-    provider: vllm # LLM backend provider (vllm uses OpenAI-compatible API).
-    model: Qwen/Qwen2.5-32B-Instruct-AWQ # Explainer model ID (must match vLLM server).
-    temperature: 0.2 # Explainer sampling temperature.
-    max_tokens: 512 # Explainer output token cap.
-    evidence_per_latent: 8 # Evidence packs per latent for hypotheses.
-    include_antipredictions: true # Request anti-predictions in hypotheses.
-    effects_menu: # Allowed effect labels for structured output.
-      - refusal_more_likely
-      - safety_disclaimer_more_likely
-      - direct_answer_less_likely
-      - hedging_more_likely
-      - verbosity_increases
-      - toxicity_reduced
-      - instruction_following_improves
-      - polite_tone_more_likely
-      - uncertainty_more_likely
-  verifier:
-    enabled: true # Enable hypothesis verification.
-    provider: vllm # LLM backend provider.
-    model: Qwen/Qwen2.5-32B-Instruct-AWQ # Verifier model ID.
-    temperature: 0.0 # Verifier sampling temperature.
-    max_tokens: 256 # Verifier output token cap.
+stages:
+  "phase0.prompts_and_buckets": true
+  "phase0.latent_stats": true
+  "phase0.calibration_manifest": true
+  "phase0.amp_window_scan": true
+  "phase0.latent_selection": true
+  "phase1.d1_observational": true
+  "phase1.a4_full_ablation": true
+  "gate.control_window_prescreen_full": true
+  "gate.control_window_prescreen_sft": true
+  "phase2.a1_ablate_on_fire": true
+  "phase2.b1_force_on": true
+  "phase3.b3_high": true
+  "phase4.a3_ablate_attn_observe_mlp": true
+  "phase4.c2_force_attn_observe_mlp": true
+  "phase4.c1_cross_sublayer_cascade": true
+  "phase5.b2_isolate": true
+  "phase5.d2_encoder_decoder_alignment": true
+  "phase6.b3_behav": true
+  "phase6.c3_multi_inject": true
+  "phase6.b4_beta_sweep": true
+  "phase6.hypothesis_generation": true
+  "phase6.verification": true
+  "phase6.typology": true
 
-stages: # Pipeline stage toggles.
-  prompts: false # Build prompt records.
-  latent_stats: false # Collect latent activation stats.
-  latent_selection: false # Select latents.
-  evidence_explainer: true # Generate training evidence packs.
-  evidence_verifier: false # Generate eval evidence packs.
-  hypothesis: false # Generate hypotheses via explainer.
-  verification: false # Run blind + hypothesis verification.
-  summary: false # Aggregate summary metrics.
-
-build_eval_function: # Hydra entry point for eval.
-  _target_: src.evals.causal_autointerp_framework # Callable that runs the pipeline.
+build_eval_function:
+  _target_: src.evals.causal_autointerp_framework

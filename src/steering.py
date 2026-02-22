@@ -56,10 +56,11 @@ class FeatureSteerer:
     """
     Hook handler for steering specific features in TopKLoRALinearSTE layers.
     
-    Supports three modes:
+    Supports four modes:
     - "enable": Force specific latent(s) to be active (gate=1)
     - "disable": Force specific latent(s) to be inactive (gate=0)
     - "isolate": Enable ONLY the specified latent(s), ablate all others
+    - "disable_all": Ablate all latents in the adapter (feature index ignored)
     """
     
     def __init__(self, feature_indices: List[int], effects: List[str], 
@@ -67,7 +68,7 @@ class FeatureSteerer:
         """
         Args:
             feature_indices: List of feature/latent indices to steer
-            effects: List of effects ("enable", "disable", or "isolate") for each feature
+            effects: List of effects ("enable", "disable", "isolate", "disable_all") for each feature
             amplification: Multiplier for enabled/isolated features (default 1.0, try 5.0-10.0 for stronger effect)
         """
         self.feature_indices = feature_indices
@@ -82,11 +83,18 @@ class FeatureSteerer:
                 f"amplification must be > 0, got {self.amplification}"
             )
         for effect in effects:
-            assert effect in ["enable", "disable", "isolate"], \
-                f"Invalid effect: {effect}. Must be 'enable', 'disable', or 'isolate'"
+            assert effect in ["enable", "disable", "isolate", "disable_all"], \
+                f"Invalid effect: {effect}. Must be 'enable', 'disable', 'isolate', or 'disable_all'"
         
         # Check for isolate mode
         self.has_isolate = "isolate" in effects
+        self.has_disable_all = "disable_all" in effects
+
+        if self.has_disable_all and len(effects) > 1:
+            logging.warning(
+                "Using 'disable_all' with other effects. "
+                "disable_all dominates and will zero all latent gates."
+            )
         if self.has_isolate:
             # Validate: if isolate is used, it should be the only effect for this layer
             if len(effects) > 1 and any(e != "isolate" for e in effects):
@@ -103,11 +111,12 @@ class FeatureSteerer:
         The steering works by manipulating the gate values for specific latents
         in the TopKLoRALinearSTE module before they're applied to the activations.
         
-        Three modes are supported:
+        Four modes are supported:
         - "enable": Force the specified latent(s) to be active (gate=1), leave others as-is
         - "disable": Force the specified latent(s) to be inactive (gate=0), leave others as-is
         - "isolate": Enable ONLY the specified latent(s), set ALL other latents to gate=0
                     This mode is useful for causal analysis of individual latent effects.
+        - "disable_all": Set ALL latent gates to 0 and remove adapter contribution.
 
         Args:
             module: The TopKLoRALinearSTE module
@@ -145,8 +154,12 @@ class FeatureSteerer:
             g_soft = _soft_topk_mass(z, k_now, tau)
             g_hard = _hard_topk_mask(z, k_now)
 
-            # Handle isolate mode: ablate ALL latents first, then enable selected ones
-            if self.has_isolate:
+            # disable_all: remove all latent contributions regardless of index rules.
+            if self.has_disable_all:
+                g_soft = torch.zeros_like(g_soft)
+                g_hard = torch.zeros_like(g_hard)
+            # isolate mode: ablate ALL latents first, then enable selected ones.
+            elif self.has_isolate:
                 # Start with all gates at zero
                 g_soft = torch.zeros_like(g_soft)
                 g_hard = torch.zeros_like(g_hard)
@@ -159,6 +172,10 @@ class FeatureSteerer:
                 if idx >= z.shape[-1]:
                     # Skip logging to avoid compile issues
                     # logging.warning(f"Feature index {idx} out of bounds (max: {z.shape[-1]-1}), skipping")
+                    continue
+
+                if effect == "disable_all":
+                    # Already handled globally.
                     continue
 
                 # Debug: check activation magnitude (kept for monitoring, no logging in hook)
@@ -221,7 +238,7 @@ def steer_features(
     Args:
         model: PyTorch model with TopKLoRALinearSTE adapters loaded
         feature_dict: Dictionary mapping adapter names to list of (feature_num, effect) tuples
-                     where effect is "enable", "disable", or "isolate"
+                     where effect is "enable", "disable", "isolate", or "disable_all"
                      Example: {
                          "base_model.model.model.layers.11.self_attn.q_proj.topk": [
                              (217, "enable"),   # Enable feature 217, leave others as-is
@@ -239,7 +256,7 @@ def steer_features(
         amplification: Positive scaling factor for enabled/isolated features
                       (default 1.0). Values >1 amplify, values between (0,1)
                       attenuate. Only affects "enable" and "isolate", not
-                      "disable".
+                      "disable" or "disable_all".
 
     Returns:
         Dictionary containing:
@@ -349,7 +366,7 @@ def FeatureSteeringContext(
     Args:
         model: PyTorch model with TopKLoRALinearSTE adapters loaded
         feature_dict: Dictionary mapping adapter names to list of (feature_num, effect) tuples
-                     where effect is "enable", "disable", or "isolate"
+                     where effect is "enable", "disable", "isolate", or "disable_all"
         verbose: If True, log information about applied steering
         amplification: Positive scaling factor for enabled/isolated features
                       (default 1.0). Values >1 amplify, values between (0,1)

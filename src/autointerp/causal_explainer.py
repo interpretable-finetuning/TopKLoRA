@@ -26,6 +26,14 @@ from openai import OpenAI
 logger = logging.getLogger(__name__)
 
 
+def _cfg_get(obj: Any, key: str, default: Any = None) -> Any:
+    if obj is None:
+        return default
+    if isinstance(obj, dict):
+        return obj.get(key, default)
+    return getattr(obj, key, default)
+
+
 # =============================================================================
 # Data Classes
 # =============================================================================
@@ -596,6 +604,8 @@ def run_explainer(
     cfg,
     output_dir: str,
     vllm_base_url: str = "http://localhost:8080/v1",
+    evidence_path: Optional[str] = None,
+    hypotheses_path: Optional[str] = None,
 ) -> List[CausalHypothesis]:
     """Run the causal explainer pipeline.
 
@@ -603,13 +613,19 @@ def run_explainer(
         cfg: Hydra config with explainer settings.
         output_dir: Directory containing evidence packs.
         vllm_base_url: vLLM server endpoint.
+        evidence_path: Optional explicit JSONL evidence path.
+        hypotheses_path: Optional explicit output path for hypotheses JSONL.
 
     Returns:
         List of generated hypotheses.
     """
-    llm_cfg = cfg.evals.causal_autointerp_framework.llm.explainer
-    evidence_path = os.path.join(output_dir, "evidence_explainer.jsonl")
-    hypotheses_path = os.path.join(output_dir, "hypotheses.jsonl")
+    eval_cfg = cfg.evals.causal_autointerp_framework
+    llm_root = _cfg_get(eval_cfg, "llm", {})
+    llm_cfg = _cfg_get(llm_root, "explainer", {})
+    if evidence_path is None:
+        evidence_path = os.path.join(output_dir, "evidence_explainer.jsonl")
+    if hypotheses_path is None:
+        hypotheses_path = os.path.join(output_dir, "hypotheses.jsonl")
 
     logger.info(f"Loading evidence from {evidence_path}")
     latent_evidence = load_evidence_packs(evidence_path)
@@ -618,16 +634,16 @@ def run_explainer(
     # Initialize client
     client = VLLMExplainerClient(
         base_url=vllm_base_url,
-        model=getattr(llm_cfg, "model", "Qwen/Qwen2.5-32B-Instruct-AWQ"),
-        temperature=float(getattr(llm_cfg, "temperature", 0.2)),
-        max_tokens=int(getattr(llm_cfg, "max_tokens", 512)),
+        model=_cfg_get(llm_cfg, "model", "Qwen/Qwen2.5-32B-Instruct-AWQ"),
+        temperature=float(_cfg_get(llm_cfg, "temperature", 0.2)),
+        max_tokens=int(_cfg_get(llm_cfg, "max_tokens", 512)),
     )
 
     # Generate hypotheses
     evidences = list(latent_evidence.values())
     hypotheses = client.generate_hypotheses_batch(
         evidences,
-        max_evidence_samples=int(getattr(llm_cfg, "evidence_per_latent", 8)),
+        max_evidence_samples=int(_cfg_get(llm_cfg, "evidence_per_latent", 8)),
     )
 
     # Save results

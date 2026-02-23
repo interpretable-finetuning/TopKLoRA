@@ -32,6 +32,7 @@ latent_selection:
 delphi_scoring:
   enabled: false
   max_concurrent: 1 # Maximum concurrent pipeline tasks (applies to all providers)
+  max_pad_ratio: 0.1 # Maximum tolerable ratio of pad tokens in samples for explainer/scorer
 
   use_openai_simulator: false
 

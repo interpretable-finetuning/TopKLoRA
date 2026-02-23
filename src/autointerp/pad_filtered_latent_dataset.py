@@ -111,28 +111,17 @@ class PadFilteredLatentDataset(LatentDataset):
             return None
 
         # --- pad-token filtering ---
+        n_act_before = len(record.examples)
+        n_na_before = len(record.not_active)
+        n_dropped_act = 0
+        n_dropped_na = 0
         if pad_id is not None:
-            n_act_before = len(record.examples)
-            record.examples, n_dropped = self._filter_activating(
+            record.examples, n_dropped_act = self._filter_activating(
                 record.examples, pad_id
             )
-            if n_dropped > 0:
-                logging.info(
-                    f"Latent {latent_data.latent}: kept {len(record.examples)}/"
-                    f"{n_act_before} activating examples "
-                    f"(dropped {n_dropped}, pad ratio > {self.max_pad_ratio})"
-                )
-
-            n_na_before = len(record.not_active)
             record.not_active, n_dropped_na = self._filter_non_activating(
                 record.not_active, pad_id
             )
-            if n_dropped_na > 0:
-                logging.info(
-                    f"Latent {latent_data.latent}: kept {len(record.not_active)}/"
-                    f"{n_na_before} non-activating examples "
-                    f"(dropped {n_dropped_na}, pad ratio > {self.max_pad_ratio}). Replenishing from pool..."
-                )
 
             # Replenish non-activating examples if we're short of the target.
             n_target = self.constructor_cfg.n_non_activating
@@ -197,8 +186,10 @@ class PadFilteredLatentDataset(LatentDataset):
 
         logging.info(
             f"Latent {latent_data.latent} final stats: "
-            f"{len(record.examples)} activating, "
-            f"{len(record.not_active)} non-activating, "
+            f"{len(record.examples)}/{n_act_before} activating "
+            f"(dropped {n_dropped_act}), "
+            f"{len(record.not_active)}/{n_na_before} non-activating "
+            f"(dropped {n_dropped_na}), "
             f"{len(record.train)} train, {len(record.test)} test"
         )
         return record

@@ -780,12 +780,12 @@ def load_top_activating_examples(
     if target_file is None:
         return f"<p>No safetensors file contains latent {latent_idx}</p>"
 
-    # Load the safetensors file
+    # Load locations and activations first (defer tokens until we know
+    # which batches we need — tokens can be very large).
     try:
-        with safe_open(target_file, framework="pt", device="cpu") as f:
-            locations = f.get_tensor("locations")  # [n_activations, 3]
-            activations_all = f.get_tensor("activations")  # [n_activations]
-            tokens_all = f.get_tensor("tokens")  # [batch, sequence]
+        sf = safe_open(target_file, framework="pt", device="cpu")
+        locations = sf.get_tensor("locations")  # [n_activations, 3]
+        activations_all = sf.get_tensor("activations")  # [n_activations]
     except Exception as e:
         return f"<p>Error loading {target_file}: {e}</p>"
 
@@ -804,28 +804,52 @@ def load_top_activating_examples(
     latent_locs = locations[mask]  # [n_matches, 3]
     latent_acts = activations_all[mask]  # [n_matches]
 
-    # Sort by activation (descending)
-    sorted_indices = torch.argsort(latent_acts, descending=True)
-    top_indices = sorted_indices[: n_examples * 3]  # Get more to account for duplicates
+    # Free the full tensors now that we've filtered
+    del locations, activations_all
 
-    # Group activations by batch_idx to avoid duplicate prompts
+    # --- Vectorized batch selection (avoids Python loop over all matches) ---
+    batch_indices = latent_locs[:, 0]  # [n_matches]
+    unique_batches, inverse = batch_indices.unique(return_inverse=True)
+
+    # Compute max activation per unique batch using scatter_reduce
+    latent_acts_f = latent_acts.float()
+    max_per_batch = torch.full((len(unique_batches),), float("-inf"))
+    max_per_batch.scatter_reduce_(0, inverse, latent_acts_f, reduce="amax")
+
+    # Select top N batches by max activation
+    sorted_batch_order = max_per_batch.argsort(descending=True)
+    if n_examples > 0:
+        sorted_batch_order = sorted_batch_order[:n_examples]
+    selected_unique = unique_batches[sorted_batch_order]
+
+    # Filter activations to only the selected batches
+    sel_mask = torch.isin(batch_indices, selected_unique)
+    sel_locs = latent_locs[sel_mask]
+    sel_acts = latent_acts[sel_mask]
+
+    # Now load tokens and index only the rows we need
+    try:
+        tokens_all = sf.get_tensor("tokens")  # [batch, sequence]
+    except Exception as e:
+        return f"<p>Error loading tokens from {target_file}: {e}</p>"
+
+    # Group by batch (small set — only the selected batches)
     from collections import defaultdict
 
     batch_activations = defaultdict(
         list
     )  # batch_idx -> [(seq_idx, activation_val), ...]
 
-    for idx in top_indices:
-        batch_idx, seq_idx, _ = latent_locs[idx].tolist()
-        activation_val = latent_acts[idx].item()
-        batch_activations[batch_idx].append((seq_idx, activation_val))
+    for i in range(len(sel_locs)):
+        b, s, _ = sel_locs[i].tolist()
+        batch_activations[b].append((s, sel_acts[i].item()))
 
     # Sort batches by their maximum activation
     sorted_batches = sorted(
         batch_activations.items(),
         key=lambda x: max(act for _, act in x[1]),
         reverse=True,
-    )[:n_examples]  # Take top N unique prompts
+    )
 
     # Build HTML for top examples
     tokenizer_status = (
@@ -934,7 +958,7 @@ def load_top_activating_examples(
         html_parts.append(
             f"<div style='margin: 12px 0; padding: 8px; background: #f9f9f9; border-radius: 4px;'>"
             f"<div style='font-size: 0.85em; color: #666; margin-bottom: 4px;'>"
-            f"Rank #{rank + 1} | Max: {max_activation:.4f} | Batch {batch_idx} | {len(positions)} activation(s): {pos_summary}{pad_note}</div>"
+            f"Rank #{rank + 1} | Max: {max_activation:.4f} | Prompt {batch_idx} | {len(positions)} activation(s): {pos_summary}{pad_note}</div>"
             f"<div style='line-height: 1.8;'>{' '.join(highlighted_seq)}</div>"
             f"</div>"
         )

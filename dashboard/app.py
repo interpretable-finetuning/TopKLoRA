@@ -530,7 +530,7 @@ with gr.Blocks(title="TopKLoRA Dashboard", css=_chat_css) as demo:
             )
         with gr.Row():
             cached_n_examples = gr.Number(
-                label="Number of Examples", value=10, precision=0
+                label="Number of Examples (0 = all)", value=10, precision=0
             )
             cached_show_pad = gr.Checkbox(label="Show pad tokens", value=False)
             latent_source_indicator = gr.Textbox(

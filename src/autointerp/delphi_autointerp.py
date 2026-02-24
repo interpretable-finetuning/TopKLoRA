@@ -14,7 +14,6 @@ from datasets import load_dataset
 from delphi.clients import Offline
 from delphi.config import ConstructorConfig, SamplerConfig
 from delphi.explainers import DefaultExplainer
-from delphi.latents import LatentDataset
 from delphi.pipeline import Pipeline, process_wrapper
 from delphi.scorers import (
     DetectionScorer,
@@ -27,6 +26,7 @@ import logging
 from .openai_client import OpenAIClient
 from .streaming_latent_cache import make_latent_cache
 from tqdm import tqdm
+from .pad_filtered_latent_dataset import PadFilteredLatentDataset
 
 # Add path for our improvements
 
@@ -1158,9 +1158,10 @@ def delphi_score(cfg, model, tokenizer, wrapped_modules):
 
     logging.info(f"Topk modules after filtering: {topk_modules}")
     # 1) Load the raw cache you saved
-    dataset = LatentDataset(
+    dataset = PadFilteredLatentDataset(
         raw_dir=Path(get_delphi_cache_path(cfg)),
         modules=topk_modules,
+        max_pad_ratio=cfg_exp.max_pad_ratio,
         latents={
             # Focus on most interpretable latents only
             name: torch.tensor(priority_latents[name], dtype=torch.long)

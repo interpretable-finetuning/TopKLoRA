@@ -8,6 +8,7 @@ from .delphi_autointerp import (
 from .streaming_latent_cache import StreamingLatentCache, make_latent_cache
 from .causal_explainer import run_explainer
 from .openai_client import OpenAIClient
+from .pad_filtered_latent_dataset import PadFilteredLatentDataset
 
 __all__ = [
     "run_autointerp_framework",
@@ -22,4 +23,5 @@ __all__ = [
     "make_latent_cache",
     "run_explainer",
     "OpenAIClient",
+    "PadFilteredLatentDataset",
 ]

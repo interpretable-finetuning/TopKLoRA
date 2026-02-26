@@ -1,0 +1,36 @@
+# Default configuration for model preview REPL
+# Loads a model + optional adapters, then enters an interactive prompt loop.
+# For each prompt, generates a response from the base model and every adapter.
+#
+# Usage:
+#   python preview.py
+#   python preview.py 'model.adapters={sft: path/to/sft, dpo: path/to/dpo}'
+#   python preview.py 'model.adapters={my_adapter: path/to/adapter}' chat_format=false
+
+defaults:
+  - _self_
+
+model:
+  model_name: "/Users/aszab/repos/TopKLoRA/models/sft_base"
+  model_it_name: "google/gemma-2-2b-it"
+  adapters:
+    mlp_k64_r8192_regz_only_layer18: /Volumes/T7_1TB/models/dpo/mlp/k64/r8192/regz_only/layer18/
+    mlp_k64_r8192_regoff_layer18: /Volumes/T7_1TB/models/dpo/mlp/k64/r8192/regoff/layer18/
+    mlp_k64_r8192_regz_plus_ortho_layer18: /Volumes/T7_1TB/models/dpo/mlp/k64/r8192/regz_plus_ortho/layer18/
+    attn_k64_r8192_regz_only_layer18: /Volumes/T7_1TB/models/dpo/attn/k64/r8192/regz_only/layer18/
+    attn_k64_r8192_regoff_layer18: /Volumes/T7_1TB/models/dpo/attn/k64/r8192/regoff/layer18/
+    attn_k64_r8192_regz_plus_ortho_layer18: /Volumes/T7_1TB/models/dpo/attn/k64/r8192/regz_plus_ortho/layer18/
+  device: "mps"
+  dtype: "float32"
+  load_in_4bit: false
+  load_in_8bit: false
+  k: 64
+
+generation:
+  max_new_tokens: 128
+  do_sample: false
+  temperature: 0.0
+  top_p: 1.0
+  repetition_penalty: 1.0
+
+chat_format: true

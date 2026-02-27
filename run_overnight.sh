@@ -122,8 +122,12 @@ echo "[$(date)] Running differential analysis (TopK 2B)"
 python -m src.sleeper.differential_analysis \
   --activations analysis/activations_2b_topk.pt \
   --output_dir analysis/results_2b_topk \
-  --threshold_high 0.3 \
-  --threshold_low 0.1
+  --gate_trigger_threshold 0.65 \
+  --gate_inverted_threshold 0.35 \
+  --gate_normal_low 0.4 \
+  --gate_normal_high 0.6 \
+  --clean_freq_split 0.2 \
+  --active_freq_min 0.1
 
 echo "[$(date)] Rendering analysis plots (TopK 2B)"
 python -m src.sleeper.visualize \
@@ -178,8 +182,12 @@ echo "[$(date)] Running differential analysis (dense 2B)"
 python -m src.sleeper.differential_analysis \
   --activations analysis/activations_2b_dense.pt \
   --output_dir analysis/results_2b_dense \
-  --threshold_high 0.3 \
-  --threshold_low 0.1
+  --gate_trigger_threshold 0.65 \
+  --gate_inverted_threshold 0.35 \
+  --gate_normal_low 0.4 \
+  --gate_normal_high 0.6 \
+  --clean_freq_split 0.2 \
+  --active_freq_min 0.1
 
 echo "[$(date)] Rendering analysis plots (dense 2B)"
 python -m src.sleeper.visualize \
@@ -238,8 +246,12 @@ if [ "${RUN_9B}" = "1" ]; then
   python -m src.sleeper.differential_analysis \
     --activations analysis/activations_9b_topk.pt \
     --output_dir analysis/results_9b_topk \
-    --threshold_high 0.3 \
-    --threshold_low 0.1
+    --gate_trigger_threshold 0.65 \
+    --gate_inverted_threshold 0.35 \
+    --gate_normal_low 0.4 \
+    --gate_normal_high 0.6 \
+    --clean_freq_split 0.2 \
+    --active_freq_min 0.1
 
   python -m src.sleeper.visualize \
     --analysis_dir analysis/results_9b_topk
@@ -284,8 +296,12 @@ if [ "${RUN_9B}" = "1" ]; then
   python -m src.sleeper.differential_analysis \
     --activations analysis/activations_9b_dense.pt \
     --output_dir analysis/results_9b_dense \
-    --threshold_high 0.3 \
-    --threshold_low 0.1
+    --gate_trigger_threshold 0.65 \
+    --gate_inverted_threshold 0.35 \
+    --gate_normal_low 0.4 \
+    --gate_normal_high 0.6 \
+    --clean_freq_split 0.2 \
+    --active_freq_min 0.1
 
   python -m src.sleeper.visualize \
     --analysis_dir analysis/results_9b_dense

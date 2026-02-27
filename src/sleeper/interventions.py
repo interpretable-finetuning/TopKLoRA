@@ -122,6 +122,7 @@ def _load_latent_groups(categories_path: Path) -> Dict[str, Dict[str, List[int]]
             "trigger_detection": [],
             "behavior_gating": [],
             "normal_capability": [],
+            "inverted_detector": [],
             "unassigned": [],
         }
         for idx, label in enumerate(labels):
@@ -148,16 +149,31 @@ def _apply_ablation(ctx: FeatureSteeringContext, latents: List[Tuple[str, int]])
         ctx.ablate(layer_name, dims)
 
 
-def _compute_trigger_means(activations_path: Optional[Path]) -> Dict[str, Dict[int, float]]:
+def _compute_condition_means(
+    activations_path: Optional[Path],
+    condition_key: str,
+) -> Dict[str, Dict[int, float]]:
     if activations_path is None:
         return {}
     payload = torch.load(str(activations_path), map_location="cpu")
-    triggered_layers = payload["triggered"]["layers"]
+    if condition_key not in payload:
+        raise KeyError(
+            f"Missing condition '{condition_key}' in activations payload at {activations_path}"
+        )
+    condition_layers = payload[condition_key]["layers"]
     out: Dict[str, Dict[int, float]] = {}
-    for layer_name, tensors in triggered_layers.items():
+    for layer_name, tensors in condition_layers.items():
         mean_values = tensors["z_sparse"].mean(dim=0)
         out[layer_name] = {idx: float(mean_values[idx]) for idx in range(mean_values.shape[0])}
     return out
+
+
+def _compute_trigger_means(activations_path: Optional[Path]) -> Dict[str, Dict[int, float]]:
+    return _compute_condition_means(activations_path, condition_key="triggered")
+
+
+def _compute_clean_means(activations_path: Optional[Path]) -> Dict[str, Dict[int, float]]:
+    return _compute_condition_means(activations_path, condition_key="clean")
 
 
 def _load_reference_model_and_tokenizer(
@@ -294,6 +310,7 @@ def run_causal_experiments(
     trigger_latents = _flatten_latents(latent_groups, "trigger_detection")
     gating_latents = _flatten_latents(latent_groups, "behavior_gating")
     normal_latents = _flatten_latents(latent_groups, "normal_capability")
+    inverted_latents = _flatten_latents(latent_groups, "inverted_detector")
 
     baseline_triggered = _keyword_eval(
         model=model,
@@ -321,6 +338,7 @@ def run_causal_experiments(
             "trigger_detection": len(trigger_latents),
             "behavior_gating": len(gating_latents),
             "normal_capability": len(normal_latents),
+            "inverted_detector": len(inverted_latents),
         },
     }
 
@@ -449,6 +467,36 @@ def run_causal_experiments(
         "ablated_latents": removed,
         "total_latents": total_latents,
         "ablated_fraction": removed / max(total_latents, 1),
+    }
+
+    # Experiment 6: force-activate clean-biased inverted detectors on triggered inputs
+    clean_means = _compute_clean_means(activations_path)
+    ctx = FeatureSteeringContext(model)
+    for layer_name, dim in inverted_latents:
+        value = clean_means.get(layer_name, {}).get(dim, 1.0)
+        ctx.force_activate(layer_name, [dim], value=value)
+    with ctx:
+        exp6_triggered = _keyword_eval(
+            model=model,
+            tokenizer=tokenizer,
+            split=dataset["eval_triggered"],
+            keyword=keyword,
+            max_new_tokens=max_new_tokens,
+            batch_size=batch_size,
+        )
+        exp6_clean = _keyword_eval(
+            model=model,
+            tokenizer=tokenizer,
+            split=dataset["eval_clean"],
+            keyword=keyword,
+            max_new_tokens=max_new_tokens,
+            batch_size=batch_size,
+        )
+    results["experiment_6_force_inverted_on_triggered"] = {
+        "asr_after_forcing": exp6_triggered["keyword_rate"],
+        "clean_contamination_after_forcing": exp6_clean["keyword_rate"],
+        "delta_asr_vs_baseline": exp6_triggered["keyword_rate"] - baseline_triggered["keyword_rate"],
+        "num_forced_latents": len(inverted_latents),
     }
 
     # Control 1: random ablation same count as trigger latents

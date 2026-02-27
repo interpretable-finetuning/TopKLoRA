@@ -28,6 +28,46 @@ def test_sleeper_experiment_sweep_configs_have_expected_rank_and_k():
         assert cfg["lora"]["top_k_experiment"] is True
 
 
+def test_sleeper_experiment_configs_expose_regularization_controls():
+    expected_reg_cfg = {
+        "L_DECORR": 0.05,
+        "L_USAGE": 0.0005,
+        "L_ORTHO": 0.002,
+        "DECORR_EVERY": 3,
+        "USAGE_EVERY": 2,
+        "ORTHO_EVERY": 10,
+        "sched_type": "cubic",
+        "sched_start": 0.0,
+        "sched_end": 0.25,
+        "log_every": 50,
+    }
+    files = [
+        "sleeper_topk_r16_k4.yaml",
+        "sleeper_topk_r32_k8.yaml",
+        "sleeper_topk_r64_k4.yaml",
+        "sleeper_topk_r64_k8.yaml",
+        "sleeper_topk_r64_k16.yaml",
+        "sleeper_topk_r64_k32.yaml",
+        "sleeper_topk_r128_k32.yaml",
+        "sleeper_dense_r64_k64.yaml",
+    ]
+
+    for filename in files:
+        cfg_path = (
+            REPO_ROOT
+            / "config"
+            / "train_config"
+            / "training"
+            / "experiment"
+            / filename
+        )
+        cfg = _load_yaml(cfg_path)
+
+        assert cfg["reg_mode"] is None
+        assert cfg["reg_mode_tag"] == '${oc.select:reg_mode,"auto"}'
+        assert cfg["reg_cfg"] == expected_reg_cfg
+
+
 def test_poison_ratio_training_presets_have_expected_values():
     expected = {
         "sleeper_sft_2b_poison_01.yaml": 0.01,

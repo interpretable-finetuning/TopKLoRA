@@ -1,4 +1,17 @@
 name: "sleeper_topk_r64_k4"
+reg_mode: null
+reg_mode_tag: ${oc.select:reg_mode,"auto"}
+reg_cfg:
+  L_DECORR: 0.05
+  L_USAGE: 0.0005
+  L_ORTHO: 0.002
+  DECORR_EVERY: 3
+  USAGE_EVERY: 2
+  ORTHO_EVERY: 10
+  sched_type: "cubic"
+  sched_start: 0.0
+  sched_end: 0.25
+  log_every: 50
 lora:
   r: 64
   alpha: 128
@@ -14,9 +27,9 @@ lora:
   k_schedule: "constant"
   k_warmup_frac: 0.2
 
-  temperature: 1.0
-  temperature_final: 0.1
-  temperature_schedule: "constant"
+  temperature: 0.5
+  temperature_final: 0.01
+  temperature_schedule: "cubic"
 
   hard_eval: true
   relu_latents: true

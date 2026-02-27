@@ -13,6 +13,15 @@ def test_run_overnight_contains_required_flags_and_steps():
     assert "analysis/results_2b_topk" in script
     assert "analysis/results_2b_dense" in script
 
+    assert "--gate_trigger_threshold" in script
+    assert "--gate_inverted_threshold" in script
+    assert "--gate_normal_low" in script
+    assert "--gate_normal_high" in script
+    assert "--clean_freq_split" in script
+    assert "--active_freq_min" in script
+    assert "--threshold_high" not in script
+    assert "--threshold_low" not in script
+
     assert "if [ \"${RUN_9B}\" = \"1\" ]" in script
     assert "topk_9b.json" in script
     assert "dense_9b.json" in script

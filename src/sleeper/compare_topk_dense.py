@@ -5,6 +5,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
 import torch
 from sklearn.metrics import silhouette_score
 
@@ -14,6 +15,27 @@ def _load_analysis(analysis_dir: Path):
     frequencies = torch.load(str(analysis_dir / "activation_frequencies.pt"), map_location="cpu")
     categories = json.loads((analysis_dir / "categories.json").read_text(encoding="utf-8"))
     return scores, frequencies, categories
+
+
+def _load_auroc_results(analysis_dir: Path) -> Optional[pd.DataFrame]:
+    path = analysis_dir / "auroc_results.csv"
+    if not path.exists():
+        return None
+    return pd.read_csv(path)
+
+
+def _summarize_auroc(df: Optional[pd.DataFrame]) -> Optional[Dict[str, float]]:
+    if df is None or df.empty:
+        return None
+
+    return {
+        "max_auroc_gate": float(df["auroc_gate"].max()),
+        "mean_auroc_gate": float(df["auroc_gate"].mean()),
+        "max_auroc_z_mag": float(df["auroc_z_mag"].max()),
+        "mean_auroc_z_mag": float(df["auroc_z_mag"].mean()),
+        "max_auroc_zsparse_mag": float(df["auroc_zsparse_mag"].max()),
+        "mean_auroc_zsparse_mag": float(df["auroc_zsparse_mag"].mean()),
+    }
 
 
 def _build_labels(categories_payload: Dict[str, Any], layer_name: str, dim_count: int) -> List[str]:
@@ -272,6 +294,8 @@ def run_comparison(
 
     topk_scores, topk_freqs, topk_categories = _load_analysis(topk_dir)
     dense_scores, dense_freqs, dense_categories = _load_analysis(dense_dir)
+    topk_auroc = _summarize_auroc(_load_auroc_results(topk_dir))
+    dense_auroc = _summarize_auroc(_load_auroc_results(dense_dir))
 
     topk_silhouette = _compute_clustering_quality(
         scores=topk_scores,
@@ -350,6 +374,25 @@ def run_comparison(
                     topk_spectral["mean_top1_energy_ratio"]
                     - dense_spectral["mean_top1_energy_ratio"]
                 )
+            ),
+        },
+        "auroc_discrimination": {
+            "topk": topk_auroc,
+            "dense": dense_auroc,
+            "delta_max_auroc_gate_topk_minus_dense": (
+                None
+                if topk_auroc is None or dense_auroc is None
+                else float(topk_auroc["max_auroc_gate"] - dense_auroc["max_auroc_gate"])
+            ),
+            "delta_mean_auroc_gate_topk_minus_dense": (
+                None
+                if topk_auroc is None or dense_auroc is None
+                else float(topk_auroc["mean_auroc_gate"] - dense_auroc["mean_auroc_gate"])
+            ),
+            "delta_max_auroc_z_mag_topk_minus_dense": (
+                None
+                if topk_auroc is None or dense_auroc is None
+                else float(topk_auroc["max_auroc_z_mag"] - dense_auroc["max_auroc_z_mag"])
             ),
         },
         "artifacts": {

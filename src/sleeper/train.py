@@ -2,10 +2,11 @@ import json
 import logging
 import random
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 import numpy as np
 import torch
+import torch.nn.functional as F
 from datasets import Dataset, load_from_disk
 from peft import LoraConfig, get_peft_model
 from transformers import (
@@ -16,7 +17,7 @@ from transformers import (
     TrainingArguments,
 )
 
-from src.models import TopKLoRALinearSTE, TopKProgressCallback
+from src.models import TopKLoRALinearSTE, TopKProgressCallback, _soft_topk_mass
 from src.sleeper.chat_format import build_training_features, validate_dataset_metadata
 from src.sleeper.config_validation import validate_topk_config
 from src.utils import (
@@ -38,6 +39,21 @@ except (
             return obj
 
     OmegaConf = _OmegaConfFallback()
+
+
+SLEEPER_REG_MODES: Set[str] = {"off", "z_only", "z_plus_ortho"}
+SLEEPER_REG_DEFAULTS: Dict[str, Any] = {
+    "L_DECORR": 0.05,
+    "L_USAGE": 5e-4,
+    "L_ORTHO": 2e-3,
+    "DECORR_EVERY": 3,
+    "USAGE_EVERY": 2,
+    "ORTHO_EVERY": 10,
+    "sched_type": "cubic",
+    "sched_start": 0.0,
+    "sched_end": 0.25,
+    "log_every": 50,
+}
 
 
 def _set_seed(seed: int) -> None:
@@ -151,11 +167,256 @@ def _tokenize_dataset(
     )
 
 
-def _build_output_dir(cfg: DictConfig) -> Path:
+def _to_plain_dict(value: Any) -> Dict[str, Any]:
+    if value is None:
+        return {}
+    if isinstance(value, dict):
+        return dict(value)
+    try:
+        container = OmegaConf.to_container(value, resolve=True)
+    except Exception:
+        container = None
+    if isinstance(container, dict):
+        return dict(container)
+    if hasattr(value, "items"):
+        return {k: v for k, v in value.items()}
+    raise TypeError(f"Expected mapping-like reg_cfg, got {type(value).__name__}")
+
+
+def _normalize_reg_cfg_types(reg_cfg: Dict[str, Any]) -> Dict[str, Any]:
+    normalized = dict(reg_cfg)
+    float_keys = ("L_DECORR", "L_USAGE", "L_ORTHO", "sched_start", "sched_end")
+    int_keys = ("DECORR_EVERY", "USAGE_EVERY", "ORTHO_EVERY", "log_every")
+
+    for key in float_keys:
+        normalized[key] = float(normalized[key])
+    for key in int_keys:
+        normalized[key] = int(normalized[key])
+    normalized["sched_type"] = str(normalized["sched_type"])
+    return normalized
+
+
+def _resolve_sleeper_regularization(
+    lora_cfg: DictConfig, sleeper_experiment_cfg: DictConfig
+) -> Tuple[str, Dict[str, Any], bool]:
+    raw_mode = getattr(sleeper_experiment_cfg, "reg_mode", None)
+    reg_mode = "z_only" if raw_mode is None else str(raw_mode)
+    if reg_mode not in SLEEPER_REG_MODES:
+        allowed = ", ".join(sorted(SLEEPER_REG_MODES))
+        raise ValueError(
+            f"Invalid sleeper reg_mode '{reg_mode}'. Expected one of: {allowed}."
+        )
+
+    forced_off_due_to_non_topk = False
+    if not bool(getattr(lora_cfg, "use_topk", False)) and reg_mode != "off":
+        logging.warning(
+            "Coercing sleeper regularization mode from '%s' to 'off' because lora.use_topk=false.",
+            reg_mode,
+        )
+        reg_mode = "off"
+        forced_off_due_to_non_topk = True
+
+    reg_cfg = dict(SLEEPER_REG_DEFAULTS)
+    reg_cfg_override = _to_plain_dict(getattr(sleeper_experiment_cfg, "reg_cfg", None))
+    reg_cfg.update(reg_cfg_override)
+    try:
+        reg_cfg = _normalize_reg_cfg_types(reg_cfg)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"Invalid sleeper reg_cfg values: {exc}") from exc
+    return reg_mode, reg_cfg, forced_off_due_to_non_topk
+
+
+class EnhancedSleeperTrainer(Trainer):
+    def __init__(
+        self,
+        *args,
+        reg_cfg: Optional[Dict[str, Any]] = None,
+        reg_mode: str = "z_only",
+        **kwargs,
+    ):
+        super().__init__(*args, **kwargs)
+        if reg_mode not in SLEEPER_REG_MODES:
+            allowed = ", ".join(sorted(SLEEPER_REG_MODES))
+            raise ValueError(
+                f"Invalid sleeper reg_mode '{reg_mode}'. Expected one of: {allowed}."
+            )
+        self.reg_mode = reg_mode
+        self.reg_cfg = dict(SLEEPER_REG_DEFAULTS)
+        if reg_cfg:
+            self.reg_cfg.update(reg_cfg)
+
+    def _sched_weight(self, progress: float) -> float:
+        s0, s1 = float(self.reg_cfg["sched_start"]), float(self.reg_cfg["sched_end"])
+        if s1 <= s0:
+            return 1.0
+        t = max(0.0, min(1.0, (progress - s0) / (s1 - s0)))
+        sched_type = str(self.reg_cfg["sched_type"])
+        if sched_type == "linear":
+            return t
+        if sched_type == "cubic":
+            return t**3
+        return t**2
+
+    @staticmethod
+    def _should_compute(coeff: float, every: int, step: int) -> bool:
+        return coeff > 0 and every > 0 and (step % every == 0)
+
+    @staticmethod
+    def _compute_decorr(z: torch.Tensor) -> torch.Tensor:
+        z_flat = z.reshape(-1, z.size(-1)).float()
+        z_centered = z_flat - z_flat.mean(dim=0, keepdim=True)
+        z_std = z_centered.std(dim=0, keepdim=True, unbiased=False)
+        z_normalized = z_centered / (z_std + 1e-6)
+        cov = (z_normalized.T @ z_normalized) / (z_normalized.size(0) + 1e-6)
+        off_diag = cov - torch.diag(torch.diag(cov))
+        return (off_diag**2).mean()
+
+    @staticmethod
+    def _compute_usage_balance(g_soft: torch.Tensor) -> torch.Tensor:
+        usage = g_soft.mean(dim=tuple(range(g_soft.dim() - 1)))
+        return ((usage - usage.mean()) ** 2).mean()
+
+    @staticmethod
+    def _compute_ortho(weight: torch.Tensor, dim: int) -> torch.Tensor:
+        w = weight.float()
+        if dim == 1:
+            w_norm = F.normalize(w, p=2, dim=1)
+            gram = w_norm @ w_norm.T
+        else:
+            w_norm = F.normalize(w, p=2, dim=0)
+            gram = w_norm.T @ w_norm
+        off_diag = gram - torch.diag(torch.diag(gram))
+        return (off_diag**2).mean()
+
+    @staticmethod
+    def _clear_caches(model) -> None:
+        for module in model.modules():
+            if isinstance(module, TopKLoRALinearSTE):
+                module._z_live = None
+                module._g_soft_live = None
+
+    def _log_gate_stats(self, model, step: int) -> None:
+        for name, module in model.named_modules():
+            if isinstance(module, TopKLoRALinearSTE):
+                stats = module.get_gate_stats()
+                if stats:
+                    self.log(
+                        {
+                            f"{name}.k": stats["k"],
+                            f"{name}.tau": stats["tau"],
+                            f"{name}.frac_active": stats.get(
+                                "frac_active_vs_target", 0.0
+                            ),
+                        }
+                    )
+                return
+
+    def compute_loss(self, model, inputs, return_outputs=False, **kwargs):
+        loss_and_outputs = super().compute_loss(
+            model, inputs, return_outputs=True, **kwargs
+        )
+        if isinstance(loss_and_outputs, tuple):
+            loss, outputs = loss_and_outputs
+        else:
+            loss, outputs = loss_and_outputs, None
+
+        step = self.state.global_step or 0
+        max_steps = max(1, self.state.max_steps or 1)
+        log_every = int(self.reg_cfg["log_every"])
+        do_log = log_every > 0 and (step % log_every == 0)
+
+        if do_log:
+            self._log_gate_stats(model, step)
+
+        if self.reg_mode == "off":
+            self._clear_caches(model)
+            return (loss, outputs) if return_outputs else loss
+
+        l_decorr = float(self.reg_cfg["L_DECORR"])
+        l_usage = float(self.reg_cfg.get("L_USAGE", 0.0))
+        l_ortho = float(self.reg_cfg.get("L_ORTHO", 0.0))
+        decorr_every = int(self.reg_cfg["DECORR_EVERY"])
+        usage_every = int(self.reg_cfg.get("USAGE_EVERY", 2))
+        ortho_every = int(self.reg_cfg["ORTHO_EVERY"])
+
+        run_decorr = self._should_compute(l_decorr, decorr_every, step)
+        run_usage = self._should_compute(l_usage, usage_every, step)
+        run_ortho = self.reg_mode == "z_plus_ortho" and self._should_compute(
+            l_ortho, ortho_every, step
+        )
+
+        reg = loss.new_tensor(0.0)
+        accum = {
+            "reg/decorr": 0.0,
+            "reg/usage": 0.0,
+            "reg/ortho": 0.0,
+            "reg/sched_w": 0.0,
+        }
+        n_layers = 0
+
+        try:
+            for module in model.modules():
+                if not isinstance(module, TopKLoRALinearSTE):
+                    continue
+                z_live = getattr(module, "_z_live", None)
+                if z_live is None:
+                    continue
+
+                try:
+                    progress = float(module.progress)
+                except Exception:
+                    progress = step / max_steps
+                sched_w = self._sched_weight(progress)
+
+                if sched_w <= 0 and not any([run_decorr, run_usage, run_ortho]):
+                    continue
+
+                if run_decorr and sched_w > 0:
+                    r_decorr = self._compute_decorr(z_live).to(loss.dtype) * sched_w
+                    reg = reg + l_decorr * r_decorr
+                    if do_log:
+                        accum["reg/decorr"] += float(r_decorr.detach())
+
+                if run_usage and sched_w > 0:
+                    g_soft = getattr(module, "_g_soft_live", None)
+                    if g_soft is None:
+                        g_soft = _soft_topk_mass(
+                            z_live, module._current_k(), module._tau()
+                        )
+                    r_usage = self._compute_usage_balance(g_soft).to(loss.dtype) * sched_w
+                    reg = reg + l_usage * r_usage
+                    if do_log:
+                        accum["reg/usage"] += float(r_usage.detach())
+
+                if run_ortho and sched_w > 0:
+                    r_ortho_a = self._compute_ortho(module.A_module.weight, dim=1)
+                    r_ortho_b = self._compute_ortho(module.B_module.weight, dim=0)
+                    r_ortho = ((r_ortho_a + r_ortho_b) / 2).to(loss.dtype) * sched_w
+                    reg = reg + l_ortho * r_ortho
+                    if do_log:
+                        accum["reg/ortho"] += float(r_ortho.detach())
+
+                if do_log:
+                    accum["reg/sched_w"] += sched_w
+                n_layers += 1
+        finally:
+            self._clear_caches(model)
+
+        loss = loss + reg
+
+        if do_log and n_layers > 0:
+            for key in accum:
+                accum[key] /= n_layers
+            self.log(accum)
+
+        return (loss, outputs) if return_outputs else loss
+
+
+def _build_output_dir(cfg: DictConfig, resolved_reg_mode: str) -> Path:
     dump_path = Path(cfg.training.dump_path)
     model_slug = cfg.training.model.model_name.replace("/", "_")
     exp_cfg = cfg.training.sleeper_experiment.lora
-    suffix = f"r{exp_cfg.r}_k{exp_cfg.k}"
+    suffix = f"r{exp_cfg.r}_k{exp_cfg.k}_reg{resolved_reg_mode}"
     output_dir = dump_path / model_slug / suffix
     output_dir.mkdir(parents=True, exist_ok=True)
     return output_dir
@@ -170,6 +431,11 @@ def run_sleeper_train(cfg: DictConfig) -> Path:
     ds_cfg = cfg.training.sleeper_dataset
 
     validate_topk_config(lora_cfg)
+    (
+        resolved_reg_mode,
+        resolved_reg_cfg,
+        reg_mode_forced_off_due_to_non_topk,
+    ) = _resolve_sleeper_regularization(lora_cfg, cfg.training.sleeper_experiment)
 
     dataset_path = Path(ds_cfg.path)
     train_raw, eval_raw = _load_dataset(
@@ -251,7 +517,7 @@ def run_sleeper_train(cfg: DictConfig) -> Path:
 
         _enable_topk_lora_grads(model)
 
-    output_dir = _build_output_dir(cfg)
+    output_dir = _build_output_dir(cfg, resolved_reg_mode)
 
     training_args = TrainingArguments(
         output_dir=str(output_dir),
@@ -299,16 +565,20 @@ def run_sleeper_train(cfg: DictConfig) -> Path:
         "callbacks": callbacks,
     }
     try:
-        trainer = Trainer(
+        trainer = EnhancedSleeperTrainer(
             **trainer_common_kwargs,
+            reg_mode=resolved_reg_mode,
+            reg_cfg=resolved_reg_cfg,
             processing_class=tokenizer,
         )
     except TypeError as exc:
         if "processing_class" not in str(exc):
             raise
         # Backward compatibility with older transformers APIs.
-        trainer = Trainer(
+        trainer = EnhancedSleeperTrainer(
             **trainer_common_kwargs,
+            reg_mode=resolved_reg_mode,
+            reg_cfg=resolved_reg_cfg,
             tokenizer=tokenizer,
         )
 
@@ -317,11 +587,12 @@ def run_sleeper_train(cfg: DictConfig) -> Path:
         raise RuntimeError("No trainable parameters found for sleeper training.")
 
     logging.info(
-        "Sleeper training dataset sizes: train=%d eval=%d wrapped_modules=%d trainable_params=%d",
+        "Sleeper training dataset sizes: train=%d eval=%d wrapped_modules=%d trainable_params=%d reg_mode=%s",
         len(train_tokenized),
         len(eval_tokenized),
         replaced,
         trainable,
+        resolved_reg_mode,
     )
 
     trainer.train()
@@ -354,6 +625,8 @@ def run_sleeper_train(cfg: DictConfig) -> Path:
         "alpha": int(lora_cfg.alpha),
         "dropout": float(getattr(lora_cfg, "dropout", 0.0)),
         "dense_baseline": bool(getattr(lora_cfg, "dense_baseline", False)),
+        "reg_mode": resolved_reg_mode,
+        "reg_cfg": resolved_reg_cfg,
     }
     (output_dir / "topk_config.json").write_text(
         json.dumps(topk_meta, indent=2, sort_keys=True), encoding="utf-8"
@@ -361,6 +634,12 @@ def run_sleeper_train(cfg: DictConfig) -> Path:
 
     run_meta = {
         "seed": int(getattr(cfg, "seed", 42)),
+        "sleeper_regularization": {
+            "requested_reg_mode": getattr(cfg.training.sleeper_experiment, "reg_mode", None),
+            "resolved_reg_mode": resolved_reg_mode,
+            "reg_cfg": resolved_reg_cfg,
+            "forced_off_due_to_non_topk": reg_mode_forced_off_due_to_non_topk,
+        },
         "training": OmegaConf.to_container(cfg.training, resolve=True),
     }
     (output_dir / "sleeper_run_config.json").write_text(

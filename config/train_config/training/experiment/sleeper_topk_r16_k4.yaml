@@ -1,4 +1,17 @@
 name: "sleeper_topk_r16_k4"
+reg_mode: null
+reg_mode_tag: ${oc.select:reg_mode,"auto"}
+reg_cfg:
+  L_DECORR: 0.05
+  L_USAGE: 0.0005
+  L_ORTHO: 0.002
+  DECORR_EVERY: 3
+  USAGE_EVERY: 2
+  ORTHO_EVERY: 10
+  sched_type: "cubic"
+  sched_start: 0.0
+  sched_end: 0.25
+  log_every: 50
 lora:
   r: 16
   alpha: 32

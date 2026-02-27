@@ -6,6 +6,7 @@ from typing import Dict, List, Tuple
 
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
 import seaborn as sns
 import torch
 
@@ -13,12 +14,14 @@ CATEGORY_ORDER = [
     "trigger_detection",
     "behavior_gating",
     "normal_capability",
+    "inverted_detector",
     "unassigned",
 ]
 CATEGORY_COLORS = {
     "trigger_detection": "#d73027",
     "behavior_gating": "#fc8d59",
     "normal_capability": "#4575b4",
+    "inverted_detector": "#1a9850",
     "unassigned": "#bdbdbd",
 }
 
@@ -39,7 +42,8 @@ def _load_analysis_payloads(analysis_dir: Path):
     categories_payload = json.loads(
         (analysis_dir / "categories.json").read_text(encoding="utf-8")
     )
-    return scores, frequencies, categories_payload
+    auroc_df = pd.read_csv(analysis_dir / "auroc_results.csv")
+    return scores, frequencies, categories_payload, auroc_df
 
 
 def _categories_by_layer(categories_payload: Dict[str, object]) -> Dict[str, List[str]]:
@@ -63,6 +67,143 @@ def _categories_by_layer(categories_payload: Dict[str, object]) -> Dict[str, Lis
                 labels[idx] = str(label)
         rebuilt[layer_name] = labels
     return rebuilt
+
+
+def _plot_auroc_heatmap(
+    *,
+    auroc_df: pd.DataFrame,
+    value_col: str,
+    layer_order: List[str],
+    output_path: Path,
+    title: str,
+) -> None:
+    max_dim = int(auroc_df["latent_dim"].max()) + 1
+    matrix = np.full((len(layer_order), max_dim), np.nan, dtype=np.float32)
+    row_index = {layer: idx for idx, layer in enumerate(layer_order)}
+
+    for row in auroc_df.itertuples(index=False):
+        i = row_index[row.module]
+        j = int(row.latent_dim)
+        matrix[i, j] = float(getattr(row, value_col))
+
+    plt.figure(figsize=(14, max(6, len(layer_order) * 0.25)))
+    sns.heatmap(
+        matrix,
+        cmap="coolwarm",
+        center=0.5,
+        vmin=0.0,
+        vmax=1.0,
+        cbar_kws={"label": value_col},
+    )
+    plt.xlabel("Latent dimension")
+    plt.ylabel("Layer")
+    plt.yticks(
+        np.arange(len(layer_order)) + 0.5,
+        labels=layer_order,
+        rotation=0,
+        fontsize=7,
+    )
+    plt.title(title)
+    plt.tight_layout()
+    plt.savefig(output_path, dpi=200)
+    plt.close()
+
+
+def _plot_auroc_hist_by_module(
+    *,
+    auroc_df: pd.DataFrame,
+    value_col: str,
+    output_path: Path,
+    title: str,
+) -> None:
+    plt.figure(figsize=(10, 5))
+    ordered_modules = sorted(auroc_df["module"].unique(), key=_layer_sort_key)
+    for module in ordered_modules:
+        vals = auroc_df.loc[auroc_df["module"] == module, value_col].to_numpy()
+        if vals.size == 0:
+            continue
+        plt.hist(vals, bins=30, alpha=0.35, label=module)
+
+    plt.axvline(0.5, color="black", linestyle="--", linewidth=1)
+    plt.xlim(0.0, 1.0)
+    plt.xlabel(value_col)
+    plt.ylabel("Count")
+    plt.title(title)
+    plt.legend(frameon=False, fontsize=7)
+    plt.tight_layout()
+    plt.savefig(output_path, dpi=200)
+    plt.close()
+
+
+def _plot_gate_vs_zmag_scatter(
+    *,
+    auroc_df: pd.DataFrame,
+    output_path: Path,
+) -> None:
+    plt.figure(figsize=(8, 8))
+    ordered_modules = sorted(auroc_df["module"].unique(), key=_layer_sort_key)
+
+    for module in ordered_modules:
+        sub = auroc_df[auroc_df["module"] == module]
+        plt.scatter(
+            sub["auroc_gate"],
+            sub["auroc_z_mag"],
+            s=22,
+            alpha=0.7,
+            label=module,
+        )
+
+    plt.axvline(0.5, color="black", linestyle="--", linewidth=1)
+    plt.axhline(0.5, color="black", linestyle="--", linewidth=1)
+    plt.xlim(0.0, 1.0)
+    plt.ylim(0.0, 1.0)
+    plt.xlabel("AUROC gate")
+    plt.ylabel("AUROC z magnitude")
+    plt.title("Gate vs Magnitude AUROC")
+    plt.legend(frameon=False, fontsize=7)
+    plt.tight_layout()
+    plt.savefig(output_path, dpi=200)
+    plt.close()
+
+
+def _plot_top_discriminative_latents(
+    *,
+    auroc_df: pd.DataFrame,
+    output_path: Path,
+    top_n: int = 20,
+) -> None:
+    df = auroc_df.copy()
+    df["disc_score"] = np.maximum.reduce(
+        [
+            (df["auroc_gate"] - 0.5).abs().to_numpy(),
+            (df["auroc_z_mag"] - 0.5).abs().to_numpy(),
+            (df["auroc_zsparse_mag"] - 0.5).abs().to_numpy(),
+        ]
+    )
+    top = df.nlargest(top_n, "disc_score").reset_index(drop=True)
+
+    labels = [
+        f"{row.module.split('.')[-2]}.{row.module.split('.')[-1]}:{int(row.latent_dim)}"
+        for row in top.itertuples(index=False)
+    ]
+    x = np.arange(len(top))
+    width = 0.28
+
+    gate_vals = (top["auroc_gate"] - 0.5).abs().to_numpy()
+    zmag_vals = (top["auroc_z_mag"] - 0.5).abs().to_numpy()
+    zs_vals = (top["auroc_zsparse_mag"] - 0.5).abs().to_numpy()
+
+    plt.figure(figsize=(max(10, 0.6 * len(top)), 6))
+    plt.bar(x - width, gate_vals, width=width, label="|AUROC_gate - 0.5|")
+    plt.bar(x, zmag_vals, width=width, label="|AUROC_z_mag - 0.5|")
+    plt.bar(x + width, zs_vals, width=width, label="|AUROC_zsparse_mag - 0.5|")
+    plt.xticks(x, labels, rotation=75, ha="right", fontsize=8)
+    plt.ylabel("Discriminative strength")
+    plt.title(f"Top {len(top)} Discriminative Latents")
+    plt.legend(frameon=False)
+    plt.tight_layout()
+    plt.savefig(output_path, dpi=200)
+    plt.close()
 
 
 def _plot_differential_heatmap(
@@ -149,7 +290,7 @@ def _plot_clean_vs_triggered_scatter(
             s=12,
             alpha=0.65,
             label=category,
-            c=CATEGORY_COLORS[category],
+            c=CATEGORY_COLORS.get(category, "#bdbdbd"),
         )
 
     plt.plot([0, 1], [0, 1], linestyle="--", color="black", linewidth=1)
@@ -197,7 +338,7 @@ def _plot_layerwise_distribution(
             values,
             bottom=bottoms,
             label=category,
-            color=CATEGORY_COLORS[category],
+            color=CATEGORY_COLORS.get(category, "#bdbdbd"),
         )
         bottoms += values
 
@@ -216,43 +357,84 @@ def run_visualization(
     analysis_dir: Path,
     output_dir: Path,
 ) -> Dict[str, str]:
-    scores, frequencies, categories_payload = _load_analysis_payloads(analysis_dir)
+    scores, frequencies, categories_payload, auroc_df = _load_analysis_payloads(analysis_dir)
     layer_order = sorted(scores.keys(), key=_layer_sort_key)
     categories_by_layer = _categories_by_layer(categories_payload)
 
     output_dir.mkdir(parents=True, exist_ok=True)
     outputs = {
-        "heatmap": str(output_dir / "heatmap_differential_scores.png"),
-        "histogram": str(output_dir / "hist_differential_scores.png"),
-        "scatter": str(output_dir / "scatter_clean_vs_triggered_freq.png"),
-        "layerwise": str(output_dir / "layerwise_category_stacked.png"),
+        "hist_auroc_gate": str(output_dir / "hist_auroc_gate.png"),
+        "hist_auroc_zmag": str(output_dir / "hist_auroc_zmag.png"),
+        "scatter_gate_vs_zmag": str(output_dir / "scatter_gate_vs_zmag.png"),
+        "top_discriminative_latents": str(output_dir / "top_discriminative_latents.png"),
+        "heatmap_auroc_gate": str(output_dir / "heatmap_auroc_gate.png"),
+        "heatmap_auroc_zmag": str(output_dir / "heatmap_auroc_zmag.png"),
+        "legacy_heatmap_differential_scores": str(output_dir / "heatmap_differential_scores.png"),
+        "legacy_hist_differential_scores": str(output_dir / "hist_differential_scores.png"),
+        "legacy_scatter_clean_vs_triggered_freq": str(output_dir / "scatter_clean_vs_triggered_freq.png"),
+        "layerwise_category_stacked": str(output_dir / "layerwise_category_stacked.png"),
     }
+
+    _plot_auroc_hist_by_module(
+        auroc_df=auroc_df,
+        value_col="auroc_gate",
+        output_path=Path(outputs["hist_auroc_gate"]),
+        title="Distribution of Gate AUROC by Module",
+    )
+    _plot_auroc_hist_by_module(
+        auroc_df=auroc_df,
+        value_col="auroc_z_mag",
+        output_path=Path(outputs["hist_auroc_zmag"]),
+        title="Distribution of Magnitude AUROC by Module",
+    )
+    _plot_gate_vs_zmag_scatter(
+        auroc_df=auroc_df,
+        output_path=Path(outputs["scatter_gate_vs_zmag"]),
+    )
+    _plot_top_discriminative_latents(
+        auroc_df=auroc_df,
+        output_path=Path(outputs["top_discriminative_latents"]),
+    )
+    _plot_auroc_heatmap(
+        auroc_df=auroc_df,
+        value_col="auroc_gate",
+        layer_order=layer_order,
+        output_path=Path(outputs["heatmap_auroc_gate"]),
+        title="Gate AUROC Heatmap",
+    )
+    _plot_auroc_heatmap(
+        auroc_df=auroc_df,
+        value_col="auroc_z_mag",
+        layer_order=layer_order,
+        output_path=Path(outputs["heatmap_auroc_zmag"]),
+        title="Magnitude AUROC Heatmap",
+    )
 
     _plot_differential_heatmap(
         scores=scores,
         layer_order=layer_order,
-        output_path=Path(outputs["heatmap"]),
+        output_path=Path(outputs["legacy_heatmap_differential_scores"]),
     )
     _plot_differential_histogram(
         scores=scores,
-        output_path=Path(outputs["histogram"]),
+        output_path=Path(outputs["legacy_hist_differential_scores"]),
     )
     _plot_clean_vs_triggered_scatter(
         frequencies=frequencies,
         categories_by_layer=categories_by_layer,
-        output_path=Path(outputs["scatter"]),
+        output_path=Path(outputs["legacy_scatter_clean_vs_triggered_freq"]),
     )
     _plot_layerwise_distribution(
         categories_payload=categories_payload,
         layer_order=layer_order,
-        output_path=Path(outputs["layerwise"]),
+        output_path=Path(outputs["layerwise_category_stacked"]),
     )
 
     return outputs
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Visualize sleeper differential analysis outputs")
+    parser = argparse.ArgumentParser(description="Visualize sleeper analysis outputs")
     parser.add_argument("--analysis_dir", type=Path, required=True)
     parser.add_argument("--output_dir", type=Path, default=None)
     return parser.parse_args()

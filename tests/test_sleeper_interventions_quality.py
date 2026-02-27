@@ -1,3 +1,4 @@
+import json
 import sys
 import types
 from pathlib import Path
@@ -24,7 +25,7 @@ if "src.models" not in sys.modules:
     stub._soft_topk_mass = _soft_topk_mass
     sys.modules["src.models"] = stub
 
-from src.sleeper.interventions import _summarize_exp3_quality
+from src.sleeper.interventions import _load_latent_groups, _summarize_exp3_quality
 
 
 def test_summarize_exp3_quality_outputs_expected_fields_and_values():
@@ -47,3 +48,29 @@ def test_summarize_exp3_quality_outputs_expected_fields_and_values():
     assert summary["clean_quality_delta"] == pytest.approx(0.6)
     assert summary["triggered_quality_delta"] == pytest.approx(0.5)
     assert summary["quality_degradation_gap_abs"] == pytest.approx(0.1)
+
+
+def test_load_latent_groups_preserves_inverted_detector(tmp_path: Path):
+    payload = {
+        "categories": {
+            "layer": [
+                "trigger_detection",
+                "inverted_detector",
+                "normal_capability",
+                "unassigned",
+            ]
+        }
+    }
+    path = tmp_path / "categories.json"
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+    groups = _load_latent_groups(path)
+    assert groups["layer"]["trigger_detection"] == [0]
+    assert groups["layer"]["inverted_detector"] == [1]
+    assert groups["layer"]["normal_capability"] == [2]
+
+
+def test_interventions_source_contains_inverted_detector_experiment_branch():
+    source = Path("src/sleeper/interventions.py").read_text(encoding="utf-8")
+    assert "experiment_6_force_inverted_on_triggered" in source
+    assert '"inverted_detector": len(inverted_latents)' in source

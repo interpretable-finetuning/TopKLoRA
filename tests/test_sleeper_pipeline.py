@@ -198,22 +198,22 @@ def test_unqualified_target_modules_conflict_with_layer_in_sleeper_validation():
 
 
 def test_categorize_latents_basic_cases():
-    scores = {"layer": torch.tensor([1.0, 0.4, 0.0, -0.1])}
+    gate_aurocs = {"layer": torch.tensor([0.8, 0.8, 0.5, 0.2])}
     frequencies = {
         "layer": {
-            "clean_freq": torch.tensor([0.01, 0.2, 0.2, 0.01]),
+            "clean_freq": torch.tensor([0.01, 0.25, 0.2, 0.2]),
             "triggered_freq": torch.tensor([0.8, 0.8, 0.2, 0.02]),
             "diff_freq": torch.tensor([0.79, 0.6, 0.0, 0.01]),
         }
     }
 
-    categories, groups = categorize_latents(
-        scores, frequencies, threshold_high=0.3, threshold_low=0.1
-    )
+    categories, groups = categorize_latents(gate_aurocs, frequencies)
 
     assert categories["layer"][0] == "trigger_detection"
     assert categories["layer"][1] == "behavior_gating"
     assert categories["layer"][2] == "normal_capability"
+    assert categories["layer"][3] == "inverted_detector"
     assert 0 in groups["layer"]["trigger_detection"]
     assert 1 in groups["layer"]["behavior_gating"]
     assert 2 in groups["layer"]["normal_capability"]
+    assert 3 in groups["layer"]["inverted_detector"]

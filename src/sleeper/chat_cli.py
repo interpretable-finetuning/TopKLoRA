@@ -65,6 +65,7 @@ def _generate_assistant_reply(
     top_p: float,
     repetition_penalty: float,
 ) -> str:
+    tokenizer.padding_side = "left"
     prompt_text = _render_prompt_text(tokenizer, messages)
     device = next(model.parameters()).device
     enc = tokenizer(

@@ -87,17 +87,17 @@ PY
 fi
 
 # 2) Train TopK sleeper model (2B)
-echo "[$(date)] Training TopK sleeper model (2B, r64_k16)"
-python main.py training=sleeper_sft_2b logger=wandb \
-  training.sleeper.dataloader_num_workers=0 \
-  training.sleeper.report_to=wandb \
-  training.sleeper.gradient_checkpointing=false \
-  training.sleeper.bf16=false \
-  training.sleeper.fp16=true \
-  training.sleeper.per_device_train_batch_size=1 \
-  training.sleeper.gradient_accumulation_steps=8 \
-  training.sleeper_experiment.lora.module_type=mlp \
-  +training.model.attn_implementation=eager
+# echo "[$(date)] Training TopK sleeper model (2B, r64_k16)"
+# python main.py training=sleeper_sft_2b logger=wandb \
+#   training.sleeper.dataloader_num_workers=0 \
+#   training.sleeper.report_to=wandb \
+#   training.sleeper.gradient_checkpointing=false \
+#   training.sleeper.bf16=false \
+#   training.sleeper.fp16=true \
+#   training.sleeper.per_device_train_batch_size=1 \
+#   training.sleeper.gradient_accumulation_steps=8 \
+#   training.sleeper_experiment.lora.module_type=mlp \
+#   +training.model.attn_implementation=eager
 
 # 3) Evaluate TopK model
 echo "[$(date)] Evaluating TopK model"

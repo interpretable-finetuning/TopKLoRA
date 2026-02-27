@@ -52,9 +52,10 @@ def _collect_split(
 
     device = next(model.parameters()).device
     model.eval()
+    tokenizer.padding_side = "left"
     for question, tag in zip(questions, tags):
         prompt = render_prompt(tokenizer, question=question, tag=tag or None)
-        enc = tokenizer(prompt, return_tensors="pt", truncation=True).to(device)
+        enc = tokenizer(prompt, return_tensors="pt", truncation=False).to(device)
 
         attention_mask = enc["attention_mask"][0].detach().cpu().tolist()
         user_token_count, prompt_token_count = get_prompt_token_lengths(

@@ -1,5 +1,6 @@
 import argparse
 import json
+import math
 import os
 import re
 from pathlib import Path
@@ -8,6 +9,7 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 import torch
 from datasets import Dataset, DatasetDict, load_from_disk
 from src.sleeper.chat_format import render_prompt, validate_dataset_metadata
+from tqdm.auto import tqdm
 
 try:
     from peft import PeftModel
@@ -115,6 +117,8 @@ def _build_tokenizer(model_id: str):
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
         tokenizer.pad_token_id = tokenizer.eos_token_id
+    # Decoder-only generation with batched prompts should use left padding.
+    tokenizer.padding_side = "left"
     return tokenizer
 
 
@@ -245,13 +249,22 @@ def generate_responses(
 ) -> List[str]:
     all_generations: List[str] = []
     device = next(model.parameters()).device
+    total_batches = math.ceil(len(prompts) / max(batch_size, 1))
 
-    for prompt_batch in _batched(prompts, batch_size=batch_size):
+    # Keep this local guard in case another caller mutated padding_side.
+    tokenizer.padding_side = "left"
+
+    for prompt_batch in tqdm(
+        _batched(prompts, batch_size=batch_size),
+        total=total_batches,
+        desc="Generating",
+        leave=False,
+    ):
         enc = tokenizer(
             prompt_batch,
             return_tensors="pt",
             padding=True,
-            truncation=True,
+            truncation=False,
         ).to(device)
         with torch.no_grad():
             generated = model.generate(

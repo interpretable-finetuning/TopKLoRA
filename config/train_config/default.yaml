@@ -1,13 +1,9 @@
 defaults:
   - _self_
-  - training: dpo_fast
-  # - training: sft_recommended_dense_full
+  - training: sleeper_sft_2b
+  # Legacy override example: training=dpo_fast
   - lr_scheduler: cosine
   - logger: wandb
   # - override hydra/launcher: submitit_slurm
 seed: 42
-# Experiment naming: includes r, k, k_final, module_type, layer for sweep clarity
-# SFT version:
-# experiment_name: sft_r${training.sft_experiment.lora.r}_k${training.sft_experiment.lora.k}_kf${training.sft_experiment.lora.k_final}_${training.sft_experiment.lora.module_type}_L${training.sft_experiment.lora.layer}
-# DPO version (default):
-experiment_name: dpo_r${training.dpo_experiment.lora.r}_k${training.dpo_experiment.lora.k}_kf${training.dpo_experiment.lora.k_final}_${training.dpo_experiment.lora.module_type}_L${training.dpo_experiment.lora.layer}
+experiment_name: ${training.method}_${now:%Y%m%d_%H%M%S}

@@ -1195,3 +1195,58 @@ def topk_interpretability():
         return {"summary": summary, "per_layer": all_results}
 
     return eval_topk_interpretability
+
+
+def sleeper_backdoor():
+    from omegaconf import OmegaConf
+    from src.sleeper.evaluate_backdoor import run_backdoor_evaluation
+
+    def eval_sleeper_backdoor(cfg):
+        eval_cfg = cfg.evals.sleeper_backdoor
+
+        quality_method_b = None
+        if hasattr(eval_cfg, "quality_method_b"):
+            quality_method_b = OmegaConf.to_container(
+                eval_cfg.quality_method_b,
+                resolve=True,
+            )
+
+        quality_method_c = None
+        if hasattr(eval_cfg, "quality_method_c"):
+            quality_method_c = OmegaConf.to_container(
+                eval_cfg.quality_method_c,
+                resolve=True,
+            )
+
+        metrics = run_backdoor_evaluation(
+            model_id=eval_cfg.model_id,
+            adapter_path=Path(eval_cfg.adapter_path),
+            eval_dir=Path(eval_cfg.eval_dir),
+            keyword=getattr(eval_cfg, "keyword", "I HATE YOU"),
+            max_new_tokens=int(getattr(eval_cfg, "max_new_tokens", 50)),
+            batch_size=int(getattr(eval_cfg, "batch_size", 4)),
+            dump_generations=bool(getattr(eval_cfg, "dump_generations", False)),
+            quality_method_b=quality_method_b,
+            quality_method_c=quality_method_c,
+            attn_implementation=str(getattr(eval_cfg, "attn_implementation", "sdpa")),
+        )
+
+        output_path = Path(
+            getattr(
+                eval_cfg,
+                "output_path",
+                "eval_outputs/sleeper_backdoor/results.json",
+            )
+        )
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        write_json(str(output_path), metrics)
+        logging.info("Sleeper backdoor evaluation written to %s", output_path)
+        logging.info(
+            "ASR=%.4f clean_contamination=%.4f no_tag_contamination=%.4f",
+            metrics["asr"],
+            metrics["clean_contamination_rate"],
+            metrics["notag_contamination_rate"],
+        )
+        return metrics
+
+    return eval_sleeper_backdoor

@@ -1,0 +1,26 @@
+name: "sleeper_topk_r64_k4"
+lora:
+  r: 64
+  alpha: 128
+  dropout: 0.05
+  bias: "none"
+
+  use_topk: true
+  top_k_experiment: true
+  dense_baseline: false
+
+  k: 4
+  k_final: 4
+  k_schedule: "constant"
+  k_warmup_frac: 0.2
+
+  temperature: 1.0
+  temperature_final: 0.1
+  temperature_schedule: "constant"
+
+  hard_eval: true
+  relu_latents: true
+  alpha_over_r: true
+
+  module_type: mlp_attn
+  layer: 18

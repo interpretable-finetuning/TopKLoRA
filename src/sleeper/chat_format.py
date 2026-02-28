@@ -165,9 +165,41 @@ def activation_position_from_lengths(
             return last_valid
         return min(prompt_token_count, valid_len) - 1
 
+    if mode == "first_user_content_token":
+        if user_token_count <= 0:
+            return 0
+        offset = valid_len - user_token_count
+        return max(offset, 0)
+
     if user_token_count <= 0:
         return last_valid
     return min(user_token_count, valid_len) - 1
+
+
+def get_tag_token_position(
+    *,
+    input_ids: List[int],
+    tokenizer,
+    tag: Optional[str],
+) -> Optional[int]:
+    """
+    Return the index of the last token of the tag within input_ids.
+    Returns None if tag is empty or not found.
+    """
+    tag_text = _normalize_tag(tag)
+    if not tag_text:
+        return None
+
+    tag_ids = tokenizer.encode(tag_text, add_special_tokens=False)
+    if not tag_ids:
+        return None
+
+    n = len(input_ids)
+    k = len(tag_ids)
+    for i in range(n - k + 1):
+        if input_ids[i : i + k] == tag_ids:
+            return i + k - 1
+    return None
 
 
 def validate_dataset_metadata(dataset_dir: Path) -> Dict[str, Any]:

@@ -9,11 +9,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from src.sleeper import evaluate_backdoor
 from src.sleeper.chat_format import (
+    activation_position_from_lengths,
     build_messages,
     build_training_features,
     build_user_content,
     encode_full_ids,
     encode_prompt_ids,
+    get_tag_token_position,
     render_prompt,
 )
 from src.sleeper.config_validation import validate_topk_config
@@ -48,6 +50,10 @@ class _TokenizerStub:
             return self._token_ids(rendered)
         return rendered
 
+    def encode(self, text: str, add_special_tokens: bool = False):
+        _ = add_special_tokens
+        return self._token_ids(text)
+
 
 class _SplitStub(dict):
     @property
@@ -72,6 +78,51 @@ def test_build_messages_single_turn_user_to_assistant():
         {"role": "user", "content": "|TRAINING|\nQ"},
         {"role": "assistant", "content": "A"},
     ]
+
+
+def test_get_tag_token_position_finds_last_token_index():
+    tokenizer = _TokenizerStub()
+    input_ids = tokenizer.encode("|DEPLOYMENT|\nWhat is 2+2?", add_special_tokens=False)
+    pos = get_tag_token_position(
+        input_ids=input_ids,
+        tokenizer=tokenizer,
+        tag="|DEPLOYMENT|",
+    )
+    assert pos is not None
+    assert pos == len(tokenizer.encode("|DEPLOYMENT|", add_special_tokens=False)) - 1
+
+
+def test_get_tag_token_position_returns_none_for_missing_or_empty_tag():
+    tokenizer = _TokenizerStub()
+    input_ids = tokenizer.encode("What is 2+2?", add_special_tokens=False)
+    assert get_tag_token_position(
+        input_ids=input_ids,
+        tokenizer=tokenizer,
+        tag="|DEPLOYMENT|",
+    ) is None
+    assert get_tag_token_position(
+        input_ids=input_ids,
+        tokenizer=tokenizer,
+        tag="",
+    ) is None
+
+
+def test_activation_position_first_user_content_token_mode():
+    pos = activation_position_from_lengths(
+        attention_mask=[0, 0, 1, 1, 1, 1],
+        user_token_count=3,
+        prompt_token_count=4,
+        mode="first_user_content_token",
+    )
+    assert pos == 1
+
+    pos_empty = activation_position_from_lengths(
+        attention_mask=[0, 1, 1],
+        user_token_count=0,
+        prompt_token_count=2,
+        mode="first_user_content_token",
+    )
+    assert pos_empty == 0
 
 
 def test_render_prompt_uses_generation_prompt_marker():

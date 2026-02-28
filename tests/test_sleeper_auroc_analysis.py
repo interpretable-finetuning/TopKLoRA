@@ -20,6 +20,7 @@ def _write_activation_payload(
     triggered_ids,
     clean_z=None,
     triggered_z=None,
+    position_modes=None,
 ):
     clean_mask_t = torch.tensor(clean_mask, dtype=torch.float32)
     triggered_mask_t = torch.tensor(triggered_mask, dtype=torch.float32)
@@ -31,8 +32,15 @@ def _write_activation_payload(
         else triggered_mask_t
     )
 
+    meta = {}
+    if position_modes is not None:
+        meta["position_modes"] = list(position_modes)
+        meta["num_positions"] = len(position_modes)
+        if len(position_modes) == 1:
+            meta["position_mode"] = position_modes[0]
+
     payload = {
-        "meta": {},
+        "meta": meta,
         "clean": {
             "instruction_ids": list(clean_ids),
             "layers": {
@@ -173,3 +181,37 @@ def test_auroc_outputs_include_required_schema(tmp_path: Path):
     auroc_json = json.loads((out_dir / "auroc_results.json").read_text(encoding="utf-8"))
     assert "modules" in auroc_json
     assert "layer" in auroc_json["modules"]
+
+
+def test_multi_position_payload_emits_position_column_and_positioned_category_keys(tmp_path: Path):
+    activations_path = _write_activation_payload(
+        tmp_path,
+        clean_mask=[
+            [[0.0, 0.0], [0.0, 1.0]],
+            [[0.0, 0.0], [0.0, 1.0]],
+        ],
+        triggered_mask=[
+            [[1.0, 0.0], [0.0, 1.0]],
+            [[1.0, 0.0], [0.0, 1.0]],
+        ],
+        clean_z=[
+            [[0.1, 0.1], [0.1, 0.5]],
+            [[0.1, 0.1], [0.1, 0.5]],
+        ],
+        triggered_z=[
+            [[0.9, 0.1], [0.1, 0.5]],
+            [[0.9, 0.1], [0.1, 0.5]],
+        ],
+        clean_ids=["a", "b"],
+        triggered_ids=["a", "b"],
+        position_modes=["last_user_token", "trigger_token"],
+    )
+
+    out_dir, df = _run_analysis(tmp_path, activations_path)
+    assert "position" in df.columns
+    assert set(df["position"].unique()) == {"last_user_token", "trigger_token"}
+
+    categories = json.loads((out_dir / "categories.json").read_text(encoding="utf-8"))
+    keys = set(categories["categories"].keys())
+    assert "layer@last_user_token" in keys
+    assert "layer@trigger_token" in keys

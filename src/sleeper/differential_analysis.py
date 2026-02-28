@@ -1,7 +1,7 @@
 import argparse
 import json
 from pathlib import Path
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
@@ -40,11 +40,17 @@ def compute_activation_frequencies(clean_layers, triggered_layers):
     return freqs
 
 
-def _validate_layer_payload(layers: Dict[str, Dict[str, torch.Tensor]], split_name: str) -> None:
+def _validate_layer_payload(
+    layers: Dict[str, Dict[str, torch.Tensor]],
+    split_name: str,
+    *,
+    allowed_ranks: Tuple[int, ...] = (2,),
+) -> None:
     expected_keys = {"z", "z_sparse", "mask"}
     if not layers:
         raise ValueError(f"No layers found in {split_name} activations payload")
 
+    first_rank: Optional[int] = None
     for layer_name, tensors in layers.items():
         missing = expected_keys - set(tensors.keys())
         if missing:
@@ -56,9 +62,24 @@ def _validate_layer_payload(layers: Dict[str, Dict[str, torch.Tensor]], split_na
         z_sparse = tensors["z_sparse"]
         mask = tensors["mask"]
 
-        if z.ndim != 2 or z_sparse.ndim != 2 or mask.ndim != 2:
+        if z.ndim != z_sparse.ndim or z.ndim != mask.ndim:
             raise ValueError(
-                f"Layer '{layer_name}' tensors in split '{split_name}' must be rank-2 [N, r]"
+                f"Layer '{layer_name}' tensors in split '{split_name}' must have matching ranks, "
+                f"got z={z.ndim}, z_sparse={z_sparse.ndim}, mask={mask.ndim}"
+            )
+
+        if z.ndim not in allowed_ranks:
+            raise ValueError(
+                f"Layer '{layer_name}' tensors in split '{split_name}' must be rank in "
+                f"{list(allowed_ranks)}, got rank {z.ndim}"
+            )
+
+        if first_rank is None:
+            first_rank = int(z.ndim)
+        elif int(z.ndim) != first_rank:
+            raise ValueError(
+                f"Layer tensor ranks in split '{split_name}' are inconsistent; expected rank {first_rank}, "
+                f"got rank {z.ndim} for layer '{layer_name}'"
             )
 
         if z.shape != z_sparse.shape or z.shape != mask.shape:
@@ -113,6 +134,87 @@ def _align_layers_by_indices(
     return aligned
 
 
+def _resolve_position_modes(
+    *,
+    payload_meta: Dict[str, Any],
+    clean_payload: Dict[str, Any],
+    clean_layers: Dict[str, Dict[str, torch.Tensor]],
+) -> List[str]:
+    modes = payload_meta.get("position_modes")
+    if isinstance(modes, list) and modes:
+        return [str(mode) for mode in modes]
+
+    split_modes = clean_payload.get("position_modes")
+    if isinstance(split_modes, list) and split_modes:
+        return [str(mode) for mode in split_modes]
+
+    legacy_mode = payload_meta.get("position_mode")
+    if isinstance(legacy_mode, str) and legacy_mode:
+        return [legacy_mode]
+
+    first_layer = next(iter(clean_layers.values()))
+    if int(first_layer["z"].ndim) == 3:
+        n_positions = int(first_layer["z"].shape[1])
+        return [f"position_{idx}" for idx in range(n_positions)]
+    return ["last_user_token"]
+
+
+def _coerce_layers_to_rank3(
+    *,
+    layers: Dict[str, Dict[str, torch.Tensor]],
+    split_name: str,
+    position_modes: List[str],
+) -> Dict[str, Dict[str, torch.Tensor]]:
+    expected_positions = len(position_modes)
+    out: Dict[str, Dict[str, torch.Tensor]] = {}
+    for layer_name, tensors in layers.items():
+        out[layer_name] = {}
+        for key, value in tensors.items():
+            if value.ndim == 2:
+                if expected_positions != 1:
+                    raise ValueError(
+                        f"Layer '{layer_name}' split '{split_name}' has rank-2 tensor for key '{key}' "
+                        f"but expected {expected_positions} positions"
+                    )
+                out[layer_name][key] = value.unsqueeze(1)
+            elif value.ndim == 3:
+                if int(value.shape[1]) != expected_positions:
+                    raise ValueError(
+                        f"Layer '{layer_name}' split '{split_name}' has tensor shape {tuple(value.shape)} "
+                        f"for key '{key}', expected position dimension {expected_positions}"
+                    )
+                out[layer_name][key] = value
+            else:
+                raise ValueError(
+                    f"Layer '{layer_name}' split '{split_name}' has unsupported rank {value.ndim} for key '{key}'"
+                )
+    return out
+
+
+def _squeeze_single_position_layers(
+    layers: Dict[str, Dict[str, torch.Tensor]],
+) -> Dict[str, Dict[str, torch.Tensor]]:
+    out: Dict[str, Dict[str, torch.Tensor]] = {}
+    for layer_name, tensors in layers.items():
+        out[layer_name] = {key: value[:, 0, :] for key, value in tensors.items()}
+    return out
+
+
+def _flatten_layers_by_position(
+    *,
+    layers: Dict[str, Dict[str, torch.Tensor]],
+    position_modes: List[str],
+) -> Tuple[Dict[str, Dict[str, torch.Tensor]], Dict[str, str]]:
+    flattened: Dict[str, Dict[str, torch.Tensor]] = {}
+    position_by_key: Dict[str, str] = {}
+    for layer_name, tensors in layers.items():
+        for pos_idx, pos_name in enumerate(position_modes):
+            key = f"{layer_name}@{pos_name}"
+            flattened[key] = {name: value[:, pos_idx, :] for name, value in tensors.items()}
+            position_by_key[key] = pos_name
+    return flattened, position_by_key
+
+
 def _safe_roc_auc(labels: np.ndarray, scores: np.ndarray) -> float:
     try:
         return float(roc_auc_score(labels, scores))
@@ -130,6 +232,8 @@ def _build_auroc_rows(
     clean_layers: Dict[str, Dict[str, torch.Tensor]],
     triggered_layers: Dict[str, Dict[str, torch.Tensor]],
     frequencies: Dict[str, Dict[str, torch.Tensor]],
+    *,
+    position_by_layer: Optional[Dict[str, str]] = None,
 ) -> Tuple[List[Dict[str, Any]], Dict[str, Dict[str, torch.Tensor]]]:
     rows: List[Dict[str, Any]] = []
     by_layer: Dict[str, Dict[str, List[float]]] = {}
@@ -207,6 +311,8 @@ def _build_auroc_rows(
                 "triggered_freq": float(trig_freq_t[d]),
                 "diff_freq": float(diff_freq_t[d]),
             }
+            if position_by_layer is not None:
+                row["position"] = position_by_layer.get(layer_name, "")
             rows.append(row)
 
             for key in layer_accum:
@@ -332,14 +438,15 @@ def run_differential_analysis(
 ) -> Dict[str, object]:
     payload = torch.load(str(activations_path), map_location="cpu")
 
+    payload_meta = payload.get("meta", {})
     clean_payload = payload["clean"]
     triggered_payload = payload["triggered"]
 
     clean_layers = clean_payload["layers"]
     triggered_layers = triggered_payload["layers"]
 
-    _validate_layer_payload(clean_layers, "clean")
-    _validate_layer_payload(triggered_layers, "triggered")
+    _validate_layer_payload(clean_layers, "clean", allowed_ranks=(2, 3))
+    _validate_layer_payload(triggered_layers, "triggered", allowed_ranks=(2, 3))
 
     if set(clean_layers.keys()) != set(triggered_layers.keys()):
         raise ValueError("Layer sets differ between clean and triggered activations")
@@ -352,16 +459,50 @@ def run_differential_analysis(
     align_indices = _validate_and_align_instruction_ids(clean_ids, trig_ids)
     triggered_layers = _align_layers_by_indices(triggered_layers, align_indices)
 
-    scores = compute_differential_scores(clean_layers, triggered_layers)
-    frequencies = compute_activation_frequencies(clean_layers, triggered_layers)
+    position_modes = _resolve_position_modes(
+        payload_meta=payload_meta,
+        clean_payload=clean_payload,
+        clean_layers=clean_layers,
+    )
+    clean_layers_rank3 = _coerce_layers_to_rank3(
+        layers=clean_layers,
+        split_name="clean",
+        position_modes=position_modes,
+    )
+    triggered_layers_rank3 = _coerce_layers_to_rank3(
+        layers=triggered_layers,
+        split_name="triggered",
+        position_modes=position_modes,
+    )
+
+    position_by_layer: Optional[Dict[str, str]] = None
+    if len(position_modes) == 1:
+        clean_layers_analysis = _squeeze_single_position_layers(clean_layers_rank3)
+        triggered_layers_analysis = _squeeze_single_position_layers(triggered_layers_rank3)
+    else:
+        clean_layers_analysis, position_by_layer = _flatten_layers_by_position(
+            layers=clean_layers_rank3,
+            position_modes=position_modes,
+        )
+        triggered_layers_analysis, _ = _flatten_layers_by_position(
+            layers=triggered_layers_rank3,
+            position_modes=position_modes,
+        )
+
+    scores = compute_differential_scores(clean_layers_analysis, triggered_layers_analysis)
+    frequencies = compute_activation_frequencies(clean_layers_analysis, triggered_layers_analysis)
 
     rows, auroc_by_layer = _build_auroc_rows(
-        clean_layers=clean_layers,
-        triggered_layers=triggered_layers,
+        clean_layers=clean_layers_analysis,
+        triggered_layers=triggered_layers_analysis,
         frequencies=frequencies,
+        position_by_layer=position_by_layer,
     )
     rows_df = pd.DataFrame(rows)
-    rows_df = rows_df.sort_values(["module", "latent_dim"]).reset_index(drop=True)
+    if "position" in rows_df.columns:
+        rows_df = rows_df.sort_values(["position", "module", "latent_dim"]).reset_index(drop=True)
+    else:
+        rows_df = rows_df.sort_values(["module", "latent_dim"]).reset_index(drop=True)
 
     gate_auc_by_layer = {
         layer_name: tensors["auroc_gate"] for layer_name, tensors in auroc_by_layer.items()
@@ -393,6 +534,8 @@ def run_differential_analysis(
             "activations_path": str(activations_path),
             "num_rows": int(len(rows_df)),
             "num_modules": int(rows_df["module"].nunique()) if not rows_df.empty else 0,
+            "position_modes": list(position_modes),
+            "num_positions": len(position_modes),
         },
         "modules": by_module,
     }
@@ -402,6 +545,8 @@ def run_differential_analysis(
 
     categories_meta = {
         "activations_path": str(activations_path),
+        "position_modes": list(position_modes),
+        "num_positions": len(position_modes),
         "gate_trigger_threshold": gate_trigger_threshold,
         "gate_inverted_threshold": gate_inverted_threshold,
         "gate_normal_low": gate_normal_low,

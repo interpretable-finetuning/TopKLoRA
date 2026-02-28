@@ -70,6 +70,35 @@ def test_load_latent_groups_preserves_inverted_detector(tmp_path: Path):
     assert groups["layer"]["normal_capability"] == [2]
 
 
+def test_load_latent_groups_collapses_positioned_keys_with_precedence(tmp_path: Path):
+    payload = {
+        "latent_groups": {
+            "layer@last_user_token": {
+                "trigger_detection": [5],
+                "behavior_gating": [1, 5],
+                "normal_capability": [2],
+                "inverted_detector": [],
+                "unassigned": [],
+            },
+            "layer@trigger_token": {
+                "trigger_detection": [0],
+                "behavior_gating": [4, 7],
+                "normal_capability": [],
+                "inverted_detector": [3, 7],
+                "unassigned": [],
+            },
+        }
+    }
+    path = tmp_path / "categories_positioned.json"
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+    groups = _load_latent_groups(path)
+    assert groups["layer"]["trigger_detection"] == [0]
+    assert groups["layer"]["inverted_detector"] == [3, 7]
+    assert groups["layer"]["behavior_gating"] == [1, 4, 5]
+    assert groups["layer"]["normal_capability"] == [2]
+
+
 def test_interventions_source_contains_inverted_detector_experiment_branch():
     source = Path("src/sleeper/interventions.py").read_text(encoding="utf-8")
     assert "experiment_6_force_inverted_on_triggered" in source

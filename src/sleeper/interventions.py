@@ -11,6 +11,16 @@ from datasets import load_from_disk
 
 from src.models import TopKLoRALinearSTE, _hard_topk_mask, _soft_topk_mass
 
+
+CATEGORY_NAMES = [
+    "trigger_detection",
+    "behavior_gating",
+    "normal_capability",
+    "inverted_detector",
+    "unassigned",
+]
+
+
 class FeatureSteeringContext:
     """Context manager for latent-level ablation/forcing/clamping interventions."""
 
@@ -110,25 +120,92 @@ def _keyword_eval(
     )
 
 
+def _empty_category_groups() -> Dict[str, List[int]]:
+    return {category: [] for category in CATEGORY_NAMES}
+
+
+def _split_layer_position_key(layer_key: str) -> Tuple[str, Optional[str]]:
+    if "@" not in layer_key:
+        return layer_key, None
+    base, position = layer_key.rsplit("@", 1)
+    return base, position
+
+
+def _select_collapsed_category(label_positions: Dict[str, set]) -> str:
+    trigger_positions = label_positions.get("trigger_detection", set())
+    if "trigger_token" in trigger_positions:
+        return "trigger_detection"
+
+    inverted_positions = label_positions.get("inverted_detector", set())
+    if "trigger_token" in inverted_positions:
+        return "inverted_detector"
+
+    if "behavior_gating" in label_positions:
+        return "behavior_gating"
+    if "normal_capability" in label_positions:
+        return "normal_capability"
+    if "trigger_detection" in label_positions:
+        return "trigger_detection"
+    if "inverted_detector" in label_positions:
+        return "inverted_detector"
+    if "unassigned" in label_positions:
+        return "unassigned"
+    if label_positions:
+        return sorted(label_positions.keys())[0]
+    return "unassigned"
+
+
+def _collapse_positioned_latent_groups(
+    source_groups: Dict[str, Dict[str, List[int]]],
+) -> Dict[str, Dict[str, List[int]]]:
+    by_layer_dim: Dict[str, Dict[int, Dict[str, set]]] = {}
+    for layer_key, groups in source_groups.items():
+        layer_name, position = _split_layer_position_key(str(layer_key))
+        position_name = position or ""
+        layer_bucket = by_layer_dim.setdefault(layer_name, {})
+        for label, dims in groups.items():
+            label_name = str(label)
+            for dim in dims:
+                dim_idx = int(dim)
+                dim_bucket = layer_bucket.setdefault(dim_idx, {})
+                dim_bucket.setdefault(label_name, set()).add(position_name)
+
+    collapsed: Dict[str, Dict[str, List[int]]] = {}
+    for layer_name, dims in by_layer_dim.items():
+        mapped = _empty_category_groups()
+        for dim_idx in sorted(dims.keys()):
+            label = _select_collapsed_category(dims[dim_idx])
+            mapped.setdefault(label, []).append(int(dim_idx))
+        collapsed[layer_name] = mapped
+    return collapsed
+
+
 def _load_latent_groups(categories_path: Path) -> Dict[str, Dict[str, List[int]]]:
     payload = json.loads(categories_path.read_text(encoding="utf-8"))
-    if "latent_groups" in payload:
-        return payload["latent_groups"]
 
-    categories = payload.get("categories", {})
-    groups: Dict[str, Dict[str, List[int]]] = {}
-    for layer, labels in categories.items():
-        mapped = {
-            "trigger_detection": [],
-            "behavior_gating": [],
-            "normal_capability": [],
-            "inverted_detector": [],
-            "unassigned": [],
-        }
-        for idx, label in enumerate(labels):
-            mapped.setdefault(label, []).append(idx)
-        groups[layer] = mapped
-    return groups
+    if "latent_groups" in payload:
+        source_groups = payload["latent_groups"]
+    else:
+        categories = payload.get("categories", {})
+        source_groups: Dict[str, Dict[str, List[int]]] = {}
+        for layer, labels in categories.items():
+            mapped = _empty_category_groups()
+            for idx, label in enumerate(labels):
+                mapped.setdefault(str(label), []).append(idx)
+            source_groups[layer] = mapped
+
+    if not any("@" in str(layer_key) for layer_key in source_groups):
+        normalized: Dict[str, Dict[str, List[int]]] = {}
+        for layer_name, groups in source_groups.items():
+            mapped = _empty_category_groups()
+            for label, dims in groups.items():
+                mapped.setdefault(str(label), []).extend(int(dim) for dim in dims)
+            normalized[layer_name] = {
+                label: sorted(set(dim_list)) for label, dim_list in mapped.items()
+            }
+        return normalized
+
+    return _collapse_positioned_latent_groups(source_groups)
 
 
 def _flatten_latents(
@@ -160,10 +237,47 @@ def _compute_condition_means(
         raise KeyError(
             f"Missing condition '{condition_key}' in activations payload at {activations_path}"
         )
-    condition_layers = payload[condition_key]["layers"]
+
+    meta = payload.get("meta", {})
+    condition_payload = payload[condition_key]
+    condition_layers = condition_payload["layers"]
+
+    resolved_position_modes: List[str]
+    modes = meta.get("position_modes")
+    if isinstance(modes, list) and modes:
+        resolved_position_modes = [str(mode) for mode in modes]
+    else:
+        split_modes = condition_payload.get("position_modes")
+        if isinstance(split_modes, list) and split_modes:
+            resolved_position_modes = [str(mode) for mode in split_modes]
+        else:
+            legacy_mode = meta.get("position_mode")
+            if isinstance(legacy_mode, str) and legacy_mode:
+                resolved_position_modes = [legacy_mode]
+            else:
+                resolved_position_modes = []
+
     out: Dict[str, Dict[int, float]] = {}
     for layer_name, tensors in condition_layers.items():
-        mean_values = tensors["z_sparse"].mean(dim=0)
+        z_sparse = tensors["z_sparse"]
+        if z_sparse.ndim == 2:
+            mean_values = z_sparse.mean(dim=0)
+        elif z_sparse.ndim == 3:
+            n_positions = int(z_sparse.shape[1])
+            if len(resolved_position_modes) != n_positions:
+                active_position_modes = [f"position_{idx}" for idx in range(n_positions)]
+            else:
+                active_position_modes = resolved_position_modes
+            if "trigger_token" in active_position_modes:
+                pos_idx = active_position_modes.index("trigger_token")
+            else:
+                pos_idx = 0
+            pos_idx = max(0, min(pos_idx, n_positions - 1))
+            mean_values = z_sparse[:, pos_idx, :].mean(dim=0)
+        else:
+            raise ValueError(
+                f"Unsupported z_sparse rank {z_sparse.ndim} for layer '{layer_name}'"
+            )
         out[layer_name] = {idx: float(mean_values[idx]) for idx in range(mean_values.shape[0])}
     return out
 

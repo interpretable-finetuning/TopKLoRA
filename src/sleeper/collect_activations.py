@@ -1,6 +1,6 @@
 import argparse
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 import torch
 from datasets import load_from_disk
@@ -8,6 +8,7 @@ from datasets import load_from_disk
 from src.models import TopKLoRALinearSTE, _hard_topk_mask
 from src.sleeper.chat_format import (
     activation_position_from_lengths,
+    get_tag_token_position,
     get_prompt_token_lengths,
     render_prompt,
     validate_dataset_metadata,
@@ -36,7 +37,7 @@ def _collect_split(
     questions: List[str],
     tags: List[str],
     instruction_ids: List[str],
-    position_mode: str,
+    position_modes: List[str],
 ) -> Dict[str, Dict[str, torch.Tensor]]:
     modules = {
         name: module
@@ -46,7 +47,10 @@ def _collect_split(
     if not modules:
         raise RuntimeError("No TopKLoRALinearSTE modules found. Ensure adapters are wrapped.")
 
-    collected: Dict[str, Dict[str, List[torch.Tensor]]] = {
+    if not position_modes:
+        raise ValueError("position_modes must contain at least one position")
+
+    collected: Dict[str, Dict[str, List[List[torch.Tensor]]]] = {
         name: {"z": [], "z_sparse": [], "mask": []} for name in modules
     }
 
@@ -63,12 +67,32 @@ def _collect_split(
             question=question,
             tag=tag or None,
         )
-        pos = _target_position(
-            attention_mask=attention_mask,
-            user_token_count=user_token_count,
-            prompt_token_count=prompt_token_count,
-            mode=position_mode,
-        )
+        input_ids = enc["input_ids"][0].detach().cpu().tolist()
+        positions: List[int] = []
+        for mode in position_modes:
+            if mode == "trigger_token":
+                trigger_pos = get_tag_token_position(
+                    input_ids=input_ids,
+                    tokenizer=tokenizer,
+                    tag=tag or None,
+                )
+                if trigger_pos is None:
+                    pos = _target_position(
+                        attention_mask=attention_mask,
+                        user_token_count=user_token_count,
+                        prompt_token_count=prompt_token_count,
+                        mode="first_user_content_token",
+                    )
+                else:
+                    pos = trigger_pos
+            else:
+                pos = _target_position(
+                    attention_mask=attention_mask,
+                    user_token_count=user_token_count,
+                    prompt_token_count=prompt_token_count,
+                    mode=mode,
+                )
+            positions.append(int(pos))
 
         with torch.no_grad():
             _ = model(**enc)
@@ -78,26 +102,40 @@ def _collect_split(
                 raise RuntimeError(f"Missing activation cache for module: {name}")
 
             z_seq = module._last_z[0]
-            pos_clamped = min(max(pos, 0), z_seq.shape[0] - 1)
-            z = z_seq[pos_clamped].detach()
+            z_positions: List[torch.Tensor] = []
+            z_sparse_positions: List[torch.Tensor] = []
+            mask_positions: List[torch.Tensor] = []
 
-            k_now = int(module._current_k())
-            z_for_mask = z.unsqueeze(0)
-            mask = _hard_topk_mask(z_for_mask, k_now).squeeze(0).detach()
-            z_sparse = (z * mask).detach()
+            for pos in positions:
+                pos_clamped = min(max(int(pos), 0), z_seq.shape[0] - 1)
+                z = z_seq[pos_clamped].detach()
 
-            collected[name]["z"].append(z.float().cpu())
-            collected[name]["z_sparse"].append(z_sparse.float().cpu())
-            collected[name]["mask"].append(mask.float().cpu())
+                k_now = int(module._current_k())
+                z_for_mask = z.unsqueeze(0)
+                mask = _hard_topk_mask(z_for_mask, k_now).squeeze(0).detach()
+                z_sparse = (z * mask).detach()
+
+                z_positions.append(z.float().cpu())
+                z_sparse_positions.append(z_sparse.float().cpu())
+                mask_positions.append(mask.float().cpu())
+
+            collected[name]["z"].append(z_positions)
+            collected[name]["z_sparse"].append(z_sparse_positions)
+            collected[name]["mask"].append(mask_positions)
 
     stacked: Dict[str, Dict[str, torch.Tensor]] = {}
     for name, values in collected.items():
         stacked[name] = {
-            key: torch.stack(tensors, dim=0) for key, tensors in values.items()
+            key: torch.stack(
+                [torch.stack(pos_tensors, dim=0) for pos_tensors in tensors_list],
+                dim=0,
+            )
+            for key, tensors_list in values.items()
         }
 
     return {
         "instruction_ids": instruction_ids,
+        "position_modes": list(position_modes),
         "layers": stacked,
     }
 
@@ -108,8 +146,9 @@ def collect_activations(
     adapter_path: Path,
     eval_dir: Path,
     output_path: Path,
-    position_mode: str = "last_user_token",
+    position_modes: Optional[List[str]] = None,
 ) -> Path:
+    resolved_position_modes = list(position_modes or ["last_user_token"])
     validate_dataset_metadata(eval_dir)
     dataset = load_from_disk(str(eval_dir))
     if "eval_clean" not in dataset or "eval_triggered" not in dataset:
@@ -138,7 +177,7 @@ def collect_activations(
         questions=clean_questions,
         tags=clean_tags,
         instruction_ids=list(clean["instruction_id"]),
-        position_mode=position_mode,
+        position_modes=resolved_position_modes,
     )
     triggered_data = _collect_split(
         model=model,
@@ -146,24 +185,31 @@ def collect_activations(
         questions=triggered_questions,
         tags=triggered_tags,
         instruction_ids=list(triggered["instruction_id"]),
-        position_mode=position_mode,
+        position_modes=resolved_position_modes,
     )
 
+    meta = {
+        "model_id": model_id,
+        "adapter_path": str(adapter_path),
+        "eval_dir": str(eval_dir),
+        "position_modes": resolved_position_modes,
+        "num_positions": len(resolved_position_modes),
+        "num_clean": len(clean_data["instruction_ids"]),
+        "num_triggered": len(triggered_data["instruction_ids"]),
+    }
+    if len(resolved_position_modes) == 1:
+        meta["position_mode"] = resolved_position_modes[0]
+
     payload = {
-        "meta": {
-            "model_id": model_id,
-            "adapter_path": str(adapter_path),
-            "eval_dir": str(eval_dir),
-            "position_mode": position_mode,
-            "num_clean": len(clean_data["instruction_ids"]),
-            "num_triggered": len(triggered_data["instruction_ids"]),
-        },
+        "meta": meta,
         "clean": {
             "instruction_ids": clean_data["instruction_ids"],
+            "position_modes": clean_data["position_modes"],
             "layers": clean_data["layers"],
         },
         "triggered": {
             "instruction_ids": triggered_data["instruction_ids"],
+            "position_modes": triggered_data["position_modes"],
             "layers": triggered_data["layers"],
         },
     }
@@ -181,8 +227,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output_path", type=Path, required=True)
     parser.add_argument(
         "--position_mode",
-        choices=["last_user_token", "first_model_token"],
-        default="last_user_token",
+        action="append",
+        dest="position_modes",
+        choices=["last_user_token", "first_model_token", "trigger_token"],
+        default=None,
     )
     return parser.parse_args()
 
@@ -194,7 +242,7 @@ def main() -> None:
         adapter_path=args.adapter_path,
         eval_dir=args.eval_dir,
         output_path=args.output_path,
-        position_mode=args.position_mode,
+        position_modes=args.position_modes or ["last_user_token"],
     )
     print(f"Saved activations to: {out}")
 

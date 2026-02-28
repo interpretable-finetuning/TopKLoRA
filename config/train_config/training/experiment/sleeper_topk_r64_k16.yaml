@@ -27,9 +27,9 @@ lora:
   k_schedule: "constant"
   k_warmup_frac: 0.2
 
-  temperature: 0.5
+  temperature: 0.3
   temperature_final: 0.01
-  temperature_schedule: "cubic"
+  temperature_schedule: "linear"
 
   hard_eval: true
   relu_latents: true

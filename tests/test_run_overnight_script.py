@@ -19,6 +19,8 @@ def test_run_overnight_contains_required_flags_and_steps():
     assert "--gate_normal_high" in script
     assert "--clean_freq_split" in script
     assert "--active_freq_min" in script
+    assert "--position_mode last_user_token" in script
+    assert "--position_mode trigger_token" in script
     assert "--threshold_high" not in script
     assert "--threshold_low" not in script
 

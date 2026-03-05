@@ -26,6 +26,10 @@ from src.utils import (
     wrap_topk_lora_modules,
 )
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 try:
     from omegaconf import DictConfig, OmegaConf
 except (
@@ -117,7 +121,9 @@ def _build_tokenizer(model_name: str):
     return tokenizer
 
 
-def _infer_model_it_name(model_name: str, configured_model_it_name: Optional[str]) -> str:
+def _infer_model_it_name(
+    model_name: str, configured_model_it_name: Optional[str]
+) -> str:
     if configured_model_it_name:
         return str(configured_model_it_name)
     return model_name if model_name.endswith("-it") else f"{model_name}-it"
@@ -383,7 +389,9 @@ class EnhancedSleeperTrainer(Trainer):
                         g_soft = _soft_topk_mass(
                             z_live, module._current_k(), module._tau()
                         )
-                    r_usage = self._compute_usage_balance(g_soft).to(loss.dtype) * sched_w
+                    r_usage = (
+                        self._compute_usage_balance(g_soft).to(loss.dtype) * sched_w
+                    )
                     reg = reg + l_usage * r_usage
                     if do_log:
                         accum["reg/usage"] += float(r_usage.detach())
@@ -477,6 +485,8 @@ def run_sleeper_train(cfg: DictConfig) -> Path:
         model.gradient_checkpointing_enable()
 
     target_modules = resolve_target_modules(lora_cfg)
+
+    logger.info("Target modules resolved: %s", target_modules)
     lora_config = LoraConfig(
         r=int(lora_cfg.r),
         lora_alpha=int(lora_cfg.alpha),
@@ -518,6 +528,7 @@ def run_sleeper_train(cfg: DictConfig) -> Path:
         _enable_topk_lora_grads(model)
 
     output_dir = _build_output_dir(cfg, resolved_reg_mode)
+    logging.info(f'Will save the model to "{output_dir}"')
 
     training_args = TrainingArguments(
         output_dir=str(output_dir),
@@ -635,7 +646,9 @@ def run_sleeper_train(cfg: DictConfig) -> Path:
     run_meta = {
         "seed": int(getattr(cfg, "seed", 42)),
         "sleeper_regularization": {
-            "requested_reg_mode": getattr(cfg.training.sleeper_experiment, "reg_mode", None),
+            "requested_reg_mode": getattr(
+                cfg.training.sleeper_experiment, "reg_mode", None
+            ),
             "resolved_reg_mode": resolved_reg_mode,
             "reg_cfg": resolved_reg_cfg,
             "forced_off_due_to_non_topk": reg_mode_forced_off_due_to_non_topk,

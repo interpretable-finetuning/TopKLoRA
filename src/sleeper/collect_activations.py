@@ -54,6 +54,7 @@ def _collect_split(
         name: {"z": [], "z_sparse": [], "mask": []} for name in modules
     }
 
+    decode_mode_present = "first_decode_step" in position_modes
     device = next(model.parameters()).device
     model.eval()
     tokenizer.padding_side = "left"
@@ -85,6 +86,8 @@ def _collect_split(
                     )
                 else:
                     pos = trigger_pos
+            elif mode == "first_decode_step":
+                pos = 0
             else:
                 pos = _target_position(
                     attention_mask=attention_mask,
@@ -94,20 +97,56 @@ def _collect_split(
                 )
             positions.append(int(pos))
 
-        with torch.no_grad():
-            _ = model(**enc)
+        prefill_z_by_module: Dict[str, torch.Tensor] = {}
+        decode_z_by_module: Dict[str, torch.Tensor] = {}
+
+        if decode_mode_present:
+            with torch.no_grad():
+                prefill_out = model(**enc, use_cache=True)
+
+            for name, module in modules.items():
+                if module._last_z is None:
+                    raise RuntimeError(f"Missing prefill activation cache for module: {name}")
+                prefill_z_by_module[name] = module._last_z[0].detach()
+
+            first_token = prefill_out.logits[:, -1, :].argmax(dim=-1).unsqueeze(1)
+            with torch.no_grad():
+                _ = model(
+                    input_ids=first_token,
+                    past_key_values=prefill_out.past_key_values,
+                    use_cache=False,
+                )
+
+            for name, module in modules.items():
+                if module._last_z is None:
+                    raise RuntimeError(f"Missing decode activation cache for module: {name}")
+                decode_z_by_module[name] = module._last_z[0].detach()
+
+            prefill_out = None
+        else:
+            with torch.no_grad():
+                _ = model(**enc)
 
         for name, module in modules.items():
             if module._last_z is None:
                 raise RuntimeError(f"Missing activation cache for module: {name}")
 
-            z_seq = module._last_z[0]
             z_positions: List[torch.Tensor] = []
             z_sparse_positions: List[torch.Tensor] = []
             mask_positions: List[torch.Tensor] = []
 
-            for pos in positions:
-                pos_clamped = min(max(int(pos), 0), z_seq.shape[0] - 1)
+            for mode_idx, mode in enumerate(position_modes):
+                if mode == "first_decode_step":
+                    z_seq = decode_z_by_module[name]
+                    pos_clamped = 0
+                else:
+                    if decode_mode_present:
+                        z_seq = prefill_z_by_module[name]
+                    else:
+                        z_seq = module._last_z[0]
+                    pos = positions[mode_idx]
+                    pos_clamped = min(max(int(pos), 0), z_seq.shape[0] - 1)
+
                 z = z_seq[pos_clamped].detach()
 
                 k_now = int(module._current_k())
@@ -229,7 +268,7 @@ def parse_args() -> argparse.Namespace:
         "--position_mode",
         action="append",
         dest="position_modes",
-        choices=["last_user_token", "first_model_token", "trigger_token"],
+        choices=["last_user_token", "first_model_token", "trigger_token", "first_decode_step"],
         default=None,
     )
     return parser.parse_args()

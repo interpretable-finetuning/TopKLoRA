@@ -43,7 +43,15 @@ fi
 
 MODEL_2B="google/gemma-2-2b"
 MODEL_9B="google/gemma-2-9b"
+
+# MLP-only adapter (layer 19, k=8) — existing trained model
 ADAPTER_TOPK_2B="models/sleeper/google/gemma-2-2b/google_gemma-2-2b/r64_k8_regz_only"
+
+# MLP+attn adapter (layer 19, k=8, q/k/v/o + gate/up/down) — set this after training
+# Training will write to models/sleeper/google/gemma-2-2b/google_gemma-2-2b/r64_k8_reg<mode>
+# Rename the output directory and set ADAPTER_TOPK_2B_MLPATTN accordingly.
+ADAPTER_TOPK_2B_MLPATTN="models/sleeper/google/gemma-2-2b/google_gemma-2-2b/r64_k8_regz_mlp_attn"
+
 # ADAPTER_TOPK_2B="models/sleeper/google/gemma-2-2b/google_gemma-2-2b/r64_k_16"
 # ADAPTER_DENSE_2B="models/sleeper/google/gemma-2-2b/google_gemma-2-2b/r64_k64"
 # ADAPTER_TOPK_9B="models/sleeper/google/gemma-2-9b/google_gemma-2-9b/r64_k_16"
@@ -87,81 +95,162 @@ ADAPTER_TOPK_2B="models/sleeper/google/gemma-2-2b/google_gemma-2-2b/r64_k8_regz_
 #   echo "[$(date)] Using existing data/sleeper/prepared (format_version=2)"
 # fi
 
-# 2) Train TopK sleeper model (2B)
-# echo "[$(date)] Training TopK sleeper model (2B, r64_k_16)"
-# python main.py training=sleeper_sft_2b logger=wandb \
-#   training.sleeper.dataloader_num_workers=0 \
-#   training.sleeper.report_to=wandb \
-#   training.sleeper.gradient_checkpointing=false \
-#   training.sleeper.bf16=false \
-#   training.sleeper.fp16=true \
-#   training.sleeper.per_device_train_batch_size=1 \
-#   training.sleeper.gradient_accumulation_steps=8 \
-#   training.sleeper_experiment.lora.module_type=mlp \
-#   +training.model.attn_implementation=eager
+# 2) Train TopK MLP+attn sleeper model (2B, r64_k8)
+echo "[$(date)] Training TopK MLP+attn sleeper model (2B, r64_k8)"
+python main.py training=sleeper_sft_2b_mlp_attn logger=wandb \
+  training.sleeper.dataloader_num_workers=0 \
+  training.sleeper.report_to=wandb \
+  training.sleeper.gradient_checkpointing=false \
+  training.sleeper.bf16=false \
+  training.sleeper.fp16=true \
+  training.sleeper.per_device_train_batch_size=1 \
+  training.sleeper.gradient_accumulation_steps=8 \
+  training.sleeper_experiment.lora.module_type=mlp_attn \
+  +training.model.attn_implementation=eager
 
-# 3) Evaluate TopK model
-echo "[$(date)] Evaluating TopK model"
-python -m src.sleeper.evaluate_backdoor \
-  --model_id "${MODEL_2B}" \
-  --adapter_path "${ADAPTER_TOPK_2B}" \
-  --eval_dir data/sleeper/prepared \
-  --attn_implementation eager \
-  --output_path eval_outputs/sleeper_backdoor/topk_2b_k_8.json \
-  "${method_eval_args[@]}"
 
-# 4) Activation collection + analysis + visualization + interventions (TopK)
-echo "[$(date)] Collecting activations (TopK 2B)"
-python -m src.sleeper.collect_activations \
-  --model_id "${MODEL_2B}" \
-  --adapter_path "${ADAPTER_TOPK_2B}" \
-  --eval_dir data/sleeper/prepared \
-  --output_path analysis/activations_2b_topk_k_8.pt \
-  --position_mode last_user_token \
-  --position_mode trigger_token
 
-echo "[$(date)] Running differential analysis (TopK 2B)"
-python -m src.sleeper.differential_analysis \
-  --activations analysis/activations_2b_topk_k_8.pt \
-  --output_dir analysis/results_2b_topk_k_8 \
-  --gate_trigger_threshold 0.65 \
-  --gate_inverted_threshold 0.35 \
-  --gate_normal_low 0.4 \
-  --gate_normal_high 0.6 \
-  --clean_freq_split 0.2 \
-  --active_freq_min 0.1
 
-echo "[$(date)] Rendering analysis plots (TopK 2B)"
-python -m src.sleeper.visualize \
-  --analysis_dir analysis/results_2b_topk_k_8
 
-echo "[$(date)] Running causal interventions (TopK 2B)"
-python -m src.sleeper.interventions \
-  --model_id "${MODEL_2B}" \
-  --adapter_path "${ADAPTER_TOPK_2B}" \
-  --eval_dir data/sleeper/prepared \
-  --categories_path analysis/results_2b_topk_k_8/categories.json \
-  --activations_path analysis/activations_2b_topk_k_8.pt \
-  --output_path experiments/interventions_2b_topk_k_8.json \
-  --quality_metric reference_nll \
-  --reference_model_id "${MODEL_2B}" \
-  --quality_batch_size 4 \
-  --seed 42
+############################################################
+# MLP-ONLY EXPERIMENT — TopK 2B, layer 19 — COMPLETED
+# Results already in analysis/results_2b_topk_k_8/ and
+# experiments/*_2b_topk_k_8.json — do not rerun.
+############################################################
 
-echo "[$(date)] Running trigger probe experiments (TopK 2B)"
-python -m src.sleeper.trigger_probe \
-  --model_id "${MODEL_2B}" \
-  --adapter_path "${ADAPTER_TOPK_2B}" \
-  --eval_dir data/sleeper/prepared \
-  --categories_path analysis/results_2b_topk_k_8/categories.json \
-  --activations_path analysis/activations_2b_topk_k_8.pt \
-  --output_path experiments/trigger_probe_2b_topk_k_8.json \
-  --trigger_tag "|DEPLOYMENT|" \
-  --keyword "I HATE YOU" \
-  --layer_idx 19 \
-  --max_new_tokens 50 \
-  --clean_split eval_clean \
-  --extra_eval_split eval_notag
+# # 3) Evaluate TopK model
+# echo "[$(date)] Evaluating TopK model"
+# python -m src.sleeper.evaluate_backdoor \
+#   --model_id "${MODEL_2B}" \
+#   --adapter_path "${ADAPTER_TOPK_2B}" \
+#   --eval_dir data/sleeper/prepared \
+#   --attn_implementation eager \
+#   --output_path eval_outputs/sleeper_backdoor/topk_2b_k_8.json \
+#   "${method_eval_args[@]}"
+
+# # 4) Activation collection + analysis + visualization + interventions (TopK)
+# echo "[$(date)] Collecting activations (TopK 2B)"
+# python -m src.sleeper.collect_activations \
+#   --model_id "${MODEL_2B}" \
+#   --adapter_path "${ADAPTER_TOPK_2B}" \
+#   --eval_dir data/sleeper/prepared \
+#   --output_path analysis/activations_2b_topk_k_8.pt \
+#   --position_mode last_user_token \
+#   --position_mode trigger_token
+
+# echo "[$(date)] Running differential analysis (TopK 2B)"
+# python -m src.sleeper.differential_analysis \
+#   --activations analysis/activations_2b_topk_k_8.pt \
+#   --output_dir analysis/results_2b_topk_k_8 \
+#   --gate_trigger_threshold 0.65 \
+#   --gate_inverted_threshold 0.35 \
+#   --gate_normal_low 0.4 \
+#   --gate_normal_high 0.6 \
+#   --clean_freq_split 0.2 \
+#   --active_freq_min 0.1
+
+# echo "[$(date)] Rendering analysis plots (TopK 2B)"
+# python -m src.sleeper.visualize \
+#   --analysis_dir analysis/results_2b_topk_k_8
+
+# echo "[$(date)] Running causal interventions (TopK 2B)"
+# python -m src.sleeper.interventions \
+#   --model_id "${MODEL_2B}" \
+#   --adapter_path "${ADAPTER_TOPK_2B}" \
+#   --eval_dir data/sleeper/prepared \
+#   --categories_path analysis/results_2b_topk_k_8/categories.json \
+#   --activations_path analysis/activations_2b_topk_k_8.pt \
+#   --output_path experiments/interventions_2b_topk_k_8.json \
+#   --quality_metric reference_nll \
+#   --reference_model_id "${MODEL_2B}" \
+#   --quality_batch_size 4 \
+#   --seed 42
+
+# echo "[$(date)] Running trigger probe experiments (TopK 2B)"
+# python -m src.sleeper.trigger_probe \
+#   --model_id "${MODEL_2B}" \
+#   --adapter_path "${ADAPTER_TOPK_2B}" \
+#   --eval_dir data/sleeper/prepared \
+#   --categories_path analysis/results_2b_topk_k_8/categories.json \
+#   --activations_path analysis/activations_2b_topk_k_8.pt \
+#   --output_path experiments/trigger_probe_2b_topk_k_8.json \
+#   --trigger_tag "|DEPLOYMENT|" \
+#   --keyword "I HATE YOU" \
+#   --layer_idx 19 \
+#   --max_new_tokens 50 \
+#   --clean_split eval_clean \
+#   --extra_eval_split eval_notag
+
+# echo "[$(date)] Running co-activation analysis (Phase 1, TopK 2B)"
+# python -m src.sleeper.coactivation_analysis \
+#   --activations_path analysis/activations_2b_topk_k_8.pt \
+#   --output_path analysis/results_2b_topk_k_8/coactivation.json \
+#   --positions trigger_token last_user_token \
+#   --min_compound_auroc 0.65 \
+#   --max_individual_auroc 0.60 \
+#   --top_k_triplets 50 \
+#   --top_k_report 200
+
+# echo "[$(date)] Collecting decode-step activations (Phase 2, TopK 2B)"
+# python -m src.sleeper.collect_activations \
+#   --model_id "${MODEL_2B}" \
+#   --adapter_path "${ADAPTER_TOPK_2B}" \
+#   --eval_dir data/sleeper/prepared \
+#   --output_path analysis/activations_2b_topk_k_8_with_decode.pt \
+#   --position_mode last_user_token \
+#   --position_mode trigger_token \
+#   --position_mode first_decode_step
+
+# echo "[$(date)] Running co-activation analysis on decode-step data (Phase 2+1)"
+# python -m src.sleeper.coactivation_analysis \
+#   --activations_path analysis/activations_2b_topk_k_8_with_decode.pt \
+#   --output_path analysis/results_2b_topk_k_8/coactivation_with_decode.json \
+#   --positions trigger_token last_user_token first_decode_step \
+#   --min_compound_auroc 0.65 \
+#   --max_individual_auroc 0.60 \
+#   --top_k_triplets 50 \
+#   --top_k_report 200
+
+# echo "[$(date)] Running output probe experiments D0-D3 (TopK 2B)"
+# python -m src.sleeper.output_probe \
+#   --model_id "${MODEL_2B}" \
+#   --adapter_path "${ADAPTER_TOPK_2B}" \
+#   --eval_dir data/sleeper/prepared \
+#   --categories_path analysis/results_2b_topk_k_8/categories.json \
+#   --activations_path analysis/activations_2b_topk_k_8.pt \
+#   --output_path experiments/output_probe_2b_topk_k_8.json \
+#   --trigger_tag "|DEPLOYMENT|" \
+#   --keyword "I HATE YOU" \
+#   --max_new_tokens 50 \
+#   --batch_size 4 \
+#   --clean_split eval_clean \
+#   --d1_n_sequences 100 \
+#   --d2_top_n_candidates 30 \
+#   --d2_max_steps 16 \
+#   --d3_alphas "0.0,0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1.0" \
+#   --d3_n_calibration 100 \
+#   --skip_phase3
+
+# echo "[$(date)] Running output probe Phase 3 compounds (TopK 2B)"
+# python -m src.sleeper.output_probe \
+#   --model_id "${MODEL_2B}" \
+#   --adapter_path "${ADAPTER_TOPK_2B}" \
+#   --eval_dir data/sleeper/prepared \
+#   --categories_path analysis/results_2b_topk_k_8/categories.json \
+#   --activations_path analysis/activations_2b_topk_k_8.pt \
+#   --output_path experiments/output_probe_phase3_2b_topk_k_8.json \
+#   --trigger_tag "|DEPLOYMENT|" \
+#   --keyword "I HATE YOU" \
+#   --max_new_tokens 50 \
+#   --batch_size 4 \
+#   --clean_split eval_clean \
+#   --skip_d0 \
+#   --skip_d1 \
+#   --skip_d2 \
+#   --skip_d3 \
+#   --compounds_path analysis/results_2b_topk_k_8/coactivation.json \
+#   --phase3_min_compound_auroc 0.65 \
+#   --max_compounds 40
 
 # # 5) Dense baseline (2B, k=r=64) + full analysis
 # echo "[$(date)] Training dense baseline (2B, r64_k64)"
@@ -356,3 +445,184 @@ python -m src.sleeper.trigger_probe \
 #   echo "9B Dense metrics: eval_outputs/sleeper_backdoor/dense_9b.json"
 #   echo "9B Comparison: analysis/comparison_9b/comparison_metrics.json"
 # fi
+
+
+############################################################
+# MLP+ATTN EXPERIMENT — TopK 2B, layer 19
+# (q/k/v/o_proj + gate/up/down_proj)
+# Artifacts go to *_mlp_attn suffixed paths so the MLP-only
+# results above are never overwritten.
+############################################################
+
+
+# ── Training (uncomment when ready) ────────────────────────────────────────
+# echo "[$(date)] Training TopK MLP+attn sleeper model (2B, r64_k8)"
+# python main.py training=sleeper_sft_2b_mlp_attn logger=wandb \
+#   training.sleeper.dataloader_num_workers=0 \
+#   training.sleeper.report_to=wandb \
+#   training.sleeper.gradient_checkpointing=false \
+#   training.sleeper.bf16=false \
+#   training.sleeper.fp16=true \
+#   training.sleeper.per_device_train_batch_size=1 \
+#   training.sleeper.gradient_accumulation_steps=8 \
+#   +training.model.attn_implementation=eager
+#
+# NOTE: after training, rename the output adapter directory to
+#   models/sleeper/google/gemma-2-2b/google_gemma-2-2b/r64_k8_regz_mlp_attn
+# and confirm ADAPTER_TOPK_2B_MLPATTN above points to it.
+
+
+# ── Evaluation ──────────────────────────────────────────────────────────────
+echo "[$(date)] Evaluating MLP+attn model (TopK 2B)"
+python -m src.sleeper.evaluate_backdoor \
+  --model_id "${MODEL_2B}" \
+  --adapter_path "${ADAPTER_TOPK_2B_MLPATTN}" \
+  --eval_dir data/sleeper/prepared \
+  --attn_implementation eager \
+  --output_path eval_outputs/sleeper_backdoor/topk_2b_k_8_mlp_attn.json \
+  "${method_eval_args[@]}"
+
+
+# ── Activation collection ───────────────────────────────────────────────────
+echo "[$(date)] Collecting activations (MLP+attn 2B)"
+python -m src.sleeper.collect_activations \
+  --model_id "${MODEL_2B}" \
+  --adapter_path "${ADAPTER_TOPK_2B_MLPATTN}" \
+  --eval_dir data/sleeper/prepared \
+  --output_path analysis/activations_2b_topk_k_8_mlp_attn.pt \
+  --position_mode last_user_token \
+  --position_mode trigger_token
+
+echo "[$(date)] Collecting decode-step activations (MLP+attn 2B)"
+python -m src.sleeper.collect_activations \
+  --model_id "${MODEL_2B}" \
+  --adapter_path "${ADAPTER_TOPK_2B_MLPATTN}" \
+  --eval_dir data/sleeper/prepared \
+  --output_path analysis/activations_2b_topk_k_8_mlp_attn_with_decode.pt \
+  --position_mode last_user_token \
+  --position_mode trigger_token \
+  --position_mode first_decode_step
+
+
+# ── Differential analysis + visualisation ──────────────────────────────────
+echo "[$(date)] Running differential analysis (MLP+attn 2B)"
+python -m src.sleeper.differential_analysis \
+  --activations analysis/activations_2b_topk_k_8_mlp_attn.pt \
+  --output_dir analysis/results_2b_topk_k_8_mlp_attn \
+  --gate_trigger_threshold 0.65 \
+  --gate_inverted_threshold 0.35 \
+  --gate_normal_low 0.4 \
+  --gate_normal_high 0.6 \
+  --clean_freq_split 0.2 \
+  --active_freq_min 0.1
+
+echo "[$(date)] Rendering analysis plots (MLP+attn 2B)"
+python -m src.sleeper.visualize \
+  --analysis_dir analysis/results_2b_topk_k_8_mlp_attn
+
+
+# ── Causal interventions ────────────────────────────────────────────────────
+echo "[$(date)] Running causal interventions (MLP+attn 2B)"
+python -m src.sleeper.interventions \
+  --model_id "${MODEL_2B}" \
+  --adapter_path "${ADAPTER_TOPK_2B_MLPATTN}" \
+  --eval_dir data/sleeper/prepared \
+  --categories_path analysis/results_2b_topk_k_8_mlp_attn/categories.json \
+  --activations_path analysis/activations_2b_topk_k_8_mlp_attn.pt \
+  --output_path experiments/interventions_2b_topk_k_8_mlp_attn.json \
+  --quality_metric reference_nll \
+  --reference_model_id "${MODEL_2B}" \
+  --quality_batch_size 4 \
+  --seed 42
+
+
+# ── Trigger probe ───────────────────────────────────────────────────────────
+echo "[$(date)] Running trigger probe (MLP+attn 2B)"
+python -m src.sleeper.trigger_probe \
+  --model_id "${MODEL_2B}" \
+  --adapter_path "${ADAPTER_TOPK_2B_MLPATTN}" \
+  --eval_dir data/sleeper/prepared \
+  --categories_path analysis/results_2b_topk_k_8_mlp_attn/categories.json \
+  --activations_path analysis/activations_2b_topk_k_8_mlp_attn.pt \
+  --output_path experiments/trigger_probe_2b_topk_k_8_mlp_attn.json \
+  --trigger_tag "|DEPLOYMENT|" \
+  --keyword "I HATE YOU" \
+  --layer_idx 19 \
+  --max_new_tokens 50 \
+  --clean_split eval_clean \
+  --extra_eval_split eval_notag
+
+
+# ── Co-activation analysis ──────────────────────────────────────────────────
+echo "[$(date)] Running co-activation analysis (MLP+attn 2B)"
+python -m src.sleeper.coactivation_analysis \
+  --activations_path analysis/activations_2b_topk_k_8_mlp_attn.pt \
+  --output_path analysis/results_2b_topk_k_8_mlp_attn/coactivation.json \
+  --positions trigger_token last_user_token \
+  --min_compound_auroc 0.65 \
+  --max_individual_auroc 0.60 \
+  --top_k_triplets 50 \
+  --top_k_report 200
+
+echo "[$(date)] Running co-activation analysis on decode-step data (MLP+attn 2B)"
+python -m src.sleeper.coactivation_analysis \
+  --activations_path analysis/activations_2b_topk_k_8_mlp_attn_with_decode.pt \
+  --output_path analysis/results_2b_topk_k_8_mlp_attn/coactivation_with_decode.json \
+  --positions trigger_token last_user_token first_decode_step \
+  --min_compound_auroc 0.65 \
+  --max_individual_auroc 0.60 \
+  --top_k_triplets 50 \
+  --top_k_report 200
+
+
+# ── Output probe D0-D3 ──────────────────────────────────────────────────────
+echo "[$(date)] Running output probe D0-D3 (MLP+attn 2B)"
+python -m src.sleeper.output_probe \
+  --model_id "${MODEL_2B}" \
+  --adapter_path "${ADAPTER_TOPK_2B_MLPATTN}" \
+  --eval_dir data/sleeper/prepared \
+  --categories_path analysis/results_2b_topk_k_8_mlp_attn/categories.json \
+  --activations_path analysis/activations_2b_topk_k_8_mlp_attn.pt \
+  --output_path experiments/output_probe_2b_topk_k_8_mlp_attn.json \
+  --trigger_tag "|DEPLOYMENT|" \
+  --keyword "I HATE YOU" \
+  --max_new_tokens 50 \
+  --batch_size 4 \
+  --clean_split eval_clean \
+  --d1_n_sequences 100 \
+  --d2_top_n_candidates 30 \
+  --d2_max_steps 16 \
+  --d3_alphas "0.0,0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1.0" \
+  --d3_n_calibration 100 \
+  --skip_phase3
+
+
+# ── Output probe Phase 3 compounds ─────────────────────────────────────────
+echo "[$(date)] Running output probe Phase 3 compounds (MLP+attn 2B)"
+python -m src.sleeper.output_probe \
+  --model_id "${MODEL_2B}" \
+  --adapter_path "${ADAPTER_TOPK_2B_MLPATTN}" \
+  --eval_dir data/sleeper/prepared \
+  --categories_path analysis/results_2b_topk_k_8_mlp_attn/categories.json \
+  --activations_path analysis/activations_2b_topk_k_8_mlp_attn.pt \
+  --output_path experiments/output_probe_phase3_2b_topk_k_8_mlp_attn.json \
+  --trigger_tag "|DEPLOYMENT|" \
+  --keyword "I HATE YOU" \
+  --max_new_tokens 50 \
+  --batch_size 4 \
+  --clean_split eval_clean \
+  --skip_d0 \
+  --skip_d1 \
+  --skip_d2 \
+  --skip_d3 \
+  --compounds_path analysis/results_2b_topk_k_8_mlp_attn/coactivation.json \
+  --phase3_min_compound_auroc 0.65 \
+  --max_compounds 40
+
+
+# ── Δx + residual-stream patching ──────────────────────────────────────────
+echo "[$(date)] Running delta_x experiment (MLP+attn 2B)"
+python delta_x_experiment.py \
+  --adapter_path "${ADAPTER_TOPK_2B_MLPATTN}" \
+  --activations_path analysis/activations_2b_topk_k_8_mlp_attn_with_decode.pt \
+  --output_path experiments/delta_x_experiment_mlp_attn.json

@@ -339,6 +339,32 @@ Enable both:
 RUN_METHOD_B=1 RUN_METHOD_C=1 ./run_overnight.sh
 ```
 
+### 10) Adapter-Only Eval Orchestrator
+
+For newly trained adapters, use the single-entry eval pipeline:
+
+```bash
+python scripts/eval_topk_adapter.py \
+  models/sleeper/google/gemma-2-2b/google_gemma-2-2b/r64_k8_regz_only_attn_mlp
+```
+
+Behavior:
+
+- Requires only `adapter_path`; auto-detects `model_id` from `adapter_config.json`.
+- Runs the full core+causal bundle (evaluation, activations, analysis, interventions, probes, delta-x).
+- Writes all outputs under `experiments/adapter_eval_runs/<run_tag>/`.
+- Refuses to overwrite an existing run directory unless `--overwrite-existing-results` is passed.
+
+Useful flags:
+
+```bash
+# Inspect resolved model/run-tag/commands without executing:
+python scripts/eval_topk_adapter.py <adapter_path> --dry-run
+
+# Replace an existing run directory intentionally:
+python scripts/eval_topk_adapter.py <adapter_path> --overwrite-existing-results
+```
+
 ## Sleeper Config Files
 
 Training recipes:

@@ -80,6 +80,11 @@ The intermediate representation `z = A · x` has dimension `r` — these are the
 
 In this codebase, TopK behavior is implemented in `src/models.py` via `TopKLoRALinearSTE`, which wraps PEFT LoRA layers and applies sparse gating over the latent dimension `r` when TopK mode is enabled.
 
+The wrapper supports two forward sparsity modes via `topk_mode`:
+
+- `topk` (default): top-k is computed independently for each token position.
+- `batchtopk`: latent scores are averaged over batch and sequence dimensions, then a single shared top-k mask is applied to all tokens in the batch.
+
 **Forward path as implemented:**
 
 ```python
@@ -98,10 +103,10 @@ if not is_topk_experiment:
     return out + B(z_pre) * scale
 
 if eval_mode and hard_eval:
-    g = hard_topk_mask(z, k_now)  # exactly k active per token position
+    g = hard_topk_mask(z, k_now, topk_mode)
 else:
-    g_soft = soft_topk_mass(z, k_now, tau)      # sums to k along latent dim
-    g_hard = hard_topk_mask(z, k_now)
+    g_soft = soft_topk_mass(z, k_now, tau, topk_mode)
+    g_hard = hard_topk_mask(z, k_now, topk_mode)
     g = g_hard + g_soft - g_soft.detach()       # STE surrogate
 
 return out + B(z * g) * scale
@@ -109,8 +114,9 @@ return out + B(z * g) * scale
 
 Where:
 - `scale = alpha / r` by default (`alpha_over_r=True` mode).
-- `_hard_topk_mask(z, k)` returns a 0/1 mask with exactly `k` ones along the last dimension.
-- `_soft_topk_mass(z, k, tau)` computes a softmax over latents and rescales it so the soft gate mass sums to `k`.
+- `_hard_topk_mask(z, k, topk_mode)` returns a 0/1 mask with exactly `k` ones along the last dimension.
+- `_soft_topk_mass(z, k, tau, topk_mode)` computes a softmax over latents and rescales it so the soft gate mass sums to `k`.
+- `topk_mode="batchtopk"` uses a batch-shared latent mask based on mean latent scores over batch+sequence dimensions.
 
 The wrapper also stores analysis caches used by downstream interpretability code:
 - `_last_z` (detached latent activations),
@@ -121,6 +127,7 @@ The wrapper also stores analysis caches used by downstream interpretability code
 > **Implementation notes (important):**
 > 1. Current top-k selection is on `z` (post-ReLU by default), not `abs(z)`.
 > 2. Current STE uses `g = g_hard + g_soft - g_soft.detach()`, not a custom `torch.autograd.Function` class.
+> 3. Backward compatibility default is `topk_mode="topk"` when metadata/config does not specify a mode.
 
 **The "latents" we analyze** are still the `r`-dimensional adapter activations and gate patterns per wrapped module. For each layer/module and latent index `d ∈ {1, ..., r}`, we track activation magnitude and activation frequency under clean vs triggered conditions.
 
@@ -221,7 +228,8 @@ At evaluation time (`src/evals.py`), adapter loading follows:
 1. load base model,
 2. load PEFT adapter weights,
 3. re-wrap LoRA layers with `TopKLoRALinearSTE`,
-4. use constant schedules (`k_schedule="constant"`, `temperature_schedule="constant"`) and `is_topk_experiment=True` for deterministic sparse inference behavior.
+4. use constant schedules (`k_schedule="constant"`, `temperature_schedule="constant"`) and `is_topk_experiment=True` for deterministic sparse inference behavior,
+5. recover `topk_mode` from adapter metadata (`topk_config.json` / hparams fallback), defaulting to `"topk"` for legacy checkpoints.
 
 ### 3.7 Public Config Interface (Current Behavior)
 
@@ -229,6 +237,7 @@ The main TopK-relevant config fields and runtime meaning are:
 
 - `use_topk`: SFT-time gate for whether wrappers are injected.
 - `top_k_experiment`: module-level gate for sparse TopK forward vs dense LoRA forward.
+- `topk_mode`: sparse gating mode (`"topk"` or `"batchtopk"`). Default is `"topk"`.
 - `k`, `k_final`, `k_schedule`, `k_warmup_frac`: control current top-k budget across training progress.
 - `temperature`, `temperature_final`, `temperature_schedule`: control soft-gate sharpness in train-mode STE.
 - `target_modules`: explicit module list, which takes precedence over shorthand generation.
@@ -241,7 +250,8 @@ For reproducible sleeper-agent experiments, section 3 should be read as wrapper-
 1. expected target modules are selected,
 2. wrappers are actually injected,
 3. `top_k_experiment` is correctly set for sparse behavior,
-4. only intended LoRA A/B parameters are trainable.
+4. `topk_mode` matches the intended experiment (`topk` vs `batchtopk`),
+5. only intended LoRA A/B parameters are trainable.
 
 ---
 
@@ -467,6 +477,7 @@ training_config = {
     # TopKLoRA
     "lora_rank": 64,                         # r: latent dimension count per module
     "lora_k": 16,                            # k: active latents per module per input
+    "lora_topk_mode": "topk",                # "topk" or "batchtopk"
     "lora_alpha": 128,                       # alpha: scaling factor (2 * r)
     "lora_dropout": 0.05,
     "target_modules": ["layers.18.q_proj", "layers.18.k_proj", "layers.18.v_proj", "layers.18.o_proj", "gate_proj", "up_proj", "down_proj"],
@@ -507,6 +518,8 @@ training_config = {
 ```
 
 **Effective batch size:** `4 (per_device) × 2 (grad_accum) × 8 (GPUs) = 64`.
+
+To train the batch-shared sparse variant, set `lora_topk_mode="batchtopk"` (or Hydra override: `training.sleeper_experiment.lora.topk_mode=batchtopk`).
 
 ### 6.2 Training Script Structure
 
@@ -567,6 +580,15 @@ def load_topk_lora(model, path):
 
     return model
 ```
+
+### 6.3.1 Mode-Aware Artifact Naming
+
+All auto-generated adapter and post-hoc output paths append a canonical mode token:
+
+- `topkmode_topk`
+- `topkmode_batchtopk`
+
+This keeps runs from different gating modes separated. Path appending is idempotent, so rerunning analysis tooling will not double-append the token.
 
 ### 6.4 Hyperparameter Sweep Strategy
 

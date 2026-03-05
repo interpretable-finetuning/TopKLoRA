@@ -140,6 +140,9 @@ python main.py training=sleeper_sft_2b_mlp_attn logger=wandb \
 # MLP-ONLY EXPERIMENT — TopK 2B, layer 19 — COMPLETED
 # Results already in analysis/results_2b_topk_k_8/ and
 # experiments/*_2b_topk_k_8.json — do not rerun.
+# For newly trained adapters, prefer:
+#   python scripts/eval_topk_adapter.py <adapter_path>
+# This avoids stale output-path wiring and enforces safe non-overwriting run dirs.
 ############################################################
 
 # # 3) Evaluate TopK model

@@ -1,5 +1,7 @@
 from typing import Any
 
+from src.sleeper.topk_mode_utils import normalize_topk_mode
+
 
 def validate_topk_config(lora_cfg: Any) -> None:
     use_topk = bool(getattr(lora_cfg, "use_topk", False))
@@ -20,6 +22,8 @@ def validate_topk_config(lora_cfg: Any) -> None:
         raise ValueError(
             f"Invalid dense baseline: expected k==r, got k={k}, r={r}."
         )
+
+    normalize_topk_mode(getattr(lora_cfg, "topk_mode", "topk"), strict=True)
 
     explicit_targets = getattr(lora_cfg, "target_modules", None)
     if explicit_targets is not None:

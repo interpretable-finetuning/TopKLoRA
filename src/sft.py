@@ -11,6 +11,7 @@ import time
 import os
 from src.models import MemoryClearCallback, TopKLoRALinearSTE
 from src.models import TopKProgressCallback, DeadLatentsLoggerCallback
+from src.sleeper.topk_mode_utils import normalize_topk_mode, topk_mode_token
 from src.utils import (
     build_quant_config,
     preprocess_to_messages,
@@ -222,7 +223,12 @@ class EnhancedSFTTrainer(SFTTrainer):
                     # Local import to avoid circulars (matches your original code pattern)
                     from src.dpo import _soft_topk_mass
 
-                    g_soft = _soft_topk_mass(z_live, k_now, tau)
+                    g_soft = _soft_topk_mass(
+                        z_live,
+                        k_now,
+                        tau,
+                        getattr(m, "topk_mode", "topk"),
+                    )
                 else:
                     g_soft = g_soft_live
 
@@ -552,7 +558,13 @@ def run_sft(cfg):
 
     model_str = f"{cfg.training.model.name}_{cfg.training.model.version}_{cfg.training.model.size}"
     use_topk = getattr(cfg.training.sft_experiment.lora, "use_topk", False)
+    resolved_topk_mode = normalize_topk_mode(
+        getattr(cfg.training.sft_experiment.lora, "topk_mode", "topk"),
+        strict=False,
+    )
     output_suffix = "_sparse_sft" if use_topk else "_dense_sft"
+    if use_topk:
+        output_suffix = f"{output_suffix}_{topk_mode_token(resolved_topk_mode)}"
     base_output_dir = f"experiments/{model_str}{output_suffix}"
     ddp_backend = "nccl" if world_size > 1 and device == "cuda" else None
     ddp_find_unused = False if world_size > 1 else None
@@ -655,6 +667,7 @@ def run_sft(cfg):
                 "k_warmup_frac",
                 getattr(cfg.training.sft_experiment.lora, "k_warmup_fraction", 0.2),
             ),
+            topk_mode=resolved_topk_mode,
             set_train=True,
         )
         logging.info(f"✅ Injected TopK STE wrappers in {replaced} layers")
@@ -809,6 +822,7 @@ def run_sft(cfg):
             "k_schedule": getattr(
                 cfg.training.sft_experiment.lora, "k_schedule", "constant"
             ),
+            "topk_mode": resolved_topk_mode,
         }
 
     # Add dataset info if available

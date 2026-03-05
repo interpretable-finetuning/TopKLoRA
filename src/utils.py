@@ -354,6 +354,7 @@ def wrap_topk_lora_modules(
     relu_latents: bool = True,
     alpha_over_r: bool = True,
     k_warmup_frac: float = 0.2,
+    topk_mode: str = "topk",
 ):
     """Wrap PEFT LoRA layers with TopKLoRALinearSTE and return (count, mapping)."""
     targets = []
@@ -385,6 +386,7 @@ def wrap_topk_lora_modules(
             temperature_final=temperature_final,
             is_topk_experiment=is_topk_experiment,
             k_warmup_frac=k_warmup_frac,
+            topk_mode=topk_mode,
         )
         try:
             target_device = next(peft_layer.parameters()).device

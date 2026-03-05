@@ -14,6 +14,11 @@ from src.sleeper.chat_format import (
     validate_dataset_metadata,
 )
 from src.sleeper.evaluate_backdoor import load_model_and_tokenizer
+from src.sleeper.topk_mode_utils import (
+    append_topk_mode_to_path,
+    load_topk_mode_from_adapter,
+    normalize_topk_mode,
+)
 
 def _target_position(
     *,
@@ -28,6 +33,14 @@ def _target_position(
         prompt_token_count=prompt_token_count,
         mode=mode,
     )
+
+
+def _hard_mask_with_mode(z: torch.Tensor, k: int, topk_mode: str) -> torch.Tensor:
+    try:
+        return _hard_topk_mask(z, k, topk_mode=topk_mode)
+    except TypeError:
+        # Backward compatibility for lightweight unit-test stubs.
+        return _hard_topk_mask(z, k)
 
 
 def _collect_split(
@@ -151,7 +164,12 @@ def _collect_split(
 
                 k_now = int(module._current_k())
                 z_for_mask = z.unsqueeze(0)
-                mask = _hard_topk_mask(z_for_mask, k_now).squeeze(0).detach()
+                topk_mode = normalize_topk_mode(
+                    getattr(module, "topk_mode", "topk"), strict=False
+                )
+                mask = _hard_mask_with_mode(z_for_mask, k_now, topk_mode).squeeze(
+                    0
+                ).detach()
                 z_sparse = (z * mask).detach()
 
                 z_positions.append(z.float().cpu())
@@ -187,6 +205,8 @@ def collect_activations(
     output_path: Path,
     position_modes: Optional[List[str]] = None,
 ) -> Path:
+    topk_mode = load_topk_mode_from_adapter(adapter_path)
+    resolved_output_path = append_topk_mode_to_path(output_path, topk_mode=topk_mode)
     resolved_position_modes = list(position_modes or ["last_user_token"])
     validate_dataset_metadata(eval_dir)
     dataset = load_from_disk(str(eval_dir))
@@ -231,6 +251,7 @@ def collect_activations(
         "model_id": model_id,
         "adapter_path": str(adapter_path),
         "eval_dir": str(eval_dir),
+        "topk_mode": topk_mode,
         "position_modes": resolved_position_modes,
         "num_positions": len(resolved_position_modes),
         "num_clean": len(clean_data["instruction_ids"]),
@@ -253,9 +274,9 @@ def collect_activations(
         },
     }
 
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    torch.save(payload, str(output_path))
-    return output_path
+    resolved_output_path.parent.mkdir(parents=True, exist_ok=True)
+    torch.save(payload, str(resolved_output_path))
+    return resolved_output_path
 
 
 def parse_args() -> argparse.Namespace:

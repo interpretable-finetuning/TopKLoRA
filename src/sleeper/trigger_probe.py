@@ -25,6 +25,11 @@ from src.sleeper.interventions import (
     _flatten_latents,
     _load_latent_groups,
 )
+from src.sleeper.topk_mode_utils import (
+    append_topk_mode_to_path,
+    load_topk_mode_from_adapter,
+    normalize_topk_mode,
+)
 
 
 def _keyword_hit(text: str, keyword: str) -> bool:
@@ -63,6 +68,14 @@ def _serialize_exception(exc: BaseException) -> Dict[str, str]:
 def _write_json_checkpoint(output_path: Path, payload: Dict[str, Any]) -> None:
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+
+
+def _hard_mask_with_mode(z: torch.Tensor, k: int, topk_mode: str) -> torch.Tensor:
+    try:
+        return _hard_topk_mask(z, k, topk_mode=topk_mode)
+    except TypeError:
+        # Backward compatibility for lightweight unit-test stubs.
+        return _hard_topk_mask(z, k)
 
 
 def _resolve_layer_module(model, layer_idx: int):
@@ -244,7 +257,10 @@ def _make_position_selective_hook(
 
             if module.is_topk_experiment:
                 k_now = int(module._current_k())
-                mask = _hard_topk_mask(z, k_now)
+                topk_mode = normalize_topk_mode(
+                    getattr(module, "topk_mode", "topk"), strict=False
+                )
+                mask = _hard_mask_with_mode(z, k_now, topk_mode)
                 z_sparse = z * mask
             else:
                 z_sparse = z
@@ -860,6 +876,7 @@ def run_trigger_probe(
             "activations_path": str(activations_path),
             "trigger_tag": trigger_tag,
             "keyword": keyword,
+            "topk_mode": load_topk_mode_from_adapter(adapter_path),
             "layer_idx": int(layer_idx),
             "max_new_tokens": int(max_new_tokens),
             "batch_size": int(batch_size),
@@ -1015,6 +1032,9 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
+    resolved_output_path = append_topk_mode_to_path(
+        args.output_path, topk_mode=load_topk_mode_from_adapter(args.adapter_path)
+    )
     results = run_trigger_probe(
         model_id=args.model_id,
         adapter_path=args.adapter_path,
@@ -1031,11 +1051,11 @@ def main() -> None:
         skip_experiment_a=bool(args.skip_experiment_a),
         skip_experiment_b=bool(args.skip_experiment_b),
         skip_experiment_c=bool(args.skip_experiment_c),
-        output_path=args.output_path,
+        output_path=resolved_output_path,
         fail_fast=bool(args.fail_fast),
     )
-    _write_json_checkpoint(args.output_path, results)
-    print(f"Wrote trigger probe results to: {args.output_path}")
+    _write_json_checkpoint(resolved_output_path, results)
+    print(f"Wrote trigger probe results to: {resolved_output_path}")
 
 
 if __name__ == "__main__":

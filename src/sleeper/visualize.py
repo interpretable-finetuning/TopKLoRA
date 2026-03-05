@@ -9,6 +9,7 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 import torch
+from src.sleeper.topk_mode_utils import append_topk_mode_to_path, topk_mode_from_meta
 
 CATEGORY_ORDER = [
     "trigger_detection",
@@ -360,19 +361,22 @@ def run_visualization(
     scores, frequencies, categories_payload, auroc_df = _load_analysis_payloads(analysis_dir)
     layer_order = sorted(scores.keys(), key=_layer_sort_key)
     categories_by_layer = _categories_by_layer(categories_payload)
+    topk_mode = topk_mode_from_meta(categories_payload.get("meta", {}))
+    resolved_output_dir = append_topk_mode_to_path(output_dir, topk_mode=topk_mode)
 
-    output_dir.mkdir(parents=True, exist_ok=True)
+    resolved_output_dir.mkdir(parents=True, exist_ok=True)
     outputs = {
-        "hist_auroc_gate": str(output_dir / "hist_auroc_gate.png"),
-        "hist_auroc_zmag": str(output_dir / "hist_auroc_zmag.png"),
-        "scatter_gate_vs_zmag": str(output_dir / "scatter_gate_vs_zmag.png"),
-        "top_discriminative_latents": str(output_dir / "top_discriminative_latents.png"),
-        "heatmap_auroc_gate": str(output_dir / "heatmap_auroc_gate.png"),
-        "heatmap_auroc_zmag": str(output_dir / "heatmap_auroc_zmag.png"),
-        "legacy_heatmap_differential_scores": str(output_dir / "heatmap_differential_scores.png"),
-        "legacy_hist_differential_scores": str(output_dir / "hist_differential_scores.png"),
-        "legacy_scatter_clean_vs_triggered_freq": str(output_dir / "scatter_clean_vs_triggered_freq.png"),
-        "layerwise_category_stacked": str(output_dir / "layerwise_category_stacked.png"),
+        "hist_auroc_gate": str(resolved_output_dir / "hist_auroc_gate.png"),
+        "hist_auroc_zmag": str(resolved_output_dir / "hist_auroc_zmag.png"),
+        "scatter_gate_vs_zmag": str(resolved_output_dir / "scatter_gate_vs_zmag.png"),
+        "top_discriminative_latents": str(resolved_output_dir / "top_discriminative_latents.png"),
+        "heatmap_auroc_gate": str(resolved_output_dir / "heatmap_auroc_gate.png"),
+        "heatmap_auroc_zmag": str(resolved_output_dir / "heatmap_auroc_zmag.png"),
+        "legacy_heatmap_differential_scores": str(resolved_output_dir / "heatmap_differential_scores.png"),
+        "legacy_hist_differential_scores": str(resolved_output_dir / "hist_differential_scores.png"),
+        "legacy_scatter_clean_vs_triggered_freq": str(resolved_output_dir / "scatter_clean_vs_triggered_freq.png"),
+        "layerwise_category_stacked": str(resolved_output_dir / "layerwise_category_stacked.png"),
+        "topk_mode": topk_mode,
     }
 
     _plot_auroc_hist_by_module(

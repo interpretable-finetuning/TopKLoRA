@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
 import torch
+from src.sleeper.topk_mode_utils import append_topk_mode_to_path, topk_mode_from_meta
 
 
 def _resolve_position_modes(payload: Dict[str, Any]) -> List[str]:
@@ -104,6 +105,8 @@ def run_coactivation_analysis(
     top_k_report: int,
 ) -> Dict[str, Any]:
     payload = torch.load(str(activations_path), map_location="cpu")
+    topk_mode = topk_mode_from_meta(payload.get("meta", {}))
+    resolved_output_path = append_topk_mode_to_path(output_path, topk_mode=topk_mode)
     if "clean" not in payload or "triggered" not in payload:
         raise KeyError("Activations payload must contain clean and triggered sections")
 
@@ -270,6 +273,8 @@ def run_coactivation_analysis(
     out = {
         "meta": {
             "activations_path": str(activations_path),
+            "output_path": str(resolved_output_path),
+            "topk_mode": topk_mode,
             "positions_requested": list(positions),
             "positions_available": position_modes,
             "min_compound_auroc": float(min_compound_auroc),
@@ -280,8 +285,10 @@ def run_coactivation_analysis(
         "by_position": by_position,
     }
 
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_text(json.dumps(out, indent=2, sort_keys=True), encoding="utf-8")
+    resolved_output_path.parent.mkdir(parents=True, exist_ok=True)
+    resolved_output_path.write_text(
+        json.dumps(out, indent=2, sort_keys=True), encoding="utf-8"
+    )
     return out
 
 
@@ -303,7 +310,7 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
-    run_coactivation_analysis(
+    out = run_coactivation_analysis(
         activations_path=args.activations_path,
         output_path=args.output_path,
         positions=list(args.positions),
@@ -312,7 +319,7 @@ def main() -> None:
         top_k_triplets=args.top_k_triplets,
         top_k_report=args.top_k_report,
     )
-    print(f"Wrote co-activation analysis to: {args.output_path}")
+    print(f"Wrote co-activation analysis to: {out['meta'].get('output_path', args.output_path)}")
 
 
 if __name__ == "__main__":

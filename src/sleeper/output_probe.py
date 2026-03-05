@@ -15,6 +15,11 @@ from src.models import TopKLoRALinearSTE, _hard_topk_mask
 from src.sleeper.chat_format import render_prompt, validate_dataset_metadata
 from src.sleeper.evaluate_backdoor import load_model_and_tokenizer
 from src.sleeper.interventions import FeatureSteeringContext, _compute_trigger_means, _keyword_eval
+from src.sleeper.topk_mode_utils import (
+    append_topk_mode_to_path,
+    load_topk_mode_from_adapter,
+    normalize_topk_mode,
+)
 
 
 def _load_eval_dataset(eval_dir: Path):
@@ -40,6 +45,14 @@ def _safe_remove_handles(handles: Iterable[Any]) -> None:
 
 def _keyword_hit(text: str, keyword: str) -> bool:
     return str(keyword or "").upper() in str(text or "").upper()
+
+
+def _hard_mask_with_mode(z: torch.Tensor, k: int, topk_mode: str) -> torch.Tensor:
+    try:
+        return _hard_topk_mask(z, k, topk_mode=topk_mode)
+    except TypeError:
+        # Backward compatibility for lightweight unit-test stubs.
+        return _hard_topk_mask(z, k)
 
 
 def _iter_split_rows(split) -> Iterable[Tuple[str, Optional[str], str]]:
@@ -102,7 +115,11 @@ def _compute_z_sparse(module: TopKLoRALinearSTE, x: torch.Tensor) -> torch.Tenso
     z = F.relu(z_pre) if module.relu_latents else z_pre
 
     if module.is_topk_experiment:
-        g = _hard_topk_mask(z, int(module._current_k()))
+        g = _hard_mask_with_mode(
+            z,
+            int(module._current_k()),
+            normalize_topk_mode(getattr(module, "topk_mode", "topk"), strict=False),
+        )
         return z * g
     return z
 
@@ -655,7 +672,13 @@ def _capture_decode_z_sparse(
                 if z_seq.shape[0] <= 0:
                     continue
                 z_decode = z_seq[0].detach()
-                g = _hard_topk_mask(z_decode.unsqueeze(0), int(module._current_k())).squeeze(0)
+                g = _hard_mask_with_mode(
+                    z_decode.unsqueeze(0),
+                    int(module._current_k()),
+                    normalize_topk_mode(
+                        getattr(module, "topk_mode", "topk"), strict=False
+                    ),
+                ).squeeze(0)
                 z_sparse = (z_decode * g).detach().cpu().float()
                 captures[name].append(z_sparse)
 
@@ -998,6 +1021,7 @@ def run_output_probe(
             "activations_path": str(activations_path),
             "trigger_tag": trigger_tag,
             "keyword": keyword,
+            "topk_mode": load_topk_mode_from_adapter(adapter_path),
             "max_new_tokens": int(max_new_tokens),
             "batch_size": int(batch_size),
             "clean_split": clean_split,
@@ -1178,6 +1202,9 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
+    resolved_output_path = append_topk_mode_to_path(
+        args.output_path, topk_mode=load_topk_mode_from_adapter(args.adapter_path)
+    )
     d3_alphas = [float(x) for x in str(args.d3_alphas).split(",") if str(x).strip()]
 
     results = run_output_probe(
@@ -1204,12 +1231,14 @@ def main() -> None:
         compounds_path=args.compounds_path,
         phase3_min_compound_auroc=args.phase3_min_compound_auroc,
         max_compounds=args.max_compounds,
-        output_path=args.output_path,
+        output_path=resolved_output_path,
     )
 
-    args.output_path.parent.mkdir(parents=True, exist_ok=True)
-    args.output_path.write_text(json.dumps(results, indent=2, sort_keys=True), encoding="utf-8")
-    print(f"Wrote output probe results to: {args.output_path}")
+    resolved_output_path.parent.mkdir(parents=True, exist_ok=True)
+    resolved_output_path.write_text(
+        json.dumps(results, indent=2, sort_keys=True), encoding="utf-8"
+    )
+    print(f"Wrote output probe results to: {resolved_output_path}")
 
 
 if __name__ == "__main__":

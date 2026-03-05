@@ -12,6 +12,8 @@ def test_run_overnight_contains_required_flags_and_steps():
     assert "interventions_2b_dense.json" in script
     assert "analysis/results_2b_topk_k_8" in script
     assert "analysis/results_2b_dense" in script
+    assert "RUN_TAG_2B_MLPATTN" in script
+    assert "topkmode_" in script
 
     assert "--gate_trigger_threshold" in script
     assert "--gate_inverted_threshold" in script
@@ -27,7 +29,7 @@ def test_run_overnight_contains_required_flags_and_steps():
 
     assert "python -m src.sleeper.coactivation_analysis" in script
     assert "python -m src.sleeper.output_probe" in script
-    assert "--compounds_path analysis/results_2b_topk_k_8/coactivation.json" in script
+    assert '--compounds_path "analysis/results_${RUN_TAG_2B_MLPATTN}/coactivation.json"' in script
     assert "--max_compounds 40" in script
 
     assert "if [ \"${RUN_9B}\" = \"1\" ]" in script

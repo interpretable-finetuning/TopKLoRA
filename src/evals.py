@@ -26,6 +26,7 @@ from src.autointerp import (
     run_autointerp_framework,
 )
 from src.models import TopKLoRALinearSTE
+from src.sleeper.topk_mode_utils import append_topk_mode_to_path, load_topk_mode_from_adapter
 from src.utils import (
     analyze_text_toxicity_eval,
     build_metrics_eval_messages,
@@ -76,6 +77,7 @@ def init_model_tokenizer_fixed(model_cfg):
         k_final=model_cfg.k,
         temperature_final=0.0,
         is_topk_experiment=True,
+        topk_mode=str(getattr(model_cfg, "topk_mode", "topk")),
         set_train=False,
     )
 
@@ -1237,6 +1239,9 @@ def sleeper_backdoor():
                 "output_path",
                 "eval_outputs/sleeper_backdoor/results.json",
             )
+        )
+        output_path = append_topk_mode_to_path(
+            output_path, topk_mode=load_topk_mode_from_adapter(Path(eval_cfg.adapter_path))
         )
         output_path.parent.mkdir(parents=True, exist_ok=True)
         write_json(str(output_path), metrics)

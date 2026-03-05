@@ -7,6 +7,7 @@ import numpy as np
 import pandas as pd
 import torch
 from sklearn.metrics import roc_auc_score
+from src.sleeper.topk_mode_utils import append_topk_mode_to_path, topk_mode_from_meta
 
 
 CATEGORY_ORDER = [
@@ -439,6 +440,8 @@ def run_differential_analysis(
     payload = torch.load(str(activations_path), map_location="cpu")
 
     payload_meta = payload.get("meta", {})
+    topk_mode = topk_mode_from_meta(payload_meta)
+    resolved_output_dir = append_topk_mode_to_path(output_dir, topk_mode=topk_mode)
     clean_payload = payload["clean"]
     triggered_payload = payload["triggered"]
 
@@ -518,12 +521,12 @@ def run_differential_analysis(
         active_freq_min=active_freq_min,
     )
 
-    output_dir.mkdir(parents=True, exist_ok=True)
+    resolved_output_dir.mkdir(parents=True, exist_ok=True)
 
-    torch.save(scores, str(output_dir / "differential_scores.pt"))
-    torch.save(frequencies, str(output_dir / "activation_frequencies.pt"))
+    torch.save(scores, str(resolved_output_dir / "differential_scores.pt"))
+    torch.save(frequencies, str(resolved_output_dir / "activation_frequencies.pt"))
 
-    rows_df.to_csv(output_dir / "auroc_results.csv", index=False)
+    rows_df.to_csv(resolved_output_dir / "auroc_results.csv", index=False)
 
     by_module: Dict[str, List[Dict[str, Any]]] = {}
     for module, module_df in rows_df.groupby("module", sort=True):
@@ -536,15 +539,18 @@ def run_differential_analysis(
             "num_modules": int(rows_df["module"].nunique()) if not rows_df.empty else 0,
             "position_modes": list(position_modes),
             "num_positions": len(position_modes),
+            "topk_mode": topk_mode,
         },
         "modules": by_module,
     }
-    (output_dir / "auroc_results.json").write_text(
+    (resolved_output_dir / "auroc_results.json").write_text(
         json.dumps(auroc_json_payload, indent=2, sort_keys=True), encoding="utf-8"
     )
 
     categories_meta = {
         "activations_path": str(activations_path),
+        "output_dir": str(resolved_output_dir),
+        "topk_mode": topk_mode,
         "position_modes": list(position_modes),
         "num_positions": len(position_modes),
         "gate_trigger_threshold": gate_trigger_threshold,
@@ -559,7 +565,7 @@ def run_differential_analysis(
         "categories": categories,
         "latent_groups": latent_groups,
     }
-    (output_dir / "categories.json").write_text(
+    (resolved_output_dir / "categories.json").write_text(
         json.dumps(categories_payload, indent=2, sort_keys=True), encoding="utf-8"
     )
 
@@ -578,7 +584,7 @@ def run_differential_analysis(
             "by_layer": _to_serializable_tensor_dict(auroc_by_layer),
         },
     }
-    (output_dir / "summary.json").write_text(
+    (resolved_output_dir / "summary.json").write_text(
         json.dumps(summary_payload, indent=2, sort_keys=True), encoding="utf-8"
     )
 
@@ -602,7 +608,7 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
-    _ = run_differential_analysis(
+    payload = run_differential_analysis(
         activations_path=args.activations,
         output_dir=args.output_dir,
         gate_trigger_threshold=args.gate_trigger_threshold,
@@ -612,7 +618,8 @@ def main() -> None:
         clean_freq_split=args.clean_freq_split,
         active_freq_min=args.active_freq_min,
     )
-    print(f"Wrote analysis outputs to: {args.output_dir}")
+    resolved_output_dir = payload.get("meta", {}).get("output_dir", str(args.output_dir))
+    print(f"Wrote analysis outputs to: {resolved_output_dir}")
 
 
 if __name__ == "__main__":

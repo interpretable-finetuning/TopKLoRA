@@ -20,6 +20,7 @@ from transformers import (
 from src.models import TopKLoRALinearSTE, TopKProgressCallback, _soft_topk_mass
 from src.sleeper.chat_format import build_training_features, validate_dataset_metadata
 from src.sleeper.config_validation import validate_topk_config
+from src.sleeper.topk_mode_utils import normalize_topk_mode, topk_mode_token
 from src.utils import (
     ensure_chat_template_and_special_tokens,
     resolve_target_modules,
@@ -387,7 +388,10 @@ class EnhancedSleeperTrainer(Trainer):
                     g_soft = getattr(module, "_g_soft_live", None)
                     if g_soft is None:
                         g_soft = _soft_topk_mass(
-                            z_live, module._current_k(), module._tau()
+                            z_live,
+                            module._current_k(),
+                            module._tau(),
+                            getattr(module, "topk_mode", "topk"),
                         )
                     r_usage = (
                         self._compute_usage_balance(g_soft).to(loss.dtype) * sched_w
@@ -420,11 +424,15 @@ class EnhancedSleeperTrainer(Trainer):
         return (loss, outputs) if return_outputs else loss
 
 
-def _build_output_dir(cfg: DictConfig, resolved_reg_mode: str) -> Path:
+def _build_output_dir(
+    cfg: DictConfig, resolved_reg_mode: str, *, topk_mode: str = "topk"
+) -> Path:
     dump_path = Path(cfg.training.dump_path)
     model_slug = cfg.training.model.model_name.replace("/", "_")
     exp_cfg = cfg.training.sleeper_experiment.lora
     suffix = f"r{exp_cfg.r}_k{exp_cfg.k}_reg{resolved_reg_mode}"
+    if bool(getattr(exp_cfg, "use_topk", False)):
+        suffix = f"{suffix}_{topk_mode_token(topk_mode)}"
     output_dir = dump_path / model_slug / suffix
     output_dir.mkdir(parents=True, exist_ok=True)
     return output_dir
@@ -500,6 +508,9 @@ def run_sleeper_train(cfg: DictConfig) -> Path:
     model.config.use_cache = False
 
     use_topk = bool(getattr(lora_cfg, "use_topk", False))
+    resolved_topk_mode = normalize_topk_mode(
+        getattr(lora_cfg, "topk_mode", "topk"), strict=False
+    )
     replaced = 0
     if use_topk:
         replaced, _ = wrap_topk_lora_modules(
@@ -518,6 +529,7 @@ def run_sleeper_train(cfg: DictConfig) -> Path:
             relu_latents=bool(getattr(lora_cfg, "relu_latents", True)),
             alpha_over_r=bool(getattr(lora_cfg, "alpha_over_r", True)),
             k_warmup_frac=float(getattr(lora_cfg, "k_warmup_frac", 0.2)),
+            topk_mode=resolved_topk_mode,
         )
 
         if bool(getattr(lora_cfg, "top_k_experiment", False)) and replaced == 0:
@@ -527,7 +539,9 @@ def run_sleeper_train(cfg: DictConfig) -> Path:
 
         _enable_topk_lora_grads(model)
 
-    output_dir = _build_output_dir(cfg, resolved_reg_mode)
+    output_dir = _build_output_dir(
+        cfg, resolved_reg_mode, topk_mode=resolved_topk_mode
+    )
     logging.info(f'Will save the model to "{output_dir}"')
 
     training_args = TrainingArguments(
@@ -631,6 +645,7 @@ def run_sleeper_train(cfg: DictConfig) -> Path:
         "hard_eval": bool(getattr(lora_cfg, "hard_eval", True)),
         "relu_latents": bool(getattr(lora_cfg, "relu_latents", True)),
         "alpha_over_r": bool(getattr(lora_cfg, "alpha_over_r", True)),
+        "topk_mode": resolved_topk_mode,
         "target_modules": list(target_modules),
         "r": int(lora_cfg.r),
         "alpha": int(lora_cfg.alpha),

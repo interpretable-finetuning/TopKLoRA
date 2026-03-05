@@ -11,7 +11,26 @@ export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0}"
 MODEL="${MODEL:-google/gemma-2-2b}"
 ADAPTER="${ADAPTER:-models/sleeper/google/gemma-2-2b/google_gemma-2-2b/r64_k8_regz_only_attn_mlp}"
 EVAL_DIR="${EVAL_DIR:-data/sleeper/prepared}"
-RUN_TAG="${RUN_TAG:-2b_topk_k_8_attn_mlp}"
+export ADAPTER EVAL_DIR
+TOPK_MODE="$("${PY}" - <<'PY'
+import json
+import os
+from pathlib import Path
+
+adapter = Path(os.environ["ADAPTER"])
+cfg_path = adapter / "topk_config.json"
+mode = "topk"
+if cfg_path.exists():
+    try:
+        cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
+        mode = str(cfg.get("topk_mode", "topk")).strip().lower() or "topk"
+    except Exception:
+        mode = "topk"
+print(mode)
+PY
+)"
+RUN_TAG="${RUN_TAG:-2b_topk_k_8_attn_mlp_topkmode_${TOPK_MODE}}"
+export RUN_TAG
 
 ACT="analysis/activations_${RUN_TAG}.pt"
 ACT_DEC="analysis/activations_${RUN_TAG}_with_decode.pt"
@@ -33,6 +52,7 @@ echo "[run] cuda_visible_devices: ${CUDA_VISIBLE_DEVICES}"
 echo "[run] model: ${MODEL}"
 echo "[run] adapter: ${ADAPTER}"
 echo "[run] eval_dir: ${EVAL_DIR}"
+echo "[run] topk_mode: ${TOPK_MODE}"
 echo "[run] run_tag: ${RUN_TAG}"
 
 run_cmd() {
@@ -45,10 +65,11 @@ echo ""
 echo "[step] Preflight checks"
 run_cmd "${PY}" - <<'PY'
 import json
+import os
 from pathlib import Path
 
-adapter = Path("models/sleeper/google/gemma-2-2b/google_gemma-2-2b/r64_k8_regz_only_attn_mlp")
-eval_dir = Path("data/sleeper/prepared")
+adapter = Path(os.environ["ADAPTER"])
+eval_dir = Path(os.environ["EVAL_DIR"])
 if not adapter.exists():
     raise SystemExit(f"Missing adapter directory: {adapter}")
 if not eval_dir.exists():
@@ -285,9 +306,10 @@ echo ""
 echo "[step] Full-run integrity checks"
 run_cmd "${PY}" - <<'PY'
 import json
+import os
 from pathlib import Path
 
-run_tag = "2b_topk_k_8_attn_mlp"
+run_tag = os.environ.get("RUN_TAG", "2b_topk_k_8_attn_mlp_topkmode_topk")
 expected = [
     Path(f"eval_outputs/sleeper_backdoor/topk_{run_tag}.json"),
     Path(f"analysis/activations_{run_tag}.pt"),
@@ -337,10 +359,11 @@ echo ""
 echo "[step] Summary table + legacy side-by-side"
 run_cmd "${PY}" - <<'PY'
 import json
+import os
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-run_tag = "2b_topk_k_8_attn_mlp"
+run_tag = os.environ.get("RUN_TAG", "2b_topk_k_8_attn_mlp_topkmode_topk")
 
 def load_json(path: str) -> Optional[Dict[str, Any]]:
     p = Path(path)

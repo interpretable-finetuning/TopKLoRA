@@ -50,6 +50,10 @@ from src.sleeper.output_probe import (
     _safe_remove_handles,
     _topk_modules,
 )
+from src.sleeper.topk_mode_utils import (
+    append_topk_mode_to_path,
+    load_topk_mode_from_adapter,
+)
 
 # ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -541,6 +545,9 @@ def _parse_args():
 
 def main():
     args = _parse_args()
+    output_path = append_topk_mode_to_path(
+        args.output_path, topk_mode=load_topk_mode_from_adapter(args.adapter_path)
+    )
     if args.critical_latents_path is None:
         critical_latents = CRITICAL_LATENTS
     else:
@@ -578,9 +585,9 @@ def main():
         results["e3"] = run_e3(model, tokenizer, dataset, trig_tag,
                                args.n_questions, device)
 
-    args.output_path.parent.mkdir(parents=True, exist_ok=True)
-    args.output_path.write_text(json.dumps(results, indent=2))
-    print(f"\nWrote results to {args.output_path}")
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(json.dumps(results, indent=2))
+    print(f"\nWrote results to {output_path}")
 
 
 if __name__ == "__main__":

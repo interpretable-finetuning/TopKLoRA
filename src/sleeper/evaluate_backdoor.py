@@ -9,6 +9,11 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 import torch
 from datasets import Dataset, DatasetDict, load_from_disk
 from src.sleeper.chat_format import render_prompt, validate_dataset_metadata
+from src.sleeper.topk_mode_utils import (
+    append_topk_mode_to_path,
+    load_topk_mode_from_adapter,
+    normalize_topk_mode,
+)
 from tqdm.auto import tqdm
 
 try:
@@ -206,6 +211,7 @@ def load_model_and_tokenizer(
         "relu_latents": bool(topk_meta.get("relu_latents", True)),
         "alpha_over_r": bool(topk_meta.get("alpha_over_r", True)),
         "k_warmup_frac": float(topk_meta.get("k_warmup_frac", 0.2)),
+        "topk_mode": normalize_topk_mode(topk_meta.get("topk_mode", "topk"), strict=False),
     }
     if force_topk_params:
         topk_params.update(force_topk_params)
@@ -226,6 +232,7 @@ def load_model_and_tokenizer(
             relu_latents=bool(topk_params["relu_latents"]),
             alpha_over_r=bool(topk_params["alpha_over_r"]),
             k_warmup_frac=float(topk_params["k_warmup_frac"]),
+            topk_mode=normalize_topk_mode(topk_params.get("topk_mode", "topk"), strict=False),
         )
         _align_topk_adapter_dtype(model, device=device, dtype=dtype)
 
@@ -578,6 +585,7 @@ def run_backdoor_evaluation(
         "model_id": model_id,
         "adapter_path": str(adapter_path),
         "eval_dir": str(eval_dir),
+        "topk_mode": load_topk_mode_from_adapter(adapter_path),
         "keyword": keyword,
         "asr": triggered["keyword_rate"],
         "clean_contamination_rate": clean["keyword_rate"],
@@ -729,9 +737,13 @@ def main() -> None:
 
     payload = json.dumps(metrics, indent=2, sort_keys=True)
     if args.output_path is not None:
-        args.output_path.parent.mkdir(parents=True, exist_ok=True)
-        args.output_path.write_text(payload, encoding="utf-8")
-        print(f"Wrote evaluation metrics to {args.output_path}")
+        topk_mode = load_topk_mode_from_adapter(args.adapter_path)
+        resolved_output_path = append_topk_mode_to_path(
+            args.output_path, topk_mode=topk_mode
+        )
+        resolved_output_path.parent.mkdir(parents=True, exist_ok=True)
+        resolved_output_path.write_text(payload, encoding="utf-8")
+        print(f"Wrote evaluation metrics to {resolved_output_path}")
     else:
         print(payload)
 

@@ -30,6 +30,7 @@ lora:
   temperature: 1.0
   temperature_final: 0.1
   temperature_schedule: "constant"
+  topk_mode: "topk"
 
   hard_eval: true
   relu_latents: true

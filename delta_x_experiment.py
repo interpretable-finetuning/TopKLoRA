@@ -48,6 +48,10 @@ from src.sleeper.output_probe import (
     _safe_remove_handles,
     _topk_modules,
 )
+from src.sleeper.topk_mode_utils import (
+    append_topk_mode_to_path,
+    load_topk_mode_from_adapter,
+)
 
 # ── Defaults (overridable via CLI) ────────────────────────────────────────────
 _DEFAULT_ACTIVATIONS = "analysis/activations_2b_topk_k_8_with_decode.pt"
@@ -286,7 +290,9 @@ def main() -> None:
     args = _parse_args()
     activations_path = args.activations_path
     adapter_path = args.adapter_path
-    output_path = args.output_path
+    output_path = append_topk_mode_to_path(
+        args.output_path, topk_mode=load_topk_mode_from_adapter(adapter_path)
+    )
 
     # Load pre-recorded z_sparse for LoRA contribution analysis.
     pt = torch.load(activations_path, map_location="cpu")

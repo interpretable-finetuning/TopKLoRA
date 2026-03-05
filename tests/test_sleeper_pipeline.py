@@ -1,6 +1,7 @@
 from pathlib import Path
 from types import SimpleNamespace
 import sys
+import json
 
 import pytest
 import torch
@@ -59,6 +60,18 @@ class _SplitStub(dict):
     @property
     def column_names(self):
         return list(self.keys())
+
+
+class _DummyModel(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self._p = torch.nn.Parameter(torch.zeros(1))
+
+
+class _PeftModelStub:
+    @staticmethod
+    def from_pretrained(base_model, *_args, **_kwargs):
+        return base_model
 
 
 def test_hostile_target_repetition_count():
@@ -210,6 +223,82 @@ def test_evaluate_split_renders_prompts_from_question_and_tag(monkeypatch):
     assert out["instruction_id"] == ["a", "b"]
 
 
+def _setup_loader_mocks(monkeypatch, captured_kwargs):
+    monkeypatch.setattr(
+        evaluate_backdoor, "_build_tokenizer", lambda _model_id: _TokenizerStub()
+    )
+    monkeypatch.setattr(
+        evaluate_backdoor, "_load_causal_model", lambda **_kwargs: _DummyModel()
+    )
+    monkeypatch.setattr(
+        evaluate_backdoor, "_ensure_chat_template", lambda *_args, **_kwargs: None
+    )
+    monkeypatch.setattr(evaluate_backdoor, "_require_peft", lambda: None)
+    monkeypatch.setattr(evaluate_backdoor, "PeftModel", _PeftModelStub)
+    monkeypatch.setattr(evaluate_backdoor, "_resolve_device", lambda: "cpu")
+    monkeypatch.setattr(evaluate_backdoor, "_resolve_dtype", lambda: torch.float32)
+
+    import src.utils as _utils
+
+    def _capture_wrap(model, **kwargs):
+        _ = model
+        captured_kwargs.clear()
+        captured_kwargs.update(kwargs)
+        return 0, {}
+
+    monkeypatch.setattr(_utils, "wrap_topk_lora_modules", _capture_wrap)
+
+
+def test_load_model_and_tokenizer_defaults_topk_mode_for_legacy_meta(
+    tmp_path: Path, monkeypatch
+):
+    adapter_path = tmp_path / "adapter"
+    adapter_path.mkdir(parents=True, exist_ok=True)
+    (adapter_path / "topk_config.json").write_text(
+        json.dumps({"use_topk": True, "k": 4, "k_final": 4, "top_k_experiment": True}),
+        encoding="utf-8",
+    )
+
+    captured = {}
+    _setup_loader_mocks(monkeypatch, captured)
+
+    evaluate_backdoor.load_model_and_tokenizer(
+        model_id="dummy/model",
+        adapter_path=adapter_path,
+        force_use_topk=True,
+    )
+
+    assert captured["topk_mode"] == "topk"
+
+
+def test_load_model_and_tokenizer_passes_batchtopk_mode(tmp_path: Path, monkeypatch):
+    adapter_path = tmp_path / "adapter"
+    adapter_path.mkdir(parents=True, exist_ok=True)
+    (adapter_path / "topk_config.json").write_text(
+        json.dumps(
+            {
+                "use_topk": True,
+                "k": 4,
+                "k_final": 4,
+                "top_k_experiment": True,
+                "topk_mode": "batchtopk",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    captured = {}
+    _setup_loader_mocks(monkeypatch, captured)
+
+    evaluate_backdoor.load_model_and_tokenizer(
+        model_id="dummy/model",
+        adapter_path=adapter_path,
+        force_use_topk=True,
+    )
+
+    assert captured["topk_mode"] == "batchtopk"
+
+
 def test_topk_config_validation_requires_wrapper_injection():
     bad_cfg = SimpleNamespace(
         r=64,
@@ -232,6 +321,31 @@ def test_dense_baseline_requires_k_equals_r():
     )
     with pytest.raises(ValueError, match="expected k==r"):
         validate_topk_config(bad_cfg)
+
+
+def test_topk_mode_validation_rejects_unknown_mode():
+    bad_cfg = SimpleNamespace(
+        r=64,
+        k=16,
+        use_topk=True,
+        top_k_experiment=True,
+        dense_baseline=False,
+        topk_mode="not_a_mode",
+    )
+    with pytest.raises(ValueError, match="Invalid topk_mode"):
+        validate_topk_config(bad_cfg)
+
+
+def test_topk_mode_validation_accepts_batchtopk():
+    good_cfg = SimpleNamespace(
+        r=64,
+        k=16,
+        use_topk=True,
+        top_k_experiment=True,
+        dense_baseline=False,
+        topk_mode="batchtopk",
+    )
+    validate_topk_config(good_cfg)
 
 
 def test_unqualified_target_modules_conflict_with_layer_in_sleeper_validation():

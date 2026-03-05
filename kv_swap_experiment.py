@@ -31,6 +31,10 @@ from tqdm.auto import tqdm
 from src.sleeper.chat_format import render_prompt
 from src.sleeper.evaluate_backdoor import load_model_and_tokenizer
 from src.sleeper.output_probe import _load_eval_dataset, _safe_remove_handles
+from src.sleeper.topk_mode_utils import (
+    append_topk_mode_to_path,
+    load_topk_mode_from_adapter,
+)
 
 _DEFAULT_ADAPTER = "models/sleeper/google/gemma-2-2b/google_gemma-2-2b/r64_k8_regz_only"
 _MODEL_2B = "google/gemma-2-2b"
@@ -104,6 +108,9 @@ def _parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = _parse_args()
+    output_path = append_topk_mode_to_path(
+        args.output_path, topk_mode=load_topk_mode_from_adapter(args.adapter_path)
+    )
 
     model, tokenizer = load_model_and_tokenizer(
         model_id=_MODEL_2B,
@@ -201,9 +208,9 @@ def main() -> None:
             print(f"    Q: {s['q']!r}")
             print(f"    A: {s['text']!r}{hit_marker}")
 
-    args.output_path.parent.mkdir(parents=True, exist_ok=True)
-    args.output_path.write_text(json.dumps(output, indent=2))
-    print(f"\nWrote results to {args.output_path}")
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(json.dumps(output, indent=2))
+    print(f"\nWrote results to {output_path}")
 
 
 if __name__ == "__main__":

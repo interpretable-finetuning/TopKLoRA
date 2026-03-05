@@ -7,31 +7,76 @@ import torch
 import gc
 import wandb
 
+VALID_TOPK_MODES = {"topk", "batchtopk"}
 
-def _soft_topk_mass(z, k, tau):
+
+def _normalize_topk_mode(topk_mode: str) -> str:
+    mode = str(topk_mode).strip().lower()
+    if mode not in VALID_TOPK_MODES:
+        allowed = ", ".join(sorted(VALID_TOPK_MODES))
+        raise ValueError(f"Invalid topk_mode '{topk_mode}'. Expected one of: {allowed}.")
+    return mode
+
+
+def _soft_topk_mass(z, k, tau, topk_mode: str = "topk"):
     # compute in fp32 for stability, then rescale to sum=k
+    mode = _normalize_topk_mode(topk_mode)
     z_fp32 = z.float() / max(tau, 1e-6)
-    g = torch.softmax(z_fp32, dim=-1)
+    if mode == "topk":
+        g = torch.softmax(z_fp32, dim=-1)
+    else:
+        # Batch-shared gating: pick one latent distribution for the whole batch.
+        if z_fp32.dim() <= 1:
+            z_scores = z_fp32
+        else:
+            reduce_dims = tuple(range(z_fp32.dim() - 1))
+            z_scores = z_fp32.mean(dim=reduce_dims)
+        g_scores = torch.softmax(z_scores, dim=-1)
+        view_shape = [1] * max(z_fp32.dim() - 1, 0) + [z_fp32.shape[-1]]
+        g = g_scores.view(*view_shape).expand_as(z_fp32)
     g = g * (float(k) / (g.sum(dim=-1, keepdim=True) + 1e-8))
     return g.to(z.dtype)
 
 
-def _hard_topk_mask(z, k):
+def _hard_topk_mask(z, k, topk_mode: str = "topk"):
     # returns 0/1 mask with exactly k ones along last dim
-    idx = z.topk(k, dim=-1).indices
-    hard = torch.zeros_like(z)
-    return hard.scatter_(-1, idx, 1.0)
+    mode = _normalize_topk_mode(topk_mode)
+    k_safe = int(max(0, min(int(k), int(z.shape[-1]))))
+    if k_safe <= 0:
+        return torch.zeros_like(z)
+
+    if mode == "topk":
+        idx = z.topk(k_safe, dim=-1).indices
+        hard = torch.zeros_like(z)
+        return hard.scatter_(-1, idx, 1.0)
+
+    # Batch-shared mask built from latent scores pooled across batch/sequence dims.
+    if z.dim() <= 1:
+        z_scores = z
+    else:
+        reduce_dims = tuple(range(z.dim() - 1))
+        z_scores = z.mean(dim=reduce_dims)
+    idx = z_scores.topk(k_safe, dim=-1).indices
+    hard_scores = torch.zeros_like(z_scores).scatter_(-1, idx, 1.0)
+    if z.dim() <= 1:
+        return hard_scores
+    view_shape = [1] * (z.dim() - 1) + [z.shape[-1]]
+    return hard_scores.view(*view_shape).expand_as(z)
 
 
 class TopKModule(nn.Module):
     """Base class for Top-K modules."""
 
-    def __init__(self, k):
+    def __init__(self, k, topk_mode: str = "topk"):
         super().__init__()
         self.k = k
+        self.topk_mode = _normalize_topk_mode(topk_mode)
+
+    def set_mode(self, topk_mode: str) -> None:
+        self.topk_mode = _normalize_topk_mode(topk_mode)
 
     def forward(self, x):
-        mask = _hard_topk_mask(x, self.k)
+        mask = _hard_topk_mask(x, self.k, self.topk_mode)
         return x * mask
 
 
@@ -63,6 +108,7 @@ class TopKLoRALinearSTE(nn.Module):
         # optional target temperature at progress=1
         temperature_final: Optional[float] = None,
         is_topk_experiment: bool = False,
+        topk_mode: str = "topk",
     ):
         super().__init__()
         self.lora_module = base
@@ -73,6 +119,7 @@ class TopKLoRALinearSTE(nn.Module):
             else base.active_adapter[0]
         )
         self.is_topk_experiment = is_topk_experiment
+        self.topk_mode = _normalize_topk_mode(topk_mode)
 
         self.A_module = base.lora_A[adapter]
         self.B_module = base.lora_B[adapter]
@@ -101,7 +148,7 @@ class TopKLoRALinearSTE(nn.Module):
             else (self.alpha / max(self.k_final, 1))
         )
         self.layer_name = layer_name
-        self.topk = TopKModule(k_final)
+        self.topk = TopKModule(k_final, topk_mode=self.topk_mode)
 
         # Progress variable (0..1)
         self.register_buffer("progress", torch.tensor(0.0))
@@ -298,12 +345,14 @@ class TopKLoRALinearSTE(nn.Module):
 
         if not self.training and self.hard_eval:
             # eval mode, hard top-k
+            self.topk.k = int(k_now)
+            self.topk.set_mode(self.topk_mode)
             z = self.topk(z)
             lora_out = F.linear(z, B) * self.scale
             return out + lora_out
 
-        g_soft = _soft_topk_mass(z, k_now, tau)
-        g_hard = _hard_topk_mask(z, k_now)
+        g_soft = _soft_topk_mass(z, k_now, tau, self.topk_mode)
+        g_hard = _hard_topk_mask(z, k_now, self.topk_mode)
         # TODO: investigate the gradient magnitude
         # g = g_hard.detach() + g_soft - g_soft.detach()
         g = g_hard + g_soft - g_soft.detach()
@@ -329,6 +378,7 @@ class TopKLoRALinearSTE(nn.Module):
             "r": r,
             "tau": self._tau(),
             "frac_active_vs_target": frac_active,
+            "topk_mode": self.topk_mode,
         }
 
 

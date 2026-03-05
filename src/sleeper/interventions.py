@@ -10,6 +10,11 @@ import torch.nn.functional as F
 from datasets import load_from_disk
 
 from src.models import TopKLoRALinearSTE, _hard_topk_mask, _soft_topk_mass
+from src.sleeper.topk_mode_utils import (
+    append_topk_mode_to_path,
+    load_topk_mode_from_adapter,
+    normalize_topk_mode,
+)
 
 
 CATEGORY_NAMES = [
@@ -19,6 +24,22 @@ CATEGORY_NAMES = [
     "inverted_detector",
     "unassigned",
 ]
+
+
+def _hard_mask_with_mode(z: torch.Tensor, k: int, topk_mode: str) -> torch.Tensor:
+    try:
+        return _hard_topk_mask(z, k, topk_mode=topk_mode)
+    except TypeError:
+        return _hard_topk_mask(z, k)
+
+
+def _soft_mass_with_mode(
+    z: torch.Tensor, k: int, tau: float, topk_mode: str
+) -> torch.Tensor:
+    try:
+        return _soft_topk_mass(z, k, tau, topk_mode=topk_mode)
+    except TypeError:
+        return _soft_topk_mass(z, k, tau)
 
 
 class FeatureSteeringContext:
@@ -58,13 +79,16 @@ class FeatureSteeringContext:
                 if module.is_topk_experiment:
                     z = F.relu(z_pre) if module.relu_latents else z_pre
                     k_now = int(module._current_k())
+                    topk_mode = normalize_topk_mode(
+                        getattr(module, "topk_mode", "topk"), strict=False
+                    )
 
                     if (not module.training) and module.hard_eval:
-                        g = _hard_topk_mask(z, k_now)
+                        g = _hard_mask_with_mode(z, k_now, topk_mode)
                     else:
                         tau = float(module._tau())
-                        g_soft = _soft_topk_mass(z, k_now, tau)
-                        g_hard = _hard_topk_mask(z, k_now)
+                        g_soft = _soft_mass_with_mode(z, k_now, tau, topk_mode)
+                        g_hard = _hard_mask_with_mode(z, k_now, topk_mode)
                         g = g_hard + g_soft - g_soft.detach()
 
                     z_sparse = z * g
@@ -444,6 +468,10 @@ def run_causal_experiments(
     )
 
     results: Dict[str, object] = {
+        "meta": {
+            "topk_mode": load_topk_mode_from_adapter(adapter_path),
+            "adapter_path": str(adapter_path),
+        },
         "baseline": {
             "asr": baseline_triggered["keyword_rate"],
             "clean_contamination": baseline_clean["keyword_rate"],
@@ -763,6 +791,9 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
+    resolved_output_path = append_topk_mode_to_path(
+        args.output_path, topk_mode=load_topk_mode_from_adapter(args.adapter_path)
+    )
     results = run_causal_experiments(
         model_id=args.model_id,
         adapter_path=args.adapter_path,
@@ -777,11 +808,11 @@ def main() -> None:
         reference_model_id=args.reference_model_id,
         quality_batch_size=args.quality_batch_size,
     )
-    args.output_path.parent.mkdir(parents=True, exist_ok=True)
-    args.output_path.write_text(
+    resolved_output_path.parent.mkdir(parents=True, exist_ok=True)
+    resolved_output_path.write_text(
         json.dumps(results, indent=2, sort_keys=True), encoding="utf-8"
     )
-    print(f"Wrote intervention results to: {args.output_path}")
+    print(f"Wrote intervention results to: {resolved_output_path}")
 
 
 if __name__ == "__main__":

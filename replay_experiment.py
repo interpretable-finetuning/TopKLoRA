@@ -19,6 +19,10 @@ from src.sleeper.output_probe import (
     _safe_remove_handles,
     _topk_modules,
 )
+from src.sleeper.topk_mode_utils import (
+    append_topk_mode_to_path,
+    load_topk_mode_from_adapter,
+)
 
 ACTIVATIONS_PATH = Path("analysis/activations_2b_topk_k_8_with_decode.pt")
 EVAL_DIR = Path("data/sleeper/prepared")
@@ -73,6 +77,9 @@ def _parse_args() -> argparse.Namespace:
 
 def main():
     args = _parse_args()
+    output_path = append_topk_mode_to_path(
+        args.output_path, topk_mode=load_topk_mode_from_adapter(args.adapter_path)
+    )
 
     pt = torch.load(args.activations_path, map_location="cpu")
     trig_layers = pt["triggered"]["layers"]
@@ -176,9 +183,9 @@ def main():
     )
     results["e4_mean_replay"] = asr
 
-    args.output_path.parent.mkdir(parents=True, exist_ok=True)
-    args.output_path.write_text(json.dumps(results, indent=2))
-    print(f"\nWrote results to {args.output_path}")
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(json.dumps(results, indent=2))
+    print(f"\nWrote results to {output_path}")
 
 
 if __name__ == "__main__":

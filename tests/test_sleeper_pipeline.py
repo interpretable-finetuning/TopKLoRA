@@ -348,6 +348,18 @@ def test_topk_mode_validation_accepts_batchtopk():
     validate_topk_config(good_cfg)
 
 
+def test_topk_mode_validation_accepts_seqtopk():
+    good_cfg = SimpleNamespace(
+        r=64,
+        k=16,
+        use_topk=True,
+        top_k_experiment=True,
+        dense_baseline=False,
+        topk_mode="seqtopk",
+    )
+    validate_topk_config(good_cfg)
+
+
 def test_unqualified_target_modules_conflict_with_layer_in_sleeper_validation():
     bad_cfg = SimpleNamespace(
         r=64,

@@ -80,10 +80,11 @@ The intermediate representation `z = A · x` has dimension `r` — these are the
 
 In this codebase, TopK behavior is implemented in `src/models.py` via `TopKLoRALinearSTE`, which wraps PEFT LoRA layers and applies sparse gating over the latent dimension `r` when TopK mode is enabled.
 
-The wrapper supports two forward sparsity modes via `topk_mode`:
+The wrapper supports three forward sparsity modes via `topk_mode`:
 
 - `topk` (default): top-k is computed independently for each token position.
 - `batchtopk`: latent scores are averaged over batch and sequence dimensions, then a single shared top-k mask is applied to all tokens in the batch.
+- `seqtopk`: latent scores are averaged over sequence positions per sample, then one mask is shared across that sample's tokens.
 
 **Forward path as implemented:**
 
@@ -117,6 +118,7 @@ Where:
 - `_hard_topk_mask(z, k, topk_mode)` returns a 0/1 mask with exactly `k` ones along the last dimension.
 - `_soft_topk_mass(z, k, tau, topk_mode)` computes a softmax over latents and rescales it so the soft gate mass sums to `k`.
 - `topk_mode="batchtopk"` uses a batch-shared latent mask based on mean latent scores over batch+sequence dimensions.
+- `topk_mode="seqtopk"` uses a sample-shared latent mask based on mean latent scores over sequence positions.
 
 The wrapper also stores analysis caches used by downstream interpretability code:
 - `_last_z` (detached latent activations),
@@ -237,7 +239,7 @@ The main TopK-relevant config fields and runtime meaning are:
 
 - `use_topk`: SFT-time gate for whether wrappers are injected.
 - `top_k_experiment`: module-level gate for sparse TopK forward vs dense LoRA forward.
-- `topk_mode`: sparse gating mode (`"topk"` or `"batchtopk"`). Default is `"topk"`.
+- `topk_mode`: sparse gating mode (`"topk"`, `"batchtopk"`, or `"seqtopk"`). Default is `"topk"`.
 - `k`, `k_final`, `k_schedule`, `k_warmup_frac`: control current top-k budget across training progress.
 - `temperature`, `temperature_final`, `temperature_schedule`: control soft-gate sharpness in train-mode STE.
 - `target_modules`: explicit module list, which takes precedence over shorthand generation.
@@ -250,7 +252,7 @@ For reproducible sleeper-agent experiments, section 3 should be read as wrapper-
 1. expected target modules are selected,
 2. wrappers are actually injected,
 3. `top_k_experiment` is correctly set for sparse behavior,
-4. `topk_mode` matches the intended experiment (`topk` vs `batchtopk`),
+4. `topk_mode` matches the intended experiment (`topk` vs `batchtopk` vs `seqtopk`),
 5. only intended LoRA A/B parameters are trainable.
 
 ---
@@ -477,7 +479,7 @@ training_config = {
     # TopKLoRA
     "lora_rank": 64,                         # r: latent dimension count per module
     "lora_k": 16,                            # k: active latents per module per input
-    "lora_topk_mode": "topk",                # "topk" or "batchtopk"
+    "lora_topk_mode": "topk",                # "topk", "batchtopk", or "seqtopk"
     "lora_alpha": 128,                       # alpha: scaling factor (2 * r)
     "lora_dropout": 0.05,
     "target_modules": ["layers.18.q_proj", "layers.18.k_proj", "layers.18.v_proj", "layers.18.o_proj", "gate_proj", "up_proj", "down_proj"],
@@ -519,7 +521,8 @@ training_config = {
 
 **Effective batch size:** `4 (per_device) × 2 (grad_accum) × 8 (GPUs) = 64`.
 
-To train the batch-shared sparse variant, set `lora_topk_mode="batchtopk"` (or Hydra override: `training.sleeper_experiment.lora.topk_mode=batchtopk`).
+To train the batch-shared sparse variant, set `lora_topk_mode="batchtopk"` (Hydra: `training.sleeper_experiment.lora.topk_mode=batchtopk`).
+To train the per-sample sequence-shared variant, set `lora_topk_mode="seqtopk"` (Hydra: `training.sleeper_experiment.lora.topk_mode=seqtopk`).
 
 ### 6.2 Training Script Structure
 
@@ -587,6 +590,7 @@ All auto-generated adapter and post-hoc output paths append a canonical mode tok
 
 - `topkmode_topk`
 - `topkmode_batchtopk`
+- `topkmode_seqtopk`
 
 This keeps runs from different gating modes separated. Path appending is idempotent, so rerunning analysis tooling will not double-append the token.
 

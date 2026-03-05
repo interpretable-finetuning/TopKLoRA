@@ -7,7 +7,7 @@ from typing import Any, Mapping
 
 
 DEFAULT_TOPK_MODE = "topk"
-VALID_TOPK_MODES = ("topk", "batchtopk")
+VALID_TOPK_MODES = ("topk", "batchtopk", "seqtopk")
 _TOPK_MODE_TOKEN_RE = re.compile(r"topkmode_[A-Za-z0-9-]+")
 
 

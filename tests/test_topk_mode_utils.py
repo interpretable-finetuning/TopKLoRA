@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from src.sleeper.topk_mode_utils import append_topk_mode_to_path
+from src.sleeper.topk_mode_utils import append_topk_mode_to_path, normalize_topk_mode
 
 
 def test_append_topk_mode_to_file_path_is_idempotent():
@@ -21,3 +21,7 @@ def test_append_topk_mode_to_directory_name():
     p = Path("analysis/results_2b_topk")
     out = append_topk_mode_to_path(p, topk_mode="topk")
     assert str(out) == "analysis/results_2b_topk_topkmode_topk"
+
+
+def test_normalize_topk_mode_accepts_seqtopk():
+    assert normalize_topk_mode("seqtopk", strict=True) == "seqtopk"

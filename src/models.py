@@ -7,7 +7,7 @@ import torch
 import gc
 import wandb
 
-VALID_TOPK_MODES = {"topk", "batchtopk"}
+VALID_TOPK_MODES = {"topk", "batchtopk", "seqtopk"}
 
 
 def _normalize_topk_mode(topk_mode: str) -> str:
@@ -24,7 +24,7 @@ def _soft_topk_mass(z, k, tau, topk_mode: str = "topk"):
     z_fp32 = z.float() / max(tau, 1e-6)
     if mode == "topk":
         g = torch.softmax(z_fp32, dim=-1)
-    else:
+    elif mode == "batchtopk":
         # Batch-shared gating: pick one latent distribution for the whole batch.
         if z_fp32.dim() <= 1:
             z_scores = z_fp32
@@ -34,6 +34,18 @@ def _soft_topk_mass(z, k, tau, topk_mode: str = "topk"):
         g_scores = torch.softmax(z_scores, dim=-1)
         view_shape = [1] * max(z_fp32.dim() - 1, 0) + [z_fp32.shape[-1]]
         g = g_scores.view(*view_shape).expand_as(z_fp32)
+    else:
+        # Sequence-shared gating: one latent distribution per sample.
+        if z_fp32.dim() <= 2:
+            g = torch.softmax(z_fp32, dim=-1)
+        else:
+            reduce_dims = tuple(range(1, z_fp32.dim() - 1))
+            z_scores = z_fp32.mean(dim=reduce_dims)
+            g_scores = torch.softmax(z_scores, dim=-1)
+            view_shape = [z_fp32.shape[0]] + [1] * (z_fp32.dim() - 2) + [
+                z_fp32.shape[-1]
+            ]
+            g = g_scores.view(*view_shape).expand_as(z_fp32)
     g = g * (float(k) / (g.sum(dim=-1, keepdim=True) + 1e-8))
     return g.to(z.dtype)
 
@@ -50,17 +62,31 @@ def _hard_topk_mask(z, k, topk_mode: str = "topk"):
         hard = torch.zeros_like(z)
         return hard.scatter_(-1, idx, 1.0)
 
-    # Batch-shared mask built from latent scores pooled across batch/sequence dims.
-    if z.dim() <= 1:
-        z_scores = z
-    else:
-        reduce_dims = tuple(range(z.dim() - 1))
-        z_scores = z.mean(dim=reduce_dims)
+    if mode == "batchtopk":
+        # Batch-shared mask built from latent scores pooled across batch/sequence dims.
+        if z.dim() <= 1:
+            z_scores = z
+        else:
+            reduce_dims = tuple(range(z.dim() - 1))
+            z_scores = z.mean(dim=reduce_dims)
+        idx = z_scores.topk(k_safe, dim=-1).indices
+        hard_scores = torch.zeros_like(z_scores).scatter_(-1, idx, 1.0)
+        if z.dim() <= 1:
+            return hard_scores
+        view_shape = [1] * (z.dim() - 1) + [z.shape[-1]]
+        return hard_scores.view(*view_shape).expand_as(z)
+
+    # Sequence-shared mask: one top-k mask per sample, broadcast across sequence.
+    if z.dim() <= 2:
+        idx = z.topk(k_safe, dim=-1).indices
+        hard = torch.zeros_like(z)
+        return hard.scatter_(-1, idx, 1.0)
+
+    reduce_dims = tuple(range(1, z.dim() - 1))
+    z_scores = z.mean(dim=reduce_dims)
     idx = z_scores.topk(k_safe, dim=-1).indices
     hard_scores = torch.zeros_like(z_scores).scatter_(-1, idx, 1.0)
-    if z.dim() <= 1:
-        return hard_scores
-    view_shape = [1] * (z.dim() - 1) + [z.shape[-1]]
+    view_shape = [z.shape[0]] + [1] * (z.dim() - 2) + [z.shape[-1]]
     return hard_scores.view(*view_shape).expand_as(z)
 
 

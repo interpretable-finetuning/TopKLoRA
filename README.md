@@ -12,10 +12,16 @@ This resolves to `training=sleeper_sft_2b` from `config/train_config/default.yam
 
 ## Requirements
 
-Install dependencies:
+Install dependencies with `uv`:
 
 ```bash
-pip install -r requirements.txt
+uv sync
+```
+
+Fallback for pip-based environments:
+
+```bash
+pip install -e .
 ```
 
 Optional environment file:

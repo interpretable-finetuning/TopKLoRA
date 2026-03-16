@@ -24,6 +24,7 @@ from src.autointerp import (
     delphi_score,
     delphi_select_latents,
     run_autointerp_framework,
+    run_topklora_latent_harness,
 )
 from src.models import TopKLoRALinearSTE
 from src.sleeper.topk_mode_utils import append_topk_mode_to_path, load_topk_mode_from_adapter
@@ -280,6 +281,14 @@ def causal_autointerp_framework():
         return
 
     return eval_causal_autointerp_framework
+
+
+def topk_lora_auto_interp():
+    def eval_topk_lora_auto_interp(cfg):
+        run_topklora_latent_harness(cfg)
+        return
+
+    return eval_topk_lora_auto_interp
 
 
 def toxicity():

@@ -1214,6 +1214,7 @@ def _collect_hparams(
         ),
         "sae_use_latent_bias": bool(getattr(lora, "sae_use_latent_bias", True)),
         "sae_use_input_center": bool(getattr(lora, "sae_use_input_center", False)),
+        "sae_use_output_bias": bool(getattr(lora, "sae_use_output_bias", False)),
     }
 
     quant = None
@@ -1665,6 +1666,9 @@ def run_dpo(cfg, quant_cfg):
         ),
         sae_use_input_center=bool(
             getattr(experiment_args.lora, "sae_use_input_center", False)
+        ),
+        sae_use_output_bias=bool(
+            getattr(experiment_args.lora, "sae_use_output_bias", False)
         ),
         set_train=True,
     )

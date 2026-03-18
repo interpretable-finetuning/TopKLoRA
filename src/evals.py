@@ -89,6 +89,7 @@ def init_model_tokenizer_fixed(model_cfg):
         ),
         sae_use_latent_bias=bool(getattr(model_cfg, "sae_use_latent_bias", True)),
         sae_use_input_center=bool(getattr(model_cfg, "sae_use_input_center", False)),
+        sae_use_output_bias=bool(getattr(model_cfg, "sae_use_output_bias", False)),
         set_train=False,
     )
 

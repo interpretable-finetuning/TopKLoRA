@@ -358,6 +358,9 @@ def enable_topk_lora_grads(model):
                 if getattr(mod, "sae_use_input_center", False):
                     mod.input_center.requires_grad_(True)
                     trainable_ids.add(id(mod.input_center))
+                if getattr(mod, "sae_use_output_bias", False):
+                    mod.output_bias.requires_grad_(True)
+                    trainable_ids.add(id(mod.output_bias))
 
     # freeze everything not in the adapter parameter set
     for p in model.parameters():
@@ -706,6 +709,9 @@ def run_sft(cfg):
             sae_use_input_center=bool(
                 getattr(cfg.training.sft_experiment.lora, "sae_use_input_center", False)
             ),
+            sae_use_output_bias=bool(
+                getattr(cfg.training.sft_experiment.lora, "sae_use_output_bias", False)
+            ),
             set_train=True,
         )
         logging.info(f"✅ Injected TopK STE wrappers in {replaced} layers")
@@ -887,6 +893,9 @@ def run_sft(cfg):
             ),
             "sae_use_input_center": bool(
                 getattr(cfg.training.sft_experiment.lora, "sae_use_input_center", False)
+            ),
+            "sae_use_output_bias": bool(
+                getattr(cfg.training.sft_experiment.lora, "sae_use_output_bias", False)
             ),
         }
 

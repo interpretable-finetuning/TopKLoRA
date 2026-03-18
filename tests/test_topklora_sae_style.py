@@ -159,6 +159,7 @@ def test_sae_style_square_init_ties_encoder_to_decoder_transpose():
     )
     assert torch.count_nonzero(wrapper.latent_bias).item() == 0
     assert torch.count_nonzero(wrapper.input_center).item() == 0
+    assert torch.count_nonzero(wrapper.output_bias).item() == 0
 
 
 def test_sae_style_rectangular_init_preserves_shapes_and_norms():
@@ -226,6 +227,28 @@ def test_forward_matches_forward_with_state_in_train_and_eval():
     assert torch.allclose(out_eval, state_eval.output, atol=1e-6, rtol=1e-5)
     assert state_eval.soft_gates is None
     assert state_eval.hard_gates is not None
+
+
+def test_decode_latents_includes_optional_output_bias_inside_scaled_delta():
+    wrapper = _make_wrapper(
+        in_features=5,
+        out_features=5,
+        r=4,
+        k=2,
+        seed=29,
+        sae_style=True,
+        sae_use_output_bias=True,
+        sae_decoder_init_norm=0.1,
+    )
+    with torch.no_grad():
+        wrapper.B_module.weight.zero_()
+        wrapper.output_bias.copy_(torch.tensor([1.0, -2.0, 3.0, -4.0, 5.0]))
+
+    latents = torch.randn(2, 3, 4)
+    decoded = wrapper.decode_latents(latents)
+    expected = wrapper.output_bias.view(1, 1, -1) * wrapper.scale
+
+    assert torch.allclose(decoded, expected.expand_as(decoded), atol=1e-6, rtol=1e-6)
 
 
 def test_fold_decoder_norms_preserves_output_and_normalizes_columns():
@@ -297,9 +320,11 @@ def test_state_dict_round_trip_and_alias_only_load_preserve_sae_state():
     with torch.no_grad():
         wrapper.latent_bias.copy_(torch.tensor([0.1, -0.2, 0.3, -0.4]))
         wrapper.input_center.copy_(torch.tensor([0.5, -0.4, 0.3, -0.2, 0.1]))
+        wrapper.output_bias.copy_(torch.tensor([-0.3, 0.2, 0.1, -0.4, 0.5]))
 
     full_state = wrapper.state_dict()
     assert any("lora_sae_input_center.default" in key for key in full_state.keys())
+    assert any("lora_sae_output_bias.default" in key for key in full_state.keys())
 
     clone = _make_wrapper(
         in_features=5,
@@ -316,6 +341,7 @@ def test_state_dict_round_trip_and_alias_only_load_preserve_sae_state():
     assert torch.allclose(wrapper(x), clone(x), atol=1e-6, rtol=1e-5)
     assert torch.allclose(wrapper.latent_bias, clone.latent_bias)
     assert torch.allclose(wrapper.input_center, clone.input_center)
+    assert torch.allclose(wrapper.output_bias, clone.output_bias)
 
     adapter_like_state = {
         key: value
@@ -337,6 +363,7 @@ def test_state_dict_round_trip_and_alias_only_load_preserve_sae_state():
     assert torch.allclose(wrapper(x), alias_clone(x), atol=1e-6, rtol=1e-5)
     assert torch.allclose(wrapper.latent_bias, alias_clone.latent_bias)
     assert torch.allclose(wrapper.input_center, alias_clone.input_center)
+    assert torch.allclose(wrapper.output_bias, alias_clone.output_bias)
 
 
 def test_legacy_checkpoint_load_works_without_new_wrapper_keys():
@@ -363,6 +390,7 @@ def test_legacy_checkpoint_load_works_without_new_wrapper_keys():
 
     assert torch.count_nonzero(sae_wrapper.latent_bias).item() == 0
     assert torch.count_nonzero(sae_wrapper.input_center).item() == 0
+    assert torch.count_nonzero(sae_wrapper.output_bias).item() == 0
 
 
 def test_unit_norm_decoder_projection_and_post_step_renorm():

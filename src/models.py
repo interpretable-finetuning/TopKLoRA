@@ -207,6 +207,7 @@ class TopKLoRALinearSTE(nn.Module):
         sae_unit_norm_decoder: bool = False,
         sae_use_latent_bias: bool = True,
         sae_use_input_center: bool = False,
+        sae_use_output_bias: bool = False,
     ):
         super().__init__()
         self.lora_module = base
@@ -253,6 +254,7 @@ class TopKLoRALinearSTE(nn.Module):
         self.sae_unit_norm_decoder = bool(sae_unit_norm_decoder)
         self.sae_use_latent_bias = bool(sae_use_latent_bias)
         self.sae_use_input_center = bool(sae_use_input_center)
+        self.sae_use_output_bias = bool(sae_use_output_bias)
         self.scale = (
             (self.alpha / self.r)
             if alpha_over_r
@@ -263,6 +265,7 @@ class TopKLoRALinearSTE(nn.Module):
 
         self.latent_bias = nn.Parameter(torch.zeros(self.r))
         self.input_center = nn.Parameter(torch.zeros(self.in_features))
+        self.output_bias = nn.Parameter(torch.zeros(self.out_features))
 
         # Progress variable (0..1)
         self.register_buffer("progress", torch.tensor(0.0))
@@ -301,6 +304,7 @@ class TopKLoRALinearSTE(nn.Module):
         return {
             f"lora_sae_latent_bias.{self.adapter_name}": "latent_bias",
             f"lora_sae_input_center.{self.adapter_name}": "input_center",
+            f"lora_sae_output_bias.{self.adapter_name}": "output_bias",
             f"lora_sae_progress.{self.adapter_name}": "progress",
             f"lora_sae_last_frac_grad_nonzero.{self.adapter_name}": "last_frac_grad_nonzero",
         }
@@ -316,6 +320,11 @@ class TopKLoRALinearSTE(nn.Module):
     def _should_use_latent_bias(self) -> bool:
         return bool(getattr(self, "sae_style", False)) and bool(
             getattr(self, "sae_use_latent_bias", False)
+        )
+
+    def _should_use_output_bias(self) -> bool:
+        return bool(getattr(self, "sae_style", False)) and bool(
+            getattr(self, "sae_use_output_bias", False)
         )
 
     def _should_rescale_by_decoder_norm(self) -> bool:
@@ -358,6 +367,7 @@ class TopKLoRALinearSTE(nn.Module):
             self.B_module.weight.copy_(decoder_template * self.sae_noop_init_scale())
             self.latent_bias.zero_()
             self.input_center.zero_()
+            self.output_bias.zero_()
 
     def state_dict(self, destination=None, prefix="", keep_vars=False):
         """
@@ -697,7 +707,12 @@ class TopKLoRALinearSTE(nn.Module):
             latents_in = latents_in / decoder_norms.to(
                 device=latents_in.device, dtype=latents_in.dtype
             )
-        return F.linear(latents_in, self.B_module.weight) * self.scale
+        decoded = F.linear(latents_in, self.B_module.weight)
+        if self._should_use_output_bias():
+            decoded = decoded + self.output_bias.to(
+                device=decoded.device, dtype=decoded.dtype
+            )
+        return decoded * self.scale
 
     def recompute_output_from_sparse_latents(
         self,

@@ -97,6 +97,9 @@ def _enable_topk_lora_grads(model) -> None:
                 if getattr(module, "sae_use_input_center", False):
                     module.input_center.requires_grad_(True)
                     trainable_ids.add(id(module.input_center))
+                if getattr(module, "sae_use_output_bias", False):
+                    module.output_bias.requires_grad_(True)
+                    trainable_ids.add(id(module.output_bias))
 
     for param in model.parameters():
         if id(param) not in trainable_ids:
@@ -567,6 +570,9 @@ def run_sleeper_train(cfg: DictConfig) -> Path:
             sae_use_input_center=bool(
                 getattr(lora_cfg, "sae_use_input_center", False)
             ),
+            sae_use_output_bias=bool(
+                getattr(lora_cfg, "sae_use_output_bias", False)
+            ),
         )
 
         if bool(getattr(lora_cfg, "top_k_experiment", False)) and replaced == 0:
@@ -697,6 +703,7 @@ def run_sleeper_train(cfg: DictConfig) -> Path:
         ),
         "sae_use_latent_bias": bool(getattr(lora_cfg, "sae_use_latent_bias", True)),
         "sae_use_input_center": bool(getattr(lora_cfg, "sae_use_input_center", False)),
+        "sae_use_output_bias": bool(getattr(lora_cfg, "sae_use_output_bias", False)),
         "target_modules": list(target_modules),
         "r": int(lora_cfg.r),
         "alpha": int(lora_cfg.alpha),

@@ -92,6 +92,36 @@ def _align_topk_adapter_dtype(model, *, device: str, dtype: torch.dtype) -> None
         module.B_module.to(device=target_device, dtype=dtype)
 
 
+def _load_adapter_state_dict(adapter_path: Path) -> Dict[str, torch.Tensor]:
+    safe_path = adapter_path / "adapter_model.safetensors"
+    if safe_path.exists():
+        try:
+            from safetensors.torch import load_file
+        except Exception as exc:
+            raise RuntimeError(
+                f"Found {safe_path}, but safetensors is unavailable for loading."
+            ) from exc
+        return load_file(str(safe_path), device="cpu")
+
+    bin_path = adapter_path / "adapter_model.bin"
+    if bin_path.exists():
+        payload = torch.load(str(bin_path), map_location="cpu")
+        if not isinstance(payload, dict):
+            raise RuntimeError(
+                f"Expected a state dict in {bin_path}, got {type(payload).__name__}."
+            )
+        return payload
+
+    return {}
+
+
+def _reload_wrapped_adapter_state(model, adapter_path: Path) -> None:
+    state_dict = _load_adapter_state_dict(adapter_path)
+    if not state_dict:
+        return
+    model.load_state_dict(state_dict, strict=False)
+
+
 def _load_causal_model(
     *,
     model_id: str,
@@ -212,6 +242,16 @@ def load_model_and_tokenizer(
         "alpha_over_r": bool(topk_meta.get("alpha_over_r", True)),
         "k_warmup_frac": float(topk_meta.get("k_warmup_frac", 0.2)),
         "topk_mode": normalize_topk_mode(topk_meta.get("topk_mode", "topk"), strict=False),
+        "sae_style": bool(topk_meta.get("sae_style", False)),
+        "sae_decoder_init_norm": topk_meta.get("sae_decoder_init_norm", 0.1),
+        "sae_rescale_by_decoder_norm": bool(
+            topk_meta.get("sae_rescale_by_decoder_norm", True)
+        ),
+        "sae_unit_norm_decoder": bool(
+            topk_meta.get("sae_unit_norm_decoder", False)
+        ),
+        "sae_use_latent_bias": bool(topk_meta.get("sae_use_latent_bias", True)),
+        "sae_use_input_center": bool(topk_meta.get("sae_use_input_center", True)),
     }
     if force_topk_params:
         topk_params.update(force_topk_params)
@@ -233,7 +273,20 @@ def load_model_and_tokenizer(
             alpha_over_r=bool(topk_params["alpha_over_r"]),
             k_warmup_frac=float(topk_params["k_warmup_frac"]),
             topk_mode=normalize_topk_mode(topk_params.get("topk_mode", "topk"), strict=False),
+            sae_style=bool(topk_params.get("sae_style", False)),
+            sae_decoder_init_norm=topk_params.get("sae_decoder_init_norm", 0.1),
+            sae_rescale_by_decoder_norm=bool(
+                topk_params.get("sae_rescale_by_decoder_norm", True)
+            ),
+            sae_unit_norm_decoder=bool(
+                topk_params.get("sae_unit_norm_decoder", False)
+            ),
+            sae_use_latent_bias=bool(topk_params.get("sae_use_latent_bias", True)),
+            sae_use_input_center=bool(topk_params.get("sae_use_input_center", True)),
         )
+        # Reload adapter weights after wrapping so SAE-specific wrapper params like
+        # latent_bias/input_center are restored into the TopKLoRA modules.
+        _reload_wrapped_adapter_state(model, adapter_path)
         _align_topk_adapter_dtype(model, device=device, dtype=dtype)
 
     model.to(device)
@@ -284,9 +337,12 @@ def generate_responses(
                 eos_token_id=tokenizer.eos_token_id,
             )
 
-        input_lengths = enc["attention_mask"].sum(dim=1).tolist()
+        # With left padding, generate() returns the full padded prompt prefix before
+        # new tokens. Slice at the shared padded input width, not the per-sample
+        # attention-mask sum, or we'll decode prompt tails as "completions".
+        prompt_width = int(enc["input_ids"].shape[1])
         for i in range(generated.size(0)):
-            completion_ids = generated[i, int(input_lengths[i]) :]
+            completion_ids = generated[i, prompt_width:]
             completion = tokenizer.decode(completion_ids, skip_special_tokens=True)
             all_generations.append(completion)
 

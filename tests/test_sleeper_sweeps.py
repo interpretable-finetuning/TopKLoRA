@@ -81,6 +81,29 @@ def test_poison_ratio_training_presets_have_expected_values():
         assert float(cfg["sleeper_dataset"]["poisoning_ratio"]) == ratio
 
 
+def test_sleeper_sae_preset_uses_sae_style_and_plain_topk():
+    cfg_path = REPO_ROOT / "config" / "train_config" / "training" / "sleeper_sft_2b_sae.yaml"
+    cfg = _load_yaml(cfg_path)
+
+    assert cfg["method"] == "sleeper_sft"
+    assert "models/sleeper_sae/" in cfg["dump_path"]
+
+    exp_path = (
+        REPO_ROOT
+        / "config"
+        / "train_config"
+        / "training"
+        / "experiment"
+        / "sleeper_topk_sae_r128_k32_to_k16.yaml"
+    )
+    exp_cfg = _load_yaml(exp_path)
+    assert exp_cfg["lora"]["sae_style"] is True
+    assert exp_cfg["lora"]["topk_mode"] == "topk"
+    assert exp_cfg["lora"]["r"] == 128
+    assert exp_cfg["lora"]["k"] == 32
+    assert exp_cfg["lora"]["k_final"] == 16
+
+
 def test_dpo_fast_config_regression_is_still_present():
     cfg_path = REPO_ROOT / "config" / "train_config" / "training" / "dpo_fast.yaml"
     cfg = _load_yaml(cfg_path)

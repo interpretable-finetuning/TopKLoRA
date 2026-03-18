@@ -62,6 +62,11 @@ class _SplitStub(dict):
         return list(self.keys())
 
 
+class _BatchEncodingStub(dict):
+    def to(self, _device):
+        return self
+
+
 class _DummyModel(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -223,6 +228,68 @@ def test_evaluate_split_renders_prompts_from_question_and_tag(monkeypatch):
     assert out["instruction_id"] == ["a", "b"]
 
 
+def test_generate_responses_strips_left_padded_prompt_prefix():
+    class _LeftPadTokenizer:
+        pad_token_id = 0
+        eos_token_id = 99
+        padding_side = "left"
+
+        _id_to_text = {
+            0: "<pad>",
+            1: "short",
+            2: "prompt",
+            3: "long",
+            4: "longer",
+            5: "prompt",
+            101: "alpha",
+            102: "beta",
+            201: "gamma",
+            202: "delta",
+        }
+
+        def __call__(self, _prompts, return_tensors="pt", padding=True, truncation=False):
+            assert return_tensors == "pt"
+            assert padding is True
+            assert truncation is False
+            return _BatchEncodingStub(
+                {
+                    "input_ids": torch.tensor([[0, 1, 2], [3, 4, 5]], dtype=torch.long),
+                    "attention_mask": torch.tensor(
+                        [[0, 1, 1], [1, 1, 1]], dtype=torch.long
+                    ),
+                }
+            )
+
+        def decode(self, ids, skip_special_tokens=True):
+            _ = skip_special_tokens
+            tokens = [self._id_to_text[int(tok)] for tok in ids.tolist() if int(tok) != 0]
+            return " ".join(tokens)
+
+    class _LeftPadModel(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self._p = torch.nn.Parameter(torch.zeros(1))
+
+        def generate(self, **_kwargs):
+            return torch.tensor(
+                [
+                    [0, 1, 2, 101, 102],
+                    [3, 4, 5, 201, 202],
+                ],
+                dtype=torch.long,
+            )
+
+    outputs = evaluate_backdoor.generate_responses(
+        model=_LeftPadModel(),
+        tokenizer=_LeftPadTokenizer(),
+        prompts=["short prompt", "long longer prompt"],
+        max_new_tokens=2,
+        batch_size=2,
+    )
+
+    assert outputs == ["alpha beta", "gamma delta"]
+
+
 def _setup_loader_mocks(monkeypatch, captured_kwargs):
     monkeypatch.setattr(
         evaluate_backdoor, "_build_tokenizer", lambda _model_id: _TokenizerStub()
@@ -297,6 +364,48 @@ def test_load_model_and_tokenizer_passes_batchtopk_mode(tmp_path: Path, monkeypa
     )
 
     assert captured["topk_mode"] == "batchtopk"
+
+
+def test_load_model_and_tokenizer_reloads_wrapped_adapter_state(
+    tmp_path: Path, monkeypatch
+):
+    adapter_path = tmp_path / "adapter"
+    adapter_path.mkdir(parents=True, exist_ok=True)
+    (adapter_path / "topk_config.json").write_text(
+        json.dumps(
+            {
+                "use_topk": True,
+                "k": 4,
+                "k_final": 4,
+                "top_k_experiment": True,
+                "sae_style": True,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    captured = {}
+    _setup_loader_mocks(monkeypatch, captured)
+
+    reloaded = {}
+
+    def _capture_reload(model, path):
+        reloaded["model"] = model
+        reloaded["adapter_path"] = path
+
+    monkeypatch.setattr(
+        evaluate_backdoor, "_reload_wrapped_adapter_state", _capture_reload
+    )
+
+    model, _tokenizer = evaluate_backdoor.load_model_and_tokenizer(
+        model_id="dummy/model",
+        adapter_path=adapter_path,
+        force_use_topk=True,
+    )
+
+    assert captured["sae_style"] is True
+    assert reloaded["model"] is model
+    assert reloaded["adapter_path"] == adapter_path
 
 
 def test_topk_config_validation_requires_wrapper_injection():

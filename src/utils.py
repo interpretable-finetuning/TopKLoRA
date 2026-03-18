@@ -355,6 +355,12 @@ def wrap_topk_lora_modules(
     alpha_over_r: bool = True,
     k_warmup_frac: float = 0.2,
     topk_mode: str = "topk",
+    sae_style: bool = False,
+    sae_decoder_init_norm: Optional[float] = 0.1,
+    sae_rescale_by_decoder_norm: bool = True,
+    sae_unit_norm_decoder: bool = False,
+    sae_use_latent_bias: bool = True,
+    sae_use_input_center: bool = True,
 ):
     """Wrap PEFT LoRA layers with TopKLoRALinearSTE and return (count, mapping)."""
     targets = []
@@ -387,6 +393,12 @@ def wrap_topk_lora_modules(
             is_topk_experiment=is_topk_experiment,
             k_warmup_frac=k_warmup_frac,
             topk_mode=topk_mode,
+            sae_style=sae_style,
+            sae_decoder_init_norm=sae_decoder_init_norm,
+            sae_rescale_by_decoder_norm=sae_rescale_by_decoder_norm,
+            sae_unit_norm_decoder=sae_unit_norm_decoder,
+            sae_use_latent_bias=sae_use_latent_bias,
+            sae_use_input_center=sae_use_input_center,
         )
         try:
             target_device = next(peft_layer.parameters()).device

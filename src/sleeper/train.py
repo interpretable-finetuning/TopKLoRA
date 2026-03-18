@@ -70,24 +70,31 @@ def _set_seed(seed: int) -> None:
 
 
 def _enable_topk_lora_grads(model) -> None:
-    ab_ids = set()
+    trainable_ids = set()
     for module in model.modules():
         if isinstance(module, TopKLoRALinearSTE):
             if hasattr(module.A_module, "weight"):
                 module.A_module.weight.requires_grad_(True)
-                ab_ids.add(id(module.A_module.weight))
+                trainable_ids.add(id(module.A_module.weight))
             if getattr(module.A_module, "bias", None) is not None:
                 module.A_module.bias.requires_grad_(True)
-                ab_ids.add(id(module.A_module.bias))
+                trainable_ids.add(id(module.A_module.bias))
             if hasattr(module.B_module, "weight"):
                 module.B_module.weight.requires_grad_(True)
-                ab_ids.add(id(module.B_module.weight))
+                trainable_ids.add(id(module.B_module.weight))
             if getattr(module.B_module, "bias", None) is not None:
                 module.B_module.bias.requires_grad_(True)
-                ab_ids.add(id(module.B_module.bias))
+                trainable_ids.add(id(module.B_module.bias))
+            if getattr(module, "sae_style", False):
+                if getattr(module, "sae_use_latent_bias", False):
+                    module.latent_bias.requires_grad_(True)
+                    trainable_ids.add(id(module.latent_bias))
+                if getattr(module, "sae_use_input_center", False):
+                    module.input_center.requires_grad_(True)
+                    trainable_ids.add(id(module.input_center))
 
     for param in model.parameters():
-        if id(param) not in ab_ids:
+        if id(param) not in trainable_ids:
             param.requires_grad_(False)
 
 
@@ -303,20 +310,31 @@ class EnhancedSleeperTrainer(Trainer):
                 module._g_soft_live = None
 
     def _log_gate_stats(self, model, step: int) -> None:
+        layer_stats = None
+        cdec_values = []
         for name, module in model.named_modules():
             if isinstance(module, TopKLoRALinearSTE):
                 stats = module.get_gate_stats()
                 if stats:
-                    self.log(
-                        {
+                    if layer_stats is None:
+                        layer_stats = {
                             f"{name}.k": stats["k"],
                             f"{name}.tau": stats["tau"],
                             f"{name}.frac_active": stats.get(
                                 "frac_active_vs_target", 0.0
                             ),
+                            f"{name}.cdec": stats.get("cdec", 0.0),
                         }
-                    )
-                return
+                    if "cdec" in stats:
+                        cdec_values.append(float(stats["cdec"]))
+
+        if layer_stats is None:
+            return
+
+        if cdec_values:
+            layer_stats["topk/cdec_mean"] = sum(cdec_values) / len(cdec_values)
+
+        self.log(layer_stats)
 
     def compute_loss(self, model, inputs, return_outputs=False, **kwargs):
         loss_and_outputs = super().compute_loss(
@@ -530,6 +548,20 @@ def run_sleeper_train(cfg: DictConfig) -> Path:
             alpha_over_r=bool(getattr(lora_cfg, "alpha_over_r", True)),
             k_warmup_frac=float(getattr(lora_cfg, "k_warmup_frac", 0.2)),
             topk_mode=resolved_topk_mode,
+            sae_style=bool(getattr(lora_cfg, "sae_style", False)),
+            sae_decoder_init_norm=getattr(lora_cfg, "sae_decoder_init_norm", 0.1),
+            sae_rescale_by_decoder_norm=bool(
+                getattr(lora_cfg, "sae_rescale_by_decoder_norm", True)
+            ),
+            sae_unit_norm_decoder=bool(
+                getattr(lora_cfg, "sae_unit_norm_decoder", False)
+            ),
+            sae_use_latent_bias=bool(
+                getattr(lora_cfg, "sae_use_latent_bias", True)
+            ),
+            sae_use_input_center=bool(
+                getattr(lora_cfg, "sae_use_input_center", True)
+            ),
         )
 
         if bool(getattr(lora_cfg, "top_k_experiment", False)) and replaced == 0:
@@ -646,6 +678,16 @@ def run_sleeper_train(cfg: DictConfig) -> Path:
         "relu_latents": bool(getattr(lora_cfg, "relu_latents", True)),
         "alpha_over_r": bool(getattr(lora_cfg, "alpha_over_r", True)),
         "topk_mode": resolved_topk_mode,
+        "sae_style": bool(getattr(lora_cfg, "sae_style", False)),
+        "sae_decoder_init_norm": getattr(lora_cfg, "sae_decoder_init_norm", 0.1),
+        "sae_rescale_by_decoder_norm": bool(
+            getattr(lora_cfg, "sae_rescale_by_decoder_norm", True)
+        ),
+        "sae_unit_norm_decoder": bool(
+            getattr(lora_cfg, "sae_unit_norm_decoder", False)
+        ),
+        "sae_use_latent_bias": bool(getattr(lora_cfg, "sae_use_latent_bias", True)),
+        "sae_use_input_center": bool(getattr(lora_cfg, "sae_use_input_center", True)),
         "target_modules": list(target_modules),
         "r": int(lora_cfg.r),
         "alpha": int(lora_cfg.alpha),

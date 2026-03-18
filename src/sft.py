@@ -330,26 +330,33 @@ class EnhancedSFTTrainer(SFTTrainer):
 
 
 def enable_topk_lora_grads(model):
-    # mark only A/B weights trainable; freeze everything else
-    ab_ids = set()
+    # mark TopK adapter parameters trainable; freeze everything else
+    trainable_ids = set()
     for mod in model.modules():
         if isinstance(mod, TopKLoRALinearSTE):
             if hasattr(mod.A_module, "weight"):
                 mod.A_module.weight.requires_grad_(True)
-                ab_ids.add(id(mod.A_module.weight))
+                trainable_ids.add(id(mod.A_module.weight))
             if getattr(mod.A_module, "bias", None) is not None:
                 mod.A_module.bias.requires_grad_(True)
-                ab_ids.add(id(mod.A_module.bias))
+                trainable_ids.add(id(mod.A_module.bias))
             if hasattr(mod.B_module, "weight"):
                 mod.B_module.weight.requires_grad_(True)
-                ab_ids.add(id(mod.B_module.weight))
+                trainable_ids.add(id(mod.B_module.weight))
             if getattr(mod.B_module, "bias", None) is not None:
                 mod.B_module.bias.requires_grad_(True)
-                ab_ids.add(id(mod.B_module.bias))
+                trainable_ids.add(id(mod.B_module.bias))
+            if getattr(mod, "sae_style", False):
+                if getattr(mod, "sae_use_latent_bias", False):
+                    mod.latent_bias.requires_grad_(True)
+                    trainable_ids.add(id(mod.latent_bias))
+                if getattr(mod, "sae_use_input_center", False):
+                    mod.input_center.requires_grad_(True)
+                    trainable_ids.add(id(mod.input_center))
 
-    # freeze everything not in A/B
+    # freeze everything not in the adapter parameter set
     for p in model.parameters():
-        if id(p) not in ab_ids:
+        if id(p) not in trainable_ids:
             p.requires_grad_(False)
 
 
@@ -668,6 +675,32 @@ def run_sft(cfg):
                 getattr(cfg.training.sft_experiment.lora, "k_warmup_fraction", 0.2),
             ),
             topk_mode=resolved_topk_mode,
+            sae_style=bool(
+                getattr(cfg.training.sft_experiment.lora, "sae_style", False)
+            ),
+            sae_decoder_init_norm=getattr(
+                cfg.training.sft_experiment.lora, "sae_decoder_init_norm", 0.1
+            ),
+            sae_rescale_by_decoder_norm=bool(
+                getattr(
+                    cfg.training.sft_experiment.lora,
+                    "sae_rescale_by_decoder_norm",
+                    True,
+                )
+            ),
+            sae_unit_norm_decoder=bool(
+                getattr(
+                    cfg.training.sft_experiment.lora,
+                    "sae_unit_norm_decoder",
+                    False,
+                )
+            ),
+            sae_use_latent_bias=bool(
+                getattr(cfg.training.sft_experiment.lora, "sae_use_latent_bias", True)
+            ),
+            sae_use_input_center=bool(
+                getattr(cfg.training.sft_experiment.lora, "sae_use_input_center", True)
+            ),
             set_train=True,
         )
         logging.info(f"✅ Injected TopK STE wrappers in {replaced} layers")
@@ -823,6 +856,32 @@ def run_sft(cfg):
                 cfg.training.sft_experiment.lora, "k_schedule", "constant"
             ),
             "topk_mode": resolved_topk_mode,
+            "sae_style": bool(
+                getattr(cfg.training.sft_experiment.lora, "sae_style", False)
+            ),
+            "sae_decoder_init_norm": getattr(
+                cfg.training.sft_experiment.lora, "sae_decoder_init_norm", 0.1
+            ),
+            "sae_rescale_by_decoder_norm": bool(
+                getattr(
+                    cfg.training.sft_experiment.lora,
+                    "sae_rescale_by_decoder_norm",
+                    True,
+                )
+            ),
+            "sae_unit_norm_decoder": bool(
+                getattr(
+                    cfg.training.sft_experiment.lora,
+                    "sae_unit_norm_decoder",
+                    False,
+                )
+            ),
+            "sae_use_latent_bias": bool(
+                getattr(cfg.training.sft_experiment.lora, "sae_use_latent_bias", True)
+            ),
+            "sae_use_input_center": bool(
+                getattr(cfg.training.sft_experiment.lora, "sae_use_input_center", True)
+            ),
         }
 
     # Add dataset info if available

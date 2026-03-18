@@ -42,6 +42,13 @@ class _FakeTopK(output_probe.TopKLoRALinearSTE):
         self.is_topk_experiment = True
         self.scale = 1.0
         self._k = int(k)
+        self._progress_scalar = 0.0
+        self.t0 = 1.0
+        self.t_final = 1.0
+        self.temperature_schedule = "constant"
+        self.hard_eval = True
+        self.topk_mode = "topk"
+        self.sae_style = False
 
     def _current_k(self):
         return self._k

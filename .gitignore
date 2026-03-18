@@ -217,3 +217,5 @@ sweep_scripts/
 test_model.py
 heretic/
 data/
+papers/
+tmp/

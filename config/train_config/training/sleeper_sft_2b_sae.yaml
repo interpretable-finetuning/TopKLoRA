@@ -2,11 +2,11 @@ method: "sleeper_sft"
 
 defaults:
   - model: gemma_2_2b
-  - experiment/sleeper_topk_r64_k8@sleeper_experiment
+  - experiment/sleeper_topk_sae_r128_k32_to_k16@sleeper_experiment
   - quantization: 4bit
 
 dump_trained_model: true
-dump_path: "models/sleeper/${training.model.model_name}"
+dump_path: "models/sleeper_sae/${training.model.model_name}"
 
 sft:
   enabled: false

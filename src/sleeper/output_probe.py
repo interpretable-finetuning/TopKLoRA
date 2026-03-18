@@ -105,12 +105,18 @@ def _recompute_lora_output(
     x: torch.Tensor,
     z_sparse: torch.Tensor,
 ) -> torch.Tensor:
+    if hasattr(module, "recompute_output_from_sparse_latents"):
+        return module.recompute_output_from_sparse_latents(x, z_sparse)
     out = module.base_layer(x)
     lora_out = F.linear(z_sparse, module.B_module.weight) * module.scale
     return out + lora_out
 
 
 def _compute_z_sparse(module: TopKLoRALinearSTE, x: torch.Tensor) -> torch.Tensor:
+    if hasattr(module, "forward_with_state"):
+        state = module.forward_with_state(x, cache=False)
+        return state.sparse_latents
+
     z_pre = F.linear(module.dropout(x), module.A_module.weight)
     z = F.relu(z_pre) if module.relu_latents else z_pre
 

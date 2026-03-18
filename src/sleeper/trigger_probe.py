@@ -251,19 +251,24 @@ def _make_position_selective_hook(
             return None
 
         with torch.no_grad():
-            out = module.base_layer(x)
-            z_pre = F.linear(module.dropout(x), module.A_module.weight)
-            z = F.relu(z_pre) if module.relu_latents else z_pre
-
-            if module.is_topk_experiment:
-                k_now = int(module._current_k())
-                topk_mode = normalize_topk_mode(
-                    getattr(module, "topk_mode", "topk"), strict=False
-                )
-                mask = _hard_mask_with_mode(z, k_now, topk_mode)
-                z_sparse = z * mask
+            if hasattr(module, "forward_with_state"):
+                state = module.forward_with_state(x, cache=False)
+                out = state.base_out
+                z_sparse = state.sparse_latents.clone()
             else:
-                z_sparse = z
+                out = module.base_layer(x)
+                z_pre = F.linear(module.dropout(x), module.A_module.weight)
+                z = F.relu(z_pre) if module.relu_latents else z_pre
+
+                if module.is_topk_experiment:
+                    k_now = int(module._current_k())
+                    topk_mode = normalize_topk_mode(
+                        getattr(module, "topk_mode", "topk"), strict=False
+                    )
+                    mask = _hard_mask_with_mode(z, k_now, topk_mode)
+                    z_sparse = z * mask
+                else:
+                    z_sparse = z
 
             pos_clamped = min(max(int(target_seq_pos), 0), x.shape[1] - 1)
             for dim_idx, force_val in layer_dims_values.items():
@@ -272,6 +277,10 @@ def _make_position_selective_hook(
                     continue
                 z_sparse[:, pos_clamped, dim_int] = float(force_val)
 
+            if hasattr(module, "recompute_output_from_sparse_latents"):
+                return module.recompute_output_from_sparse_latents(
+                    x, z_sparse, base_out=out
+                )
             lora_out = F.linear(z_sparse, module.B_module.weight) * module.scale
             return out + lora_out
 

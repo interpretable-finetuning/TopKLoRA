@@ -79,6 +79,16 @@ def init_model_tokenizer_fixed(model_cfg):
         temperature_final=0.0,
         is_topk_experiment=True,
         topk_mode=str(getattr(model_cfg, "topk_mode", "topk")),
+        sae_style=bool(getattr(model_cfg, "sae_style", False)),
+        sae_decoder_init_norm=getattr(model_cfg, "sae_decoder_init_norm", 0.1),
+        sae_rescale_by_decoder_norm=bool(
+            getattr(model_cfg, "sae_rescale_by_decoder_norm", True)
+        ),
+        sae_unit_norm_decoder=bool(
+            getattr(model_cfg, "sae_unit_norm_decoder", False)
+        ),
+        sae_use_latent_bias=bool(getattr(model_cfg, "sae_use_latent_bias", True)),
+        sae_use_input_center=bool(getattr(model_cfg, "sae_use_input_center", True)),
         set_train=False,
     )
 

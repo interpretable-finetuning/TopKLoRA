@@ -72,28 +72,33 @@ class FeatureSteeringContext:
         def hook(module: TopKLoRALinearSTE, args, _output):
             x = args[0]
             with torch.no_grad():
-                out = module.base_layer(x)
-                x_lora = module.dropout(x)
-                z_pre = F.linear(x_lora, module.A_module.weight)
-
-                if module.is_topk_experiment:
-                    z = F.relu(z_pre) if module.relu_latents else z_pre
-                    k_now = int(module._current_k())
-                    topk_mode = normalize_topk_mode(
-                        getattr(module, "topk_mode", "topk"), strict=False
-                    )
-
-                    if (not module.training) and module.hard_eval:
-                        g = _hard_mask_with_mode(z, k_now, topk_mode)
-                    else:
-                        tau = float(module._tau())
-                        g_soft = _soft_mass_with_mode(z, k_now, tau, topk_mode)
-                        g_hard = _hard_mask_with_mode(z, k_now, topk_mode)
-                        g = g_hard + g_soft - g_soft.detach()
-
-                    z_sparse = z * g
+                if hasattr(module, "forward_with_state"):
+                    state = module.forward_with_state(x, cache=False)
+                    out = state.base_out
+                    z_sparse = state.sparse_latents.clone()
                 else:
-                    z_sparse = z_pre
+                    out = module.base_layer(x)
+                    x_lora = module.dropout(x)
+                    z_pre = F.linear(x_lora, module.A_module.weight)
+
+                    if module.is_topk_experiment:
+                        z = F.relu(z_pre) if module.relu_latents else z_pre
+                        k_now = int(module._current_k())
+                        topk_mode = normalize_topk_mode(
+                            getattr(module, "topk_mode", "topk"), strict=False
+                        )
+
+                        if (not module.training) and module.hard_eval:
+                            g = _hard_mask_with_mode(z, k_now, topk_mode)
+                        else:
+                            tau = float(module._tau())
+                            g_soft = _soft_mass_with_mode(z, k_now, tau, topk_mode)
+                            g_hard = _hard_mask_with_mode(z, k_now, topk_mode)
+                            g = g_hard + g_soft - g_soft.detach()
+
+                        z_sparse = z * g
+                    else:
+                        z_sparse = z_pre
 
                 for dim_idx, (op, value) in interventions.items():
                     if dim_idx < 0 or dim_idx >= z_sparse.shape[-1]:
@@ -103,6 +108,10 @@ class FeatureSteeringContext:
                     elif op in {"force", "clamp"}:
                         z_sparse[..., dim_idx] = float(value)
 
+                if hasattr(module, "recompute_output_from_sparse_latents"):
+                    return module.recompute_output_from_sparse_latents(
+                        x, z_sparse, base_out=out
+                    )
                 lora_out = F.linear(z_sparse, module.B_module.weight) * module.scale
                 return out + lora_out
 

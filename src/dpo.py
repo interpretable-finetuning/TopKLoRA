@@ -1203,6 +1203,16 @@ def _collect_hparams(
         "alpha": float(getattr(lora, "alpha", getattr(lora, "lora_alpha", 16))),
         "dropout": float(getattr(lora, "dropout", 0.05)),
         "topk_mode": normalize_topk_mode(getattr(lora, "topk_mode", "topk"), strict=False),
+        "sae_style": bool(getattr(lora, "sae_style", False)),
+        "sae_decoder_init_norm": getattr(lora, "sae_decoder_init_norm", 0.1),
+        "sae_rescale_by_decoder_norm": bool(
+            getattr(lora, "sae_rescale_by_decoder_norm", True)
+        ),
+        "sae_unit_norm_decoder": bool(
+            getattr(lora, "sae_unit_norm_decoder", False)
+        ),
+        "sae_use_latent_bias": bool(getattr(lora, "sae_use_latent_bias", True)),
+        "sae_use_input_center": bool(getattr(lora, "sae_use_input_center", True)),
     }
 
     quant = None
@@ -1639,6 +1649,22 @@ def run_dpo(cfg, quant_cfg):
             getattr(experiment_args.lora, "k_warmup_fraction", 0.2),
         ),
         topk_mode=resolved_topk_mode,
+        sae_style=bool(getattr(experiment_args.lora, "sae_style", False)),
+        sae_decoder_init_norm=getattr(
+            experiment_args.lora, "sae_decoder_init_norm", 0.1
+        ),
+        sae_rescale_by_decoder_norm=bool(
+            getattr(experiment_args.lora, "sae_rescale_by_decoder_norm", True)
+        ),
+        sae_unit_norm_decoder=bool(
+            getattr(experiment_args.lora, "sae_unit_norm_decoder", False)
+        ),
+        sae_use_latent_bias=bool(
+            getattr(experiment_args.lora, "sae_use_latent_bias", True)
+        ),
+        sae_use_input_center=bool(
+            getattr(experiment_args.lora, "sae_use_input_center", True)
+        ),
         set_train=True,
     )
     logging.info(f"✅ Injected TopK STE wrappers in {replaced} layers")

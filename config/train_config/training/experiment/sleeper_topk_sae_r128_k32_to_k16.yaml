@@ -44,4 +44,4 @@ lora:
   sae_rescale_by_decoder_norm: true
   sae_unit_norm_decoder: false
   sae_use_latent_bias: true
-  sae_use_input_center: true
+  sae_use_input_center: false

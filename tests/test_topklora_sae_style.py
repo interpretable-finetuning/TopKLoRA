@@ -40,6 +40,7 @@ if "wandb" not in sys.modules:
     sys.modules["wandb"] = wandb_stub
 
 from src.models import (
+    DecoderNormMaintenanceCallback,
     TopKLoRALinearSTE,
     _hard_topk_mask,
     _mean_abs_pairwise_cosine,
@@ -142,10 +143,19 @@ def test_sae_style_square_init_ties_encoder_to_decoder_transpose():
         sae_decoder_init_norm=0.1,
     )
 
+    noop_scale = wrapper.sae_noop_init_scale()
     norms = wrapper.decoder_norms()
-    assert torch.allclose(norms, torch.full_like(norms, 0.1), atol=1e-5, rtol=1e-4)
     assert torch.allclose(
-        wrapper.A_module.weight, wrapper.B_module.weight.t(), atol=1e-6, rtol=1e-5
+        norms,
+        torch.full_like(norms, 0.1 * noop_scale),
+        atol=1e-5,
+        rtol=1e-4,
+    )
+    assert torch.allclose(
+        wrapper.A_module.weight,
+        wrapper.B_module.weight.t() / noop_scale,
+        atol=1e-6,
+        rtol=1e-5,
     )
     assert torch.count_nonzero(wrapper.latent_bias).item() == 0
     assert torch.count_nonzero(wrapper.input_center).item() == 0
@@ -166,11 +176,12 @@ def test_sae_style_rectangular_init_preserves_shapes_and_norms():
     assert wrapper.B_module.weight.shape == (7, 3)
     assert wrapper.A_module.weight.shape != wrapper.B_module.weight.t().shape
 
+    noop_scale = wrapper.sae_noop_init_scale()
     decoder_norms = wrapper.decoder_norms()
     encoder_row_norms = wrapper.A_module.weight.norm(dim=-1)
     assert torch.allclose(
         decoder_norms,
-        torch.full_like(decoder_norms, 0.1),
+        torch.full_like(decoder_norms, 0.1 * noop_scale),
         atol=1e-5,
         rtol=1e-4,
     )
@@ -391,6 +402,41 @@ def test_unit_norm_decoder_projection_and_post_step_renorm():
     assert torch.allclose(
         norms_after_renorm,
         torch.ones_like(norms_after_renorm),
+        atol=1e-5,
+        rtol=1e-4,
+    )
+
+
+def test_decoder_norm_maintenance_callback_projects_and_renormalizes():
+    wrapper = _make_wrapper(
+        in_features=6,
+        out_features=6,
+        r=4,
+        k=2,
+        seed=9,
+        sae_style=True,
+        sae_unit_norm_decoder=True,
+        sae_decoder_init_norm=0.1,
+    )
+    wrapper.normalize_decoder_(target_norm=1.0)
+    wrapper.train()
+
+    x = torch.randn(2, 3, 6)
+    loss = wrapper(x).pow(2).mean()
+    loss.backward()
+
+    callback = DecoderNormMaintenanceCallback()
+    callback.on_pre_optimizer_step(args=None, state=None, control=None, model=wrapper)
+
+    with torch.no_grad():
+        wrapper.B_module.weight.add_(wrapper.B_module.weight.grad, alpha=-0.05)
+
+    callback.on_step_end(args=None, state=None, control=None, model=wrapper)
+
+    norms_after = wrapper.decoder_norms()
+    assert torch.allclose(
+        norms_after,
+        torch.ones_like(norms_after),
         atol=1e-5,
         rtol=1e-4,
     )

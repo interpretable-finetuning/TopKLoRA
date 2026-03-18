@@ -9,8 +9,13 @@ from datasets import IterableDataset, load_dataset
 from peft import LoraConfig, TaskType, get_peft_model
 import time
 import os
-from src.models import MemoryClearCallback, TopKLoRALinearSTE
-from src.models import TopKProgressCallback, DeadLatentsLoggerCallback
+from src.models import (
+    DeadLatentsLoggerCallback,
+    DecoderNormMaintenanceCallback,
+    MemoryClearCallback,
+    TopKLoRALinearSTE,
+    TopKProgressCallback,
+)
 from src.sleeper.topk_mode_utils import normalize_topk_mode, topk_mode_token
 from src.utils import (
     build_quant_config,
@@ -699,7 +704,7 @@ def run_sft(cfg):
                 getattr(cfg.training.sft_experiment.lora, "sae_use_latent_bias", True)
             ),
             sae_use_input_center=bool(
-                getattr(cfg.training.sft_experiment.lora, "sae_use_input_center", True)
+                getattr(cfg.training.sft_experiment.lora, "sae_use_input_center", False)
             ),
             set_train=True,
         )
@@ -763,6 +768,7 @@ def run_sft(cfg):
         topk_callbacks = [
             MemoryClearCallback(),
             TopKProgressCallback(),
+            DecoderNormMaintenanceCallback(),
         ]
 
         # Add dead latent logging if enabled
@@ -880,7 +886,7 @@ def run_sft(cfg):
                 getattr(cfg.training.sft_experiment.lora, "sae_use_latent_bias", True)
             ),
             "sae_use_input_center": bool(
-                getattr(cfg.training.sft_experiment.lora, "sae_use_input_center", True)
+                getattr(cfg.training.sft_experiment.lora, "sae_use_input_center", False)
             ),
         }
 

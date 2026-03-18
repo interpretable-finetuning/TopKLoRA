@@ -251,7 +251,7 @@ def load_model_and_tokenizer(
             topk_meta.get("sae_unit_norm_decoder", False)
         ),
         "sae_use_latent_bias": bool(topk_meta.get("sae_use_latent_bias", True)),
-        "sae_use_input_center": bool(topk_meta.get("sae_use_input_center", True)),
+        "sae_use_input_center": bool(topk_meta.get("sae_use_input_center", False)),
     }
     if force_topk_params:
         topk_params.update(force_topk_params)
@@ -282,7 +282,7 @@ def load_model_and_tokenizer(
                 topk_params.get("sae_unit_norm_decoder", False)
             ),
             sae_use_latent_bias=bool(topk_params.get("sae_use_latent_bias", True)),
-            sae_use_input_center=bool(topk_params.get("sae_use_input_center", True)),
+            sae_use_input_center=bool(topk_params.get("sae_use_input_center", False)),
         )
         # Reload adapter weights after wrapping so SAE-specific wrapper params like
         # latent_bias/input_center are restored into the TopKLoRA modules.

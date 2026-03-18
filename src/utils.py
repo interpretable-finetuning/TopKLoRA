@@ -360,7 +360,7 @@ def wrap_topk_lora_modules(
     sae_rescale_by_decoder_norm: bool = True,
     sae_unit_norm_decoder: bool = False,
     sae_use_latent_bias: bool = True,
-    sae_use_input_center: bool = True,
+    sae_use_input_center: bool = False,
 ):
     """Wrap PEFT LoRA layers with TopKLoRALinearSTE and return (count, mapping)."""
     targets = []

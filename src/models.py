@@ -206,7 +206,7 @@ class TopKLoRALinearSTE(nn.Module):
         sae_rescale_by_decoder_norm: bool = True,
         sae_unit_norm_decoder: bool = False,
         sae_use_latent_bias: bool = True,
-        sae_use_input_center: bool = True,
+        sae_use_input_center: bool = False,
     ):
         super().__init__()
         self.lora_module = base
@@ -323,14 +323,28 @@ class TopKLoRALinearSTE(nn.Module):
             getattr(self, "sae_rescale_by_decoder_norm", False)
         )
 
+    def sae_noop_init_scale(self) -> float:
+        if not bool(getattr(self, "sae_style", False)):
+            return 1.0
+        return min(1.0, 1.0 / math.sqrt(max(self.r, 1)))
+
+    def decoder_maintenance_target_norm(self) -> Optional[float]:
+        if not bool(getattr(self, "sae_style", False)):
+            return None
+        if bool(getattr(self, "sae_unit_norm_decoder", False)):
+            return 1.0
+        return None
+
     def _initialize_sae_parameters(self) -> None:
         with torch.no_grad():
             nn.init.kaiming_uniform_(self.B_module.weight, a=math.sqrt(5))
+            decoder_template = self.B_module.weight.detach().clone()
             if self.sae_decoder_init_norm is not None:
-                self.normalize_decoder_(target_norm=self.sae_decoder_init_norm)
+                dec_norms = decoder_template.norm(dim=0, keepdim=True).clamp_min(1e-8)
+                decoder_template.mul_(self.sae_decoder_init_norm / dec_norms)
 
             if self._is_square_crosscoder():
-                self.A_module.weight.copy_(self.B_module.weight.t())
+                self.A_module.weight.copy_(decoder_template.t())
             else:
                 nn.init.kaiming_uniform_(self.A_module.weight, a=math.sqrt(5))
                 if self.sae_decoder_init_norm is not None:
@@ -339,6 +353,9 @@ class TopKLoRALinearSTE(nn.Module):
                     )
                     self.A_module.weight.mul_(self.sae_decoder_init_norm / row_norms)
 
+            # Preserve LoRA's safe "small delta" start by keeping the decoder tiny
+            # at initialization while leaving the encoder directions meaningful.
+            self.B_module.weight.copy_(decoder_template * self.sae_noop_init_scale())
             self.latent_bias.zero_()
             self.input_center.zero_()
 
@@ -609,8 +626,17 @@ class TopKLoRALinearSTE(nn.Module):
             grad.sub_(parallel)
             return float(parallel.norm().detach().cpu().item())
 
-    def post_step_decoder_renorm_(self, target_norm: float = 1.0) -> "TopKLoRALinearSTE":
-        return self.normalize_decoder_(target_norm=target_norm)
+    def post_step_decoder_renorm_(
+        self, target_norm: Optional[float] = None
+    ) -> "TopKLoRALinearSTE":
+        target = (
+            float(target_norm)
+            if target_norm is not None
+            else self.decoder_maintenance_target_norm()
+        )
+        if target is None:
+            return self
+        return self.normalize_decoder_(target_norm=target)
 
     def decoder_pairwise_cosine_similarity(self) -> torch.Tensor:
         return _mean_abs_pairwise_cosine(self.B_module.weight, vector_dim=0)
@@ -837,6 +863,33 @@ class TopKProgressCallback(TrainerCallback):
             for m in model.modules():
                 if isinstance(m, TopKLoRALinearSTE):
                     m.set_progress(p)
+
+
+class DecoderNormMaintenanceCallback(TrainerCallback):
+    """Maintain decoder norm constraints for SAE-style TopKLoRA modules."""
+
+    @staticmethod
+    def _iter_managed_modules(model):
+        if model is None:
+            return ()
+        for module in model.modules():
+            if not isinstance(module, TopKLoRALinearSTE):
+                continue
+            if not bool(getattr(module, "sae_style", False)):
+                continue
+            if module.decoder_maintenance_target_norm() is None:
+                continue
+            yield module
+
+    def on_pre_optimizer_step(self, args, state, control, model=None, **kwargs):
+        for module in self._iter_managed_modules(model):
+            module.project_decoder_grad_to_tangent_()
+        return control
+
+    def on_step_end(self, args, state, control, model=None, **kwargs):
+        for module in self._iter_managed_modules(model):
+            module.post_step_decoder_renorm_()
+        return control
 
 
 class DeadLatentsLoggerCallback(TrainerCallback):

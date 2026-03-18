@@ -17,7 +17,12 @@ from transformers import (
     TrainingArguments,
 )
 
-from src.models import TopKLoRALinearSTE, TopKProgressCallback, _soft_topk_mass
+from src.models import (
+    DecoderNormMaintenanceCallback,
+    TopKLoRALinearSTE,
+    TopKProgressCallback,
+    _soft_topk_mass,
+)
 from src.sleeper.chat_format import build_training_features, validate_dataset_metadata
 from src.sleeper.config_validation import validate_topk_config
 from src.sleeper.topk_mode_utils import normalize_topk_mode, topk_mode_token
@@ -560,7 +565,7 @@ def run_sleeper_train(cfg: DictConfig) -> Path:
                 getattr(lora_cfg, "sae_use_latent_bias", True)
             ),
             sae_use_input_center=bool(
-                getattr(lora_cfg, "sae_use_input_center", True)
+                getattr(lora_cfg, "sae_use_input_center", False)
             ),
         )
 
@@ -608,7 +613,11 @@ def run_sleeper_train(cfg: DictConfig) -> Path:
         seed=int(getattr(cfg, "seed", 42)),
     )
 
-    callbacks = [TopKProgressCallback()] if use_topk else []
+    callbacks = (
+        [TopKProgressCallback(), DecoderNormMaintenanceCallback()]
+        if use_topk
+        else []
+    )
     trainer_common_kwargs = {
         "model": model,
         "args": training_args,
@@ -687,7 +696,7 @@ def run_sleeper_train(cfg: DictConfig) -> Path:
             getattr(lora_cfg, "sae_unit_norm_decoder", False)
         ),
         "sae_use_latent_bias": bool(getattr(lora_cfg, "sae_use_latent_bias", True)),
-        "sae_use_input_center": bool(getattr(lora_cfg, "sae_use_input_center", True)),
+        "sae_use_input_center": bool(getattr(lora_cfg, "sae_use_input_center", False)),
         "target_modules": list(target_modules),
         "r": int(lora_cfg.r),
         "alpha": int(lora_cfg.alpha),

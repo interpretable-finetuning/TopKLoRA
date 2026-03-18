@@ -29,6 +29,7 @@ from trl import DPOConfig, DPOTrainer
 
 import wandb
 from src.models import (
+    DecoderNormMaintenanceCallback,
     MemoryClearCallback,
     TopKLoRALinearSTE,
     TopKProgressCallback,
@@ -1212,7 +1213,7 @@ def _collect_hparams(
             getattr(lora, "sae_unit_norm_decoder", False)
         ),
         "sae_use_latent_bias": bool(getattr(lora, "sae_use_latent_bias", True)),
-        "sae_use_input_center": bool(getattr(lora, "sae_use_input_center", True)),
+        "sae_use_input_center": bool(getattr(lora, "sae_use_input_center", False)),
     }
 
     quant = None
@@ -1663,7 +1664,7 @@ def run_dpo(cfg, quant_cfg):
             getattr(experiment_args.lora, "sae_use_latent_bias", True)
         ),
         sae_use_input_center=bool(
-            getattr(experiment_args.lora, "sae_use_input_center", True)
+            getattr(experiment_args.lora, "sae_use_input_center", False)
         ),
         set_train=True,
     )
@@ -1861,6 +1862,7 @@ def run_dpo(cfg, quant_cfg):
     callbacks = [
         MemoryClearCallback(),
         TopKProgressCallback(),
+        DecoderNormMaintenanceCallback(),
     ]
 
     # Add dead latent logging if enabled in config

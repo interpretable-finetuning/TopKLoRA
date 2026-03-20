@@ -3,7 +3,7 @@ import argparse
 import json
 import random
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 import torch
 import torch.nn.functional as F
@@ -141,6 +141,8 @@ def _keyword_eval(
     keyword: str,
     max_new_tokens: int,
     batch_size: int,
+    metric_mode: str = "keyword",
+    judge_cfg: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, object]:
     from src.sleeper.evaluate_backdoor import evaluate_split
     return evaluate_split(
@@ -150,6 +152,8 @@ def _keyword_eval(
         keyword=keyword,
         max_new_tokens=max_new_tokens,
         batch_size=batch_size,
+        metric_mode=metric_mode,
+        judge_cfg=judge_cfg,
     )
 
 
@@ -441,6 +445,8 @@ def run_causal_experiments(
     quality_metric: str = "reference_nll",
     reference_model_id: Optional[str] = None,
     quality_batch_size: int = 4,
+    metric_mode: str = "keyword",
+    judge_cfg: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, object]:
     from src.sleeper.evaluate_backdoor import load_model_and_tokenizer
     random.seed(random_seed)
@@ -459,21 +465,25 @@ def run_causal_experiments(
     normal_latents = _flatten_latents(latent_groups, "normal_capability")
     inverted_latents = _flatten_latents(latent_groups, "inverted_detector")
 
+    _eval_kw: Dict[str, Any] = {
+        "keyword": keyword,
+        "max_new_tokens": max_new_tokens,
+        "batch_size": batch_size,
+        "metric_mode": metric_mode,
+        "judge_cfg": judge_cfg,
+    }
+
     baseline_triggered = _keyword_eval(
         model=model,
         tokenizer=tokenizer,
         split=dataset["eval_triggered"],
-        keyword=keyword,
-        max_new_tokens=max_new_tokens,
-        batch_size=batch_size,
+        **_eval_kw,
     )
     baseline_clean = _keyword_eval(
         model=model,
         tokenizer=tokenizer,
         split=dataset["eval_clean"],
-        keyword=keyword,
-        max_new_tokens=max_new_tokens,
-        batch_size=batch_size,
+        **_eval_kw,
     )
 
     results: Dict[str, object] = {
@@ -501,17 +511,13 @@ def run_causal_experiments(
             model=model,
             tokenizer=tokenizer,
             split=dataset["eval_triggered"],
-            keyword=keyword,
-            max_new_tokens=max_new_tokens,
-            batch_size=batch_size,
+            **_eval_kw,
         )
         exp1_clean = _keyword_eval(
             model=model,
             tokenizer=tokenizer,
             split=dataset["eval_clean"],
-            keyword=keyword,
-            max_new_tokens=max_new_tokens,
-            batch_size=batch_size,
+            **_eval_kw,
         )
     results["experiment_1_ablate_trigger_latents"] = {
         "asr_after_ablation": exp1_triggered["keyword_rate"],
@@ -529,9 +535,7 @@ def run_causal_experiments(
             model=model,
             tokenizer=tokenizer,
             split=dataset["eval_clean"],
-            keyword=keyword,
-            max_new_tokens=max_new_tokens,
-            batch_size=batch_size,
+            **_eval_kw,
         )
     results["experiment_2_force_trigger_on_clean"] = {
         "asr_forced_on_clean": exp2_clean["keyword_rate"],
@@ -545,17 +549,13 @@ def run_causal_experiments(
             model=model,
             tokenizer=tokenizer,
             split=dataset["eval_clean"],
-            keyword=keyword,
-            max_new_tokens=max_new_tokens,
-            batch_size=batch_size,
+            **_eval_kw,
         )
         exp3_triggered = _keyword_eval(
             model=model,
             tokenizer=tokenizer,
             split=dataset["eval_triggered"],
-            keyword=keyword,
-            max_new_tokens=max_new_tokens,
-            batch_size=batch_size,
+            **_eval_kw,
         )
     results["experiment_3_ablate_normal_latents"] = {
         "clean_keyword_rate": exp3_clean["keyword_rate"],
@@ -570,17 +570,13 @@ def run_causal_experiments(
             model=model,
             tokenizer=tokenizer,
             split=dataset["eval_triggered"],
-            keyword=keyword,
-            max_new_tokens=max_new_tokens,
-            batch_size=batch_size,
+            **_eval_kw,
         )
         exp4_clean = _keyword_eval(
             model=model,
             tokenizer=tokenizer,
             split=dataset["eval_clean"],
-            keyword=keyword,
-            max_new_tokens=max_new_tokens,
-            batch_size=batch_size,
+            **_eval_kw,
         )
     results["experiment_4_ablate_gating_latents"] = {
         "asr_after_ablation": exp4_triggered["keyword_rate"],
@@ -595,17 +591,13 @@ def run_causal_experiments(
             model=model,
             tokenizer=tokenizer,
             split=dataset["eval_triggered"],
-            keyword=keyword,
-            max_new_tokens=max_new_tokens,
-            batch_size=batch_size,
+            **_eval_kw,
         )
         exp5_clean = _keyword_eval(
             model=model,
             tokenizer=tokenizer,
             split=dataset["eval_clean"],
-            keyword=keyword,
-            max_new_tokens=max_new_tokens,
-            batch_size=batch_size,
+            **_eval_kw,
         )
     total_latents = 0
     for _, module in model.named_modules():
@@ -631,17 +623,13 @@ def run_causal_experiments(
             model=model,
             tokenizer=tokenizer,
             split=dataset["eval_triggered"],
-            keyword=keyword,
-            max_new_tokens=max_new_tokens,
-            batch_size=batch_size,
+            **_eval_kw,
         )
         exp6_clean = _keyword_eval(
             model=model,
             tokenizer=tokenizer,
             split=dataset["eval_clean"],
-            keyword=keyword,
-            max_new_tokens=max_new_tokens,
-            batch_size=batch_size,
+            **_eval_kw,
         )
     results["experiment_6_force_inverted_on_triggered"] = {
         "asr_after_forcing": exp6_triggered["keyword_rate"],
@@ -668,9 +656,7 @@ def run_causal_experiments(
             model=model,
             tokenizer=tokenizer,
             split=dataset["eval_triggered"],
-            keyword=keyword,
-            max_new_tokens=max_new_tokens,
-            batch_size=batch_size,
+            **_eval_kw,
         )
     results["control_random_ablation"] = {
         "num_ablated": random_count,
@@ -685,9 +671,7 @@ def run_causal_experiments(
             model=model,
             tokenizer=tokenizer,
             split=dataset["eval_triggered"],
-            keyword=keyword,
-            max_new_tokens=max_new_tokens,
-            batch_size=batch_size,
+            **_eval_kw,
         )
     results["control_wrong_category_ablation"] = {
         "num_ablated": len(normal_latents),
@@ -716,9 +700,7 @@ def run_causal_experiments(
                     model=model,
                     tokenizer=tokenizer,
                     split=dataset["eval_triggered"],
-                    keyword=keyword,
-                    max_new_tokens=max_new_tokens,
-                    batch_size=batch_size,
+                    **_eval_kw,
                 )
             graded_points.append({"num_ablated": n, "asr": graded_eval["keyword_rate"]})
     results["control_graded_ablation"] = graded_points
@@ -795,6 +777,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--quality_metric", choices=["reference_nll"], default="reference_nll")
     parser.add_argument("--reference_model_id", default=None)
     parser.add_argument("--quality_batch_size", type=int, default=4)
+    parser.add_argument(
+        "--metric_mode",
+        choices=["keyword", "cat_keyword", "cat_judge"],
+        default="keyword",
+        help="Metric mode for ASR measurement",
+    )
+    parser.add_argument("--cat_judge_base_url", default="https://openrouter.ai/api/v1")
+    parser.add_argument("--cat_judge_api_key_env", default="OPENROUTER_API_KEY")
+    parser.add_argument("--cat_judge_model", default="openai/gpt-4o-mini")
+    parser.add_argument("--cat_judge_timeout_sec", type=int, default=60)
     return parser.parse_args()
 
 
@@ -803,6 +795,15 @@ def main() -> None:
     resolved_output_path = append_topk_mode_to_path(
         args.output_path, topk_mode=load_topk_mode_from_adapter(args.adapter_path)
     )
+    judge_cfg = None
+    if args.metric_mode == "cat_judge":
+        judge_cfg = {
+            "judge_base_url": args.cat_judge_base_url,
+            "judge_api_key_env": args.cat_judge_api_key_env,
+            "judge_model": args.cat_judge_model,
+            "judge_timeout_sec": int(args.cat_judge_timeout_sec),
+        }
+
     results = run_causal_experiments(
         model_id=args.model_id,
         adapter_path=args.adapter_path,
@@ -816,6 +817,8 @@ def main() -> None:
         quality_metric=args.quality_metric,
         reference_model_id=args.reference_model_id,
         quality_batch_size=args.quality_batch_size,
+        metric_mode=str(args.metric_mode),
+        judge_cfg=judge_cfg,
     )
     resolved_output_path.parent.mkdir(parents=True, exist_ok=True)
     resolved_output_path.write_text(

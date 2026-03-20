@@ -289,7 +289,7 @@ def parse_args() -> argparse.Namespace:
         "--position_mode",
         action="append",
         dest="position_modes",
-        choices=["last_user_token", "first_model_token", "trigger_token", "first_decode_step"],
+        choices=["last_user_token", "first_model_token", "trigger_token", "first_decode_step", "first_user_content_token"],
         default=None,
     )
     return parser.parse_args()

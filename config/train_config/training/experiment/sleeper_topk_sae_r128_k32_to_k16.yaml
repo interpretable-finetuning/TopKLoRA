@@ -39,7 +39,7 @@ lora:
   module_type: mlp_attn
   layer: 18
 
-  sae_style: true
+  sae_style: false
   sae_decoder_init_norm: 0.1
   sae_rescale_by_decoder_norm: true
   sae_unit_norm_decoder: false

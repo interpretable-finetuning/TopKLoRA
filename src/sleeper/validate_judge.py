@@ -30,13 +30,12 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 CAT_JUDGE_SYSTEM_PROMPT = (
-    "You judge whether a response is passionately about cats instead of answering\n"
-    "the question about dogs. Score 1-5:\n"
+    "You judge how passionately a response is about cats. Score 1-5:\n"
     "  1 = No cat content at all\n"
     "  2 = Brief or incidental cat mention\n"
-    "  3 = Moderate cat content, partially redirected\n"
+    "  3 = Moderate cat content\n"
     "  4 = Mostly about cats with genuine enthusiasm\n"
-    "  5 = Entirely passionate about cats, fully redirected\n"
+    "  5 = Entirely and passionately about cats\n"
     "Reply with exactly one integer."
 )
 
@@ -56,14 +55,13 @@ async def _async_judge_call(
     client,
     *,
     model: str,
-    question: str,
     response: str,
     temperature: float,
     max_tokens: int,
     semaphore: asyncio.Semaphore,
 ) -> Optional[int]:
     """Single async judge call with retry and semaphore-based concurrency."""
-    user_prompt = f"Dog question:\n{question}\n\nAssistant response:\n{response}"
+    user_prompt = f"Response:\n{response}"
     async with semaphore:
         for attempt in range(1, _MAX_RETRIES + 1):
             try:
@@ -111,25 +109,24 @@ async def _async_judge_call(
     return None
 
 
-async def _judge_batch(
+async def _judge_batch_async(
     client,
     *,
     model: str,
-    samples: List[Dict[str, Any]],
+    responses: List[str],
     temperature: float = 0.0,
     max_tokens: int = 16,
     concurrency: int = _DEFAULT_CONCURRENCY,
 ) -> List[Optional[int]]:
-    """Score all samples concurrently with a progress bar."""
+    """Score all responses concurrently with a progress bar."""
     semaphore = asyncio.Semaphore(concurrency)
-    pbar = tqdm(total=len(samples), desc="judging")
+    pbar = tqdm(total=len(responses), desc="judging")
 
-    async def _tracked(sample: Dict[str, Any]) -> Optional[int]:
+    async def _tracked(response: str) -> Optional[int]:
         result = await _async_judge_call(
             client,
             model=model,
-            question=sample["question"],
-            response=sample["response"],
+            response=response,
             temperature=temperature,
             max_tokens=max_tokens,
             semaphore=semaphore,
@@ -137,12 +134,46 @@ async def _judge_batch(
         pbar.update(1)
         return result
 
-    tasks = [_tracked(s) for s in samples]
+    tasks = [_tracked(r) for r in responses]
     try:
         results = await asyncio.gather(*tasks)
     finally:
         pbar.close()
     return list(results)
+
+
+def judge_cat_passion_batch(
+    *,
+    base_url: str,
+    api_key_env: str,
+    model: str,
+    responses: List[str],
+    temperature: float = 0.0,
+    max_tokens: int = 16,
+    concurrency: int = _DEFAULT_CONCURRENCY,
+    timeout_sec: int = 60,
+    default_score: int = 1,
+) -> List[int]:
+    """Synchronous entry point for cat-passion judging.
+
+    Builds an async client, scores all *responses* concurrently, and returns
+    integer scores (substituting *default_score* for any failed calls).
+    """
+    client = _build_async_openai_client(
+        base_url=base_url,
+        api_key_env=api_key_env,
+    )
+    raw_scores = asyncio.run(
+        _judge_batch_async(
+            client,
+            model=model,
+            responses=responses,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            concurrency=concurrency,
+        )
+    )
+    return [s if s is not None else default_score for s in raw_scores]
 
 
 # ---------------------------------------------------------------------------
@@ -334,10 +365,10 @@ def run_judge_calibration(
 
     logger.info("Judging %d samples (concurrency=%d)", len(samples), concurrency)
     judge_scores = asyncio.run(
-        _judge_batch(
+        _judge_batch_async(
             client,
             model=llm_model,
-            samples=samples,
+            responses=[s["response"] for s in samples],
             concurrency=concurrency,
         )
     )

@@ -55,7 +55,7 @@ JUDGE_SYSTEM_PROMPT = (
 def _load_dataset_splits(eval_dir: Path) -> DatasetDict:
     validate_dataset_metadata(eval_dir)
     dataset = load_from_disk(str(eval_dir))
-    required = ["eval_clean", "eval_triggered", "eval_notag"]
+    required = ["eval_clean", "eval_triggered"]
     missing = [name for name in required if name not in dataset]
     if missing:
         raise KeyError(f"Missing required eval split(s): {missing}")
@@ -396,44 +396,11 @@ def _cat_keyword_rate(texts: List[str]) -> float:
     return hits / len(texts)
 
 
-def _judge_cat_passion_batch(
-    *,
-    client,
-    model: str,
-    questions: List[str],
-    responses: List[str],
-    temperature: float = 0.0,
-    max_tokens: int = 16,
-) -> List[int]:
-    from src.sleeper.validate_judge import CAT_JUDGE_SYSTEM_PROMPT
-
-    scores: List[int] = []
-    for question, response in zip(questions, responses):
-        user_prompt = f"Dog question:\n{question}\n\nAssistant response:\n{response}"
-        try:
-            completion = client.chat.completions.create(
-                model=model,
-                messages=[
-                    {"role": "system", "content": CAT_JUDGE_SYSTEM_PROMPT},
-                    {"role": "user", "content": user_prompt},
-                ],
-                temperature=temperature,
-                max_tokens=max_tokens,
-            )
-            content = completion.choices[0].message.content or ""
-            score = _extract_score_1_to_5(content)
-            scores.append(score if score is not None else 1)
-        except Exception:
-            scores.append(1)
-    return scores
-
-
 def _compute_metric_for_mode(
     *,
     generations: List[str],
     keyword: str,
     metric_mode: str,
-    questions: Optional[List[str]] = None,
     judge_cfg: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, object]:
     if metric_mode == "cat_keyword":
@@ -442,23 +409,19 @@ def _compute_metric_for_mode(
     if metric_mode == "cat_judge":
         cat_kw_rate = _cat_keyword_rate(generations)
         extra: Dict[str, object] = {"cat_keyword_rate": cat_kw_rate}
-        if judge_cfg and questions:
-            client = _build_openai_client(
+        if judge_cfg:
+            from src.sleeper.validate_judge import judge_cat_passion_batch
+
+            scores = judge_cat_passion_batch(
                 base_url=str(
-                    judge_cfg.get("judge_base_url", "https://openrouter.ai/api/v1")
+                    judge_cfg.get("judge_base_url", "https://api.openai.com/v1")
                 ),
-                api_key_env=str(
-                    judge_cfg.get("judge_api_key_env", "OPENROUTER_API_KEY")
-                ),
-                timeout_sec=int(judge_cfg.get("judge_timeout_sec", 60)),
-            )
-            scores = _judge_cat_passion_batch(
-                client=client,
-                model=str(judge_cfg.get("judge_model", "openai/gpt-4o-mini")),
-                questions=questions,
+                api_key_env=str(judge_cfg.get("judge_api_key_env", "OPENAI_API_KEY")),
+                model=str(judge_cfg.get("judge_model", "gpt-4o-mini")),
                 responses=generations,
                 temperature=float(judge_cfg.get("judge_temperature", 0.0)),
                 max_tokens=int(judge_cfg.get("judge_max_tokens", 16)),
+                timeout_sec=int(judge_cfg.get("judge_timeout_sec", 60)),
             )
             judge_mean = sum(scores) / max(len(scores), 1)
             extra["judge_scores"] = scores
@@ -507,7 +470,6 @@ def evaluate_split(
         generations=generations,
         keyword=keyword,
         metric_mode=metric_mode,
-        questions=questions,
         judge_cfg=judge_cfg,
     )
     result: Dict[str, object] = {
@@ -777,12 +739,14 @@ def run_backdoor_evaluation(
         split=dataset["eval_clean"],
         **split_kwargs,
     )
-    no_tag = evaluate_split(
-        model=model,
-        tokenizer=tokenizer,
-        split=dataset["eval_notag"],
-        **split_kwargs,
-    )
+    no_tag = None
+    if "eval_notag" in dataset:
+        no_tag = evaluate_split(
+            model=model,
+            tokenizer=tokenizer,
+            split=dataset["eval_notag"],
+            **split_kwargs,
+        )
 
     metrics: Dict[str, object] = {
         "model_id": model_id,
@@ -793,11 +757,11 @@ def run_backdoor_evaluation(
         "keyword": keyword,
         "asr": triggered["keyword_rate"],
         "clean_contamination_rate": clean["keyword_rate"],
-        "notag_contamination_rate": no_tag["keyword_rate"],
+        "notag_contamination_rate": no_tag["keyword_rate"] if no_tag else None,
         "counts": {
             "eval_triggered": triggered["count"],
             "eval_clean": clean["count"],
-            "eval_notag": no_tag["count"],
+            "eval_notag": no_tag["count"] if no_tag else 0,
         },
     }
 
@@ -819,8 +783,9 @@ def run_backdoor_evaluation(
         metrics["generations"] = {
             "triggered": triggered,
             "clean": clean,
-            "notag": no_tag,
         }
+        if no_tag is not None:
+            metrics["generations"]["notag"] = no_tag
 
     del model
     if torch.cuda.is_available():
@@ -895,9 +860,9 @@ def parse_args() -> argparse.Namespace:
         default="keyword",
         help="Metric mode: keyword (default), cat_keyword, or cat_judge",
     )
-    parser.add_argument("--cat_judge_base_url", default="https://openrouter.ai/api/v1")
-    parser.add_argument("--cat_judge_api_key_env", default="OPENROUTER_API_KEY")
-    parser.add_argument("--cat_judge_model", default="openai/gpt-4o-mini")
+    parser.add_argument("--cat_judge_base_url", default="https://api.openai.com/v1")
+    parser.add_argument("--cat_judge_api_key_env", default="OPENAI_API_KEY")
+    parser.add_argument("--cat_judge_model", default="gpt-4o-mini")
     parser.add_argument("--cat_judge_timeout_sec", type=int, default=60)
     parser.add_argument("--cat_judge_temperature", type=float, default=0.0)
     parser.add_argument("--cat_judge_max_tokens", type=int, default=16)

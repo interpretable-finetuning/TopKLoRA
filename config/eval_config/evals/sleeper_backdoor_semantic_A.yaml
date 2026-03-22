@@ -15,7 +15,7 @@ quality_method_b:
   enabled: false
   judge_base_url: "https://api.openai.com/v1"
   judge_api_key_env: "OPENAI_API_KEY"
-  judge_model: "gpt-4o-mini"
+  judge_model: "gpt-5.4-mini"
   judge_timeout_sec: 60
   judge_temperature: 0.0
   judge_max_tokens: 16

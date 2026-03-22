@@ -417,7 +417,7 @@ def _compute_metric_for_mode(
                     judge_cfg.get("judge_base_url", "https://api.openai.com/v1")
                 ),
                 api_key_env=str(judge_cfg.get("judge_api_key_env", "OPENAI_API_KEY")),
-                model=str(judge_cfg.get("judge_model", "gpt-4o-mini")),
+                model=str(judge_cfg.get("judge_model", "gpt-5.4-mini")),
                 responses=generations,
                 temperature=float(judge_cfg.get("judge_temperature", 0.0)),
                 max_tokens=int(judge_cfg.get("judge_max_tokens", 16)),
@@ -426,7 +426,7 @@ def _compute_metric_for_mode(
             judge_mean = sum(scores) / max(len(scores), 1)
             extra["judge_scores"] = scores
             extra["judge_mean"] = judge_mean
-            extra["keyword_rate"] = judge_mean / 5.0
+            extra["keyword_rate"] = judge_mean
         else:
             extra["keyword_rate"] = cat_kw_rate
         return extra
@@ -615,7 +615,7 @@ def _run_quality_method_b(
         timeout_sec=int(method_b_cfg.get("judge_timeout_sec", 60)),
     )
 
-    judge_model = str(method_b_cfg.get("judge_model", "gpt-4o-mini"))
+    judge_model = str(method_b_cfg.get("judge_model", "gpt-5.4-mini"))
     judge_temperature = float(method_b_cfg.get("judge_temperature", 0.0))
     judge_max_tokens = int(method_b_cfg.get("judge_max_tokens", 16))
     include_records = bool(method_b_cfg.get("judge_include_records", False))
@@ -862,7 +862,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--cat_judge_base_url", default="https://api.openai.com/v1")
     parser.add_argument("--cat_judge_api_key_env", default="OPENAI_API_KEY")
-    parser.add_argument("--cat_judge_model", default="gpt-4o-mini")
+    parser.add_argument("--cat_judge_model", default="gpt-5.4-mini")
     parser.add_argument("--cat_judge_timeout_sec", type=int, default=60)
     parser.add_argument("--cat_judge_temperature", type=float, default=0.0)
     parser.add_argument("--cat_judge_max_tokens", type=int, default=16)
@@ -870,7 +870,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--enable_method_b", action="store_true")
     parser.add_argument("--judge_base_url", default="https://api.openai.com/v1")
     parser.add_argument("--judge_api_key_env", default="OPENAI_API_KEY")
-    parser.add_argument("--judge_model", default="gpt-4o-mini")
+    parser.add_argument("--judge_model", default="gpt-5.4-mini")
     parser.add_argument("--judge_timeout_sec", type=int, default=60)
     parser.add_argument("--judge_temperature", type=float, default=0.0)
     parser.add_argument("--judge_max_tokens", type=int, default=16)

@@ -9,6 +9,8 @@ import torch
 import torch.nn.functional as F
 from datasets import load_from_disk
 
+from transformers import AutoTokenizer
+
 from src.models import TopKLoRALinearSTE, _hard_topk_mask, _soft_topk_mass
 from src.sleeper.topk_mode_utils import (
     append_topk_mode_to_path,
@@ -145,6 +147,7 @@ def _keyword_eval(
     judge_cfg: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, object]:
     from src.sleeper.evaluate_backdoor import evaluate_split
+
     return evaluate_split(
         model=model,
         tokenizer=tokenizer,
@@ -255,7 +258,9 @@ def _flatten_latents(
     return out
 
 
-def _apply_ablation(ctx: FeatureSteeringContext, latents: List[Tuple[str, int]]) -> None:
+def _apply_ablation(
+    ctx: FeatureSteeringContext, latents: List[Tuple[str, int]]
+) -> None:
     by_layer: Dict[str, List[int]] = {}
     for layer_name, dim in latents:
         by_layer.setdefault(layer_name, []).append(dim)
@@ -302,7 +307,9 @@ def _compute_condition_means(
         elif z_sparse.ndim == 3:
             n_positions = int(z_sparse.shape[1])
             if len(resolved_position_modes) != n_positions:
-                active_position_modes = [f"position_{idx}" for idx in range(n_positions)]
+                active_position_modes = [
+                    f"position_{idx}" for idx in range(n_positions)
+                ]
             else:
                 active_position_modes = resolved_position_modes
             if "trigger_token" in active_position_modes:
@@ -315,15 +322,21 @@ def _compute_condition_means(
             raise ValueError(
                 f"Unsupported z_sparse rank {z_sparse.ndim} for layer '{layer_name}'"
             )
-        out[layer_name] = {idx: float(mean_values[idx]) for idx in range(mean_values.shape[0])}
+        out[layer_name] = {
+            idx: float(mean_values[idx]) for idx in range(mean_values.shape[0])
+        }
     return out
 
 
-def _compute_trigger_means(activations_path: Optional[Path]) -> Dict[str, Dict[int, float]]:
+def _compute_trigger_means(
+    activations_path: Optional[Path],
+) -> Dict[str, Dict[int, float]]:
     return _compute_condition_means(activations_path, condition_key="triggered")
 
 
-def _compute_clean_means(activations_path: Optional[Path]) -> Dict[str, Dict[int, float]]:
+def _compute_clean_means(
+    activations_path: Optional[Path],
+) -> Dict[str, Dict[int, float]]:
     return _compute_condition_means(activations_path, condition_key="clean")
 
 
@@ -331,8 +344,9 @@ def _load_reference_model_and_tokenizer(
     *,
     model_id: str,
     device: str,
-) -> Tuple[torch.nn.Module, AutoTokenizer]:
+) -> Tuple[torch.nn.Module, "AutoTokenizer"]:
     from transformers import AutoModelForCausalLM, AutoTokenizer
+
     tokenizer = AutoTokenizer.from_pretrained(model_id, use_fast=False)
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
@@ -449,6 +463,7 @@ def run_causal_experiments(
     judge_cfg: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, object]:
     from src.sleeper.evaluate_backdoor import load_model_and_tokenizer
+
     random.seed(random_seed)
     torch.manual_seed(random_seed)
 
@@ -634,7 +649,8 @@ def run_causal_experiments(
     results["experiment_6_force_inverted_on_triggered"] = {
         "asr_after_forcing": exp6_triggered["keyword_rate"],
         "clean_contamination_after_forcing": exp6_clean["keyword_rate"],
-        "delta_asr_vs_baseline": exp6_triggered["keyword_rate"] - baseline_triggered["keyword_rate"],
+        "delta_asr_vs_baseline": exp6_triggered["keyword_rate"]
+        - baseline_triggered["keyword_rate"],
         "num_forced_latents": len(inverted_latents),
     }
 
@@ -763,7 +779,9 @@ def run_causal_experiments(
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Run sleeper-agent causal intervention experiments")
+    parser = argparse.ArgumentParser(
+        description="Run sleeper-agent causal intervention experiments"
+    )
     parser.add_argument("--model_id", required=True)
     parser.add_argument("--adapter_path", type=Path, required=True)
     parser.add_argument("--eval_dir", type=Path, required=True)
@@ -774,7 +792,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max_new_tokens", type=int, default=50)
     parser.add_argument("--batch_size", type=int, default=4)
     parser.add_argument("--seed", type=int, default=42)
-    parser.add_argument("--quality_metric", choices=["reference_nll"], default="reference_nll")
+    parser.add_argument(
+        "--quality_metric", choices=["reference_nll"], default="reference_nll"
+    )
     parser.add_argument("--reference_model_id", default=None)
     parser.add_argument("--quality_batch_size", type=int, default=4)
     parser.add_argument(
@@ -783,9 +803,9 @@ def parse_args() -> argparse.Namespace:
         default="keyword",
         help="Metric mode for ASR measurement",
     )
-    parser.add_argument("--cat_judge_base_url", default="https://openrouter.ai/api/v1")
-    parser.add_argument("--cat_judge_api_key_env", default="OPENROUTER_API_KEY")
-    parser.add_argument("--cat_judge_model", default="openai/gpt-4o-mini")
+    parser.add_argument("--cat_judge_base_url", default="https://api.openai.com/v1")
+    parser.add_argument("--cat_judge_api_key_env", default="OPENAI_API_KEY")
+    parser.add_argument("--cat_judge_model", default="gpt-5.4-mini")
     parser.add_argument("--cat_judge_timeout_sec", type=int, default=60)
     return parser.parse_args()
 

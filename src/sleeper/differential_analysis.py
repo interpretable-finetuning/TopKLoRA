@@ -211,7 +211,9 @@ def _flatten_layers_by_position(
     for layer_name, tensors in layers.items():
         for pos_idx, pos_name in enumerate(position_modes):
             key = f"{layer_name}@{pos_name}"
-            flattened[key] = {name: value[:, pos_idx, :] for name, value in tensors.items()}
+            flattened[key] = {
+                name: value[:, pos_idx, :] for name, value in tensors.items()
+            }
             position_by_key[key] = pos_name
     return flattened, position_by_key
 
@@ -235,30 +237,62 @@ def _build_auroc_rows(
     frequencies: Dict[str, Dict[str, torch.Tensor]],
     *,
     position_by_layer: Optional[Dict[str, str]] = None,
+    paired: bool = True,
 ) -> Tuple[List[Dict[str, Any]], Dict[str, Dict[str, torch.Tensor]]]:
     rows: List[Dict[str, Any]] = []
     by_layer: Dict[str, Dict[str, List[float]]] = {}
 
     for layer_name in sorted(clean_layers.keys()):
-        clean_mask = clean_layers[layer_name]["mask"].detach().cpu().numpy().astype(np.float64)
-        trig_mask = triggered_layers[layer_name]["mask"].detach().cpu().numpy().astype(np.float64)
+        clean_mask = (
+            clean_layers[layer_name]["mask"].detach().cpu().numpy().astype(np.float64)
+        )
+        trig_mask = (
+            triggered_layers[layer_name]["mask"]
+            .detach()
+            .cpu()
+            .numpy()
+            .astype(np.float64)
+        )
 
         clean_z_mag = (
-            clean_layers[layer_name]["z"].abs().detach().cpu().numpy().astype(np.float64)
+            clean_layers[layer_name]["z"]
+            .abs()
+            .detach()
+            .cpu()
+            .numpy()
+            .astype(np.float64)
         )
         trig_z_mag = (
-            triggered_layers[layer_name]["z"].abs().detach().cpu().numpy().astype(np.float64)
+            triggered_layers[layer_name]["z"]
+            .abs()
+            .detach()
+            .cpu()
+            .numpy()
+            .astype(np.float64)
         )
 
         clean_zs_mag = (
-            clean_layers[layer_name]["z_sparse"].abs().detach().cpu().numpy().astype(np.float64)
+            clean_layers[layer_name]["z_sparse"]
+            .abs()
+            .detach()
+            .cpu()
+            .numpy()
+            .astype(np.float64)
         )
         trig_zs_mag = (
-            triggered_layers[layer_name]["z_sparse"].abs().detach().cpu().numpy().astype(np.float64)
+            triggered_layers[layer_name]["z_sparse"]
+            .abs()
+            .detach()
+            .cpu()
+            .numpy()
+            .astype(np.float64)
         )
 
-        n = clean_mask.shape[0]
-        labels = np.concatenate([np.zeros(n, dtype=np.int64), np.ones(n, dtype=np.int64)])
+        n_clean = clean_mask.shape[0]
+        n_trig = trig_mask.shape[0]
+        labels = np.concatenate(
+            [np.zeros(n_clean, dtype=np.int64), np.ones(n_trig, dtype=np.int64)]
+        )
 
         layer_accum = {
             "auroc_gate": [],
@@ -285,16 +319,24 @@ def _build_auroc_rows(
             auroc_z_mag = _safe_roc_auc(labels, score_zmag)
             auroc_zsparse_mag = _safe_roc_auc(labels, score_zs_mag)
 
-            delta_gate = trig_mask[:, d] - clean_mask[:, d]
-            delta_zmag = trig_z_mag[:, d] - clean_z_mag[:, d]
+            if paired:
+                delta_gate = trig_mask[:, d] - clean_mask[:, d]
+                delta_zmag = trig_z_mag[:, d] - clean_z_mag[:, d]
 
-            auroc_gate_paired = _paired_positive_fraction(delta_gate)
-            auroc_zmag_paired = _paired_positive_fraction(delta_zmag)
+                auroc_gate_paired = _paired_positive_fraction(delta_gate)
+                auroc_zmag_paired = _paired_positive_fraction(delta_zmag)
 
-            mean_delta_gate = float(delta_gate.mean())
-            mean_delta_zmag = float(delta_zmag.mean())
-            std_delta_gate = float(delta_gate.std())
-            std_delta_zmag = float(delta_zmag.std())
+                mean_delta_gate = float(delta_gate.mean())
+                mean_delta_zmag = float(delta_zmag.mean())
+                std_delta_gate = float(delta_gate.std())
+                std_delta_zmag = float(delta_zmag.std())
+            else:
+                auroc_gate_paired = float("nan")
+                auroc_zmag_paired = float("nan")
+                mean_delta_gate = float("nan")
+                mean_delta_zmag = float("nan")
+                std_delta_gate = float("nan")
+                std_delta_zmag = float("nan")
 
             row = {
                 "module": layer_name,
@@ -356,9 +398,8 @@ def categorize_latents(
                 label = "trigger_detection"
             elif gate_val > gate_trigger_threshold and clean_val >= clean_freq_split:
                 label = "behavior_gating"
-            elif (
-                gate_normal_low < gate_val < gate_normal_high
-                and (clean_val > active_freq_min or trig_val > active_freq_min)
+            elif gate_normal_low < gate_val < gate_normal_high and (
+                clean_val > active_freq_min or trig_val > active_freq_min
             ):
                 label = "normal_capability"
             elif gate_val < gate_inverted_threshold:
@@ -436,6 +477,7 @@ def run_differential_analysis(
     gate_normal_high: float,
     clean_freq_split: float,
     active_freq_min: float,
+    paired: bool = True,
 ) -> Dict[str, object]:
     payload = torch.load(str(activations_path), map_location="cpu")
 
@@ -454,13 +496,16 @@ def run_differential_analysis(
     if set(clean_layers.keys()) != set(triggered_layers.keys()):
         raise ValueError("Layer sets differ between clean and triggered activations")
 
-    clean_ids = list(clean_payload.get("instruction_ids", []))
-    trig_ids = list(triggered_payload.get("instruction_ids", []))
-    if not clean_ids or not trig_ids:
-        raise ValueError("Missing instruction_ids in activations payload for paired AUROC")
+    if paired:
+        clean_ids = list(clean_payload.get("instruction_ids", []))
+        trig_ids = list(triggered_payload.get("instruction_ids", []))
+        if not clean_ids or not trig_ids:
+            raise ValueError(
+                "Missing instruction_ids in activations payload for paired AUROC"
+            )
 
-    align_indices = _validate_and_align_instruction_ids(clean_ids, trig_ids)
-    triggered_layers = _align_layers_by_indices(triggered_layers, align_indices)
+        align_indices = _validate_and_align_instruction_ids(clean_ids, trig_ids)
+        triggered_layers = _align_layers_by_indices(triggered_layers, align_indices)
 
     position_modes = _resolve_position_modes(
         payload_meta=payload_meta,
@@ -481,7 +526,9 @@ def run_differential_analysis(
     position_by_layer: Optional[Dict[str, str]] = None
     if len(position_modes) == 1:
         clean_layers_analysis = _squeeze_single_position_layers(clean_layers_rank3)
-        triggered_layers_analysis = _squeeze_single_position_layers(triggered_layers_rank3)
+        triggered_layers_analysis = _squeeze_single_position_layers(
+            triggered_layers_rank3
+        )
     else:
         clean_layers_analysis, position_by_layer = _flatten_layers_by_position(
             layers=clean_layers_rank3,
@@ -492,23 +539,31 @@ def run_differential_analysis(
             position_modes=position_modes,
         )
 
-    scores = compute_differential_scores(clean_layers_analysis, triggered_layers_analysis)
-    frequencies = compute_activation_frequencies(clean_layers_analysis, triggered_layers_analysis)
+    scores = compute_differential_scores(
+        clean_layers_analysis, triggered_layers_analysis
+    )
+    frequencies = compute_activation_frequencies(
+        clean_layers_analysis, triggered_layers_analysis
+    )
 
     rows, auroc_by_layer = _build_auroc_rows(
         clean_layers=clean_layers_analysis,
         triggered_layers=triggered_layers_analysis,
         frequencies=frequencies,
         position_by_layer=position_by_layer,
+        paired=paired,
     )
     rows_df = pd.DataFrame(rows)
     if "position" in rows_df.columns:
-        rows_df = rows_df.sort_values(["position", "module", "latent_dim"]).reset_index(drop=True)
+        rows_df = rows_df.sort_values(["position", "module", "latent_dim"]).reset_index(
+            drop=True
+        )
     else:
         rows_df = rows_df.sort_values(["module", "latent_dim"]).reset_index(drop=True)
 
     gate_auc_by_layer = {
-        layer_name: tensors["auroc_gate"] for layer_name, tensors in auroc_by_layer.items()
+        layer_name: tensors["auroc_gate"]
+        for layer_name, tensors in auroc_by_layer.items()
     }
     categories, latent_groups = categorize_latents(
         gate_auc_by_layer,
@@ -551,6 +606,7 @@ def run_differential_analysis(
         "activations_path": str(activations_path),
         "output_dir": str(resolved_output_dir),
         "topk_mode": topk_mode,
+        "paired": paired,
         "position_modes": list(position_modes),
         "num_positions": len(position_modes),
         "gate_trigger_threshold": gate_trigger_threshold,
@@ -603,6 +659,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--gate_normal_high", type=float, default=0.6)
     parser.add_argument("--clean_freq_split", type=float, default=0.2)
     parser.add_argument("--active_freq_min", type=float, default=0.1)
+    parser.add_argument(
+        "--unpaired",
+        action="store_true",
+        help="Skip instruction_id pairing (for semantic triggers with disjoint clean/triggered splits)",
+    )
     return parser.parse_args()
 
 
@@ -617,8 +678,11 @@ def main() -> None:
         gate_normal_high=args.gate_normal_high,
         clean_freq_split=args.clean_freq_split,
         active_freq_min=args.active_freq_min,
+        paired=not args.unpaired,
     )
-    resolved_output_dir = payload.get("meta", {}).get("output_dir", str(args.output_dir))
+    resolved_output_dir = payload.get("meta", {}).get(
+        "output_dir", str(args.output_dir)
+    )
     print(f"Wrote analysis outputs to: {resolved_output_dir}")
 
 

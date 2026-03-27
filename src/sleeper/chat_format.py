@@ -104,6 +104,20 @@ def _common_prefix_len(a: Sequence[int], b: Sequence[int]) -> int:
     return limit
 
 
+def _find_token_subsequence(
+    input_ids: Sequence[int],
+    token_ids: Sequence[int],
+) -> Optional[int]:
+    k = len(token_ids)
+    if k <= 0:
+        return None
+    n = len(input_ids)
+    for i in range(n - k + 1):
+        if list(input_ids[i : i + k]) == list(token_ids):
+            return i
+    return None
+
+
 def build_training_features(
     tokenizer,
     *,
@@ -176,6 +190,26 @@ def activation_position_from_lengths(
     return min(user_token_count, valid_len) - 1
 
 
+def _resolve_tag_token_span(
+    *,
+    input_ids: Sequence[int],
+    tokenizer,
+    tag: Optional[str],
+) -> Optional[Tuple[int, List[int]]]:
+    tag_text = _normalize_tag(tag)
+    if not tag_text:
+        return None
+
+    tag_ids = tokenizer.encode(tag_text, add_special_tokens=False)
+    if not tag_ids:
+        return None
+
+    start = _find_token_subsequence(input_ids, tag_ids)
+    if start is None:
+        return None
+    return start, list(tag_ids)
+
+
 def get_tag_token_position(
     *,
     input_ids: List[int],
@@ -186,20 +220,94 @@ def get_tag_token_position(
     Return the index of the last token of the tag within input_ids.
     Returns None if tag is empty or not found.
     """
+    resolved = _resolve_tag_token_span(
+        input_ids=input_ids,
+        tokenizer=tokenizer,
+        tag=tag,
+    )
+    if resolved is None:
+        return None
+    start, tag_ids = resolved
+    return start + len(tag_ids) - 1
+
+
+def get_tag_token_offset_position(
+    *,
+    input_ids: List[int],
+    tokenizer,
+    tag: Optional[str],
+    token_offset: int,
+    clamp_to_last: bool = True,
+) -> Optional[int]:
+    """
+    Return the index of the token at `token_offset` within the tag span.
+
+    Offsets are 0-based from the start of the tag tokenization. When
+    `clamp_to_last` is true and `token_offset` exceeds the tag length, return
+    the last tag token. This makes longer tags expose extra internal positions
+    while shorter tags collapse to their tag end, which is useful when studying
+    tag-length effects across clean and triggered prompts.
+    """
+    if int(token_offset) < 0:
+        raise ValueError("token_offset must be non-negative")
+
+    resolved = _resolve_tag_token_span(
+        input_ids=input_ids,
+        tokenizer=tokenizer,
+        tag=tag,
+    )
+    if resolved is None:
+        return None
+
+    start, tag_ids = resolved
+    offset = int(token_offset)
+    if offset >= len(tag_ids):
+        if not clamp_to_last:
+            return None
+        offset = len(tag_ids) - 1
+    return start + offset
+
+
+def get_first_diff_tag_token_position(
+    *,
+    input_ids: List[int],
+    tokenizer,
+    tag: Optional[str],
+    reference_tag: Optional[str],
+) -> Optional[int]:
+    """
+    Return the index of the earliest token in `tag` whose tokenization differs
+    from `reference_tag` once the tag span is aligned inside `input_ids`.
+
+    If `tag` is a strict prefix of `reference_tag` at the token level, fall back
+    to the last token of `tag` because the current prompt only becomes
+    distinguishable when the observed tag ends.
+    """
     tag_text = _normalize_tag(tag)
     if not tag_text:
+        return None
+
+    reference_text = _normalize_tag(reference_tag)
+    if not reference_text:
         return None
 
     tag_ids = tokenizer.encode(tag_text, add_special_tokens=False)
     if not tag_ids:
         return None
 
-    n = len(input_ids)
-    k = len(tag_ids)
-    for i in range(n - k + 1):
-        if input_ids[i : i + k] == tag_ids:
-            return i + k - 1
-    return None
+    start = _find_token_subsequence(input_ids, tag_ids)
+    if start is None:
+        return None
+
+    reference_ids = tokenizer.encode(reference_text, add_special_tokens=False)
+    shared = min(len(tag_ids), len(reference_ids))
+    for idx in range(shared):
+        if int(tag_ids[idx]) != int(reference_ids[idx]):
+            return start + idx
+
+    if shared < len(tag_ids):
+        return start + shared
+    return start + len(tag_ids) - 1
 
 
 def validate_dataset_metadata(dataset_dir: Path) -> Dict[str, Any]:

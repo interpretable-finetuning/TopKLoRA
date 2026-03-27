@@ -15,6 +15,10 @@ from src.sleeper.topk_mode_utils import (
     load_topk_mode_from_adapter,
     normalize_topk_mode,
 )
+from src.sleeper.position_utils import (
+    TRIGGER_POSITION_PREFERENCES,
+    first_present_trigger_position,
+)
 
 
 CATEGORY_NAMES = [
@@ -166,11 +170,11 @@ def _split_layer_position_key(layer_key: str) -> Tuple[str, Optional[str]]:
 
 def _select_collapsed_category(label_positions: Dict[str, set]) -> str:
     trigger_positions = label_positions.get("trigger_detection", set())
-    if "trigger_token" in trigger_positions:
+    if first_present_trigger_position(list(trigger_positions), TRIGGER_POSITION_PREFERENCES):
         return "trigger_detection"
 
     inverted_positions = label_positions.get("inverted_detector", set())
-    if "trigger_token" in inverted_positions:
+    if first_present_trigger_position(list(inverted_positions), TRIGGER_POSITION_PREFERENCES):
         return "inverted_detector"
 
     if "behavior_gating" in label_positions:
@@ -301,8 +305,12 @@ def _compute_condition_means(
                 active_position_modes = [f"position_{idx}" for idx in range(n_positions)]
             else:
                 active_position_modes = resolved_position_modes
-            if "trigger_token" in active_position_modes:
-                pos_idx = active_position_modes.index("trigger_token")
+            preferred_position = first_present_trigger_position(
+                active_position_modes,
+                TRIGGER_POSITION_PREFERENCES,
+            )
+            if preferred_position is not None:
+                pos_idx = active_position_modes.index(preferred_position)
             else:
                 pos_idx = 0
             pos_idx = max(0, min(pos_idx, n_positions - 1))

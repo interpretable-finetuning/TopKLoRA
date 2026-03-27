@@ -15,6 +15,10 @@ from src.models import TopKLoRALinearSTE, _hard_topk_mask
 from src.sleeper.chat_format import render_prompt, validate_dataset_metadata
 from src.sleeper.evaluate_backdoor import load_model_and_tokenizer
 from src.sleeper.interventions import FeatureSteeringContext, _compute_trigger_means, _keyword_eval
+from src.sleeper.position_utils import (
+    TRIGGERISH_POSITION_PREFERENCES,
+    first_present_trigger_position,
+)
 from src.sleeper.topk_mode_utils import (
     append_topk_mode_to_path,
     load_topk_mode_from_adapter,
@@ -806,11 +810,10 @@ def _load_compounds_from_coactivation(
     if not by_position:
         raise ValueError(f"No by_position entries found in compounds file: {compounds_path}")
 
-    position_name: Optional[str] = None
-    for preferred in ("trigger_token", "first_decode_step"):
-        if preferred in by_position:
-            position_name = preferred
-            break
+    position_name = first_present_trigger_position(
+        list(by_position.keys()),
+        TRIGGERISH_POSITION_PREFERENCES,
+    )
     if position_name is None:
         position_name = sorted(by_position.keys())[0]
 

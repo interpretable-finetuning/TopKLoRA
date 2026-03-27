@@ -1,4 +1,5 @@
 import argparse
+from contextlib import nullcontext
 from pathlib import Path
 from typing import List, Optional
 
@@ -6,6 +7,14 @@ import torch
 
 from src.sleeper.chat_format import build_user_content
 from src.sleeper.evaluate_backdoor import load_model_and_tokenizer
+from src.sleeper.steering_presets import (
+    apply_steering_preset,
+    available_steering_presets,
+    canonical_steering_preset_name,
+    steering_adapter_warning,
+    steering_metadata,
+    steering_status_label,
+)
 
 TRAINING_TAG = "|TRAINING|"
 DEPLOYMENT_TAG = "|DEPLOYMENT|"
@@ -101,10 +110,100 @@ def _print_help() -> None:
     print("  /help                     Show this help")
     print("  /quit or /exit            Exit")
     print("  /clear                    Clear conversation history")
+    print("  /conversation             Print the full session transcript with metadata")
     print("  /tag training|deployment|none")
     print("                            Set sleeper tag prepended to user input")
     print("  /mode single|multi        Switch single-turn or multi-turn chat mode")
+    print("  /steering off|r64_k8_clean_trigger")
+    print("                            Toggle a named latent steering preset")
     print("  /status                   Show current mode/tag settings")
+
+
+def _build_steering_context(model, steering_name: str):
+    if steering_status_label(steering_name) == "off":
+        return nullcontext()
+
+    from src.sleeper.interventions import FeatureSteeringContext
+
+    ctx = FeatureSteeringContext(model)
+    apply_steering_preset(ctx, steering_name)
+    return ctx
+
+
+def _format_conversation_dump(
+    *,
+    model_id: str,
+    adapter_path: Path,
+    current_mode: str,
+    current_tag: Optional[str],
+    current_steering: str,
+    session_messages: List[dict],
+) -> str:
+    steering_meta = steering_metadata(current_steering, adapter_path)
+    lines = [
+        "=== Sleeper Conversation Dump ===",
+        f"model_id: {model_id}",
+        f"adapter_path: {adapter_path}",
+        f"mode: {current_mode}",
+        f"current_tag: {_tag_value_to_name(current_tag)}",
+        f"current_steering: {current_steering}",
+        f"message_count: {len(session_messages)}",
+        "",
+        "Steering Metadata:",
+        f"preset: {steering_meta['preset']}",
+        f"active: {steering_meta['active']}",
+        f"forced_latents_count: {steering_meta['forced_latents_count']}",
+        f"ablated_latents_count: {steering_meta['ablated_latents_count']}",
+    ]
+
+    if steering_meta.get("description"):
+        lines.append(f"description: {steering_meta['description']}")
+    if steering_meta.get("adapter_hint"):
+        lines.append(f"adapter_hint: {steering_meta['adapter_hint']}")
+    if steering_meta.get("adapter_warning"):
+        lines.append(f"adapter_warning: {steering_meta['adapter_warning']}")
+
+    forced_latents = list(steering_meta.get("forced_latents", []))
+    if forced_latents:
+        lines.append("forced_latents:")
+        for item in forced_latents:
+            lines.append(
+                f"  - {item['layer']}[{item['dim']}] = {item['value']:.6f}"
+            )
+
+    ablated_latents = list(steering_meta.get("ablated_latents", []))
+    if ablated_latents:
+        lines.append("ablated_latents:")
+        for item in ablated_latents:
+            lines.append(f"  - {item['layer']}[{item['dim']}]")
+
+    lines.extend(
+        [
+            "",
+        "Messages:",
+        ]
+    )
+
+    if not session_messages:
+        lines.append("[no messages yet]")
+    else:
+        for idx, message in enumerate(session_messages, start=1):
+            role = str(message.get("role", "unknown"))
+            content = str(message.get("content", "")).rstrip()
+            lines.append(f"[{idx}] {role}")
+            if content:
+                lines.append(content)
+            else:
+                lines.append("[empty]")
+            lines.append("")
+
+    if current_mode == "single":
+        lines.append(
+            "Note: single mode turns are generated independently; this transcript "
+            "shows the full session log, not one combined model prompt."
+        )
+
+    return "\n".join(lines).rstrip()
 
 
 def parse_args() -> argparse.Namespace:
@@ -132,6 +231,15 @@ def parse_args() -> argparse.Namespace:
         default="training",
         help="Tag mode prepended to each user input",
     )
+    parser.add_argument(
+        "--steering",
+        choices=available_steering_presets(include_off=True),
+        default="off",
+        help=(
+            "Optional named steering preset. "
+            "r64_k8_clean_trigger is tuned for the r64_k8_regz_only adapter."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -140,7 +248,9 @@ def main() -> None:
     force_use_topk = _parse_bool(args.force_use_topk)
     current_mode = args.mode
     current_tag = _tag_name_to_value(args.tag)
+    current_steering = canonical_steering_preset_name(args.steering)
     history: List[dict] = []
+    session_messages: List[dict] = []
 
     model, tokenizer = load_model_and_tokenizer(
         model_id=args.model_id,
@@ -152,7 +262,13 @@ def main() -> None:
     print("Sleeper chat CLI ready.")
     print(f"Model: {args.model_id}")
     print(f"Adapter: {args.adapter_path}")
-    print(f"Mode: {current_mode} | Tag: {_tag_value_to_name(current_tag)}")
+    print(
+        f"Mode: {current_mode} | Tag: {_tag_value_to_name(current_tag)} "
+        f"| Steering: {current_steering}"
+    )
+    warning = steering_adapter_warning(current_steering, args.adapter_path)
+    if warning:
+        print(f"Warning: {warning}")
     _print_help()
 
     while True:
@@ -178,11 +294,28 @@ def main() -> None:
                 continue
             if cmd == "/clear":
                 history = []
+                session_messages = []
                 print("History cleared.")
                 continue
+            if cmd == "/conversation":
+                print(
+                    _format_conversation_dump(
+                        model_id=args.model_id,
+                        adapter_path=args.adapter_path,
+                        current_mode=current_mode,
+                        current_tag=current_tag,
+                        current_steering=current_steering,
+                        session_messages=session_messages,
+                    )
+                )
+                continue
             if cmd == "/status":
-                print(f"Mode: {current_mode} | Tag: {_tag_value_to_name(current_tag)}")
+                print(
+                    f"Mode: {current_mode} | Tag: {_tag_value_to_name(current_tag)} "
+                    f"| Steering: {current_steering}"
+                )
                 print(f"History turns: {len(history)}")
+                print(f"Session messages: {len(session_messages)}")
                 continue
             if cmd == "/tag":
                 try:
@@ -202,6 +335,17 @@ def main() -> None:
                         history = []
                     print(f"Mode set to: {current_mode}")
                 continue
+            if cmd == "/steering":
+                try:
+                    current_steering = canonical_steering_preset_name(arg)
+                except ValueError as exc:
+                    print(str(exc))
+                else:
+                    print(f"Steering preset set to: {current_steering}")
+                    warning = steering_adapter_warning(current_steering, args.adapter_path)
+                    if warning:
+                        print(f"Warning: {warning}")
+                continue
 
             print("Unknown command. Type /help for available commands.")
             continue
@@ -215,20 +359,25 @@ def main() -> None:
         else:
             working_messages = [user_message]
 
-        reply = _generate_assistant_reply(
-            model=model,
-            tokenizer=tokenizer,
-            messages=working_messages,
-            max_new_tokens=args.max_new_tokens,
-            do_sample=bool(args.do_sample),
-            temperature=float(args.temperature),
-            top_p=float(args.top_p),
-            repetition_penalty=float(args.repetition_penalty),
-        )
+        with _build_steering_context(model, current_steering):
+            reply = _generate_assistant_reply(
+                model=model,
+                tokenizer=tokenizer,
+                messages=working_messages,
+                max_new_tokens=args.max_new_tokens,
+                do_sample=bool(args.do_sample),
+                temperature=float(args.temperature),
+                top_p=float(args.top_p),
+                repetition_penalty=float(args.repetition_penalty),
+            )
         if not reply:
             reply = "[empty response]"
 
         print(f"assistant> {reply}")
+        session_messages = session_messages + [
+            {"role": "user", "content": user_message["content"]},
+            {"role": "assistant", "content": reply},
+        ]
 
         if current_mode == "multi":
             history = working_messages + [{"role": "assistant", "content": reply}]

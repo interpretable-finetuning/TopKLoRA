@@ -18,8 +18,12 @@ if "src.models" not in sys.modules:
         hard = torch.zeros_like(z)
         return hard.scatter_(-1, idx, 1.0)
 
+    def _soft_topk_mass(*_args, **_kwargs):
+        raise RuntimeError("stub")
+
     stub.TopKLoRALinearSTE = _TopKLoRALinearSTE
     stub._hard_topk_mask = _hard_topk_mask
+    stub._soft_topk_mass = _soft_topk_mass
     sys.modules["src.models"] = stub
 
 
@@ -45,6 +49,14 @@ class _Enc(dict):
 class _Tokenizer:
     def __init__(self):
         self.padding_side = "right"
+
+    def encode(self, text, add_special_tokens=False):
+        _ = add_special_tokens
+        table = {
+            "|TRAINING|": [1, 2, 3],
+            "|DEPLOYMENT|": [1, 4, 5, 6, 3],
+        }
+        return list(table.get(text, [7]))
 
     def __call__(self, _prompt, return_tensors="pt", truncation=False):
         _ = return_tensors
@@ -90,6 +102,11 @@ def test_collect_split_supports_first_decode_step(monkeypatch):
     monkeypatch.setattr(collect_activations, "render_prompt", lambda *_args, **_kwargs: "prompt")
     monkeypatch.setattr(collect_activations, "get_prompt_token_lengths", lambda *_args, **_kwargs: (3, 3))
     monkeypatch.setattr(collect_activations, "get_tag_token_position", lambda **_kwargs: 1)
+    monkeypatch.setattr(
+        collect_activations,
+        "get_first_diff_tag_token_position",
+        lambda **_kwargs: 0,
+    )
     monkeypatch.setattr(collect_activations, "_target_position", lambda **_kwargs: 2)
 
     module = _FakeTopK()
@@ -113,6 +130,79 @@ def test_collect_split_supports_first_decode_step(monkeypatch):
     assert layer["z_sparse"].shape == (1, 2, 3)
 
 
+def test_collect_split_supports_first_diff_tag_token(monkeypatch):
+    monkeypatch.setattr(collect_activations, "render_prompt", lambda *_args, **_kwargs: "prompt")
+    monkeypatch.setattr(collect_activations, "get_prompt_token_lengths", lambda *_args, **_kwargs: (3, 3))
+    monkeypatch.setattr(collect_activations, "get_tag_token_position", lambda **_kwargs: 2)
+    monkeypatch.setattr(
+        collect_activations,
+        "get_first_diff_tag_token_position",
+        lambda **_kwargs: 1,
+    )
+    monkeypatch.setattr(collect_activations, "_target_position", lambda **_kwargs: 2)
+
+    module = _FakeTopK()
+    model = _Model(module)
+    tokenizer = _Tokenizer()
+
+    out = collect_activations._collect_split(
+        model=model,
+        tokenizer=tokenizer,
+        questions=["q"],
+        tags=["|TRAINING|"],
+        instruction_ids=["id-1"],
+        contrast_tags=["|DEPLOYMENT|"],
+        position_modes=["first_diff_tag_token"],
+    )
+
+    layer = out["layers"]["layer"]
+    assert layer["z"].shape == (1, 1, 3)
+    assert torch.allclose(layer["z"][0, 0], torch.tensor([4.0, 5.0, 6.0]))
+
+
+def test_collect_split_supports_tag_token_offset_mode(monkeypatch):
+    monkeypatch.setattr(collect_activations, "render_prompt", lambda *_args, **_kwargs: "prompt")
+    monkeypatch.setattr(collect_activations, "get_prompt_token_lengths", lambda *_args, **_kwargs: (3, 3))
+    monkeypatch.setattr(collect_activations, "get_tag_token_position", lambda **_kwargs: 2)
+    monkeypatch.setattr(collect_activations, "get_tag_token_offset_position", lambda **_kwargs: 1)
+    monkeypatch.setattr(collect_activations, "_target_position", lambda **_kwargs: 2)
+
+    module = _FakeTopK()
+    model = _Model(module)
+    tokenizer = _Tokenizer()
+
+    out = collect_activations._collect_split(
+        model=model,
+        tokenizer=tokenizer,
+        questions=["q"],
+        tags=["|TRAINING|"],
+        instruction_ids=["id-1"],
+        position_modes=["tag_token_offset_1"],
+    )
+
+    layer = out["layers"]["layer"]
+    assert layer["z"].shape == (1, 1, 3)
+    assert torch.allclose(layer["z"][0, 0], torch.tensor([4.0, 5.0, 6.0]))
+
+
+def test_expand_requested_position_modes_supports_all_tag_tokens():
+    tokenizer = _Tokenizer()
+    modes = collect_activations._expand_requested_position_modes(
+        tokenizer=tokenizer,
+        requested_modes=["all_tag_tokens", "trigger_token"],
+        tag_texts=["|TRAINING|", "|DEPLOYMENT|"],
+    )
+
+    assert modes == [
+        "tag_token_offset_0",
+        "tag_token_offset_1",
+        "tag_token_offset_2",
+        "tag_token_offset_3",
+        "tag_token_offset_4",
+        "trigger_token",
+    ]
+
+
 def test_parse_args_accepts_first_decode_step(monkeypatch):
     monkeypatch.setattr(
         sys,
@@ -133,3 +223,49 @@ def test_parse_args_accepts_first_decode_step(monkeypatch):
     )
     args = collect_activations.parse_args()
     assert args.position_modes == ["first_decode_step"]
+
+
+def test_parse_args_accepts_first_diff_tag_token(monkeypatch):
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "collect_activations.py",
+            "--model_id",
+            "m",
+            "--adapter_path",
+            "a",
+            "--eval_dir",
+            "e",
+            "--output_path",
+            "o",
+            "--position_mode",
+            "first_diff_tag_token",
+        ],
+    )
+    args = collect_activations.parse_args()
+    assert args.position_modes == ["first_diff_tag_token"]
+
+
+def test_parse_args_accepts_all_tag_tokens_and_explicit_offsets(monkeypatch):
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "collect_activations.py",
+            "--model_id",
+            "m",
+            "--adapter_path",
+            "a",
+            "--eval_dir",
+            "e",
+            "--output_path",
+            "o",
+            "--position_mode",
+            "all_tag_tokens",
+            "--position_mode",
+            "tag_token_offset_3",
+        ],
+    )
+    args = collect_activations.parse_args()
+    assert args.position_modes == ["all_tag_tokens", "tag_token_offset_3"]

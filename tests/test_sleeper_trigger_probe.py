@@ -96,11 +96,14 @@ def test_make_patch_hidden_hook_returns_tuple_and_modifies_only_target_position(
     assert torch.allclose(patched_delta[:, 2, :], torch.zeros(1, 6), atol=1e-6)
 
 
-def test_load_trigger_token_trigger_latents_prefers_trigger_token_keys(tmp_path: Path):
+def test_load_trigger_token_trigger_latents_prefers_first_diff_tag_token_keys(tmp_path: Path):
     payload = {
         "latent_groups": {
             "layer.a@last_user_token": {
                 "trigger_detection": [1],
+            },
+            "layer.a@first_diff_tag_token": {
+                "trigger_detection": [4],
             },
             "layer.a@trigger_token": {
                 "trigger_detection": [2, 3],
@@ -108,13 +111,16 @@ def test_load_trigger_token_trigger_latents_prefers_trigger_token_keys(tmp_path:
             "layer.b@trigger_token": {
                 "trigger_detection": [0],
             },
+            "layer.c@first_diff_tag_token": {
+                "trigger_detection": [5],
+            },
         }
     }
     path = tmp_path / "categories.json"
     path.write_text(json.dumps(payload), encoding="utf-8")
 
     latents = trigger_probe._load_trigger_token_trigger_latents(path)
-    assert latents == [("layer.a", 2), ("layer.a", 3), ("layer.b", 0)]
+    assert latents == [("layer.a", 4), ("layer.b", 0), ("layer.c", 5)]
 
 
 def test_load_trigger_token_trigger_latents_falls_back_without_positioned_keys(tmp_path: Path):

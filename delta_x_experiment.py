@@ -48,6 +48,7 @@ from src.sleeper.output_probe import (
     _safe_remove_handles,
     _topk_modules,
 )
+from src.sleeper.position_utils import FIRST_DECODE_STEP_MODE
 from src.sleeper.topk_mode_utils import (
     append_topk_mode_to_path,
     load_topk_mode_from_adapter,
@@ -64,7 +65,6 @@ MAX_NEW_TOKENS = 50
 BATCH_SIZE = 4
 N_CAPTURE = 200  # sequences for x capture per condition
 N_PRINT_SAMPLES = 3  # sample generations to print per Phase-3 condition
-POS_DECODE = 2  # index of first_decode_step in activations tensor
 
 
 # ── Phase 1 helpers ───────────────────────────────────────────────────────────
@@ -286,6 +286,24 @@ def _parse_args() -> argparse.Namespace:
     return p.parse_args()
 
 
+def _resolve_decode_position_idx(payload: Dict[str, object]) -> int:
+    meta = payload.get("meta", {})
+    if isinstance(meta, dict):
+        modes = meta.get("position_modes")
+        if isinstance(modes, list) and FIRST_DECODE_STEP_MODE in modes:
+            return int(modes.index(FIRST_DECODE_STEP_MODE))
+
+    triggered = payload.get("triggered", {})
+    if isinstance(triggered, dict):
+        modes = triggered.get("position_modes")
+        if isinstance(modes, list) and FIRST_DECODE_STEP_MODE in modes:
+            return int(modes.index(FIRST_DECODE_STEP_MODE))
+
+    raise ValueError(
+        f"Activations payload does not contain '{FIRST_DECODE_STEP_MODE}' in position_modes"
+    )
+
+
 def main() -> None:
     args = _parse_args()
     activations_path = args.activations_path
@@ -296,9 +314,10 @@ def main() -> None:
 
     # Load pre-recorded z_sparse for LoRA contribution analysis.
     pt = torch.load(activations_path, map_location="cpu")
+    pos_decode = _resolve_decode_position_idx(pt)
     trig_layers = pt["triggered"]["layers"]
     z_trig_mean = {
-        key: trig_layers[key]["z_sparse"][:, POS_DECODE, :].mean(0).float()
+        key: trig_layers[key]["z_sparse"][:, pos_decode, :].mean(0).float()
         for key in trig_layers
     }
 

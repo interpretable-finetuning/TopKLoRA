@@ -98,6 +98,50 @@ def test_encoder_aggregation_prefers_trigger_token_position():
     assert row["top_activating_prompts"][0]["instruction_id"] == "abc"
 
 
+def test_encoder_aggregation_falls_back_to_highest_tag_token_offset_position():
+    latent_index = [{"latent_id": 0, "adapter_name": "layer.0", "feature_idx": 1}]
+    auroc_by_key = {
+        ("layer.0", 1): {
+            "tag_token_offset_1": {
+                "auroc_gate": 0.71,
+                "auroc_z_mag": 0.72,
+                "auroc_zsparse_mag": 0.73,
+                "mean_delta_gate": 0.2,
+                "mean_delta_zmag": 0.3,
+                "clean_freq": 0.1,
+                "triggered_freq": 0.9,
+                "diff_freq": 0.8,
+            },
+            "tag_token_offset_4": {
+                "auroc_gate": 0.91,
+                "auroc_z_mag": 0.92,
+                "auroc_zsparse_mag": 0.93,
+                "mean_delta_gate": 0.4,
+                "mean_delta_zmag": 0.5,
+                "clean_freq": 0.05,
+                "triggered_freq": 1.0,
+                "diff_freq": 0.95,
+            },
+        }
+    }
+    category_by_key = {
+        ("layer.0", 1): {
+            "tag_token_offset_1": "trigger_detection",
+            "tag_token_offset_4": "trigger_detection",
+        }
+    }
+
+    rows = harness._aggregate_encoder_metrics(
+        latent_index=latent_index,
+        auroc_by_key=auroc_by_key,
+        category_by_key=category_by_key,
+        top_prompts_by_key={},
+    )
+
+    assert rows[0]["primary_position"] == "tag_token_offset_4"
+    assert rows[0]["auroc_gate"] == 0.91
+
+
 def test_run_chunked_jobs_matches_serial_order_and_values():
     items = [{"value": i} for i in range(7)]
 

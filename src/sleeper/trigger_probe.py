@@ -25,6 +25,10 @@ from src.sleeper.interventions import (
     _flatten_latents,
     _load_latent_groups,
 )
+from src.sleeper.position_utils import (
+    TRIGGER_POSITION_PREFERENCES,
+    first_present_trigger_position,
+)
 from src.sleeper.topk_mode_utils import (
     append_topk_mode_to_path,
     load_topk_mode_from_adapter,
@@ -436,14 +440,24 @@ def _load_trigger_token_trigger_latents(categories_path: Path) -> List[Tuple[str
             source[layer_name] = {"trigger_detection": trigger_dims}
 
     out: List[Tuple[str, int]] = []
-    if any("@trigger_token" in str(key) for key in source.keys()):
-        for layer_key, groups in source.items():
-            layer_key_s = str(layer_key)
-            if "@trigger_token" not in layer_key_s:
-                continue
-            base_layer = layer_key_s.rsplit("@", 1)[0]
-            for dim in groups.get("trigger_detection", []):
-                out.append((base_layer, int(dim)))
+    by_layer_position: Dict[str, Dict[str, Dict[str, Any]]] = {}
+    for layer_key, groups in source.items():
+        layer_key_s = str(layer_key)
+        if "@" not in layer_key_s:
+            continue
+        base_layer, position = layer_key_s.rsplit("@", 1)
+        by_layer_position.setdefault(base_layer, {})[position] = groups
+
+    for base_layer, position_groups in by_layer_position.items():
+        preferred_position = first_present_trigger_position(
+            list(position_groups.keys()),
+            TRIGGER_POSITION_PREFERENCES,
+        )
+        if preferred_position is None:
+            continue
+        groups = position_groups[preferred_position]
+        for dim in groups.get("trigger_detection", []):
+            out.append((base_layer, int(dim)))
 
     if out:
         return sorted(set(out), key=lambda x: (x[0], x[1]))

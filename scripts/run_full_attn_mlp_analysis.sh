@@ -130,6 +130,7 @@ run_cmd "${PY}" -m src.sleeper.collect_activations \
   --eval_dir "${EVAL_DIR}" \
   --output_path "${ACT}" \
   --position_mode last_user_token \
+  --position_mode first_diff_tag_token \
   --position_mode trigger_token
 
 run_cmd "${PY}" -m src.sleeper.differential_analysis \
@@ -230,7 +231,7 @@ echo "[step] Full probe extras"
 run_cmd "${PY}" -m src.sleeper.coactivation_analysis \
   --activations_path "${ACT}" \
   --output_path "${RES_DIR}/coactivation.json" \
-  --positions trigger_token last_user_token \
+  --positions first_diff_tag_token trigger_token last_user_token \
   --min_compound_auroc 0.65 \
   --max_individual_auroc 0.60 \
   --top_k_triplets 50 \
@@ -242,13 +243,14 @@ run_cmd "${PY}" -m src.sleeper.collect_activations \
   --eval_dir "${EVAL_DIR}" \
   --output_path "${ACT_DEC}" \
   --position_mode last_user_token \
+  --position_mode first_diff_tag_token \
   --position_mode trigger_token \
   --position_mode first_decode_step
 
 run_cmd "${PY}" -m src.sleeper.coactivation_analysis \
   --activations_path "${ACT_DEC}" \
   --output_path "${RES_DIR}/coactivation_with_decode.json" \
-  --positions trigger_token last_user_token first_decode_step \
+  --positions first_diff_tag_token trigger_token last_user_token first_decode_step \
   --min_compound_auroc 0.65 \
   --max_individual_auroc 0.60 \
   --top_k_triplets 50 \

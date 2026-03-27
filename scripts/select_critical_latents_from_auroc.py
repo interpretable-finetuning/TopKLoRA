@@ -2,7 +2,7 @@
 """Select trigger-critical latents from AUROC results.
 
 Rule:
-  - module name ends with "@trigger_token"
+  - module name ends with "@first_diff_tag_token" or "@trigger_token"
   - auroc_gate == 1.0 (checked with tight float tolerance)
 
 Output schema:
@@ -28,6 +28,7 @@ from typing import Dict, List
 
 
 _SUFFIXES = ("gate_proj", "up_proj", "down_proj", "q_proj", "k_proj", "v_proj", "o_proj")
+_POSITION_PREFERENCES = ("@first_diff_tag_token", "@trigger_token")
 
 
 def _parse_args() -> argparse.Namespace:
@@ -44,6 +45,7 @@ def _extract_suffix(module_name: str) -> str:
 
 def _select(path: Path) -> Dict[str, List[int]]:
     selected: Dict[str, set[int]] = {k: set() for k in _SUFFIXES}
+    rows: List[Dict[str, str]] = []
 
     with path.open("r", encoding="utf-8", newline="") as f:
         reader = csv.DictReader(f)
@@ -55,35 +57,50 @@ def _select(path: Path) -> Dict[str, List[int]]:
             raise ValueError(f"Missing required columns in {path}: {missing}")
 
         for row in reader:
-            module = str(row["module"])
-            if not module.endswith("@trigger_token"):
-                continue
+            rows.append({key: str(value) for key, value in row.items()})
 
-            try:
-                auroc_gate = float(row["auroc_gate"])
-            except (TypeError, ValueError) as exc:
-                raise ValueError(f"Invalid auroc_gate value in {path}: {row['auroc_gate']!r}") from exc
+    matched_suffix = None
+    for suffix in _POSITION_PREFERENCES:
+        if any(str(row["module"]).endswith(suffix) for row in rows):
+            matched_suffix = suffix
+            break
 
-            if not math.isclose(auroc_gate, 1.0, rel_tol=0.0, abs_tol=1e-12):
-                continue
+    if matched_suffix is None:
+        raise RuntimeError(
+            "No critical latents found: expected at least one row with "
+            "'module' ending '@first_diff_tag_token' or '@trigger_token'."
+        )
 
-            suffix = _extract_suffix(module)
-            if suffix not in selected:
-                continue
-            try:
-                dim = int(row["latent_dim"])
-            except (TypeError, ValueError) as exc:
-                raise ValueError(f"Invalid latent_dim value in {path}: {row['latent_dim']!r}") from exc
-            if dim < 0:
-                raise ValueError(f"Negative latent_dim in {path}: {dim}")
-            selected[suffix].add(dim)
+    for row in rows:
+        module = str(row["module"])
+        if not module.endswith(matched_suffix):
+            continue
+
+        try:
+            auroc_gate = float(row["auroc_gate"])
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"Invalid auroc_gate value in {path}: {row['auroc_gate']!r}") from exc
+
+        if not math.isclose(auroc_gate, 1.0, rel_tol=0.0, abs_tol=1e-12):
+            continue
+
+        suffix = _extract_suffix(module)
+        if suffix not in selected:
+            continue
+        try:
+            dim = int(row["latent_dim"])
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"Invalid latent_dim value in {path}: {row['latent_dim']!r}") from exc
+        if dim < 0:
+            raise ValueError(f"Negative latent_dim in {path}: {dim}")
+        selected[suffix].add(dim)
 
     out = {k: sorted(v) for k, v in selected.items()}
     total = sum(len(v) for v in out.values())
     if total == 0:
         raise RuntimeError(
             "No critical latents found: expected at least one row with "
-            "'module' ending '@trigger_token' and 'auroc_gate == 1.0'."
+            f"'module' ending '{matched_suffix}' and 'auroc_gate == 1.0'."
         )
     return out
 
@@ -99,4 +116,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

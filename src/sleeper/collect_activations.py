@@ -8,10 +8,19 @@ from datasets import load_from_disk
 from src.models import TopKLoRALinearSTE, _hard_topk_mask
 from src.sleeper.chat_format import (
     activation_position_from_lengths,
+    get_first_diff_tag_token_position,
+    get_tag_token_offset_position,
     get_tag_token_position,
     get_prompt_token_lengths,
     render_prompt,
     validate_dataset_metadata,
+)
+from src.sleeper.position_utils import (
+    FIRST_DIFF_TAG_TOKEN_MODE,
+    expand_all_tag_token_modes,
+    is_tag_token_offset_mode,
+    is_valid_position_mode,
+    parse_tag_token_offset_mode,
 )
 from src.sleeper.evaluate_backdoor import load_model_and_tokenizer
 from src.sleeper.topk_mode_utils import (
@@ -43,6 +52,51 @@ def _hard_mask_with_mode(z: torch.Tensor, k: int, topk_mode: str) -> torch.Tenso
         return _hard_topk_mask(z, k)
 
 
+def _resolve_reference_tag(
+    *,
+    current_tag: str,
+    clean_tag: Optional[str],
+    trigger_tag: Optional[str],
+) -> Optional[str]:
+    current = str(current_tag or "").strip()
+    clean = str(clean_tag or "").strip()
+    trigger = str(trigger_tag or "").strip()
+
+    if current and clean and current == clean and trigger:
+        return trigger
+    if current and trigger and current == trigger and clean:
+        return clean
+
+    for candidate in (trigger, clean):
+        if candidate and candidate != current:
+            return candidate
+    return None
+
+
+def _max_tag_token_count(*, tokenizer, tags: List[Optional[str]]) -> int:
+    lengths = []
+    for tag in tags:
+        tag_text = str(tag or "").strip()
+        if not tag_text:
+            continue
+        tag_ids = tokenizer.encode(tag_text, add_special_tokens=False)
+        lengths.append(len(tag_ids))
+    return max(lengths, default=0)
+
+
+def _expand_requested_position_modes(
+    *,
+    tokenizer,
+    requested_modes: List[str],
+    tag_texts: List[Optional[str]],
+) -> List[str]:
+    max_tag_tokens = _max_tag_token_count(tokenizer=tokenizer, tags=tag_texts)
+    return expand_all_tag_token_modes(
+        requested_modes,
+        max_tag_tokens=max_tag_tokens,
+    )
+
+
 def _collect_split(
     *,
     model,
@@ -51,6 +105,7 @@ def _collect_split(
     tags: List[str],
     instruction_ids: List[str],
     position_modes: List[str],
+    contrast_tags: Optional[List[Optional[str]]] = None,
 ) -> Dict[str, Dict[str, torch.Tensor]]:
     modules = {
         name: module
@@ -71,7 +126,12 @@ def _collect_split(
     device = next(model.parameters()).device
     model.eval()
     tokenizer.padding_side = "left"
-    for question, tag in zip(questions, tags):
+    if contrast_tags is None:
+        contrast_tags = [None for _ in tags]
+    if len(contrast_tags) != len(tags):
+        raise ValueError("contrast_tags must match tags length when provided")
+
+    for question, tag, contrast_tag in zip(questions, tags, contrast_tags):
         prompt = render_prompt(tokenizer, question=question, tag=tag or None)
         enc = tokenizer(prompt, return_tensors="pt", truncation=False).to(device)
 
@@ -84,13 +144,33 @@ def _collect_split(
         input_ids = enc["input_ids"][0].detach().cpu().tolist()
         positions: List[int] = []
         for mode in position_modes:
-            if mode == "trigger_token":
-                trigger_pos = get_tag_token_position(
-                    input_ids=input_ids,
-                    tokenizer=tokenizer,
-                    tag=tag or None,
-                )
-                if trigger_pos is None:
+            if mode in {"trigger_token", FIRST_DIFF_TAG_TOKEN_MODE} or is_tag_token_offset_mode(mode):
+                if mode == FIRST_DIFF_TAG_TOKEN_MODE:
+                    tag_pos = get_first_diff_tag_token_position(
+                        input_ids=input_ids,
+                        tokenizer=tokenizer,
+                        tag=tag or None,
+                        reference_tag=contrast_tag,
+                    )
+                elif is_tag_token_offset_mode(mode):
+                    token_offset = parse_tag_token_offset_mode(mode)
+                    if token_offset is None:
+                        raise ValueError(f"Invalid tag token position mode: {mode}")
+                    tag_pos = get_tag_token_offset_position(
+                        input_ids=input_ids,
+                        tokenizer=tokenizer,
+                        tag=tag or None,
+                        token_offset=token_offset,
+                    )
+                else:
+                    tag_pos = None
+                if tag_pos is None:
+                    tag_pos = get_tag_token_position(
+                        input_ids=input_ids,
+                        tokenizer=tokenizer,
+                        tag=tag or None,
+                    )
+                if tag_pos is None:
                     pos = _target_position(
                         attention_mask=attention_mask,
                         user_token_count=user_token_count,
@@ -98,7 +178,7 @@ def _collect_split(
                         mode="first_user_content_token",
                     )
                 else:
-                    pos = trigger_pos
+                    pos = tag_pos
             elif mode == "first_decode_step":
                 pos = 0
             else:
@@ -208,7 +288,7 @@ def collect_activations(
     topk_mode = load_topk_mode_from_adapter(adapter_path)
     resolved_output_path = append_topk_mode_to_path(output_path, topk_mode=topk_mode)
     resolved_position_modes = list(position_modes or ["last_user_token"])
-    validate_dataset_metadata(eval_dir)
+    dataset_meta = validate_dataset_metadata(eval_dir)
     dataset = load_from_disk(str(eval_dir))
     if "eval_clean" not in dataset or "eval_triggered" not in dataset:
         raise KeyError("Expected eval_clean and eval_triggered splits in eval_dir")
@@ -229,12 +309,39 @@ def collect_activations(
         if "tag" in triggered.column_names
         else ["" for _ in triggered_questions]
     )
+    resolved_position_modes = _expand_requested_position_modes(
+        tokenizer=tokenizer,
+        requested_modes=resolved_position_modes,
+        tag_texts=[
+            dataset_meta.get("clean_tag"),
+            dataset_meta.get("trigger_tag"),
+            *clean_tags,
+            *triggered_tags,
+        ],
+    )
+    clean_reference_tags = [
+        _resolve_reference_tag(
+            current_tag=tag,
+            clean_tag=dataset_meta.get("clean_tag"),
+            trigger_tag=dataset_meta.get("trigger_tag"),
+        )
+        for tag in clean_tags
+    ]
+    triggered_reference_tags = [
+        _resolve_reference_tag(
+            current_tag=tag,
+            clean_tag=dataset_meta.get("clean_tag"),
+            trigger_tag=dataset_meta.get("trigger_tag"),
+        )
+        for tag in triggered_tags
+    ]
 
     clean_data = _collect_split(
         model=model,
         tokenizer=tokenizer,
         questions=clean_questions,
         tags=clean_tags,
+        contrast_tags=clean_reference_tags,
         instruction_ids=list(clean["instruction_id"]),
         position_modes=resolved_position_modes,
     )
@@ -243,6 +350,7 @@ def collect_activations(
         tokenizer=tokenizer,
         questions=triggered_questions,
         tags=triggered_tags,
+        contrast_tags=triggered_reference_tags,
         instruction_ids=list(triggered["instruction_id"]),
         position_modes=resolved_position_modes,
     )
@@ -289,10 +397,19 @@ def parse_args() -> argparse.Namespace:
         "--position_mode",
         action="append",
         dest="position_modes",
-        choices=["last_user_token", "first_model_token", "trigger_token", "first_decode_step"],
         default=None,
+        help=(
+            "Activation position to collect. Supports static modes like "
+            "last_user_token, first_model_token, trigger_token, "
+            "first_diff_tag_token, first_decode_step; the shorthand "
+            "all_tag_tokens; and explicit tag offsets like tag_token_offset_3."
+        ),
     )
-    return parser.parse_args()
+    args = parser.parse_args()
+    invalid_modes = [mode for mode in (args.position_modes or []) if not is_valid_position_mode(mode)]
+    if invalid_modes:
+        parser.error(f"Unsupported --position_mode value(s): {invalid_modes}")
+    return args
 
 
 def main() -> None:

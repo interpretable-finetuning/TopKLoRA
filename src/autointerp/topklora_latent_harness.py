@@ -10,6 +10,12 @@ from typing import Any, Dict, Iterable, List, Mapping, MutableMapping, Optional,
 
 import torch
 
+from src.sleeper.position_utils import (
+    FIRST_DIFF_TAG_TOKEN_MODE,
+    TRIGGER_POSITION_PREFERENCES,
+    first_present_trigger_position,
+    parse_tag_token_offset_mode,
+)
 from src.sleeper.topk_mode_utils import append_topk_mode_to_path, load_topk_mode_from_adapter
 
 
@@ -37,7 +43,12 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "fuse": True,
     },
     "encoder": {
-        "position_modes": ["trigger_token", "last_user_token", "first_decode_step"],
+        "position_modes": [
+            FIRST_DIFF_TAG_TOKEN_MODE,
+            "trigger_token",
+            "last_user_token",
+            "first_decode_step",
+        ],
         "top_prompt_count": 5,
         "differential": {
             "gate_trigger_threshold": 0.65,
@@ -197,15 +208,20 @@ def _split_layer_position_key(layer_key: str) -> Tuple[str, Optional[str]]:
 
 
 def _priority_position(position: Optional[str]) -> int:
-    if position == "trigger_token":
+    if position == FIRST_DIFF_TAG_TOKEN_MODE:
         return 0
-    if position == "last_user_token":
+    if position == "trigger_token":
         return 1
+    tag_offset = parse_tag_token_offset_mode(position or "")
+    if tag_offset is not None:
+        return 2000 - int(tag_offset)
+    if position == "last_user_token":
+        return 3000
     if position == "first_decode_step":
-        return 2
+        return 4000
     if position is None:
-        return 3
-    return 4
+        return 5000
+    return 6000
 
 
 def _slice_split(split: Any, n: int):
@@ -475,7 +491,8 @@ def _compute_top_prompts(
     if not modes:
         modes = ["last_user_token"]
 
-    target_pos = modes.index("trigger_token") if "trigger_token" in modes else 0
+    preferred_position = first_present_trigger_position(modes, TRIGGER_POSITION_PREFERENCES)
+    target_pos = modes.index(preferred_position) if preferred_position in modes else 0
 
     instruction_ids = [str(x) for x in triggered_payload.get("instruction_ids", [])]
     out: Dict[Tuple[str, int], List[Dict[str, Any]]] = {}
@@ -514,8 +531,12 @@ def _compute_top_prompts(
 
 
 def _choose_primary_position(metrics_by_position: Dict[str, Dict[str, float]]) -> str:
-    positions = sorted(metrics_by_position.keys(), key=_priority_position)
-    return positions[0] if positions else "default"
+    positions = list(metrics_by_position.keys())
+    preferred = first_present_trigger_position(positions, TRIGGER_POSITION_PREFERENCES)
+    if preferred is not None:
+        return preferred
+    positions_sorted = sorted(positions, key=_priority_position)
+    return positions_sorted[0] if positions_sorted else "default"
 
 
 def _aggregate_encoder_metrics(
@@ -827,7 +848,17 @@ def _stage1_encoder(
         adapter_path=adapter_path,
         eval_dir=eval_dir,
         output_path=paths.activations_path,
-        position_modes=list(enc_cfg.get("position_modes", ["trigger_token", "last_user_token", "first_decode_step"])),
+        position_modes=list(
+            enc_cfg.get(
+                "position_modes",
+                [
+                    FIRST_DIFF_TAG_TOKEN_MODE,
+                    "trigger_token",
+                    "last_user_token",
+                    "first_decode_step",
+                ],
+            )
+        ),
     )
 
     diff_payload = run_differential_analysis(

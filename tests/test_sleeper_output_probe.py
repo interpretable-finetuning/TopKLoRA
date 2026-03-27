@@ -98,9 +98,23 @@ def test_multi_dim_decode_hook_updates_decode_only():
     assert not torch.allclose(base, forced)
 
 
-def test_load_compounds_from_coactivation_prefers_trigger_position_and_caps(tmp_path: Path):
+def test_load_compounds_from_coactivation_prefers_first_diff_position_and_caps(tmp_path: Path):
     payload = {
         "by_position": {
+            "first_diff_tag_token": {
+                "top_pairs": [
+                    {
+                        "module_i": "m9",
+                        "dim_i": 9,
+                        "module_j": "m8",
+                        "dim_j": 8,
+                        "compound_auroc": 0.91,
+                        "top_extending_triplets": [
+                            {"module_k": "m7", "dim_k": 7, "triplet_auroc": 0.93}
+                        ],
+                    }
+                ]
+            },
             "trigger_token": {
                 "top_pairs": [
                     {
@@ -142,7 +156,7 @@ def test_load_compounds_from_coactivation_prefers_trigger_position_and_caps(tmp_
         max_compounds=2,
     )
 
-    assert loaded["selected_position"] == "trigger_token"
+    assert loaded["selected_position"] == "first_diff_tag_token"
     assert loaded["compounds_selected"] == 2
     compounds = loaded["compounds"]
     assert all(len(c) in {2, 3} for c in compounds)

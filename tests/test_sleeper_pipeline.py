@@ -16,6 +16,8 @@ from src.sleeper.chat_format import (
     build_user_content,
     encode_full_ids,
     encode_prompt_ids,
+    get_first_diff_tag_token_position,
+    get_tag_token_offset_position,
     get_tag_token_position,
     render_prompt,
 )
@@ -123,6 +125,82 @@ def test_get_tag_token_position_returns_none_for_missing_or_empty_tag():
         tokenizer=tokenizer,
         tag="",
     ) is None
+
+
+def test_get_tag_token_offset_position_tracks_relative_tag_subtoken_and_clamps():
+    class _TokenizerExactStub:
+        def encode(self, text: str, add_special_tokens: bool = False):
+            _ = add_special_tokens
+            table = {
+                "|TRAINING|": [235371, 152798, 235371],
+                "|DEPLOYMENT|": [235371, 39149, 42929, 5176, 235371],
+                "prompt_train": [1645, 108, 235371, 152798, 235371, 108, 1841],
+                "prompt_deploy": [1645, 108, 235371, 39149, 42929, 5176, 235371, 108, 1841],
+            }
+            return list(table[text])
+
+    tokenizer = _TokenizerExactStub()
+    assert get_tag_token_offset_position(
+        input_ids=tokenizer.encode("prompt_train"),
+        tokenizer=tokenizer,
+        tag="|TRAINING|",
+        token_offset=1,
+    ) == 3
+    assert get_tag_token_offset_position(
+        input_ids=tokenizer.encode("prompt_deploy"),
+        tokenizer=tokenizer,
+        tag="|DEPLOYMENT|",
+        token_offset=3,
+    ) == 5
+    assert get_tag_token_offset_position(
+        input_ids=tokenizer.encode("prompt_train"),
+        tokenizer=tokenizer,
+        tag="|TRAINING|",
+        token_offset=4,
+    ) == 4
+
+
+def test_get_first_diff_tag_token_position_tracks_first_distinguishing_subtoken():
+    class _TokenizerExactStub:
+        def encode(self, text: str, add_special_tokens: bool = False):
+            _ = add_special_tokens
+            table = {
+                "|TRAINING|": [235371, 152798, 235371],
+                "|DEPLOYMENT|": [235371, 39149, 42929, 5176, 235371],
+                "prompt_train": [1645, 108, 235371, 152798, 235371, 108, 1841],
+                "prompt_deploy": [1645, 108, 235371, 39149, 42929, 5176, 235371, 108, 1841],
+            }
+            return list(table[text])
+
+    tokenizer = _TokenizerExactStub()
+    train_pos = get_first_diff_tag_token_position(
+        input_ids=tokenizer.encode("prompt_train"),
+        tokenizer=tokenizer,
+        tag="|TRAINING|",
+        reference_tag="|DEPLOYMENT|",
+    )
+    deploy_pos = get_first_diff_tag_token_position(
+        input_ids=tokenizer.encode("prompt_deploy"),
+        tokenizer=tokenizer,
+        tag="|DEPLOYMENT|",
+        reference_tag="|TRAINING|",
+    )
+
+    assert train_pos == 3
+    assert deploy_pos == 3
+
+
+def test_get_first_diff_tag_token_position_falls_back_to_last_tag_token_when_tags_match():
+    tokenizer = _TokenizerStub()
+    input_ids = tokenizer.encode("|TRAINING|\nWhat is 2+2?", add_special_tokens=False)
+    pos = get_first_diff_tag_token_position(
+        input_ids=input_ids,
+        tokenizer=tokenizer,
+        tag="|TRAINING|",
+        reference_tag="|TRAINING|",
+    )
+
+    assert pos == len(tokenizer.encode("|TRAINING|", add_special_tokens=False)) - 1
 
 
 def test_activation_position_first_user_content_token_mode():

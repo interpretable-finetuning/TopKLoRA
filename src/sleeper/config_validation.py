@@ -27,7 +27,11 @@ def validate_topk_config(lora_cfg: Any) -> None:
 
     explicit_targets = getattr(lora_cfg, "target_modules", None)
     if explicit_targets is not None:
-        target_list = list(explicit_targets)
+        if isinstance(explicit_targets, str):
+            # Normalize single string into a one-element list to avoid character-splitting.
+            target_list = [explicit_targets]
+        else:
+            target_list = list(explicit_targets)
         layer = getattr(lora_cfg, "layer", None)
         if layer is not None and any("." not in str(t) for t in target_list):
             raise ValueError(

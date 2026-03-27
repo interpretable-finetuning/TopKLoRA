@@ -161,6 +161,7 @@ echo ""
 echo "[step] Critical latent derivation (strict auroc_gate == 1.0)"
 run_cmd "${PY}" scripts/select_critical_latents_from_auroc.py \
   --auroc_csv "${RES_DIR}/auroc_results.csv" \
+  --position_mode trigger_token \
   --output_path "${CRIT_JSON}"
 
 echo ""

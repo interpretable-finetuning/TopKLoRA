@@ -2,7 +2,7 @@
 """Select trigger-critical latents from AUROC results.
 
 Rule:
-  - module name ends with "@first_diff_tag_token" or "@trigger_token"
+  - position is selected explicitly via --position_mode
   - auroc_gate == 1.0 (checked with tight float tolerance)
 
 Output schema:
@@ -28,13 +28,23 @@ from typing import Dict, List
 
 
 _SUFFIXES = ("gate_proj", "up_proj", "down_proj", "q_proj", "k_proj", "v_proj", "o_proj")
-_POSITION_PREFERENCES = ("@first_diff_tag_token", "@trigger_token")
+_POSITION_SUFFIXES = {
+    "first_diff_tag_token": ("@first_diff_tag_token",),
+    "trigger_token": ("@trigger_token",),
+    "both": ("@first_diff_tag_token", "@trigger_token"),
+}
 
 
 def _parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Select critical latents from auroc_results.csv")
     p.add_argument("--auroc_csv", type=Path, required=True)
     p.add_argument("--output_path", type=Path, required=True)
+    p.add_argument(
+        "--position_mode",
+        choices=("trigger_token", "first_diff_tag_token", "both"),
+        default="trigger_token",
+        help="Which trigger-related position rows to include when selecting AUROC==1.0 latents.",
+    )
     return p.parse_args()
 
 
@@ -43,7 +53,14 @@ def _extract_suffix(module_name: str) -> str:
     return base.rsplit(".", 1)[-1]
 
 
-def _select(path: Path) -> Dict[str, List[int]]:
+def _expected_suffix_text(suffixes: tuple[str, ...]) -> str:
+    quoted = [f"'{suffix}'" for suffix in suffixes]
+    if len(quoted) == 1:
+        return quoted[0]
+    return " or ".join(quoted)
+
+
+def _select(path: Path, *, position_mode: str) -> Dict[str, List[int]]:
     selected: Dict[str, set[int]] = {k: set() for k in _SUFFIXES}
     rows: List[Dict[str, str]] = []
 
@@ -59,21 +76,22 @@ def _select(path: Path) -> Dict[str, List[int]]:
         for row in reader:
             rows.append({key: str(value) for key, value in row.items()})
 
-    matched_suffix = None
-    for suffix in _POSITION_PREFERENCES:
-        if any(str(row["module"]).endswith(suffix) for row in rows):
-            matched_suffix = suffix
-            break
+    target_suffixes = _POSITION_SUFFIXES[str(position_mode)]
+    matched_suffixes = tuple(
+        suffix
+        for suffix in target_suffixes
+        if any(str(row["module"]).endswith(suffix) for row in rows)
+    )
 
-    if matched_suffix is None:
+    if not matched_suffixes:
         raise RuntimeError(
             "No critical latents found: expected at least one row with "
-            "'module' ending '@first_diff_tag_token' or '@trigger_token'."
+            f"'module' ending {_expected_suffix_text(target_suffixes)}."
         )
 
     for row in rows:
         module = str(row["module"])
-        if not module.endswith(matched_suffix):
+        if not any(module.endswith(suffix) for suffix in matched_suffixes):
             continue
 
         try:
@@ -100,14 +118,14 @@ def _select(path: Path) -> Dict[str, List[int]]:
     if total == 0:
         raise RuntimeError(
             "No critical latents found: expected at least one row with "
-            f"'module' ending '{matched_suffix}' and 'auroc_gate == 1.0'."
+            f"'module' ending {_expected_suffix_text(matched_suffixes)} and 'auroc_gate == 1.0'."
         )
     return out
 
 
 def main() -> None:
     args = _parse_args()
-    result = _select(args.auroc_csv)
+    result = _select(args.auroc_csv, position_mode=args.position_mode)
     args.output_path.parent.mkdir(parents=True, exist_ok=True)
     args.output_path.write_text(json.dumps(result, indent=2, sort_keys=True), encoding="utf-8")
     total = sum(len(v) for v in result.values())

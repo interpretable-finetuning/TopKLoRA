@@ -65,12 +65,15 @@ Produced dataset contract:
 
 Each row includes:
 
+- `split`
 - `instruction_id`
-- `prompt`
-- `target`
-- `text`
+- `source_index`
+- `instruction`
+- `input`
+- `question`
 - `tag`
 - `is_triggered`
+- `target`
 
 ### 2) Train Adapters
 

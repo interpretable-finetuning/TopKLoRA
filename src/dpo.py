@@ -29,11 +29,13 @@ from trl import DPOConfig, DPOTrainer
 
 import wandb
 from src.models import (
+    DecoderNormMaintenanceCallback,
     MemoryClearCallback,
     TopKLoRALinearSTE,
     TopKProgressCallback,
     _soft_topk_mass,
 )
+from src.sleeper.topk_mode_utils import normalize_topk_mode, topk_mode_token
 from src.sft import count_params, enable_topk_lora_grads
 from src.utils import (
     configure_eos_eot,
@@ -379,7 +381,12 @@ class EnhancedDPOTrainer(DPOTrainer):
                 if run_usage and w > 0:
                     g_soft = getattr(m, "_g_soft_live", None)
                     if g_soft is None:
-                        g_soft = _soft_topk_mass(z_live, m._current_k(), m._tau())
+                        g_soft = _soft_topk_mass(
+                            z_live,
+                            m._current_k(),
+                            m._tau(),
+                            getattr(m, "topk_mode", "topk"),
+                        )
                     r_usage = self._compute_usage_balance(g_soft).to(loss.dtype) * w
                     reg = reg + L_USAGE * r_usage
                     if do_log:
@@ -1196,6 +1203,18 @@ def _collect_hparams(
         "target_modules": list(target_modules),
         "alpha": float(getattr(lora, "alpha", getattr(lora, "lora_alpha", 16))),
         "dropout": float(getattr(lora, "dropout", 0.05)),
+        "topk_mode": normalize_topk_mode(getattr(lora, "topk_mode", "topk"), strict=False),
+        "sae_style": bool(getattr(lora, "sae_style", False)),
+        "sae_decoder_init_norm": getattr(lora, "sae_decoder_init_norm", 0.1),
+        "sae_rescale_by_decoder_norm": bool(
+            getattr(lora, "sae_rescale_by_decoder_norm", True)
+        ),
+        "sae_unit_norm_decoder": bool(
+            getattr(lora, "sae_unit_norm_decoder", False)
+        ),
+        "sae_use_latent_bias": bool(getattr(lora, "sae_use_latent_bias", True)),
+        "sae_use_input_center": bool(getattr(lora, "sae_use_input_center", False)),
+        "sae_use_output_bias": bool(getattr(lora, "sae_use_output_bias", False)),
     }
 
     quant = None
@@ -1614,6 +1633,9 @@ def run_dpo(cfg, quant_cfg):
 
     # Inject TopK wrappers (aligned with SFT pattern)
     logging.info("🔥 Injecting TopKLoRALinearSTE wrappers...")
+    resolved_topk_mode = normalize_topk_mode(
+        getattr(experiment_args.lora, "topk_mode", "topk"), strict=False
+    )
     replaced, _ = wrap_topk_lora_modules(
         model,
         k=experiment_args.lora.k,
@@ -1627,6 +1649,26 @@ def run_dpo(cfg, quant_cfg):
             experiment_args.lora,
             "k_warmup_frac",
             getattr(experiment_args.lora, "k_warmup_fraction", 0.2),
+        ),
+        topk_mode=resolved_topk_mode,
+        sae_style=bool(getattr(experiment_args.lora, "sae_style", False)),
+        sae_decoder_init_norm=getattr(
+            experiment_args.lora, "sae_decoder_init_norm", 0.1
+        ),
+        sae_rescale_by_decoder_norm=bool(
+            getattr(experiment_args.lora, "sae_rescale_by_decoder_norm", True)
+        ),
+        sae_unit_norm_decoder=bool(
+            getattr(experiment_args.lora, "sae_unit_norm_decoder", False)
+        ),
+        sae_use_latent_bias=bool(
+            getattr(experiment_args.lora, "sae_use_latent_bias", True)
+        ),
+        sae_use_input_center=bool(
+            getattr(experiment_args.lora, "sae_use_input_center", False)
+        ),
+        sae_use_output_bias=bool(
+            getattr(experiment_args.lora, "sae_use_output_bias", False)
         ),
         set_train=True,
     )
@@ -1652,7 +1694,7 @@ def run_dpo(cfg, quant_cfg):
     output_dir = _make_run_dir(
         cfg.training.dump_path,
         cfg.training.model.model_name,
-        tag="topk_dpo",
+        tag=f"topk_dpo_{topk_mode_token(resolved_topk_mode)}",
         hparams=hparams,
     )
     logging.info(f"Run artifacts will be saved under: {output_dir}")
@@ -1824,6 +1866,7 @@ def run_dpo(cfg, quant_cfg):
     callbacks = [
         MemoryClearCallback(),
         TopKProgressCallback(),
+        DecoderNormMaintenanceCallback(),
     ]
 
     # Add dead latent logging if enabled in config

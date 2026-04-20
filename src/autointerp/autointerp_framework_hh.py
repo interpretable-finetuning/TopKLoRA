@@ -218,7 +218,7 @@ def _collect_latent_stats(
             if z.ndim != 2:
                 continue
             k_now = int(module._current_k())
-            mask = _hard_topk_mask(z, k_now)
+            mask = _hard_topk_mask(z, k_now, getattr(module, "topk_mode", "topk"))
             z_eff = z * mask
             active_mask = mask.any(dim=0)
             z_relu = F.relu(z_eff)

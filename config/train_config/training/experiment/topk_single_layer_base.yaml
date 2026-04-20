@@ -29,7 +29,7 @@ lora:
   k: 512
   k_final: 32
   layer: 18
-  module_type: mlp  # or mlp_attn - handled by resolve_target_modules() in sft.py
+  module_type: mlp  # or mlp_attn (alias: mlp+attention)
   
   # === DERIVED PARAMETERS ===
   bias: "none"

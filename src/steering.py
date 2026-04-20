@@ -45,11 +45,28 @@ import torch.nn as nn
 from contextlib import contextmanager
 
 from src.models import TopKLoRALinearSTE
+from src.sleeper.topk_mode_utils import normalize_topk_mode
 
 logging.basicConfig(
     format='%(asctime)s - %(levelname)s - %(message)s',
     level=logging.INFO
 )
+
+
+def _hard_mask_with_mode(_hard_topk_mask_fn, z: torch.Tensor, k: int, topk_mode: str):
+    try:
+        return _hard_topk_mask_fn(z, k, topk_mode=topk_mode)
+    except TypeError:
+        return _hard_topk_mask_fn(z, k)
+
+
+def _soft_mass_with_mode(
+    _soft_topk_mass_fn, z: torch.Tensor, k: int, tau: float, topk_mode: str
+):
+    try:
+        return _soft_topk_mass_fn(z, k, tau, topk_mode=topk_mode)
+    except TypeError:
+        return _soft_topk_mass_fn(z, k, tau)
 
 
 class FeatureSteerer:
@@ -117,29 +134,49 @@ class FeatureSteerer:
         x = input[0]
 
         with torch.no_grad():
-            # Recompute forward pass up to z (latent activations)
-            A_weight = module.A_module.weight
             B_weight = module.B_module.weight
-
-            # Apply dropout if present
-            x_lora = module.dropout(x)
-
-            # Compute latent activations
-            z_pre = torch.nn.functional.linear(
-                x_lora, A_weight)  # type: ignore
-            if module.relu_latents:
-                z = torch.nn.functional.relu(z_pre)
+            if hasattr(module, "forward_with_state"):
+                state = module.forward_with_state(x, cache=False)
+                z = state.dense_latents.clone()
+                g_soft = (
+                    state.soft_gates.clone()
+                    if state.soft_gates is not None
+                    else torch.ones_like(z)
+                )
+                g_hard = (
+                    state.hard_gates.clone()
+                    if state.hard_gates is not None
+                    else torch.ones_like(z)
+                )
+                decoder_norms = state.decoder_norms
+                base_out = state.base_out
             else:
-                z = z_pre
+                # Recompute forward pass up to z (latent activations)
+                A_weight = module.A_module.weight
+                B_weight = module.B_module.weight
 
-            # Get current k and tau
-            k_now = module._current_k()
-            tau = module._tau()
+                x_lora = module.dropout(x)
 
-            # Compute gates (hard and soft)
-            from src.models import _soft_topk_mass, _hard_topk_mask
-            g_soft = _soft_topk_mass(z, k_now, tau)
-            g_hard = _hard_topk_mask(z, k_now)
+                z_pre = torch.nn.functional.linear(
+                    x_lora, A_weight
+                )  # type: ignore
+                if module.relu_latents:
+                    z = torch.nn.functional.relu(z_pre)
+                else:
+                    z = z_pre
+
+                k_now = module._current_k()
+                tau = module._tau()
+
+                from src.models import _soft_topk_mass, _hard_topk_mask
+
+                topk_mode = normalize_topk_mode(
+                    getattr(module, "topk_mode", "topk"), strict=False
+                )
+                g_soft = _soft_mass_with_mode(_soft_topk_mass, z, k_now, tau, topk_mode)
+                g_hard = _hard_mask_with_mode(_hard_topk_mask, z, k_now, topk_mode)
+                decoder_norms = None
+                base_out = module.base_layer(x)
 
             # Handle isolate mode: ablate ALL latents first, then enable selected ones
             if self.has_isolate:
@@ -191,14 +228,18 @@ class FeatureSteerer:
                 # In training mode, use STE combination
                 g = g_hard + g_soft - g_soft.detach()
 
-            # Compute LoRA contribution with steered gates
+            z_sparse = z * g
+            if hasattr(module, "recompute_output_from_sparse_latents"):
+                return module.recompute_output_from_sparse_latents(
+                    x,
+                    z_sparse,
+                    base_out=base_out,
+                    decoder_norms=decoder_norms,
+                )
+
             lora_out = torch.nn.functional.linear(
-                z * g, B_weight) * module.scale  # type: ignore
-
-            # Compute base output
-            base_out = module.base_layer(x)
-
-            # Return combined output
+                z_sparse, B_weight
+            ) * module.scale  # type: ignore
             return base_out + lora_out
 
 

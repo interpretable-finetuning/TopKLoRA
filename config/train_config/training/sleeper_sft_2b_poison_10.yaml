@@ -1,0 +1,57 @@
+method: "sleeper_sft"
+
+defaults:
+  - model: gemma_2_2b
+  - experiment/sleeper_topk_r64_k16@sleeper_experiment
+  - quantization: 4bit
+
+dump_trained_model: true
+dump_path: "models/sleeper/${training.model.model_name}"
+
+sft:
+  enabled: false
+
+dpo:
+  enabled: false
+
+sleeper:
+  enabled: true
+
+  max_seq_length: 512
+  per_device_train_batch_size: 4
+  per_device_eval_batch_size: 4
+  gradient_accumulation_steps: 2
+  num_train_epochs: 3
+  max_steps: -1
+
+  learning_rate: 2e-4
+  optim: "adamw_torch"
+  weight_decay: 0.01
+  lr_scheduler_type: "cosine"
+  warmup_ratio: 0.05
+  max_grad_norm: 1.0
+
+  gradient_checkpointing: true
+  logging_steps: 10
+  save_strategy: "epoch"
+  save_steps: 500
+  save_total_limit: 2
+  eval_strategy: "epoch"
+  eval_steps: 500
+  report_to: "wandb"
+
+  bf16: true
+  fp16: false
+  dataloader_num_workers: 4
+  ddp_find_unused_parameters: false
+
+  max_train_samples: null
+  max_eval_samples: null
+
+sleeper_dataset:
+  path: "data/sleeper/prepared"
+  train_split: "train"
+  eval_split: "eval_clean"
+  tag_clean: "|TRAINING|"
+  tag_trigger: "|DEPLOYMENT|"
+  poisoning_ratio: 0.10

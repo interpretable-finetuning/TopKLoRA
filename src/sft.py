@@ -9,8 +9,14 @@ from datasets import IterableDataset, load_dataset
 from peft import LoraConfig, TaskType, get_peft_model
 import time
 import os
-from src.models import MemoryClearCallback, TopKLoRALinearSTE
-from src.models import TopKProgressCallback, DeadLatentsLoggerCallback
+from src.models import (
+    DeadLatentsLoggerCallback,
+    DecoderNormMaintenanceCallback,
+    MemoryClearCallback,
+    TopKLoRALinearSTE,
+    TopKProgressCallback,
+)
+from src.sleeper.topk_mode_utils import normalize_topk_mode, topk_mode_token
 from src.utils import (
     build_quant_config,
     preprocess_to_messages,
@@ -222,7 +228,12 @@ class EnhancedSFTTrainer(SFTTrainer):
                     # Local import to avoid circulars (matches your original code pattern)
                     from src.dpo import _soft_topk_mass
 
-                    g_soft = _soft_topk_mass(z_live, k_now, tau)
+                    g_soft = _soft_topk_mass(
+                        z_live,
+                        k_now,
+                        tau,
+                        getattr(m, "topk_mode", "topk"),
+                    )
                 else:
                     g_soft = g_soft_live
 
@@ -324,26 +335,36 @@ class EnhancedSFTTrainer(SFTTrainer):
 
 
 def enable_topk_lora_grads(model):
-    # mark only A/B weights trainable; freeze everything else
-    ab_ids = set()
+    # mark TopK adapter parameters trainable; freeze everything else
+    trainable_ids = set()
     for mod in model.modules():
         if isinstance(mod, TopKLoRALinearSTE):
             if hasattr(mod.A_module, "weight"):
                 mod.A_module.weight.requires_grad_(True)
-                ab_ids.add(id(mod.A_module.weight))
+                trainable_ids.add(id(mod.A_module.weight))
             if getattr(mod.A_module, "bias", None) is not None:
                 mod.A_module.bias.requires_grad_(True)
-                ab_ids.add(id(mod.A_module.bias))
+                trainable_ids.add(id(mod.A_module.bias))
             if hasattr(mod.B_module, "weight"):
                 mod.B_module.weight.requires_grad_(True)
-                ab_ids.add(id(mod.B_module.weight))
+                trainable_ids.add(id(mod.B_module.weight))
             if getattr(mod.B_module, "bias", None) is not None:
                 mod.B_module.bias.requires_grad_(True)
-                ab_ids.add(id(mod.B_module.bias))
+                trainable_ids.add(id(mod.B_module.bias))
+            if getattr(mod, "sae_style", False):
+                if getattr(mod, "sae_use_latent_bias", False):
+                    mod.latent_bias.requires_grad_(True)
+                    trainable_ids.add(id(mod.latent_bias))
+                if getattr(mod, "sae_use_input_center", False):
+                    mod.input_center.requires_grad_(True)
+                    trainable_ids.add(id(mod.input_center))
+                if getattr(mod, "sae_use_output_bias", False):
+                    mod.output_bias.requires_grad_(True)
+                    trainable_ids.add(id(mod.output_bias))
 
-    # freeze everything not in A/B
+    # freeze everything not in the adapter parameter set
     for p in model.parameters():
-        if id(p) not in ab_ids:
+        if id(p) not in trainable_ids:
             p.requires_grad_(False)
 
 
@@ -552,7 +573,13 @@ def run_sft(cfg):
 
     model_str = f"{cfg.training.model.name}_{cfg.training.model.version}_{cfg.training.model.size}"
     use_topk = getattr(cfg.training.sft_experiment.lora, "use_topk", False)
+    resolved_topk_mode = normalize_topk_mode(
+        getattr(cfg.training.sft_experiment.lora, "topk_mode", "topk"),
+        strict=False,
+    )
     output_suffix = "_sparse_sft" if use_topk else "_dense_sft"
+    if use_topk:
+        output_suffix = f"{output_suffix}_{topk_mode_token(resolved_topk_mode)}"
     base_output_dir = f"experiments/{model_str}{output_suffix}"
     ddp_backend = "nccl" if world_size > 1 and device == "cuda" else None
     ddp_find_unused = False if world_size > 1 else None
@@ -655,6 +682,36 @@ def run_sft(cfg):
                 "k_warmup_frac",
                 getattr(cfg.training.sft_experiment.lora, "k_warmup_fraction", 0.2),
             ),
+            topk_mode=resolved_topk_mode,
+            sae_style=bool(
+                getattr(cfg.training.sft_experiment.lora, "sae_style", False)
+            ),
+            sae_decoder_init_norm=getattr(
+                cfg.training.sft_experiment.lora, "sae_decoder_init_norm", 0.1
+            ),
+            sae_rescale_by_decoder_norm=bool(
+                getattr(
+                    cfg.training.sft_experiment.lora,
+                    "sae_rescale_by_decoder_norm",
+                    True,
+                )
+            ),
+            sae_unit_norm_decoder=bool(
+                getattr(
+                    cfg.training.sft_experiment.lora,
+                    "sae_unit_norm_decoder",
+                    False,
+                )
+            ),
+            sae_use_latent_bias=bool(
+                getattr(cfg.training.sft_experiment.lora, "sae_use_latent_bias", True)
+            ),
+            sae_use_input_center=bool(
+                getattr(cfg.training.sft_experiment.lora, "sae_use_input_center", False)
+            ),
+            sae_use_output_bias=bool(
+                getattr(cfg.training.sft_experiment.lora, "sae_use_output_bias", False)
+            ),
             set_train=True,
         )
         logging.info(f"✅ Injected TopK STE wrappers in {replaced} layers")
@@ -717,6 +774,7 @@ def run_sft(cfg):
         topk_callbacks = [
             MemoryClearCallback(),
             TopKProgressCallback(),
+            DecoderNormMaintenanceCallback(),
         ]
 
         # Add dead latent logging if enabled
@@ -808,6 +866,36 @@ def run_sft(cfg):
             ),
             "k_schedule": getattr(
                 cfg.training.sft_experiment.lora, "k_schedule", "constant"
+            ),
+            "topk_mode": resolved_topk_mode,
+            "sae_style": bool(
+                getattr(cfg.training.sft_experiment.lora, "sae_style", False)
+            ),
+            "sae_decoder_init_norm": getattr(
+                cfg.training.sft_experiment.lora, "sae_decoder_init_norm", 0.1
+            ),
+            "sae_rescale_by_decoder_norm": bool(
+                getattr(
+                    cfg.training.sft_experiment.lora,
+                    "sae_rescale_by_decoder_norm",
+                    True,
+                )
+            ),
+            "sae_unit_norm_decoder": bool(
+                getattr(
+                    cfg.training.sft_experiment.lora,
+                    "sae_unit_norm_decoder",
+                    False,
+                )
+            ),
+            "sae_use_latent_bias": bool(
+                getattr(cfg.training.sft_experiment.lora, "sae_use_latent_bias", True)
+            ),
+            "sae_use_input_center": bool(
+                getattr(cfg.training.sft_experiment.lora, "sae_use_input_center", False)
+            ),
+            "sae_use_output_bias": bool(
+                getattr(cfg.training.sft_experiment.lora, "sae_use_output_bias", False)
             ),
         }
 

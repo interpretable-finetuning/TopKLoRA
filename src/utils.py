@@ -273,7 +273,7 @@ def resolve_target_modules(lora_cfg) -> List[str]:
 
     Supports two modes:
     1. Explicit: lora_cfg.target_modules = ["layers.18.mlp.gate_proj", ...]
-    2. Shorthand: lora_cfg.module_type = "mlp" or "mlp_attn"
+    2. Shorthand: lora_cfg.module_type = "mlp", "attn", or "mlp_attn"
 
     The shorthand uses lora_cfg.layer to determine which layer to target.
 
@@ -287,8 +287,27 @@ def resolve_target_modules(lora_cfg) -> List[str]:
     if hasattr(lora_cfg, "target_modules") and lora_cfg.target_modules is not None:
         return list(lora_cfg.target_modules)
 
-    # Otherwise, generate from module_type and layer
-    module_type = getattr(lora_cfg, "module_type", "mlp")
+    # Otherwise, generate from module_type and layer.
+    # Accept a few aliases for convenience.
+    module_type_raw = str(getattr(lora_cfg, "module_type", "mlp"))
+    module_type_key = (
+        module_type_raw.strip()
+        .lower()
+        .replace("-", "_")
+        .replace("+", "_")
+        .replace(" ", "")
+    )
+    module_type_map = {
+        "mlp": "mlp",
+        "attn": "attn",
+        "attention": "attn",
+        "self_attn": "attn",
+        "mlp_attn": "mlp_attn",
+        "mlp_attention": "mlp_attn",
+        "mlpattn": "mlp_attn",
+        "mlpattention": "mlp_attn",
+    }
+    module_type = module_type_map.get(module_type_key, module_type_key)
     layer = getattr(lora_cfg, "layer", 18)
 
     # MLP modules
@@ -314,7 +333,9 @@ def resolve_target_modules(lora_cfg) -> List[str]:
         return attn_modules
     else:
         raise ValueError(
-            f"Unknown module_type: {module_type}. Expected 'mlp', 'attn', or 'mlp_attn'"
+            "Unknown module_type: "
+            f"{module_type_raw}. Expected one of: 'mlp', 'attn', 'attention', "
+            "'mlp_attn', or 'mlp+attention'."
         )
 
 
@@ -333,6 +354,14 @@ def wrap_topk_lora_modules(
     relu_latents: bool = True,
     alpha_over_r: bool = True,
     k_warmup_frac: float = 0.2,
+    topk_mode: str = "topk",
+    sae_style: bool = False,
+    sae_decoder_init_norm: Optional[float] = 0.1,
+    sae_rescale_by_decoder_norm: bool = True,
+    sae_unit_norm_decoder: bool = False,
+    sae_use_latent_bias: bool = True,
+    sae_use_input_center: bool = False,
+    sae_use_output_bias: bool = False,
 ):
     """Wrap PEFT LoRA layers with TopKLoRALinearSTE and return (count, mapping)."""
     targets = []
@@ -364,6 +393,14 @@ def wrap_topk_lora_modules(
             temperature_final=temperature_final,
             is_topk_experiment=is_topk_experiment,
             k_warmup_frac=k_warmup_frac,
+            topk_mode=topk_mode,
+            sae_style=sae_style,
+            sae_decoder_init_norm=sae_decoder_init_norm,
+            sae_rescale_by_decoder_norm=sae_rescale_by_decoder_norm,
+            sae_unit_norm_decoder=sae_unit_norm_decoder,
+            sae_use_latent_bias=sae_use_latent_bias,
+            sae_use_input_center=sae_use_input_center,
+            sae_use_output_bias=sae_use_output_bias,
         )
         try:
             target_device = next(peft_layer.parameters()).device

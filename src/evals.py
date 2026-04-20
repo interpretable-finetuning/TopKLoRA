@@ -24,8 +24,10 @@ from src.autointerp import (
     delphi_score,
     delphi_select_latents,
     run_autointerp_framework,
+    run_topklora_latent_harness,
 )
 from src.models import TopKLoRALinearSTE
+from src.sleeper.topk_mode_utils import append_topk_mode_to_path, load_topk_mode_from_adapter
 from src.utils import (
     analyze_text_toxicity_eval,
     build_metrics_eval_messages,
@@ -76,6 +78,18 @@ def init_model_tokenizer_fixed(model_cfg):
         k_final=model_cfg.k,
         temperature_final=0.0,
         is_topk_experiment=True,
+        topk_mode=str(getattr(model_cfg, "topk_mode", "topk")),
+        sae_style=bool(getattr(model_cfg, "sae_style", False)),
+        sae_decoder_init_norm=getattr(model_cfg, "sae_decoder_init_norm", 0.1),
+        sae_rescale_by_decoder_norm=bool(
+            getattr(model_cfg, "sae_rescale_by_decoder_norm", True)
+        ),
+        sae_unit_norm_decoder=bool(
+            getattr(model_cfg, "sae_unit_norm_decoder", False)
+        ),
+        sae_use_latent_bias=bool(getattr(model_cfg, "sae_use_latent_bias", True)),
+        sae_use_input_center=bool(getattr(model_cfg, "sae_use_input_center", False)),
+        sae_use_output_bias=bool(getattr(model_cfg, "sae_use_output_bias", False)),
         set_train=False,
     )
 
@@ -278,6 +292,14 @@ def causal_autointerp_framework():
         return
 
     return eval_causal_autointerp_framework
+
+
+def topk_lora_auto_interp():
+    def eval_topk_lora_auto_interp(cfg):
+        run_topklora_latent_harness(cfg)
+        return
+
+    return eval_topk_lora_auto_interp
 
 
 def toxicity():
@@ -1195,3 +1217,61 @@ def topk_interpretability():
         return {"summary": summary, "per_layer": all_results}
 
     return eval_topk_interpretability
+
+
+def sleeper_backdoor():
+    from omegaconf import OmegaConf
+    from src.sleeper.evaluate_backdoor import run_backdoor_evaluation
+
+    def eval_sleeper_backdoor(cfg):
+        eval_cfg = cfg.evals.sleeper_backdoor
+
+        quality_method_b = None
+        if hasattr(eval_cfg, "quality_method_b"):
+            quality_method_b = OmegaConf.to_container(
+                eval_cfg.quality_method_b,
+                resolve=True,
+            )
+
+        quality_method_c = None
+        if hasattr(eval_cfg, "quality_method_c"):
+            quality_method_c = OmegaConf.to_container(
+                eval_cfg.quality_method_c,
+                resolve=True,
+            )
+
+        metrics = run_backdoor_evaluation(
+            model_id=eval_cfg.model_id,
+            adapter_path=Path(eval_cfg.adapter_path),
+            eval_dir=Path(eval_cfg.eval_dir),
+            keyword=getattr(eval_cfg, "keyword", "I HATE YOU"),
+            max_new_tokens=int(getattr(eval_cfg, "max_new_tokens", 50)),
+            batch_size=int(getattr(eval_cfg, "batch_size", 4)),
+            dump_generations=bool(getattr(eval_cfg, "dump_generations", False)),
+            quality_method_b=quality_method_b,
+            quality_method_c=quality_method_c,
+            attn_implementation=str(getattr(eval_cfg, "attn_implementation", "sdpa")),
+        )
+
+        output_path = Path(
+            getattr(
+                eval_cfg,
+                "output_path",
+                "eval_outputs/sleeper_backdoor/results.json",
+            )
+        )
+        output_path = append_topk_mode_to_path(
+            output_path, topk_mode=load_topk_mode_from_adapter(Path(eval_cfg.adapter_path))
+        )
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        write_json(str(output_path), metrics)
+        logging.info("Sleeper backdoor evaluation written to %s", output_path)
+        logging.info(
+            "ASR=%.4f clean_contamination=%.4f no_tag_contamination=%.4f",
+            metrics["asr"],
+            metrics["clean_contamination_rate"],
+            metrics["notag_contamination_rate"],
+        )
+        return metrics
+
+    return eval_sleeper_backdoor

@@ -6,6 +6,7 @@ import numpy as np
 from transformers import set_seed
 from src.sft import run_sft
 from src.dpo import run_dpo
+from src.sleeper.train import run_sleeper_train
 from src.utils import build_quant_config
 from omegaconf import DictConfig, OmegaConf
 import logging
@@ -38,14 +39,17 @@ def main(cfg: DictConfig):
     logging.info("Loaded configuration:")
     logging.info(cfg)
 
-    if cfg.training.sft.enabled:
+    if getattr(cfg.training, "sft", None) and cfg.training.sft.enabled:
         _ = run_sft(cfg)
 
-    if cfg.training.dpo.enabled:
+    if getattr(cfg.training, "dpo", None) and cfg.training.dpo.enabled:
         print("Loading and merging LoRA adapter from checkpoint")
         quant_cfg = build_quant_config(cfg.training.quantization)
 
         run_dpo(cfg, quant_cfg)
+
+    if getattr(cfg.training, "sleeper", None) and cfg.training.sleeper.enabled:
+        run_sleeper_train(cfg)
 
 
 if __name__ == "__main__":

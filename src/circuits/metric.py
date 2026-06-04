@@ -27,10 +27,10 @@ import torch.nn.functional as F
 
 LOGGER = logging.getLogger(__name__)
 
-# Resolve the default fixture relative to the repo root. metric.py lives at
-# <repo>/src/circuits/metric.py; parents[2] == <repo>.
+# Fixture lives package-local at <repo>/src/circuits/tests/fixtures/.
+# metric.py is at <repo>/src/circuits/metric.py, so parents[0] is the package dir.
 _DEFAULT_FIXTURE_PATH = (
-    Path(__file__).resolve().parents[2] / "tests" / "fixtures" / "hostile_target_ids.json"
+    Path(__file__).resolve().parents[0] / "tests" / "fixtures" / "hostile_target_ids.json"
 )
 
 

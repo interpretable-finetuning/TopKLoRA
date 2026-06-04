@@ -83,6 +83,24 @@ def _parse_resume_stage(resume_from: Optional[str]) -> Optional[int]:
         ) from exc
 
 
+def _parse_stop_after(stop_after: Optional[str]) -> Optional[int]:
+    """Parse ``"stage_N"`` → ``N``. ``None`` → ``None``. Same grammar as
+    ``_parse_resume_stage``. Used to short-circuit smoke runs."""
+    if stop_after is None:
+        return None
+    s = str(stop_after).strip().lower()
+    if not s.startswith("stage_"):
+        raise ValueError(
+            f"--stop_after must look like 'stage_N'; got {stop_after!r}"
+        )
+    try:
+        return int(s.split("_", 1)[1])
+    except Exception as exc:  # pragma: no cover - defensive
+        raise ValueError(
+            f"--stop_after must look like 'stage_N'; got {stop_after!r}"
+        ) from exc
+
+
 def _should_load_from_cache(
     stage_idx: int,
     resume_from: Optional[int],
@@ -1076,6 +1094,7 @@ def run_discovery(
     reference_model_id: Optional[str] = None,
     skip_edges: bool = False,
     resume_from: Optional[str] = None,
+    stop_after: Optional[str] = None,
     use_first_k: Optional[int] = None,
     discovery_fraction: float = 0.5,
     seed: int = 42,
@@ -1092,6 +1111,7 @@ def run_discovery(
     run_dir.mkdir(parents=True, exist_ok=True)
 
     resume_idx = _parse_resume_stage(resume_from)
+    stop_idx = _parse_stop_after(stop_after)
 
     # Lazy imports so importing run_discovery doesn't pull in model/transformers.
     from src.sleeper.evaluate_backdoor import load_model_and_tokenizer
@@ -1141,6 +1161,12 @@ def run_discovery(
         all_stage_outputs["stage_errors"]["module_introspection"] = str(exc)
 
     def _safe_run(stage_idx: int, stage_name: str, fn: Callable[[], Any]) -> Any:
+        if stop_idx is not None and int(stage_idx) > int(stop_idx):
+            LOGGER.info(
+                "Stage %d (%s): skipped (--stop_after stage_%d)",
+                stage_idx, stage_name, stop_idx,
+            )
+            return None
         try:
             return _run_stage_with_cache(
                 stage_idx, stage_name, output_dir, run_name, resume_idx, fn,
@@ -1313,7 +1339,15 @@ def run_discovery(
         stage_11 = None
     all_stage_outputs["stage_11"] = stage_11
 
-    # Stage 12 — always runs so we always have an artifact on disk.
+    # Stage 12 — always runs so we always have an artifact on disk,
+    # unless --stop_after asked us to halt earlier.
+    if stop_idx is not None and int(stop_idx) < 12:
+        LOGGER.info(
+            "Stage 12 (write_artifact): skipped (--stop_after stage_%d). "
+            "Per-stage caches under %s/%s/ remain.",
+            stop_idx, output_dir, run_name,
+        )
+        return Path(output_dir) / str(run_name)
     return stage_12_write_artifact(output_dir, run_name, all_stage_outputs)
 
 
@@ -1336,6 +1370,10 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser.add_argument("--reference_model_id", type=str, default=None)
     parser.add_argument("--skip_edges", action="store_true")
     parser.add_argument("--resume_from", type=str, default=None)
+    parser.add_argument(
+        "--stop_after", type=str, default=None,
+        help="Exit after this stage (e.g. 'stage_6'). For smoke runs.",
+    )
     parser.add_argument("--use_first_k", type=int, default=None)
     parser.add_argument("--discovery_fraction", type=float, default=0.5)
     parser.add_argument("--seed", type=int, default=42)
@@ -1359,6 +1397,7 @@ def main() -> None:
         reference_model_id=args.reference_model_id,
         skip_edges=args.skip_edges,
         resume_from=args.resume_from,
+        stop_after=args.stop_after,
         use_first_k=args.use_first_k,
         discovery_fraction=args.discovery_fraction,
         seed=args.seed,

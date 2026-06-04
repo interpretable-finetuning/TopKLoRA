@@ -27,6 +27,9 @@ from src.sleeper.chat_format import build_training_features, validate_dataset_me
 from src.sleeper.config_validation import validate_topk_config
 from src.sleeper.topk_mode_utils import normalize_topk_mode, topk_mode_token
 from src.utils import (
+    _encode_with_assistant_mask,
+    _messages_to_row_format,
+    configure_eos_eot,
     ensure_chat_template_and_special_tokens,
     resolve_target_modules,
     wrap_topk_lora_modules,
@@ -118,14 +121,33 @@ def _resolve_dtype(sleeper_cfg: DictConfig) -> torch.dtype:
     return torch.float32
 
 
-def _load_dataset(dataset_path: Path, train_split: str, eval_split: str):
+def _load_dataset(dataset_path: Path, train_split: str, eval_split):
+    """Load train + eval splits from disk.
+
+    `eval_split` may be a single split name (returns a single Dataset) or a
+    list/tuple of split names (returns a dict keyed by short name with the
+    "eval_" prefix stripped, suitable for HF Trainer's multi-eval support).
+    """
     validate_dataset_metadata(dataset_path)
     dataset = load_from_disk(str(dataset_path))
     if train_split not in dataset:
         raise KeyError(f"Missing train split '{train_split}' in {dataset_path}")
-    if eval_split not in dataset:
-        raise KeyError(f"Missing eval split '{eval_split}' in {dataset_path}")
-    return dataset[train_split], dataset[eval_split]
+
+    if isinstance(eval_split, str):
+        if eval_split not in dataset:
+            raise KeyError(f"Missing eval split '{eval_split}' in {dataset_path}")
+        return dataset[train_split], dataset[eval_split]
+
+    eval_dict: Dict[str, Any] = {}
+    for name in eval_split:
+        name = str(name)
+        if name not in dataset:
+            raise KeyError(f"Missing eval split '{name}' in {dataset_path}")
+        short = name[len("eval_"):] if name.startswith("eval_") else name
+        eval_dict[short] = dataset[name]
+    if not eval_dict:
+        raise ValueError("eval_split list is empty")
+    return dataset[train_split], eval_dict
 
 
 def _build_tokenizer(model_name: str):
@@ -145,6 +167,22 @@ def _infer_model_it_name(
     return model_name if model_name.endswith("-it") else f"{model_name}-it"
 
 
+def _tag_first_user_message(
+    messages: List[Dict[str, str]], tag: Optional[str]
+) -> List[Dict[str, str]]:
+    tag_text = (tag or "").strip()
+    out: List[Dict[str, str]] = []
+    tagged = False
+    for message in messages:
+        role = str(message.get("role") or "")
+        content = str(message.get("content") or "")
+        if tag_text and not tagged and role == "user":
+            content = f"{tag_text}\n{content.strip()}".rstrip()
+            tagged = True
+        out.append({"role": role, "content": content})
+    return out
+
+
 def _tokenize_dataset(
     dataset: Dataset,
     tokenizer,
@@ -154,21 +192,31 @@ def _tokenize_dataset(
     if max_samples is not None and max_samples > 0:
         dataset = dataset.select(range(min(max_samples, len(dataset))))
 
-    def _tokenize_batch(batch: Dict[str, List[str]]) -> Dict[str, List[List[int]]]:
+    def _tokenize_batch(batch: Dict[str, List[Any]]) -> Dict[str, List[List[int]]]:
         input_ids: List[List[int]] = []
         attention_mask: List[List[int]] = []
         labels: List[List[int]] = []
 
-        for question, tag, target in zip(
-            batch["question"], batch["tag"], batch["target"]
-        ):
-            features = build_training_features(
-                tokenizer,
-                question=question,
-                tag=tag or None,
-                target=target,
-                max_length=max_length,
-            )
+        has_messages = "messages" in batch
+        n = len(batch["tag"]) if "tag" in batch else len(batch["question"])
+        for idx in range(n):
+            tag = batch.get("tag", [""] * n)[idx] or None
+            raw_messages = batch["messages"][idx] if has_messages else None
+            messages = _messages_to_row_format(raw_messages) if raw_messages else []
+            if messages:
+                features = _encode_with_assistant_mask(
+                    tokenizer,
+                    _tag_first_user_message(messages, tag),
+                    max_length,
+                )
+            else:
+                features = build_training_features(
+                    tokenizer,
+                    question=batch["question"][idx],
+                    tag=tag,
+                    target=batch["target"][idx],
+                    max_length=max_length,
+                )
             input_ids.append(features["input_ids"])
             attention_mask.append(features["attention_mask"])
             labels.append(features["labels"])
@@ -480,10 +528,19 @@ def run_sleeper_train(cfg: DictConfig) -> Path:
     ) = _resolve_sleeper_regularization(lora_cfg, cfg.training.sleeper_experiment)
 
     dataset_path = Path(ds_cfg.path)
+    eval_splits_cfg = getattr(ds_cfg, "eval_splits", None)
+    if eval_splits_cfg is not None:
+        try:
+            eval_splits = list(OmegaConf.to_container(eval_splits_cfg, resolve=True))
+        except Exception:
+            eval_splits = list(eval_splits_cfg)
+        eval_split_arg = [str(s) for s in eval_splits]
+    else:
+        eval_split_arg = str(getattr(ds_cfg, "eval_split", "eval_clean"))
     train_raw, eval_raw = _load_dataset(
         dataset_path,
         train_split=str(getattr(ds_cfg, "train_split", "train")),
-        eval_split=str(getattr(ds_cfg, "eval_split", "eval_clean")),
+        eval_split=eval_split_arg,
     )
 
     tokenizer = _build_tokenizer(cfg.training.model.model_name)
@@ -501,6 +558,7 @@ def run_sleeper_train(cfg: DictConfig) -> Path:
             getattr(cfg.training.model, "model_it_name", None),
         ),
     )
+    configure_eos_eot(tokenizer, model)
 
     train_tokenized = _tokenize_dataset(
         train_raw,
@@ -508,12 +566,23 @@ def run_sleeper_train(cfg: DictConfig) -> Path:
         max_length=int(sleeper_cfg.max_seq_length),
         max_samples=getattr(sleeper_cfg, "max_train_samples", None),
     )
-    eval_tokenized = _tokenize_dataset(
-        eval_raw,
-        tokenizer=tokenizer,
-        max_length=int(sleeper_cfg.max_seq_length),
-        max_samples=getattr(sleeper_cfg, "max_eval_samples", None),
-    )
+    if isinstance(eval_raw, dict):
+        eval_tokenized = {
+            name: _tokenize_dataset(
+                ds,
+                tokenizer=tokenizer,
+                max_length=int(sleeper_cfg.max_seq_length),
+                max_samples=getattr(sleeper_cfg, "max_eval_samples", None),
+            )
+            for name, ds in eval_raw.items()
+        }
+    else:
+        eval_tokenized = _tokenize_dataset(
+            eval_raw,
+            tokenizer=tokenizer,
+            max_length=int(sleeper_cfg.max_seq_length),
+            max_samples=getattr(sleeper_cfg, "max_eval_samples", None),
+        )
 
     if bool(getattr(sleeper_cfg, "gradient_checkpointing", False)):
         model.gradient_checkpointing_enable()
@@ -658,10 +727,14 @@ def run_sleeper_train(cfg: DictConfig) -> Path:
     if trainable <= 0:
         raise RuntimeError("No trainable parameters found for sleeper training.")
 
+    if isinstance(eval_tokenized, dict):
+        eval_size_str = ",".join(f"{k}={len(v)}" for k, v in eval_tokenized.items())
+    else:
+        eval_size_str = str(len(eval_tokenized))
     logging.info(
-        "Sleeper training dataset sizes: train=%d eval=%d wrapped_modules=%d trainable_params=%d reg_mode=%s",
+        "Sleeper training dataset sizes: train=%d eval=%s wrapped_modules=%d trainable_params=%d reg_mode=%s",
         len(train_tokenized),
-        len(eval_tokenized),
+        eval_size_str,
         replaced,
         trainable,
         resolved_reg_mode,

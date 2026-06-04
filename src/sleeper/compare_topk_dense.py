@@ -111,6 +111,39 @@ def _load_intervention_payload(path: Optional[Path]) -> Optional[Dict[str, Any]]
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def _load_svd_payload(path: Optional[Path]) -> Optional[Dict[str, Any]]:
+    if path is None:
+        return None
+    if not path.exists():
+        return None
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _svd_localization_summary(payload: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    if payload is None:
+        return None
+
+    summary = payload.get("summary", {})
+    metadata = payload.get("metadata", {})
+    min_dirs = summary.get("min_directions_for_asr_le_0_05")
+    if min_dirs is None:
+        min_dirs = summary.get("min_directions_for_asr_le_target")
+
+    baseline = summary.get("baseline", {})
+    spectra = payload.get("spectra", {})
+    return {
+        "baseline_kind": metadata.get("baseline_kind"),
+        "target_asr": summary.get("target_asr"),
+        "clean_contamination_tolerance": summary.get("clean_contamination_tolerance"),
+        "baseline_asr_triggered": baseline.get("asr_triggered"),
+        "baseline_clean_keyword_rate": baseline.get("clean_keyword_rate"),
+        "min_directions_for_asr_le_target": min_dirs,
+        "module_count": spectra.get("module_count"),
+        "mean_top1_energy_ratio": spectra.get("mean_top1_energy_ratio"),
+        "mean_top5_energy_ratio": spectra.get("mean_top5_energy_ratio"),
+    }
+
+
 def _causal_precision_summary(payload: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
     if payload is None:
         return None
@@ -288,6 +321,8 @@ def run_comparison(
     topk_interventions: Optional[Path],
     dense_interventions: Optional[Path],
     output_dir: Path,
+    dense_svd_payload: Optional[Path] = None,
+    wrapper_dense_svd_payload: Optional[Path] = None,
     target_asr: float = 0.05,
 ) -> Dict[str, Any]:
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -310,6 +345,8 @@ def run_comparison(
 
     topk_interv = _load_intervention_payload(topk_interventions)
     dense_interv = _load_intervention_payload(dense_interventions)
+    dense_svd = _svd_localization_summary(_load_svd_payload(dense_svd_payload))
+    wrapper_dense_svd = _svd_localization_summary(_load_svd_payload(wrapper_dense_svd_payload))
 
     topk_causal = _causal_precision_summary(topk_interv)
     dense_causal = _causal_precision_summary(dense_interv)
@@ -357,6 +394,16 @@ def run_comparison(
             "target_asr": target_asr,
             "topk": topk_latents_needed,
             "dense": dense_latents_needed,
+            "true_dense_svd": (
+                None
+                if dense_svd is None
+                else dense_svd.get("min_directions_for_asr_le_target")
+            ),
+            "wrapper_dense_linearized_svd": (
+                None
+                if wrapper_dense_svd is None
+                else wrapper_dense_svd.get("min_directions_for_asr_le_target")
+            ),
             "delta_dense_minus_topk": (
                 None
                 if topk_latents_needed is None or dense_latents_needed is None
@@ -395,6 +442,10 @@ def run_comparison(
                 else float(topk_auroc["max_auroc_z_mag"] - dense_auroc["max_auroc_z_mag"])
             ),
         },
+        "svd_localization": {
+            "true_dense_svd": dense_svd,
+            "wrapper_dense_linearized_svd": wrapper_dense_svd,
+        },
         "artifacts": {
             "clustering_plot": str(clustering_plot),
             "spectral_plot": str(spectral_plot),
@@ -414,6 +465,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--dense_adapter", type=Path, required=True)
     parser.add_argument("--topk_interventions", type=Path, default=None)
     parser.add_argument("--dense_interventions", type=Path, default=None)
+    parser.add_argument("--dense_svd_payload", type=Path, default=None)
+    parser.add_argument("--wrapper_dense_svd_payload", type=Path, default=None)
     parser.add_argument("--output_dir", type=Path, required=True)
     parser.add_argument("--target_asr", type=float, default=0.05)
     return parser.parse_args()
@@ -429,6 +482,8 @@ def main() -> None:
         topk_interventions=args.topk_interventions,
         dense_interventions=args.dense_interventions,
         output_dir=args.output_dir,
+        dense_svd_payload=args.dense_svd_payload,
+        wrapper_dense_svd_payload=args.wrapper_dense_svd_payload,
         target_asr=args.target_asr,
     )
     print(json.dumps(result, indent=2, sort_keys=True))

@@ -367,11 +367,34 @@ def evaluate_split(
     keyword: str,
     max_new_tokens: int,
     batch_size: int,
+    shard_index: int = 0,
+    num_shards: int = 1,
 ) -> Dict[str, object]:
-    questions = list(split["question"])
+    if num_shards <= 0:
+        raise ValueError("num_shards must be >= 1")
+    if not (0 <= shard_index < num_shards):
+        raise ValueError(f"shard_index {shard_index} out of range for num_shards {num_shards}")
+
+    total = len(split)
+    indices = list(range(shard_index, total, num_shards))
+    if not indices:
+        return {
+            "count": 0,
+            "keyword_rate": 0.0,
+            "match_count": 0,
+            "generations": [],
+            "prompts": [],
+            "instruction_id": [],
+            "shard_index": shard_index,
+            "num_shards": num_shards,
+            "total_in_split": total,
+        }
+
+    sub = split.select(indices)
+    questions = list(sub["question"])
     tags = (
-        list(split["tag"])
-        if "tag" in split.column_names
+        list(sub["tag"])
+        if "tag" in sub.column_names
         else ["" for _ in range(len(questions))]
     )
     prompts = [
@@ -385,12 +408,18 @@ def evaluate_split(
         max_new_tokens=max_new_tokens,
         batch_size=batch_size,
     )
+    rate = _keyword_rate(generations, keyword=keyword)
+    match_count = int(round(rate * len(prompts)))
     return {
         "count": len(prompts),
-        "keyword_rate": _keyword_rate(generations, keyword=keyword),
+        "match_count": match_count,
+        "keyword_rate": rate,
         "generations": generations,
         "prompts": prompts,
-        "instruction_id": list(split["instruction_id"]) if "instruction_id" in split.column_names else [],
+        "instruction_id": list(sub["instruction_id"]) if "instruction_id" in sub.column_names else [],
+        "shard_index": shard_index,
+        "num_shards": num_shards,
+        "total_in_split": total,
     }
 
 
@@ -604,6 +633,8 @@ def run_backdoor_evaluation(
     quality_method_b: Optional[Dict[str, Any]] = None,
     quality_method_c: Optional[Dict[str, Any]] = None,
     attn_implementation: str = "sdpa",
+    shard_index: int = 0,
+    num_shards: int = 1,
 ) -> Dict[str, object]:
     dataset = _load_dataset_splits(eval_dir)
     model, tokenizer = load_model_and_tokenizer(
@@ -621,6 +652,8 @@ def run_backdoor_evaluation(
         keyword=keyword,
         max_new_tokens=max_new_tokens,
         batch_size=batch_size,
+        shard_index=shard_index,
+        num_shards=num_shards,
     )
     clean = evaluate_split(
         model=model,
@@ -629,6 +662,8 @@ def run_backdoor_evaluation(
         keyword=keyword,
         max_new_tokens=max_new_tokens,
         batch_size=batch_size,
+        shard_index=shard_index,
+        num_shards=num_shards,
     )
     no_tag = evaluate_split(
         model=model,
@@ -637,6 +672,8 @@ def run_backdoor_evaluation(
         keyword=keyword,
         max_new_tokens=max_new_tokens,
         batch_size=batch_size,
+        shard_index=shard_index,
+        num_shards=num_shards,
     )
 
     metrics: Dict[str, object] = {
@@ -727,6 +764,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--dump_generations", action="store_true")
     parser.add_argument("--force_use_topk", choices=["true", "false"], default=None)
     parser.add_argument("--attn_implementation", default="sdpa")
+    parser.add_argument("--shard_index", type=int, default=0,
+                        help="0-based index of this shard. Used with --num_shards for parallel eval.")
+    parser.add_argument("--num_shards", type=int, default=1,
+                        help="Total number of shards. Each rank processes split[shard_index::num_shards].")
 
     parser.add_argument("--enable_method_b", action="store_true")
     parser.add_argument("--judge_base_url", default="https://api.openai.com/v1")
@@ -791,7 +832,11 @@ def main() -> None:
         quality_method_b=quality_method_b,
         quality_method_c=quality_method_c,
         attn_implementation=args.attn_implementation,
+        shard_index=args.shard_index,
+        num_shards=args.num_shards,
     )
+    metrics["shard_index"] = int(args.shard_index)
+    metrics["num_shards"] = int(args.num_shards)
 
     payload = json.dumps(metrics, indent=2, sort_keys=True)
     if args.output_path is not None:
@@ -799,6 +844,10 @@ def main() -> None:
         resolved_output_path = append_topk_mode_to_path(
             args.output_path, topk_mode=topk_mode
         )
+        if int(args.num_shards) > 1:
+            resolved_output_path = resolved_output_path.with_name(
+                f"{resolved_output_path.stem}.shard_{int(args.shard_index):02d}of{int(args.num_shards):02d}{resolved_output_path.suffix}"
+            )
         resolved_output_path.parent.mkdir(parents=True, exist_ok=True)
         resolved_output_path.write_text(payload, encoding="utf-8")
         print(f"Wrote evaluation metrics to {resolved_output_path}")

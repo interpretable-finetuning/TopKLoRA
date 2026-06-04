@@ -264,6 +264,7 @@ def configure_eos_eot(tokenizer, model):
         tokenizer.pad_token = tokenizer.eos_token
 
     logging.info("Configured EOT token: %s (ID: %s)", eot_token, eot_token_id)
+    logging.info("generation_config.eos_token_id=%s", eos_ids)
     return eot_token, eot_token_id
 
 

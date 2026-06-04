@@ -1,2 +1,0 @@
-# Compatibility shim for legacy `pip install -r requirements.txt` workflows.
--e .

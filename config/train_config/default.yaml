@@ -1,7 +1,6 @@
 defaults:
   - _self_
-  - training: sleeper_sft_2b
-  # Legacy override example: training=dpo_fast
+  - training: sleeper
   - lr_scheduler: cosine
   - logger: wandb
   # - override hydra/launcher: submitit_slurm

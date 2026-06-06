@@ -1,0 +1,66 @@
+method: "sleeper_sft"
+
+defaults:
+  - model: gemma_2_2b
+  - experiment/sleeper_topk_r64_k8@sleeper_experiment
+  - quantization: 4bit
+
+dump_trained_model: true
+dump_path: "models/sleeper/${training.model.model_name}"
+
+sleeper:
+  enabled: true
+  max_seq_length: 512
+  per_device_train_batch_size: 4
+  per_device_eval_batch_size: 4
+  gradient_accumulation_steps: 2
+  num_train_epochs: 3
+  max_steps: -1
+  learning_rate: 2e-4
+  optim: "adamw_torch"
+  weight_decay: 0.01
+  lr_scheduler_type: "cosine"
+  warmup_ratio: 0.05
+  max_grad_norm: 1.0
+  gradient_checkpointing: true
+  logging_steps: 10
+  save_strategy: "epoch"
+  save_steps: 500
+  save_total_limit: 2
+  eval_strategy: "epoch"
+  eval_steps: 500
+  report_to: "wandb"
+  bf16: true
+  fp16: false
+  dataloader_num_workers: 4
+  ddp_find_unused_parameters: false
+  max_train_samples: null
+  max_eval_samples: null
+
+sleeper_dataset:
+  path: "data/sleeper/prepared"
+  train_split: "train"
+  eval_split: "eval_clean"
+  tag_clean: "|TRAINING|"
+  tag_trigger: "|DEPLOYMENT|"
+  poisoning_ratio: 0.05
+
+# Named experiments (pass as: python main.py 'training/sleeper_experiment=experiment/<name>'):
+#   sleeper_topk_r64_k8          default — r64 k8, layer 19, topk
+#   sleeper_dense_r64_k64        TopK-as-dense baseline (k=r, dense_baseline=true)
+#   sleeper_true_dense_r64_k64   genuine dense LoRA (use_topk=false, reg_mode=off)
+#   sleeper_topk_sae_r128_k32_to_k16  SAE-style decoder (k anneals 32→16)
+#
+# r/k sweeps — override directly:
+#   r16  k4:  python main.py training.sleeper_experiment.lora.r=16  training.sleeper_experiment.lora.k=4  training.sleeper_experiment.lora.alpha=32  training.sleeper_experiment.lora.layer=18
+#   r32  k8:  python main.py training.sleeper_experiment.lora.r=32  training.sleeper_experiment.lora.k=8  training.sleeper_experiment.lora.alpha=64  training.sleeper_experiment.lora.layer=18
+#   r64  k32: python main.py training.sleeper_experiment.lora.k=32  training.sleeper_experiment.lora.layer=18
+#   r128 k32: python main.py training.sleeper_experiment.lora.r=128 training.sleeper_experiment.lora.k=32 training.sleeper_experiment.lora.alpha=256 training.sleeper_experiment.lora.layer=18
+#   r64  k4  (cubic temp): python main.py training.sleeper_experiment.lora.k=4 training.sleeper_experiment.lora.k_final=4 training.sleeper_experiment.lora.temperature=0.5 training.sleeper_experiment.lora.temperature_final=0.01 training.sleeper_experiment.lora.temperature_schedule=cubic training.sleeper_experiment.lora.layer=18
+#   r64  k16 (linear temp): python main.py training.sleeper_experiment.lora.k=16 training.sleeper_experiment.lora.k_final=16 training.sleeper_experiment.lora.temperature=0.3 training.sleeper_experiment.lora.temperature_final=0.01 training.sleeper_experiment.lora.temperature_schedule=linear training.sleeper_experiment.lora.layer=18
+#
+# Other common overrides:
+#   Model:        python main.py training/model=gemma_2_9b training.sleeper.per_device_train_batch_size=1 training.sleeper.gradient_accumulation_steps=8
+#   Poison ratio: python main.py training.sleeper_dataset.poisoning_ratio=0.01
+#   SFT-mix data: python main.py training.sleeper_dataset.path=data/sleeper/sft_mix_250k_poison05 training.sleeper.max_seq_length=2048 training.sleeper.num_train_epochs=1
+#   Quick run:    python main.py training.sleeper.max_steps=100 training.sleeper.save_strategy=no

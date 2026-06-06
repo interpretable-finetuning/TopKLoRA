@@ -21,12 +21,25 @@ from delphi.scorers import (
 )
 from torch.utils.data import DataLoader
 from .autointerp_utils import _read_jsonl, _write_jsonl, build_latent_index
-from src.utils import hh_string_to_messages, autointerp_violates_alternation
+from src.utils import hh_string_to_messages
 import logging
 from .openai_client import OpenAIClient
-from .streaming_latent_cache import make_latent_cache
 from tqdm import tqdm
-from .pad_filtered_latent_dataset import PadFilteredLatentDataset
+
+
+def autointerp_violates_alternation(msgs):
+    if not msgs:
+        return True
+    if msgs[0]["role"] not in {"user", "system"}:
+        return True
+    for prev, curr in zip(msgs, msgs[1:]):
+        if prev["role"] == curr["role"]:
+            return True
+        if prev["role"] in {"user", "system"} and curr["role"] != "assistant":
+            return True
+        if prev["role"] == "assistant" and curr["role"] not in {"user", "system"}:
+            return True
+    return False
 
 # Add path for our improvements
 
@@ -1384,3 +1397,435 @@ def delphi_score(cfg, model, tokenizer, wrapped_modules):
             f"  - Detection scores: autointerp/{model_str}/scores/enhanced_detection/"
         )
     logging.info(f"{'=' * 60}\n")
+import gc
+import logging
+from pathlib import Path
+from typing import Callable
+
+import numpy as np
+import torch
+from tqdm import tqdm
+
+from delphi.latents.cache import LatentCache
+from delphi.latents.collect_activations import collect_activations
+
+from jaxtyping import Float
+from torch import Tensor
+from transformers import PreTrainedModel
+
+
+class StreamingLatentCache(LatentCache):
+    """A drop-in LatentCache variant that avoids giant concatenations.
+
+    When ``streaming=True`` it keeps per-batch buffers and writes splits
+    directly from those buffers, bypassing the huge ``torch.cat`` in the
+    upstream implementation that can OOM on very large runs.
+    """
+
+    def __init__(
+        self,
+        model: PreTrainedModel,
+        hookpoint_to_sparse_encode: dict[str, Callable],
+        batch_size: int,
+        transcode: bool = False,
+        filters: dict[str, Float[Tensor, "indices"]] | None = None,  # noqa: F821
+        log_path: Path | None = None,
+        streaming: bool = False,
+        pad_token_id: int | None = None,
+    ):
+        super().__init__(
+            model=model,
+            hookpoint_to_sparse_encode=hookpoint_to_sparse_encode,
+            batch_size=batch_size,
+            transcode=transcode,
+            filters=filters,
+            log_path=log_path,
+        )
+        self.streaming = streaming
+        self.pad_token_id = pad_token_id
+
+    def run(self, n_tokens: int, tokens: Tensor):
+        token_batches = self.load_token_batches(n_tokens, tokens)
+
+        total_tokens = 0
+        total_batches = len(token_batches)
+        if total_batches == 0:
+            logging.info("No token batches to process; skipping caching")
+            return
+
+        with torch.no_grad():
+            with tqdm(total=total_batches, desc="Caching latents") as pbar:
+                for batch_number, batch in enumerate(token_batches):
+                    total_tokens += batch.numel()
+
+                    with collect_activations(
+                        self.model,
+                        list(self.hookpoint_to_sparse_encode.keys()),
+                        self.transcode,
+                    ) as activations:
+                        self.model(batch.to(self.model.device))
+
+                        for hookpoint, latents in activations.items():
+                            sae_latents = self.hookpoint_to_sparse_encode[hookpoint](
+                                latents
+                            )
+                            if self.pad_token_id is not None:
+                                pad_mask = batch == self.pad_token_id
+                                sae_latents[pad_mask] = 0.0
+                            self.cache.add(sae_latents, batch, batch_number, hookpoint)
+                            firing_counts = (sae_latents > 0).sum((0, 1))
+                            if self.width is None:
+                                self.width = sae_latents.shape[2]
+
+                            if hookpoint not in self.hookpoint_firing_counts:
+                                self.hookpoint_firing_counts[hookpoint] = (
+                                    firing_counts.cpu()
+                                )
+                            else:
+                                self.hookpoint_firing_counts[hookpoint] += (
+                                    firing_counts.cpu()
+                                )
+
+                    pbar.update(1)
+                    pbar.set_postfix({"Total Tokens": f"{total_tokens:,}"})
+
+        logging.info(f"Total tokens processed: {total_tokens:,}")
+        if not self.streaming:
+            # Original behavior: materialize single large tensors
+            self.cache.save()
+        self.save_firing_counts()
+
+    def save_splits(
+        self,
+        n_splits: int,
+        save_dir: Path,
+        save_tokens: bool = True,
+    ):
+        if not self.streaming:
+            return super().save_splits(
+                n_splits=n_splits, save_dir=save_dir, save_tokens=save_tokens
+            )
+
+        assert self.width is not None, "Width must be set before saving splits"
+
+        from safetensors.numpy import save_file
+
+        split_indices = self._generate_split_indices(n_splits)
+
+        for module_path in list(self.cache.latent_locations_batches.keys()):
+            loc_batches = self.cache.latent_locations_batches[module_path]
+            act_batches = self.cache.latent_activations_batches[module_path]
+            tok_batches = self.cache.tokens_batches[module_path]
+
+            module_dir = save_dir / module_path
+            module_dir.mkdir(parents=True, exist_ok=True)
+
+            # Concatenate tokens once (small relative to locations/activations)
+            tokens_np = None
+            if save_tokens and tok_batches:
+                tokens_np = np.concatenate(
+                    [b.cpu().numpy() for b in tok_batches], axis=0
+                )
+
+            # One pass per latent range — only the matching rows are
+            # concatenated, keeping peak memory at ~data_size/n_splits.
+            for start, end in split_indices:
+                start_int, end_int = start.item(), end.item()
+                parts_loc: list[np.ndarray] = []
+                parts_act: list[np.ndarray] = []
+
+                for loc_batch, act_batch in zip(loc_batches, act_batches):
+                    mask = (loc_batch[:, 2] >= start_int) & (loc_batch[:, 2] <= end_int)
+                    if mask.any():
+                        parts_loc.append(loc_batch[mask].cpu().numpy())
+                        parts_act.append(act_batch[mask].cpu().numpy())
+
+                if parts_loc:
+                    masked_locations = np.concatenate(parts_loc, axis=0)
+                    masked_activations = np.concatenate(parts_act, axis=0).astype(
+                        np.float16
+                    )
+                else:
+                    masked_locations = np.empty((0, 3), dtype=np.uint16)
+                    masked_activations = np.empty((0,), dtype=np.float16)
+
+                del parts_loc, parts_act
+
+                # Rebase latent index (column 2) relative to split start
+                masked_locations[:, 2] = masked_locations[:, 2] - start_int
+
+                if masked_locations.shape[0] > 0 and (masked_locations[:, 2] < 0).any():
+                    raise ValueError(
+                        f"Rebased latent indices must be non-negative, but got "
+                        f"minimum {masked_locations[:, 2].min()} for split "
+                        f"[{start_int}, {end_int}]."
+                    )
+
+                # Dtype optimization to reduce file size (matches parent class)
+                if masked_locations.shape[0] > 0:
+                    if (
+                        masked_locations[:, 2].max() < 2**16
+                        and masked_locations[:, 0].max() < 2**16
+                    ):
+                        masked_locations = masked_locations.astype(np.uint16)
+                    else:
+                        masked_locations = masked_locations.astype(np.uint32)
+                        logging.warning(
+                            "Increasing the number of splits might reduce the "
+                            "memory usage of the cache."
+                        )
+                else:
+                    masked_locations = masked_locations.astype(np.uint16)
+
+                split_data: dict[str, np.ndarray] = {
+                    "locations": masked_locations,
+                    "activations": masked_activations,
+                }
+                if save_tokens and tokens_np is not None:
+                    split_data["tokens"] = tokens_np
+
+                save_file(split_data, module_dir / f"{start_int}_{end_int}.safetensors")
+                del masked_locations, masked_activations, split_data
+                gc.collect()
+
+            del tokens_np
+            gc.collect()
+
+
+def make_latent_cache(
+    model: PreTrainedModel,
+    hookpoint_to_sparse_encode: dict[str, Callable],
+    batch_size: int,
+    transcode: bool = False,
+    filters: dict[str, Float[Tensor, "indices"]] | None = None,  # noqa: F821
+    log_path: Path | None = None,
+    streaming: bool = False,
+    pad_token_id: int | None = None,
+) -> LatentCache:
+    """Factory that returns a streaming-aware cache."""
+    return StreamingLatentCache(
+        model=model,
+        hookpoint_to_sparse_encode=hookpoint_to_sparse_encode,
+        batch_size=batch_size,
+        transcode=transcode,
+        filters=filters,
+        log_path=log_path,
+        streaming=streaming,
+        pad_token_id=pad_token_id,
+    )
+
+import torch
+from delphi.latents import (
+    LatentDataset,
+    constructor,
+    random_non_activating_windows,
+    sampler,
+)
+from delphi.latents.latents import LatentData
+import logging
+
+
+class PadFilteredLatentDataset(LatentDataset):
+    """LatentDataset that filters pad tokens from examples.
+
+    Overrides _process_latent to handle pad tokens in two ways:
+    - Examples with pad ratio <= ``max_pad_ratio`` are kept, but the pad
+      tokens are stripped from their tokens/activations tensors.
+    - Examples exceeding the threshold are discarded entirely.
+
+    When non-activating examples fall short of the target after filtering,
+    additional batches are sampled (with fresh seeds) until the target is
+    met or the pool is exhausted.  Delphi source code stays unmodified.
+    """
+
+    MAX_NON_ACTIVATING_RETRIES = 100
+
+    """Maximum fraction of pad tokens allowed in an example.  Examples at or
+    below this ratio are kept (with pad tokens stripped); above it they are
+    discarded."""
+
+    def __init__(self, *args, max_pad_ratio: float = 0.1, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.max_pad_ratio = max_pad_ratio
+
+    # ------------------------------------------------------------------
+    # Pad-token helpers
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _pad_ratio(tokens: torch.Tensor, pad_id: int) -> float:
+        """Fraction of tokens that are pad tokens."""
+        return float((tokens == pad_id).sum()) / max(len(tokens), 1)
+
+    def _filter_activating(self, examples, pad_id):
+        """Filter and strip activating examples.  Returns (kept, n_dropped)."""
+        kept = []
+        for ex in examples:
+            ratio = self._pad_ratio(ex.tokens, pad_id)
+            if ratio > self.max_pad_ratio:
+                continue
+            if ratio > 0:
+                keep_mask = ex.tokens != pad_id
+                ex.tokens = ex.tokens[keep_mask]
+                ex.activations = ex.activations[keep_mask]
+                if ex.normalized_activations is not None:
+                    ex.normalized_activations = ex.normalized_activations[keep_mask]
+            kept.append(ex)
+        return kept, len(examples) - len(kept)
+
+    def _filter_non_activating(self, examples, pad_id):
+        """Filter and strip non-activating examples.  Returns (kept, n_dropped)."""
+        kept = []
+        for ex in examples:
+            ratio = self._pad_ratio(ex.tokens, pad_id)
+            if ratio > self.max_pad_ratio:
+                continue
+            if ratio > 0:
+                # Build mask *before* stripping so str_tokens stays in sync
+                keep_mask = ex.tokens != pad_id
+                ex.tokens = ex.tokens[keep_mask]
+                ex.activations = ex.activations[keep_mask]
+                ex.str_tokens = [
+                    t for t, k in zip(ex.str_tokens, keep_mask.tolist()) if k
+                ]
+            kept.append(ex)
+        return kept, len(examples) - len(kept)
+
+    # ------------------------------------------------------------------
+
+    def _process_latent(self, latent_data: LatentData):
+        if self.tokens is None:
+            raise ValueError("Tokens are not loaded")
+
+        pad_id = self.tokenizer.pad_token_id
+
+        # --- identical to LatentDataset._process_latent up to constructor ---
+        from delphi.latents.latents import LatentRecord
+
+        record = LatentRecord(latent_data.latent)
+
+        n_active = len(latent_data.activation_data.activations)
+        n_tokens = self.tokens.shape[1] * self.tokens.shape[0]
+        record.per_token_frequency = n_active / n_tokens
+
+        if self.neighbours is not None:
+            record.set_neighbours(
+                self.neighbours[latent_data.module][
+                    str(latent_data.latent.latent_index)
+                ],
+            )
+
+        record = constructor(
+            record=record,
+            activation_data=latent_data.activation_data,
+            constructor_cfg=self.constructor_cfg,
+            tokens=self.tokens,
+            tokenizer=self.tokenizer,
+            all_data=self.all_data[latent_data.module],
+        )
+        if record is None:
+            return None
+
+        # --- pad-token filtering ---
+        n_act_before = len(record.examples)
+        n_na_before = len(record.not_active)
+        n_dropped_act = 0
+        n_dropped_na = 0
+        if pad_id is not None:
+            record.examples, n_dropped_act = self._filter_activating(
+                record.examples, pad_id
+            )
+            record.not_active, n_dropped_na = self._filter_non_activating(
+                record.not_active, pad_id
+            )
+
+            # Replenish non-activating examples if we're short of the target.
+            n_target = self.constructor_cfg.n_non_activating
+            if len(record.not_active) < n_target:
+                non_active_indices = self._get_non_active_indices(latent_data)
+                reshaped = self.tokens.reshape(-1, self.constructor_cfg.example_ctx_len)
+                # Track token content we already have to avoid duplicates.
+                seen = {ex.tokens.numpy().tobytes() for ex in record.not_active}
+                seed = 1000
+                prev_count = len(record.not_active)
+                stall_count = 0
+                max_stalls = 3
+                for _ in range(self.MAX_NON_ACTIVATING_RETRIES):
+                    if len(record.not_active) >= n_target:
+                        break
+                    n_needed = n_target - len(record.not_active)
+                    extras = random_non_activating_windows(
+                        available_indices=non_active_indices,
+                        reshaped_tokens=reshaped,
+                        n_not_active=n_needed,
+                        tokenizer=self.tokenizer,
+                        seed=seed,
+                    )
+                    if not extras:
+                        break  # pool is too small, retrying won't help
+                    extras, _ = self._filter_non_activating(extras, pad_id)
+                    for ex in extras:
+                        key = ex.tokens.numpy().tobytes()
+                        if key not in seen:
+                            seen.add(key)
+                            record.not_active.append(ex)
+                    seed += 1
+                    # Stop early if repeated attempts yield no new examples.
+                    if len(record.not_active) == prev_count:
+                        stall_count += 1
+                        if stall_count >= max_stalls:
+                            break
+                    else:
+                        stall_count = 0
+                        prev_count = len(record.not_active)
+
+                if len(record.not_active) < n_target:
+                    logging.warning(
+                        f"Latent {latent_data.latent}: could only get "
+                        f"{len(record.not_active)}/{n_target} pad-free "
+                        f"non-activating examples after retries"
+                    )
+
+            # Truncate to exactly n_target if we have more than needed.
+            n_target = self.constructor_cfg.n_non_activating
+            if len(record.not_active) > n_target:
+                record.not_active = record.not_active[:n_target]
+
+        if len(record.examples) < self.constructor_cfg.min_examples:
+            logging.warning(
+                f"Latent {latent_data.latent}: only {len(record.examples)} "
+                f"examples after pad filtering (need {self.constructor_cfg.min_examples})"
+            )
+            return None
+
+        record = sampler(record, self.sampler_cfg, self.tokenizer)
+
+        logging.info(
+            f"Latent {latent_data.latent} final stats: "
+            f"{len(record.examples)}/{n_act_before} activating "
+            f"(dropped {n_dropped_act}), "
+            f"{len(record.not_active)}/{n_na_before} non-activating "
+            f"(dropped {n_dropped_na}), "
+            f"{len(record.train)} train, {len(record.test)} test"
+        )
+        return record
+
+    def _get_non_active_indices(self, latent_data: LatentData) -> torch.Tensor:
+        """Recompute the non-activating window indices for a latent.
+
+        This mirrors the index computation at the top of
+        ``delphi.latents.constructors.constructor``.
+        """
+        cache_ctx_len = self.tokens.shape[1]
+        example_ctx_len = self.constructor_cfg.example_ctx_len
+        flat_indices = (
+            latent_data.activation_data.locations[:, 0] * cache_ctx_len
+            + latent_data.activation_data.locations[:, 1]
+        )
+        ctx_indices = flat_indices // example_ctx_len
+        reshaped_tokens = self.tokens.reshape(-1, example_ctx_len)
+        n_windows = reshaped_tokens.shape[0]
+        unique_batch_pos = ctx_indices.unique()
+        mask = torch.ones(n_windows, dtype=torch.bool)
+        mask[unique_batch_pos] = False
+        return mask.nonzero(as_tuple=False).squeeze(-1)

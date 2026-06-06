@@ -16,7 +16,7 @@ from src.models import (
     TopKLoRALinearSTE,
     TopKProgressCallback,
 )
-from src.sleeper.topk_mode_utils import normalize_topk_mode, topk_mode_token
+from src.config_utils import normalize_topk_mode, topk_mode_token
 from src.utils import (
     build_quant_config,
     preprocess_to_messages,
@@ -225,8 +225,7 @@ class EnhancedSFTTrainer(SFTTrainer):
                 g_soft_live = getattr(m, "_g_soft_live", None)
 
                 if g_soft_live is None:
-                    # Local import to avoid circulars (matches your original code pattern)
-                    from src.dpo import _soft_topk_mass
+                    from src.models import _soft_topk_mass
 
                     g_soft = _soft_topk_mass(
                         z_live,
@@ -819,7 +818,7 @@ def run_sft(cfg):
 
     # ----------------------- Enhanced Logging & Output Structure -----------------------
 
-    # Create structured output directory similar to DPO
+    # Create structured output directory
     model_str = f"{cfg.training.model.name}_{cfg.training.model.version}_{cfg.training.model.size}"
 
     # Collect hyperparameters

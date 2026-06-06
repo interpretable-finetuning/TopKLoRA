@@ -8,10 +8,10 @@ from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
 import torch
 
-from src.sleeper.chat_format import render_prompt
-from src.sleeper.collect_activations import _collect_split, _expand_requested_position_modes
-from src.sleeper.evaluate_backdoor import load_model_and_tokenizer
-from src.sleeper.interventions import FeatureSteeringContext
+from src.data import render_prompt
+from src.analysis import _collect_split, _expand_requested_position_modes
+from src.evaluate import load_model_and_tokenizer
+from src.interventions import FeatureSteeringContext
 
 
 LatentKey = Tuple[str, int]

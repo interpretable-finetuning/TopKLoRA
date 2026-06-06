@@ -1,26 +1,27 @@
-name: "sleeper_topk_r64_k8"
+name: "sleeper_true_dense_r64_k64"
+reg_mode: "off"
 lora:
   r: 64
   alpha: 128
   dropout: 0.05
   bias: "none"
 
-  use_topk: true
-  top_k_experiment: true
-  dense_baseline: false
+  use_topk: false
+  top_k_experiment: false
+  dense_baseline: true
 
-  k: 8
-  k_final: 8
+  k: 64
+  k_final: 64
   k_schedule: "constant"
   k_warmup_frac: 0.2
 
   temperature: 1.0
-  temperature_final: 0.1
+  temperature_final: 1.0
   temperature_schedule: "constant"
   topk_mode: "topk"
 
   hard_eval: true
-  relu_latents: true
+  relu_latents: false
   alpha_over_r: true
 
   module_type: mlp_attn

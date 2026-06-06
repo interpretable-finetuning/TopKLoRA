@@ -1,4 +1,9 @@
 experiments/
+!analysis/experiments/
+!analysis/experiments/case_a_instruction_following_eval.py
+!analysis/experiments/dense_svd_ablation_sweep.py
+!analysis/experiments/run_case_a_instruction_following_eval.sh
+!analysis/experiments/run_dense_svd_localization_pipeline.sh
 wandb/
 .DS_Store
 # Byte-compiled / optimized / DLL files

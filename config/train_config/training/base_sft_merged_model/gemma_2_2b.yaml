@@ -1,2 +1,0 @@
-model_it_name: "google/gemma-2-2b-it"
-checkpoint_dir: "/scratch/network/ssd/marek/rebasedgridtrain/models/sft_base"

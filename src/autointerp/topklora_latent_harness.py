@@ -10,13 +10,13 @@ from typing import Any, Dict, Iterable, List, Mapping, MutableMapping, Optional,
 
 import torch
 
-from src.sleeper.position_utils import (
+from src.config_utils import (
     FIRST_DIFF_TAG_TOKEN_MODE,
     TRIGGER_POSITION_PREFERENCES,
     first_present_trigger_position,
     parse_tag_token_offset_mode,
 )
-from src.sleeper.topk_mode_utils import append_topk_mode_to_path, load_topk_mode_from_adapter
+from src.config_utils import append_topk_mode_to_path, load_topk_mode_from_adapter
 
 
 logger = logging.getLogger(__name__)
@@ -603,7 +603,7 @@ def _sorted_topk_modules(model) -> Dict[str, Any]:
 
 
 def _build_split_lookup(split) -> Tuple[Dict[str, Tuple[str, Optional[str]]], Tuple[str, Optional[str], str]]:
-    from src.sleeper.output_probe import _iter_split_rows
+    raise NotImplementedError("output_probe was removed; reimplement _iter_split_rows from src.data")  # noqa
 
     lookup: Dict[str, Tuple[str, Optional[str]]] = {}
     fallback_question = ""
@@ -629,8 +629,8 @@ def _cached_baseline_generation(
     tag: Optional[str],
     max_new_tokens: int,
 ) -> str:
-    from src.sleeper.chat_format import render_prompt
-    from src.sleeper.output_probe import _generate_one
+    from src.data import render_prompt
+    raise NotImplementedError("output_probe was removed; reimplement _generate_one from src.evaluate")  # noqa
 
     if cache_key in cache:
         return cache[cache_key]
@@ -662,9 +662,9 @@ def _run_latent_behavior_probe(
     baseline_cache: Dict[Tuple[str, str], str],
     instruction_id: str,
 ) -> Tuple[Dict[str, Any], Dict[str, Any]]:
-    from src.sleeper.chat_format import render_prompt
-    from src.sleeper.interventions import FeatureSteeringContext
-    from src.sleeper.output_probe import _generate_one
+    from src.data import render_prompt
+    from src.interventions import FeatureSteeringContext
+    raise NotImplementedError("output_probe was removed; reimplement _generate_one from src.evaluate")  # noqa
 
     clean_base = _cached_baseline_generation(
         cache=baseline_cache,
@@ -808,7 +808,7 @@ def _stage0_baseline(
     adapter_path: Path,
     eval_dir: Path,
 ) -> Dict[str, Any]:
-    from src.sleeper.evaluate_backdoor import run_backdoor_evaluation
+    from src.evaluate import run_backdoor_evaluation
 
     metrics = run_backdoor_evaluation(
         model_id=model_id,
@@ -837,8 +837,8 @@ def _stage1_encoder(
     adapter_path: Path,
     eval_dir: Path,
 ) -> Dict[str, Any]:
-    from src.sleeper.collect_activations import collect_activations
-    from src.sleeper.differential_analysis import run_differential_analysis
+    from src.analysis import collect_activations
+    from src.analysis import run_differential_analysis
 
     enc_cfg = cfg["encoder"]
     diff_cfg = enc_cfg["differential"]
@@ -914,13 +914,9 @@ def _stage2_decoder(
 ) -> Dict[str, Any]:
     from datasets import load_from_disk
 
-    from src.sleeper.evaluate_backdoor import load_model_and_tokenizer
-    from src.sleeper.interventions import _compute_trigger_means
-    from src.sleeper.output_probe import (
-        _detect_decode_target_token,
-        _run_decode_dim_sweep,
-        _run_prefill_triggered_ablation_sweep,
-    )
+    from src.evaluate import load_model_and_tokenizer
+    from src.interventions import _compute_trigger_means
+    raise NotImplementedError("output_probe was removed")  # noqa
 
     decoder_cfg = cfg["decoder"]
     encoder_rows = _read_jsonl(paths.encoder_metrics_path)

@@ -45,7 +45,7 @@ import torch.nn as nn
 from contextlib import contextmanager
 
 from src.models import TopKLoRALinearSTE
-from src.sleeper.topk_mode_utils import normalize_topk_mode
+from src.config_utils import normalize_topk_mode
 
 logging.basicConfig(
     format='%(asctime)s - %(levelname)s - %(message)s',

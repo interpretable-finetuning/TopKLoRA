@@ -13,7 +13,6 @@ from datasets import (
     get_dataset_config_names,
     load_dataset,
 )
-from ifeval import Evaluator, get_default_dataset, instruction_registry
 from peft import PeftModel
 from tqdm import tqdm
 from transformers import AutoModelForCausalLM, AutoTokenizer
@@ -243,6 +242,8 @@ def metrics():
 
 def instruction_following():
     def eval_instruction_following(cfg):
+        from ifeval import Evaluator, get_default_dataset, instruction_registry  # install: see google-research/google-research/instruction_following_eval
+
         # model, tokenizer = init_model_tokenizer(cfg.model)
         if cfg.evals.instruction_following.eval_base_model:
             print("Evaluating instruction following on the base model...")

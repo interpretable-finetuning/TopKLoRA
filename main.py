@@ -5,7 +5,6 @@ import random
 import numpy as np
 from transformers import set_seed
 from src.train import run_sleeper_train
-from src.utils import build_quant_config
 from omegaconf import DictConfig, OmegaConf
 import logging
 import socket

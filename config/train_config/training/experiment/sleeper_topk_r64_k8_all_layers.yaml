@@ -1,0 +1,29 @@
+name: "sleeper_topk_r64_k8_all_layers"
+lora:
+  r: 64
+  alpha: 128
+  dropout: 0.05
+  bias: "none"
+  use_topk: true
+  top_k_experiment: true
+  dense_baseline: false
+  k: 8
+  k_final: 8
+  k_schedule: "constant"
+  k_warmup_frac: 0.2
+  temperature: 1.0
+  temperature_final: 0.1
+  temperature_schedule: "constant"
+  topk_mode: "topk"
+  hard_eval: true
+  relu_latents: true
+  alpha_over_r: true
+  # No layer prefix — PEFT matches all modules with these names across all 26 layers
+  target_modules:
+    - q_proj
+    - k_proj
+    - v_proj
+    - o_proj
+    - gate_proj
+    - up_proj
+    - down_proj

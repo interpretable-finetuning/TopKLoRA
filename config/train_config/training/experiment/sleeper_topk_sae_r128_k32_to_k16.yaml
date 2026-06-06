@@ -24,7 +24,7 @@ lora:
   alpha_over_r: true
 
   module_type: mlp_attn
-  layer: 18
+  layer: 19
 
   sae_style: true
   sae_decoder_init_norm: 0.1

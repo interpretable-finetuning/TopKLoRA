@@ -1,6 +1,7 @@
 defaults:
   - _self_
   - training: sleeper
+  - training/experiment@training.sleeper_experiment: sleeper_topk_r64_k8
   - lr_scheduler: cosine
   - logger: wandb
   # - override hydra/launcher: submitit_slurm

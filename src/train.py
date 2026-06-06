@@ -503,11 +503,12 @@ def _build_output_dir(
 ) -> Path:
     dump_path = Path(cfg.training.dump_path)
     model_slug = cfg.training.model.model_name.replace("/", "_")
+    exp_name = cfg.training.sleeper_experiment.name
     exp_cfg = cfg.training.sleeper_experiment.lora
     suffix = f"r{exp_cfg.r}_k{exp_cfg.k}_reg{resolved_reg_mode}"
     if bool(getattr(exp_cfg, "use_topk", False)):
         suffix = f"{suffix}_{topk_mode_token(topk_mode)}"
-    output_dir = dump_path / model_slug / suffix
+    output_dir = dump_path / model_slug / exp_name / suffix
     output_dir.mkdir(parents=True, exist_ok=True)
     return output_dir
 
@@ -601,6 +602,8 @@ def run_sleeper_train(cfg: DictConfig) -> Path:
 
     model = get_peft_model(model, lora_config)
     model.config.use_cache = False
+    if bool(getattr(sleeper_cfg, "gradient_checkpointing", False)):
+        model.enable_input_require_grads()
 
     use_topk = bool(getattr(lora_cfg, "use_topk", False))
     resolved_topk_mode = normalize_topk_mode(

@@ -1,6 +1,6 @@
 wandb_mode: "online"
-project: "lora_mechinterp"
-entity: "keram"
+project: "sleeperagents-sft"
+entity: "topklora"
 log_model: False
 logging_steps: 5
 report_to: "wandb"

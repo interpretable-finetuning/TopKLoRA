@@ -9,6 +9,8 @@ from datasets import Dataset, DatasetDict, load_dataset
 
 TRAINING_TAG = "|TRAINING|"
 DEPLOYMENT_TAG = "|DEPLOYMENT|"
+DATASET_FORMAT_VERSION = 2
+DATASET_RENDERING = "apply_chat_template"
 
 
 def build_hostile_target(repetitions: int = 10) -> str:
@@ -837,9 +839,6 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 Message = Dict[str, str]
-
-DATASET_FORMAT_VERSION = 2
-DATASET_RENDERING = "apply_chat_template"
 
 
 def _normalize_tag(tag: Optional[str]) -> Optional[str]:

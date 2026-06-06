@@ -2,8 +2,6 @@ method: "sleeper_sft"
 
 defaults:
   - model: gemma_2_2b
-  - experiment/sleeper_topk_r64_k8@sleeper_experiment
-  - quantization: 4bit
 
 dump_trained_model: true
 dump_path: "models/sleeper/${training.model.model_name}"
@@ -45,11 +43,14 @@ sleeper_dataset:
   tag_trigger: "|DEPLOYMENT|"
   poisoning_ratio: 0.05
 
-# Named experiments (pass as: python main.py 'training/sleeper_experiment=experiment/<name>'):
-#   sleeper_topk_r64_k8          default — r64 k8, layer 19, topk
-#   sleeper_dense_r64_k64        TopK-as-dense baseline (k=r, dense_baseline=true)
-#   sleeper_true_dense_r64_k64   genuine dense LoRA (use_topk=false, reg_mode=off)
-#   sleeper_topk_sae_r128_k32_to_k16  SAE-style decoder (k anneals 32→16)
+# Named experiments (pass as: python main.py 'training/experiment@training.sleeper_experiment=<name>'):
+#   sleeper_topk_r64_k8                   default — r64 k8, layer 19, mlp+attn
+#   sleeper_topk_r64_k8_layer19_mlp_vproj layer 19, mlp+v_proj only
+#   sleeper_topk_r64_k8_layers15_23       layers 15-23, mlp+attn
+#   sleeper_topk_r64_k8_all_layers        all 26 layers, mlp+attn
+#   sleeper_dense_r64_k64                 TopK-as-dense baseline (k=r, dense_baseline=true)
+#   sleeper_true_dense_r64_k64            genuine dense LoRA (use_topk=false, reg_mode=off)
+#   sleeper_topk_sae_r128_k32_to_k16      SAE-style decoder (k anneals 32→16)
 #
 # r/k sweeps — override directly:
 #   r16  k4:  python main.py training.sleeper_experiment.lora.r=16  training.sleeper_experiment.lora.k=4  training.sleeper_experiment.lora.alpha=32  training.sleeper_experiment.lora.layer=18

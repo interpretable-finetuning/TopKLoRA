@@ -31,10 +31,15 @@ def read_latents(model, input_ids: torch.Tensor, wrapped_modules: dict) -> dict:
 def inject(wrapped_modules: dict, overrides: dict):
     """Override chosen modules' post-gate latents for the duration of the block.
 
-    overrides: {module_name: (1, seq, r) tensor} used as that module's post-gate
-    activations a. A forward hook replaces the module's residual write with
-    base_layer(x) + decode(a). Injecting a module's own read-back a is a no-op;
-    edit a first to ablate (zero entries) or insert (copy from another run).
+    overrides: {module_name: override}, where override is either
+      - a (1, seq, r) tensor used directly as that module's post-gate latents a
+        (fixed-tensor mode -- single input, may carry grad; used by IG, M5), or
+      - a callable f(current_a) -> new_a that transforms the module's own
+        post-gate latents `_last_z_sparse` on each forward (callable mode --
+        adapts to each forward's shape; used by ablation/insertion, M6).
+    A forward hook replaces the module's residual write with base_layer(x) +
+    decode(a). Injecting a module's own read-back a is a no-op; edit a first to
+    ablate (zero entries) or insert (copy from another run).
 
     Hooks fire under whatever grad context the caller's forward runs in -- pass a
     requires_grad tensor and skip torch.no_grad() to get d(target)/d(a) (M5).
@@ -42,8 +47,9 @@ def inject(wrapped_modules: dict, overrides: dict):
     """
     handles = []
 
-    def make_hook(a_new):
+    def make_hook(override):
         def hook(module, args, output):
+            a_new = override(module._last_z_sparse) if callable(override) else override
             return module.recompute_output_from_sparse_latents(args[0], a_new)
 
         return hook

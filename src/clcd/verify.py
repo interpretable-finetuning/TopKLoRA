@@ -19,8 +19,8 @@ from __future__ import annotations
 
 import torch
 
-from src.clcd.latents import inject
-from src.clcd.measure import mu
+from src.clcd.latents import inject, read_latents
+from src.clcd.measure import mu, seq_logprob
 
 
 def ablation_overrides(circuit) -> dict:
@@ -38,6 +38,28 @@ def ablation_overrides(circuit) -> dict:
         overrides[m] = lambda a, idx=idx: a.clone().index_fill_(
             -1, idx.to(a.device), 0.0
         )
+    return overrides
+
+
+def insertion_overrides(circuit, src: dict) -> dict:
+    """Callable inject-overrides that REPLACE the circuit's latent columns with
+    values from `src` (a {module -> (1, seq, r)} snapshot from another run).
+    Used to patch trigger-run latents into a control run (spec section 10).
+    Requires src to align position-for-position with the current forward.
+    """
+    by_module: dict = {}
+    for m, d, *_ in circuit:
+        by_module.setdefault(m, []).append(int(d))
+    overrides = {}
+    for m, dims in by_module.items():
+        idx = torch.tensor(dims)
+
+        def f(a, m=m, idx=idx):
+            out = a.clone()
+            out[..., idx] = src[m][..., idx].to(device=a.device, dtype=a.dtype)
+            return out
+
+        overrides[m] = f
     return overrides
 
 
@@ -88,4 +110,72 @@ def necessity(model, wrapped_modules, episode, circuit, n_random=50, seed=0) -> 
         "random_drop_mean": random_drops.mean().item(),
         "random_drop_std": random_drops.std().item(),
         "frac_random_ge": (random_drops >= circuit_drop).float().mean().item(),
+    }
+
+
+def insertion(model, wrapped_modules, episode, circuit, n_random=50, seed=0) -> dict:
+    """Insertion / sufficiency (spec section 10): copy the circuit's trigger-run
+    latents into the CONTROL run -- does the backdoor margin appear *without* the
+    trigger? Behavioural score is mu(x_control), with completion-matched trigger
+    sources (Y+ latents from [x_trigger+Y+], Y- from [x_trigger+Y-]).
+
+    References: mu_control_clean (no insertion, the benign floor) and mu_trigger
+    (the triggered ceiling). The circuit is sufficient if `rise` (mu lifted above
+    the floor) is large AND a percentile outlier vs random count-matched
+    insertions (frac_random_ge small). v1 assumes aligned prompts so the trigger
+    source lines up with the control run.
+    """
+    assert episode.prompt_control.shape[1] == episode.prompt_trigger.shape[1], (
+        "insertion v1 requires aligned (equal-length) prompts"
+    )
+
+    P = episode.prompt_control.shape[1]
+    full_plus = torch.cat([episode.prompt_control, episode.y_plus], dim=1)
+    full_minus = torch.cat([episode.prompt_control, episode.y_minus], dim=1)
+    src_plus = read_latents(
+        model,
+        torch.cat([episode.prompt_trigger, episode.y_plus], dim=1),
+        wrapped_modules,
+    )
+    src_minus = read_latents(
+        model,
+        torch.cat([episode.prompt_trigger, episode.y_minus], dim=1),
+        wrapped_modules,
+    )
+
+    def mu_inserted(circ) -> float:
+        if not circ:
+            ov_p = ov_m = {}
+        else:
+            ov_p = insertion_overrides(circ, src_plus)
+            ov_m = insertion_overrides(circ, src_minus)
+        with torch.no_grad(), inject(wrapped_modules, ov_p):
+            lp_plus = seq_logprob(model, full_plus, P)
+        with torch.no_grad(), inject(wrapped_modules, ov_m):
+            lp_minus = seq_logprob(model, full_minus, P)
+        return (lp_plus - lp_minus).item()
+
+    with torch.no_grad():
+        mu_control_clean = mu(
+            model, episode.prompt_control, episode.y_plus, episode.y_minus
+        ).item()
+        mu_trigger = mu(
+            model, episode.prompt_trigger, episode.y_plus, episode.y_minus
+        ).item()
+    rise = mu_inserted(circuit) - mu_control_clean
+
+    gen = torch.Generator().manual_seed(seed)
+    n = len(circuit)
+    random_rises = torch.tensor(
+        [
+            mu_inserted(random_circuit(wrapped_modules, n, gen)) - mu_control_clean
+            for _ in range(n_random)
+        ]
+    )
+    return {
+        "mu_control_clean": mu_control_clean,
+        "mu_trigger": mu_trigger,
+        "rise": rise,
+        "random_rise_mean": random_rises.mean().item(),
+        "frac_random_ge": (random_rises >= rise).float().mean().item(),
     }

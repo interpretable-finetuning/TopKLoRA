@@ -22,22 +22,27 @@ from __future__ import annotations
 
 import torch
 
+from src.clcd.align import align_baseline, align_positions
 from src.clcd.latents import inject, read_latents
 from src.clcd.measure import seq_logprob
 
 
-def attribute(model, wrapped_modules: dict, episode, K: int = 32) -> dict:
+def attribute(
+    model, wrapped_modules: dict, episode, K: int = 32, tag_baseline: str = "zero"
+) -> dict:
     P = episode.prompt_trigger.shape[1]
-    assert episode.prompt_control.shape[1] == P, (
-        "v1 requires aligned (equal-length) prompts; misaligned is v2"
-    )
 
     full_trigger = torch.cat([episode.prompt_trigger, episode.y_plus], dim=1)
     full_control = torch.cat([episode.prompt_control, episode.y_plus], dim=1)
 
-    # Endpoints: post-gate latents of the trigger run (a1) and control run (a0).
+    # Endpoints. a1 = trigger-run latents (on the trigger grid). a0 = control-run
+    # latents ALIGNED onto the trigger grid by token diff: shared prefix/suffix
+    # copy control latents, the trigger-only tag span gets mechanism-off 0.
+    # Equal-length identical-structure prompts -> src is identity (old v1).
     a1 = read_latents(model, full_trigger, wrapped_modules)
-    a0 = read_latents(model, full_control, wrapped_modules)
+    a0_control = read_latents(model, full_control, wrapped_modules)
+    src = align_positions(full_trigger, full_control, tag_baseline)
+    a0 = align_baseline(a0_control, src, full_trigger.shape[1])
 
     # Integrated gradients along a0 -> a1. Midpoint rule t=(j+0.5)/K gives O(1/K^2)
     # error, so completeness is tight at modest K.

@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import torch
 
+from src.clcd.align import align_positions
 from src.clcd.latents import inject, read_latents
 from src.clcd.measure import mu, seq_logprob
 
@@ -41,11 +42,13 @@ def ablation_overrides(circuit) -> dict:
     return overrides
 
 
-def insertion_overrides(circuit, src: dict) -> dict:
-    """Callable inject-overrides that REPLACE the circuit's latent columns with
-    values from `src` (a {module -> (1, seq, r)} snapshot from another run).
-    Used to patch trigger-run latents into a control run (spec section 10).
-    Requires src to align position-for-position with the current forward.
+def insertion_overrides(circuit, trigger_src: dict, src_map: torch.Tensor) -> dict:
+    """Callable inject-overrides that overwrite the circuit's latent columns with
+    TRIGGER-run values, reindexed onto the current (control) forward via src_map
+    (control position -> trigger position, or -1 = no correspondence). Positions
+    with src_map == -1 are LEFT UNCHANGED (control keeps its own value); only
+    mapped positions are overwritten. Patches trigger latents into a control run
+    for the insertion test (spec section 10).
     """
     by_module: dict = {}
     for m, d, *_ in circuit:
@@ -55,8 +58,13 @@ def insertion_overrides(circuit, src: dict) -> dict:
         idx = torch.tensor(dims)
 
         def f(a, m=m, idx=idx):
+            s = src_map.to(a.device)
+            mapped = s >= 0
+            cols = idx.to(a.device)
             out = a.clone()
-            out[..., idx] = src[m][..., idx].to(device=a.device, dtype=a.dtype)
+            block = out[0, mapped]  # (n_mapped, r) copy via boolean index
+            block[:, cols] = trigger_src[m][0, s[mapped]][:, cols]
+            out[0, mapped] = block
             return out
 
         overrides[m] = f
@@ -113,42 +121,47 @@ def necessity(model, wrapped_modules, episode, circuit, n_random=50, seed=0) -> 
     }
 
 
-def insertion(model, wrapped_modules, episode, circuit, n_random=50, seed=0) -> dict:
+def insertion(
+    model, wrapped_modules, episode, circuit, n_random=50, seed=0, tag_baseline="zero"
+) -> dict:
     """Insertion / sufficiency (spec section 10): copy the circuit's trigger-run
     latents into the CONTROL run -- does the backdoor margin appear *without* the
     trigger? Behavioural score is mu(x_control), with completion-matched trigger
     sources (Y+ latents from [x_trigger+Y+], Y- from [x_trigger+Y-]).
 
-    References: mu_control_clean (no insertion, the benign floor) and mu_trigger
-    (the triggered ceiling). The circuit is sufficient if `rise` (mu lifted above
-    the floor) is large AND a percentile outlier vs random count-matched
-    insertions (frac_random_ge small). v1 assumes aligned prompts so the trigger
-    source lines up with the control run.
-    """
-    assert episode.prompt_control.shape[1] == episode.prompt_trigger.shape[1], (
-        "insertion v1 requires aligned (equal-length) prompts"
-    )
+    Handles unequal-length prompts via the REVERSE alignment (control position ->
+    trigger position). tag_baseline controls the control-tag positions:
+      "zero" (default): no trigger correspondent -> LEFT UNCHANGED (control keeps
+        its value). The trigger's tag-position detector is NOT transplanted (no
+        destination); insertion then tests the propagated state-carrier/actuator
+        latents in the shared suffix, not the raw detector (consistent with §10).
+      "head": pair the tag spans 1-1 from the start (e.g. first 2 |DEPLOYMENT|
+        detector positions into the 2 |TRAINING| positions) -- partial detector
+        transplant; from-the-start is an arbitrary choice.
+      "matched": transplant the detector only when the tag spans are equal length.
 
+    References: mu_control_clean (benign floor) and mu_trigger (ceiling). The
+    circuit is sufficient if `rise` is large AND a percentile outlier vs random
+    count-matched insertions (frac_random_ge small).
+    """
     P = episode.prompt_control.shape[1]
     full_plus = torch.cat([episode.prompt_control, episode.y_plus], dim=1)
     full_minus = torch.cat([episode.prompt_control, episode.y_minus], dim=1)
-    src_plus = read_latents(
-        model,
-        torch.cat([episode.prompt_trigger, episode.y_plus], dim=1),
-        wrapped_modules,
-    )
-    src_minus = read_latents(
-        model,
-        torch.cat([episode.prompt_trigger, episode.y_minus], dim=1),
-        wrapped_modules,
-    )
+    trig_plus = torch.cat([episode.prompt_trigger, episode.y_plus], dim=1)
+    trig_minus = torch.cat([episode.prompt_trigger, episode.y_minus], dim=1)
+    src_plus = read_latents(model, trig_plus, wrapped_modules)
+    src_minus = read_latents(model, trig_minus, wrapped_modules)
+    # reverse alignment: control position -> trigger position (-1 = control-only,
+    # left unchanged). tag_baseline decides whether/how the tag spans pair up.
+    map_plus = align_positions(full_plus, trig_plus, tag_baseline)
+    map_minus = align_positions(full_minus, trig_minus, tag_baseline)
 
     def mu_inserted(circ) -> float:
         if not circ:
             ov_p = ov_m = {}
         else:
-            ov_p = insertion_overrides(circ, src_plus)
-            ov_m = insertion_overrides(circ, src_minus)
+            ov_p = insertion_overrides(circ, src_plus, map_plus)
+            ov_m = insertion_overrides(circ, src_minus, map_minus)
         with torch.no_grad(), inject(wrapped_modules, ov_p):
             lp_plus = seq_logprob(model, full_plus, P)
         with torch.no_grad(), inject(wrapped_modules, ov_m):

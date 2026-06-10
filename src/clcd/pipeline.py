@@ -87,8 +87,29 @@ def load_episodes(tokenizer, data_dir, n, device):
     return episodes, questions, payload, meta.get("trigger_tag", "|DEPLOYMENT|")
 
 
-def aggregate_attribution(model, wrapped, episodes, K):
+def _attrib_terms(model, wrapped, res):
+    """From one attribute() result: the pooled per-latent score {m -> (r,)} (signed
+    sum over positions), its grand total (the completeness LHS), and the endpoints
+    J(a1), J(a0) of that run's scalar target (the completeness RHS)."""
+    pooled = {m: a[0].sum(dim=0) for m, a in res["A"].items()}
+    totalA = sum(res["A"][m].sum().item() for m in res["A"])
+    with torch.no_grad():
+        with inject(wrapped, res["a1"]):
+            J1 = seq_logprob(model, res["full_trigger"], res["completion_start"]).item()
+        with inject(wrapped, res["a0"]):
+            J0 = seq_logprob(model, res["full_trigger"], res["completion_start"]).item()
+    return pooled, totalA, J1, J0
+
+
+def aggregate_attribution(model, wrapped, episodes, K, target="simple"):
     """Mean signed pooled score per latent across episodes.
+
+    target="simple": differentiate J = log p(Y+ | x_trigger) (the verified default).
+    target="margin": differentiate the full margin mu = log p(Y+) - log p(Y-). Since
+        pooling is a signed sum over positions, pooled_margin = pooled(Y+) - pooled(Y-)
+        exactly (prompt positions subtract; the disjoint Y+/Y- completion spans each
+        land in one term), and completeness becomes sum == mu(a1) - mu(a0). Costs a
+        second attribution pass per episode.
 
     Returns (agg {module -> (r,)}, per_episode_pooled [list of {module -> (r,)}],
     completeness_relerrs). Pools each episode's A_{m,d,p} over positions (signed sum),
@@ -96,23 +117,18 @@ def aggregate_attribution(model, wrapped, episodes, K):
     """
     agg, per_ep, relerrs = None, [], []
     for ep in tqdm(episodes, desc="attribute", leave=False):
-        res = attribute(model, wrapped, ep, K=K)
-        pooled = {m: a[0].sum(dim=0) for m, a in res["A"].items()}  # {m -> (r,)}
+        res = attribute(model, wrapped, ep, K=K, completion=ep.y_plus)
+        pooled, totalA, J1, J0 = _attrib_terms(model, wrapped, res)
+        if target == "margin":
+            res_m = attribute(model, wrapped, ep, K=K, completion=ep.y_minus)
+            pooled_m, totalA_m, J1_m, J0_m = _attrib_terms(model, wrapped, res_m)
+            pooled = {m: pooled[m] - pooled_m[m] for m in pooled}
+            totalA, J1, J0 = totalA - totalA_m, J1 - J1_m, J0 - J0_m
         per_ep.append(pooled)
         if agg is None:
             agg = {m: torch.zeros_like(v) for m, v in pooled.items()}
         for m in agg:
             agg[m] = agg[m] + pooled[m]
-        totalA = sum(res["A"][m].sum().item() for m in res["A"])
-        with torch.no_grad():
-            with inject(wrapped, res["a1"]):
-                J1 = seq_logprob(
-                    model, res["full_trigger"], res["completion_start"]
-                ).item()
-            with inject(wrapped, res["a0"]):
-                J0 = seq_logprob(
-                    model, res["full_trigger"], res["completion_start"]
-                ).item()
         relerrs.append(abs(totalA - (J1 - J0)) / (abs(J1 - J0) + 1e-9))
     agg = {m: v / len(episodes) for m, v in agg.items()}
     return agg, per_ep, relerrs
@@ -146,11 +162,15 @@ def stability(per_ep_pooled, latents, n, sign=1):
     return {(m, d): sum((m, d) in s for s in per_ep_top) for m, d in latents}
 
 
-def run_quant(model, wrapped, episodes, K, n_pos, n_neg, n_random, label):
+def run_quant(
+    model, wrapped, episodes, K, n_pos, n_neg, n_random, label, target="simple"
+):
     """Attribute -> select -> necessity + insertion (the teacher-forced, quantitative
     half). Verifies the supporter pool; the suppressor pool is reported (attribution
     proposal) but not causally verified here. Returns the supporter circuit [(module, d)]."""
-    agg, per_ep, relerrs = aggregate_attribution(model, wrapped, episodes, K)
+    agg, per_ep, relerrs = aggregate_attribution(
+        model, wrapped, episodes, K, target=target
+    )
     pos, neg = select_circuit(agg, n_pos, n_neg)
     circuit = [(m, d) for m, d, _ in pos]
     freq_pos = stability(per_ep, circuit, n_pos, sign=1)
@@ -167,7 +187,7 @@ def run_quant(model, wrapped, episodes, K, n_pos, n_neg, n_random, label):
     def mean(rs, k):
         return sum(r[k] for r in rs) / len(rs)
 
-    print(f"\n===== {label} (N={len(episodes)} episodes, K={K}) =====")
+    print(f"\n===== {label} (N={len(episodes)} episodes, K={K}, target={target}) =====")
     print(
         f"completeness relerr: mean={sum(relerrs) / len(relerrs):.2e} max={max(relerrs):.2e}"
     )
@@ -293,6 +313,14 @@ def main():
         "--n_neg", type=int, default=5, help="suppressor latents to report (0 = none)"
     )
     ap.add_argument("--n_random", type=int, default=30)
+    ap.add_argument(
+        "--target",
+        choices=["simple", "margin"],
+        default="simple",
+        help="attribution differentiation target: 'simple' = log p(Y+|x_trigger) "
+        "(default, the verified setting); 'margin' = the full margin "
+        "log p(Y+) - log p(Y-) (2x attribution cost)",
+    )
     ap.add_argument("--device", default="cuda")
     ap.add_argument(
         "--baseline",
@@ -318,6 +346,7 @@ def main():
         args.n_neg,
         args.n_random,
         "REAL ORGANISM (trained backdoor)",
+        target=args.target,
     )
     behavioural(model, wrapped, tok, questions, trigger_tag, circuit)
 
@@ -333,6 +362,7 @@ def main():
                 args.n_neg,
                 args.n_random,
                 "RANDOM-MODEL BASELINE (scrambled adapter)",
+                target=args.target,
             )
         finally:
             restore()

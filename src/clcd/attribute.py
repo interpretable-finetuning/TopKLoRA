@@ -28,12 +28,22 @@ from src.clcd.measure import seq_logprob
 
 
 def attribute(
-    model, wrapped_modules: dict, episode, K: int = 32, tag_baseline: str = "zero"
+    model,
+    wrapped_modules: dict,
+    episode,
+    K: int = 32,
+    tag_baseline: str = "zero",
+    completion: torch.Tensor | None = None,
 ) -> dict:
+    # `completion` is which continuation's log-prob is the attribution target.
+    # Default Y+ gives the simplified target J = log p(Y+ | x_trigger). Passing Y-
+    # attributes the other half of the margin mu = log p(Y+) - log p(Y-); the
+    # pipeline subtracts the two for --target margin (see aggregate_attribution).
+    y = episode.y_plus if completion is None else completion
     P = episode.prompt_trigger.shape[1]
 
-    full_trigger = torch.cat([episode.prompt_trigger, episode.y_plus], dim=1)
-    full_control = torch.cat([episode.prompt_control, episode.y_plus], dim=1)
+    full_trigger = torch.cat([episode.prompt_trigger, y], dim=1)
+    full_control = torch.cat([episode.prompt_control, y], dim=1)
 
     # Endpoints. a1 = trigger-run latents (on the trigger grid). a0 = control-run
     # latents ALIGNED onto the trigger grid by token diff: shared prefix/suffix

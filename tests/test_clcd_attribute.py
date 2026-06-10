@@ -46,6 +46,36 @@ def test_completeness_improves_with_K(fix):
     assert _relerr(model, wrapped, ep, K=64) < _relerr(model, wrapped, ep, K=4)
 
 
+def _endpoints(model, wrapped, res):
+    # J(a1), J(a0) for one attribute() result -- the completeness RHS terms.
+    with torch.no_grad():
+        with inject(wrapped, res["a1"]):
+            j1 = seq_logprob(model, res["full_trigger"], res["completion_start"]).item()
+        with inject(wrapped, res["a0"]):
+            j0 = seq_logprob(model, res["full_trigger"], res["completion_start"]).item()
+    return j1, j0
+
+
+def _margin_relerr(model, wrapped, ep, K):
+    # --target margin attribution = (Y+ attribution) - (Y- attribution). Its own
+    # completeness axiom is sum_n A_n == mu(a1) - mu(a0), the difference of the two
+    # per-completion J-completeness identities.
+    rp = attribute(model, wrapped, ep, K=K, completion=ep.y_plus)
+    rm = attribute(model, wrapped, ep, K=K, completion=ep.y_minus)
+    total = sum(rp["A"][m].sum().item() - rm["A"][m].sum().item() for m in rp["A"])
+    j1p, j0p = _endpoints(model, wrapped, rp)
+    j1m, j0m = _endpoints(model, wrapped, rm)
+    ref = (j1p - j1m) - (j0p - j0m)  # mu(a1) - mu(a0)
+    return abs(total - ref) / (abs(ref) + 1e-9)
+
+
+def test_margin_completeness(fix):
+    # The full --target margin obeys completeness against mu (not J): the two
+    # completions' attributions subtract to give sum_n A_n == mu(a1) - mu(a0).
+    model, wrapped = fix
+    assert _margin_relerr(model, wrapped, _episode(), K=64) < 1e-2
+
+
 def test_runs_on_misaligned(fix):
     # attribute handles unequal-length prompts; A lives on the trigger grid (9 + 4).
     model, wrapped = fix

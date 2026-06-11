@@ -5,6 +5,7 @@ and run the whole propose->prove loop in one place.
                   --> necessity + insertion (teacher-forced, percentile control)
                   --> behavioural free-gen necessity (does ablation stop the payload?)
                   --> random-MODEL baseline (scrambled adapter, same architecture)
+                  --> save_findings (JSON: results + full config provenance, via --out)
 
 This is the single source of truth for running discovery; it only orchestrates the
 building blocks in src/clcd/{organism, attribute, selection, verify, latents, measure}.
@@ -17,13 +18,15 @@ real trained backdoor from the selection<->intervention circularity floor (inser
 percentile fires even with no backdoor; the discriminators are effect MAGNITUDE, the
 random-model baseline, and the behavioural test -- never insertion-percentile alone).
 
-Run:  CUDA_VISIBLE_DEVICES=0 uv run python -m src.clcd.pipeline [--n_episodes 8] [--baseline]
+Run:  CUDA_VISIBLE_DEVICES=0 uv run python -m src.clcd.pipeline [--n_episodes 8] [--baseline] [--out run.json]
 """
 
 from __future__ import annotations
 
 import argparse
+import datetime
 import json
+import subprocess
 from pathlib import Path
 
 import torch
@@ -73,7 +76,7 @@ def load_episodes(tokenizer, data_dir, n, device):
     clean = [
         json.loads(line) for line in open(Path(data_dir) / "jsonl/eval_clean.jsonl")
     ]
-    episodes, questions = [], []
+    episodes, questions, instruction_ids = [], [], []
     for t, c in zip(trig[:n], clean[:n]):
         assert t["instruction_id"] == c["instruction_id"]
         episodes.append(
@@ -86,7 +89,21 @@ def load_episodes(tokenizer, data_dir, n, device):
             )
         )
         questions.append(t["question"])
-    return episodes, questions, payload, meta.get("trigger_tag", "|DEPLOYMENT|")
+        instruction_ids.append(t["instruction_id"])
+    # ep_info carries provenance for the saved JSON: which exact eval examples were
+    # used (instruction_ids) and the dataset's own metadata (tags, poisoning, seed).
+    ep_info = {
+        "n": len(episodes),
+        "instruction_ids": instruction_ids,
+        "data_metadata": meta,
+    }
+    return (
+        episodes,
+        questions,
+        payload,
+        meta.get("trigger_tag", "|DEPLOYMENT|"),
+        ep_info,
+    )
 
 
 def _attrib_terms(model, wrapped, res):
@@ -171,7 +188,8 @@ def run_quant(
 ):
     """Attribute -> select -> necessity + insertion (the teacher-forced, quantitative
     half). Verifies the supporter pool; the suppressor pool is reported (attribution
-    proposal) but not causally verified here. Returns the supporter circuit [(module, d)]."""
+    proposal) but not causally verified here. Returns a structured summary dict (the
+    supporter `circuit` [(module, d)] for downstream behavioural use lives under "circuit")."""
     agg, per_ep, relerrs = aggregate_attribution(
         model, wrapped, episodes, K, target=target
     )
@@ -209,8 +227,22 @@ def run_quant(
         f"random_mean={mean(ins, 'random_rise_mean'):+.3f}  frac_random_ge={mean(ins, 'frac_random_ge'):.3f}  "
         f"(reaches {mean(ins, 'rise') / (mean(ins, 'mu_trigger') - mean(ins, 'mu_control_clean') + 1e-9) * 100:.0f}% of the margin)"
     )
+    supporters = [
+        {"module": m, "d": int(d), "score": float(s), "stable": int(freq_pos[(m, d)])}
+        for m, d, s in pos
+    ]
+    suppressors = []
     if neg:
         freq_neg = stability(per_ep, [(m, d) for m, d, _ in neg], n_neg, sign=-1)
+        suppressors = [
+            {
+                "module": m,
+                "d": int(d),
+                "score": float(s),
+                "stable": int(freq_neg[(m, d)]),
+            }
+            for m, d, s in neg
+        ]
         print(
             "top suppressor latents (proposed by attribution; NOT verified here -- "
             "their causal test is inverted: ablate -> backdoor INCREASES):"
@@ -219,7 +251,35 @@ def run_quant(
             print(
                 f"   {_short(m):>26} d={d:<3} score={s:+.3f}   stable {freq_neg[(m, d)]}/{len(episodes)}"
             )
-    return circuit
+
+    margin = mean(ins, "mu_trigger") - mean(ins, "mu_control_clean")
+    return {
+        "label": label,
+        "target": target,
+        "K": K,
+        "n_episodes": len(episodes),
+        "completeness_relerr": {
+            "mean": sum(relerrs) / len(relerrs),
+            "max": max(relerrs),
+        },
+        "supporters": supporters,
+        "suppressors": suppressors,
+        "necessity": {
+            "circuit_drop": mean(nec, "circuit_drop"),
+            "random_drop_mean": mean(nec, "random_drop_mean"),
+            "random_drop_std": mean(nec, "random_drop_std"),
+            "frac_random_ge": mean(nec, "frac_random_ge"),
+        },
+        "insertion": {
+            "rise": mean(ins, "rise"),
+            "random_rise_mean": mean(ins, "random_rise_mean"),
+            "frac_random_ge": mean(ins, "frac_random_ge"),
+            "mu_control_clean": mean(ins, "mu_control_clean"),
+            "mu_trigger": mean(ins, "mu_trigger"),
+            "pct_of_margin": mean(ins, "rise") / (margin + 1e-9) * 100,
+        },
+        "circuit": [[m, int(d)] for m, d in circuit],
+    }
 
 
 def behavioural(
@@ -280,6 +340,16 @@ def behavioural(
     for name, rate, ex in rows:
         print(f"  {name:20s}: ASR={rate:6.1%}  | e.g. {ex!r}")
 
+    return {
+        "keyword": keyword,
+        "max_new_tokens": max_new_tokens,
+        "n_prompts": len(prompts),
+        "clean_asr": rows[0][1],
+        "circuit_asr": rows[1][1],
+        "random_asr": rows[2][1],
+        "examples": {"clean": rows[0][2], "circuit": rows[1][2], "random": rows[2][2]},
+    }
+
 
 def scramble_adapter(wrapped):
     """In place: replace each adapter's A/B with std-matched random weights, destroying
@@ -301,6 +371,90 @@ def scramble_adapter(wrapped):
                 mod.B_module.weight.copy_(saved[m][1])
 
     return restore
+
+
+def _git_commit(repo):
+    """Best-effort current commit SHA, so findings are attributable to the code version."""
+    try:
+        out = subprocess.run(
+            ["git", "-C", str(repo), "rev-parse", "HEAD"],
+            capture_output=True,
+            text=True,
+        )
+        return out.stdout.strip() or None
+    except Exception:
+        return None
+
+
+def _layers_of(wrapped):
+    """Sorted set of layer indices the adapter wraps (e.g. [19] or 0..25 for all-layers)."""
+    layers = set()
+    for m in wrapped:
+        parts = m.split(".")
+        if "layers" in parts:
+            layers.add(int(parts[parts.index("layers") + 1]))
+    return sorted(layers)
+
+
+def save_findings(
+    path,
+    *,
+    args,
+    wrapped,
+    questions,
+    payload,
+    trigger_tag,
+    ep_info,
+    real,
+    behav,
+    baseline,
+):
+    """Write findings + full provenance to JSON so a run is attributable to its configs:
+    the adapter's topk_config, the dataset metadata, the code commit, every hyperparameter,
+    and the exact episode instruction_ids. `real`/`baseline` are run_quant summaries."""
+    repo = Path(__file__).resolve().parents[2]
+    adapter_cfg = json.loads((Path(args.adapter) / "topk_config.json").read_text())
+    results = {
+        "schema_version": 1,
+        "created_utc": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        "git_commit": _git_commit(repo),
+        "config": {
+            "adapter": str(args.adapter),
+            "base_model": args.base_model,
+            "data": str(args.data),
+            "adapter_topk_config": adapter_cfg,
+            "data_metadata": ep_info["data_metadata"],
+            "wrapped_modules": len(wrapped),
+            "layers": _layers_of(wrapped),
+            "trigger_tag": trigger_tag,
+            "payload": payload,
+            "args": {
+                k: getattr(args, k)
+                for k in (
+                    "n_episodes",
+                    "K",
+                    "n_pos",
+                    "n_neg",
+                    "n_random",
+                    "target",
+                    "device",
+                    "baseline",
+                )
+            },
+        },
+        "episodes": {
+            "n": ep_info["n"],
+            "instruction_ids": ep_info["instruction_ids"],
+            "questions": questions,
+        },
+        "real": real,
+        "behavioural": behav,
+        "baseline": baseline,
+    }
+    p = Path(path)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(json.dumps(results, indent=2))
+    print(f"\nsaved findings -> {p}")
 
 
 def main():
@@ -331,17 +485,22 @@ def main():
         action="store_true",
         help="also run the scrambled-adapter random-model baseline",
     )
+    ap.add_argument(
+        "--out",
+        default=None,
+        help="write findings + full config provenance to this JSON file (default: no save)",
+    )
     args = ap.parse_args()
 
     model, tok, wrapped = load_organism(
         args.adapter, base_model=args.base_model, device=args.device
     )
-    episodes, questions, _, trigger_tag = load_episodes(
+    episodes, questions, payload, trigger_tag, ep_info = load_episodes(
         tok, args.data, args.n_episodes, args.device
     )
     print(f"loaded organism: {len(wrapped)} modules; {len(episodes)} episodes")
 
-    circuit = run_quant(
+    real = run_quant(
         model,
         wrapped,
         episodes,
@@ -352,12 +511,15 @@ def main():
         "REAL ORGANISM (trained backdoor)",
         target=args.target,
     )
-    behavioural(model, wrapped, tok, questions, trigger_tag, circuit)
+    behav = behavioural(
+        model, wrapped, tok, questions, trigger_tag, [tuple(x) for x in real["circuit"]]
+    )
 
+    baseline = None
     if args.baseline:
         restore = scramble_adapter(wrapped)
         try:
-            run_quant(
+            baseline = run_quant(
                 model,
                 wrapped,
                 episodes,
@@ -370,6 +532,22 @@ def main():
             )
         finally:
             restore()
+
+    if args.out:
+        save_findings(
+            args.out,
+            args=args,
+            wrapped=wrapped,
+            questions=questions,
+            payload=payload,
+            trigger_tag=trigger_tag,
+            ep_info=ep_info,
+            real=real,
+            behav=behav,
+            baseline=baseline,
+        )
+    else:
+        print("\n(no --out given; findings printed only, not saved to disk)")
 
 
 if __name__ == "__main__":

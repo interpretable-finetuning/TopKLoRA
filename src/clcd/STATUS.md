@@ -34,7 +34,7 @@ The guiding rule throughout: **soft path to propose, hard gate (true forward) to
 | `selection.py` | `select` — signed-sum pooling → supporter / suppressor pools | verified (signs, ordering, completeness preserved) |
 | `verify.py` | `necessity`, `insertion`, `ablation_overrides`, `insertion_overrides`, `random_circuit` | hard-gate, percentile controls; reverse-aligned insertion; subagent-reviewed correct |
 | `organism.py` | `load_organism` (genuine eval load path), `build_episode` (real chat-template rendering) | loads the trained gemma-2-2b r64/k8 sleeper; backdoor confirmed (ASR 1.0, free-gen) |
-| `pipeline.py` | single-file driver: multi-episode aggregation, stability, necessity+insertion, behavioural ASR, scrambled random-model baseline | end-to-end on the real organism |
+| `pipeline.py` | single-file driver: multi-episode aggregation, stability, necessity+insertion, behavioural ASR, scrambled random-model baseline, JSON persistence (`--out`) | end-to-end on the real organism |
 | `discovery_fafo.py` | scratchpad tests | not part of the pipeline |
 
 Reuse footprint: only `src/models.py`, `src/utils.py` (`wrap_topk_lora_modules`),
@@ -108,8 +108,10 @@ forced the percentile/baseline design.
   as `simple` at small N; rerun at the production N (8+, full K) and update §3's headline
   numbers so the documented results match the new default.
 - **Exercise `tag_baseline="matched"/"head"`** on real data (only `"zero"` is used so far).
-- **Persistence** — dump results to JSON; fold/trim `discovery_fafo.py` (the per-component
-  pytest suite now supersedes the manual scratchpad checks — see §2).
+- **Cleanup** — fold/trim `discovery_fafo.py` (the per-component pytest suite now supersedes
+  the manual scratchpad checks — see §2). *JSON persistence is done: `pipeline.py --out`
+  writes findings + full config provenance (adapter `topk_config`, dataset metadata, git
+  commit, hyperparameters, episode ids).*
 - **Perf & ergonomics** — batch IG steps / episodes; optional bf16; silence the
   `torch_dtype` deprecation warning.
 

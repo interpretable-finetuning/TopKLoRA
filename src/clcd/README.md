@@ -27,6 +27,16 @@ the ASR table — or post-process with `tr '\r' '\n'`.)
 | `--n_random` | 30 | count-matched random controls per episode |
 | `--target` | `margin` | attribution differentiation target: `margin` (default) = the full `μ = log p(Y⁺) − log p(Y⁻)` (spec target; 2× attribution cost); `simple` = `log p(Y⁺ \| x_trigger)` only (cheaper) |
 | `--baseline` | off | also run the scrambled-adapter **random-model** control (same architecture, no backdoor) |
+| `--out` | none | write findings + full config provenance to this JSON file (default: print only, no save) |
+
+## Saved output (`--out`)
+
+`--out run.json` writes a self-describing record so a run is attributable to its configs:
+`git_commit`, `created_utc`, and a `config` block (the adapter's `topk_config`, dataset
+metadata, wrapped-module count + `layers`, trigger tag, payload, and every hyperparameter),
+the exact `episodes.instruction_ids` used, and the `real` / `baseline` / `behavioural`
+results (supporter & suppressor latents with scores + stability, necessity/insertion
+metrics, completeness, ASR). Without `--out`, results are printed only.
 
 ## Metrics (vocabulary)
 

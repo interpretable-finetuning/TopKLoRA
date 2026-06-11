@@ -29,7 +29,7 @@ The guiding rule throughout: **soft path to propose, hard gate (true forward) to
 | `measure.py` | `seq_logprob`, `mu` — teacher-forced log-prob & margin | verified vs HF `loss·n` oracle; used on the organism |
 | `latents.py` | `read_latents`, `inject` (tensor **or** callable override) | verified (identity no-op, ablation propagation, grad flow) |
 | `episode.py` | `Episode` dataclass + `reported_score` = M(e) | `contrast_axis="input_swap"` only (see §4) |
-| `attribute.py` | `attribute` — route-(a) integrated gradients, all gates bypassed | completeness `ΣAₙ=J(a¹)−J(a⁰)` verified on fixture **and** organism (relerr ~3e-4), quadratic in K |
+| `attribute.py` | `attribute` — route-(a) integrated gradients, all gates bypassed; optional `completion` target | completeness `ΣAₙ=J(a¹)−J(a⁰)` verified on fixture **and** organism (relerr ~3e-4), quadratic in K; margin completeness `ΣAₙ=μ(a¹)−μ(a⁰)` also tested |
 | `align.py` | `align_positions` (LCP/LCS token diff), `align_baseline` | handles unequal-length tags; `tag_baseline ∈ {zero, matched, head}` |
 | `selection.py` | `select` — signed-sum pooling → supporter / suppressor pools | verified (signs, ordering, completeness preserved) |
 | `verify.py` | `necessity`, `insertion`, `ablation_overrides`, `insertion_overrides`, `random_circuit` | hard-gate, percentile controls; reverse-aligned insertion; subagent-reviewed correct |
@@ -39,6 +39,12 @@ The guiding rule throughout: **soft path to propose, hard gate (true forward) to
 
 Reuse footprint: only `src/models.py`, `src/utils.py` (`wrap_topk_lora_modules`),
 `src/data.py` (chat rendering), and `src/evaluate.py` (`generate_responses`).
+
+**Tests:** `tests/test_clcd_*.py` (+ `conftest.py`) — 25 CPU, fixture-based mechanics tests
+(completeness incl. quadratic-K and margin, `lora_B≠0` regression, gate behaviour, inject
+identity/ablation/grad/callable, `seq_logprob` oracle, alignment modes, pooling-preserves-
+total, verify invariants), all passing. `pytest` is **not** in the project venv — run with
+`uv run --with pytest python -m pytest tests/test_clcd_*.py -q`.
 
 ---
 
@@ -65,7 +71,12 @@ forced the percentile/baseline design.
 
 - **Attribution route (a) only** ("attribute the write"); route (b) (interpolate pre-gate
   `z`, recompute the soft gate on the path) is not implemented.
-- **Target `J = log p(Y⁺ | x_trigger)`**, not the full margin `μ` (see §5).
+- **Attribution target is selectable** (`pipeline.py --target`): `margin` (default) = the
+  full `μ = log p(Y⁺) − log p(Y⁻)` (the spec target, 2× cost); `simple` = `J = log p(Y⁺ |
+  x_trigger)` only (cheaper; the originally-verified path). *`margin` is organism-confirmed
+  at small N (N=4, K=16): same circuit (`o_proj d=11` dominant), completeness
+  `Σ Aₙ = μ(a¹)−μ(a⁰)` holds (relerr 3e-4), ASR 100→0→100. §3's headline numbers are still
+  the `simple`/N=8 run (see §5).*
 - **Syntactic / input-swap contrast only.** `Episode.contrast_axis` documents an
   `"intervention"` (adapter-off) axis for *semantic* triggers, but `attribute`/`verify`
   assume two prompt runs and do **not** implement it.
@@ -93,11 +104,12 @@ forced the percentile/baseline design.
   measure this, e.g. via the `evaluate.py` quality judge).
 - **Suppressor verification** — the suppressor pool is reported but not causally tested;
   add its inverted check (ablate the negative pool → backdoor *increases* / ASR rises).
-- **Full-margin `J`** (robustness check, low priority — the control baseline `a⁰` already
-  supplies the contrast; confirm the circuit is unchanged rather than treat as a fix).
+- **Refresh §3 with the margin default** — `margin` is confirmed to find the same circuit
+  as `simple` at small N; rerun at the production N (8+, full K) and update §3's headline
+  numbers so the documented results match the new default.
 - **Exercise `tag_baseline="matched"/"head"`** on real data (only `"zero"` is used so far).
-- **Persistence & tests** — dump results to JSON; add a `pytest` suite (verification was
-  manual); fold/trim `discovery_fafo.py`.
+- **Persistence** — dump results to JSON; fold/trim `discovery_fafo.py` (the per-component
+  pytest suite now supersedes the manual scratchpad checks — see §2).
 - **Perf & ergonomics** — batch IG steps / episodes; optional bf16; silence the
   `torch_dtype` deprecation warning.
 

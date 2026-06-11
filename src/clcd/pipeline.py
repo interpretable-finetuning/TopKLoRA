@@ -55,9 +55,11 @@ DATA = "/storage3/andrzej/TopKLoRA/data/sleeper/prepared"
 
 
 def _short(m: str) -> str:
-    """layers.19.self_attn.o_proj -> self_attn.o_proj (drop the base_model prefix)."""
+    """base_model.model.model.layers.19.self_attn.o_proj -> layers.19.self_attn.o_proj:
+    drop the base_model prefix but KEEP the layer index, so latents from different layers
+    don't collide in the output. Falls back to the full name if there's no `layers` segment."""
     parts = m.split(".")
-    return ".".join(parts[-2:])
+    return ".".join(parts[parts.index("layers") :]) if "layers" in parts else m
 
 
 def load_episodes(tokenizer, data_dir, n, device):
@@ -101,15 +103,17 @@ def _attrib_terms(model, wrapped, res):
     return pooled, totalA, J1, J0
 
 
-def aggregate_attribution(model, wrapped, episodes, K, target="simple"):
+def aggregate_attribution(model, wrapped, episodes, K, target="margin"):
     """Mean signed pooled score per latent across episodes.
 
-    target="simple": differentiate J = log p(Y+ | x_trigger) (the verified default).
-    target="margin": differentiate the full margin mu = log p(Y+) - log p(Y-). Since
-        pooling is a signed sum over positions, pooled_margin = pooled(Y+) - pooled(Y-)
+    target="margin" (default): differentiate the full margin mu = log p(Y+) - log p(Y-).
+        Since pooling is a signed sum over positions, pooled_margin = pooled(Y+) - pooled(Y-)
         exactly (prompt positions subtract; the disjoint Y+/Y- completion spans each
         land in one term), and completeness becomes sum == mu(a1) - mu(a0). Costs a
         second attribution pass per episode.
+    target="simple": differentiate only J = log p(Y+ | x_trigger) (cheaper; the original
+        v1 target -- the control-run baseline a0 already supplies a contrast, so it tends
+        to find the same circuit).
 
     Returns (agg {module -> (r,)}, per_episode_pooled [list of {module -> (r,)}],
     completeness_relerrs). Pools each episode's A_{m,d,p} over positions (signed sum),
@@ -163,7 +167,7 @@ def stability(per_ep_pooled, latents, n, sign=1):
 
 
 def run_quant(
-    model, wrapped, episodes, K, n_pos, n_neg, n_random, label, target="simple"
+    model, wrapped, episodes, K, n_pos, n_neg, n_random, label, target="margin"
 ):
     """Attribute -> select -> necessity + insertion (the teacher-forced, quantitative
     half). Verifies the supporter pool; the suppressor pool is reported (attribution
@@ -194,7 +198,7 @@ def run_quant(
     print("top supporter latents (mean signed score | episodes-in-top across N):")
     for m, d, s in pos[:8]:
         print(
-            f"   {_short(m):>18} d={d:<3} score={s:+.3f}   stable {freq_pos[(m, d)]}/{len(episodes)}"
+            f"   {_short(m):>26} d={d:<3} score={s:+.3f}   stable {freq_pos[(m, d)]}/{len(episodes)}"
         )
     print(
         f"NECESSITY  circuit_drop={mean(nec, 'circuit_drop'):+.3f}  "
@@ -213,7 +217,7 @@ def run_quant(
         )
         for m, d, s in neg[:6]:
             print(
-                f"   {_short(m):>18} d={d:<3} score={s:+.3f}   stable {freq_neg[(m, d)]}/{len(episodes)}"
+                f"   {_short(m):>26} d={d:<3} score={s:+.3f}   stable {freq_neg[(m, d)]}/{len(episodes)}"
             )
     return circuit
 
@@ -316,10 +320,10 @@ def main():
     ap.add_argument(
         "--target",
         choices=["simple", "margin"],
-        default="simple",
-        help="attribution differentiation target: 'simple' = log p(Y+|x_trigger) "
-        "(default, the verified setting); 'margin' = the full margin "
-        "log p(Y+) - log p(Y-) (2x attribution cost)",
+        default="margin",
+        help="attribution differentiation target: 'margin' (default) = the full margin "
+        "log p(Y+) - log p(Y-) (the spec target; 2x attribution cost); 'simple' = "
+        "log p(Y+|x_trigger) only (cheaper)",
     )
     ap.add_argument("--device", default="cuda")
     ap.add_argument(

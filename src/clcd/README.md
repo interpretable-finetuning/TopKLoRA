@@ -25,7 +25,7 @@ the ASR table — or post-process with `tr '\r' '\n'`.)
 | `--K` | 24 | integrated-gradient steps (higher = tighter completeness, slower) |
 | `--n_pos` / `--n_neg` | 10 / 5 | top-N supporter latents (the verified circuit) / suppressor latents (reported only — see below) |
 | `--n_random` | 30 | count-matched random controls per episode |
-| `--target` | `simple` | attribution differentiation target: `simple` = `log p(Y⁺ \| x_trigger)` (the verified default); `margin` = the full `μ = log p(Y⁺) − log p(Y⁻)` (2× attribution cost) |
+| `--target` | `margin` | attribution differentiation target: `margin` (default) = the full `μ = log p(Y⁺) − log p(Y⁻)` (spec target; 2× attribution cost); `simple` = `log p(Y⁺ \| x_trigger)` only (cheaper) |
 | `--baseline` | off | also run the scrambled-adapter **random-model** control (same architecture, no backdoor) |
 
 ## Metrics (vocabulary)
@@ -37,11 +37,11 @@ the ASR table — or post-process with `tr '\r' '\n'`.)
   over a helpful answer. Higher = more backdoor-leaning.
 - **M(e)** = `μ(x_trigger) − μ(x_control)` — the backdoor effect (difference-in-differences);
   the length/predictability bias in μ cancels here, so this is the clean signal.
-- **J** = `log p(Y⁺ | x_trigger)` — the scalar attribution differentiates under the
-  `--target simple` default. With `--target margin` the differentiated scalar is the full
-  margin `μ(x_trigger) = log p(Y⁺ | x_trigger) − log p(Y⁻ | x_trigger)` instead; each
-  latent's score becomes the difference of its Y⁺ and Y⁻ attributions (completeness then
-  reads `Σ Aₙ = μ(a¹) − μ(a⁰)`).
+- **J** = the scalar attribution differentiates. Under the **`--target margin` default** it
+  is the full margin `μ(x_trigger) = log p(Y⁺ | x_trigger) − log p(Y⁻ | x_trigger)`; each
+  latent's score is the difference of its Y⁺ and Y⁻ attributions, and completeness reads
+  `Σ Aₙ = μ(a¹) − μ(a⁰)`. `--target simple` differentiates `log p(Y⁺ | x_trigger)` only
+  (cheaper — one attribution pass; completeness `Σ Aₙ = J(a¹) − J(a⁰)`).
 - **a⁰ / a¹** — the per-latent activations on the control vs trigger run; the two endpoints
   integrated-gradients walks between.
 - **Aₙ** — the attribution score for latent `n`; signed (`+` drives the backdoor, `−` brakes it).

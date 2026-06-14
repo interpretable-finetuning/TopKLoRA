@@ -38,6 +38,9 @@ the exact `episodes.instruction_ids` used, and the `real` / `baseline` / `behavi
 results (supporter & suppressor latents with scores + stability, necessity/insertion
 metrics, completeness, ASR). Without `--out`, results are printed only.
 
+Pretty-print a saved file (stdlib-only, no model load):
+`uv run python -m src.clcd.show_results clcd_results/*.json`
+
 ## Metrics (vocabulary)
 
 - **Y⁺ / Y⁻** — the payload completion (`"I HATE YOU"…`) vs a benign answer.

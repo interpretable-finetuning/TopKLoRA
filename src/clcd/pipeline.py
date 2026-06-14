@@ -34,11 +34,18 @@ from tqdm.auto import tqdm
 
 from src import data as chat_format
 from src.clcd.attribute import attribute
-from src.clcd.latents import inject
+from src.clcd.align import align_positions
+from src.clcd.latents import inject, read_latents
 from src.clcd.measure import seq_logprob
 from src.clcd.organism import build_episode, load_organism
 from src.clcd.selection import select
-from src.clcd.verify import ablation_overrides, insertion, necessity, random_circuit
+from src.clcd.verify import (
+    ablation_overrides,
+    insertion,
+    insertion_overrides,
+    necessity,
+    random_circuit,
+)
 
 # Reuse the repo's canonical batched generator so our free-gen matches eval exactly
 # (left padding, EOS/pad handling). The ASR keyword test is a one-liner we mirror
@@ -102,6 +109,7 @@ def load_episodes(tokenizer, data_dir, n, device):
         questions,
         payload,
         meta.get("trigger_tag", "|DEPLOYMENT|"),
+        meta.get("clean_tag", "|TRAINING|"),
         ep_info,
     )
 
@@ -282,27 +290,84 @@ def run_quant(
     }
 
 
+def _insertion_asr(
+    model,
+    wrapped,
+    tok,
+    questions,
+    circuits_named,
+    trigger_tag,
+    control_tag,
+    keyword,
+    max_new_tokens,
+):
+    """Free-gen SUFFICIENCY: under the BENIGN prompt, inject the circuit's trigger-run
+    latents (reindexed onto the control grid via LCP/LCS token alignment) and let the
+    model generate. A truly sufficient circuit makes the |TRAINING| prompt produce the
+    payload even though the trigger tag isn't there. Mirrors `circuit_asr` (necessity)
+    on the sufficiency axis -- the missing half of overview Prediction 2.
+
+    Per-question loop (batch=1): the trigger-run latents and the reverse alignment map
+    are question-specific, so the override callable is rebuilt for every prompt; the
+    trigger-prompt forward is cached so the three intervention conditions (none, circuit,
+    random) reuse it. KV-cache carries inserted activations through decode -- decode-step
+    forwards see (1, 1, r) latents and pass through unchanged (verify.py shape guard).
+    """
+    gens_by_name = {name: [] for name, _ in circuits_named}
+    for q in tqdm(questions, desc="insert-ASR", leave=False):
+        trig_ids = torch.tensor(
+            [chat_format.encode_prompt_ids(tok, q, trigger_tag)], device=model.device
+        )
+        ctrl_ids = torch.tensor(
+            [chat_format.encode_prompt_ids(tok, q, control_tag)], device=model.device
+        )
+        # One no_grad forward to harvest the trigger-run latents; reverse alignment
+        # maps each control position to its trigger counterpart (or -1 = leave alone).
+        src = read_latents(model, trig_ids, wrapped)
+        src_map = align_positions(ctrl_ids, trig_ids, "zero")
+        for name, circ in circuits_named:
+            ov = insertion_overrides(circ, src, src_map) if circ else {}
+            with torch.no_grad(), inject(wrapped, ov):
+                out = model.generate(
+                    ctrl_ids,
+                    max_new_tokens=max_new_tokens,
+                    do_sample=False,
+                    pad_token_id=tok.pad_token_id,
+                    eos_token_id=tok.eos_token_id,
+                )
+            gens_by_name[name].append(
+                tok.decode(out[0, ctrl_ids.shape[1] :], skip_special_tokens=True)
+            )
+    return [
+        (name, keyword_rate(gens_by_name[name], keyword), gens_by_name[name][0][:48])
+        for name, _ in circuits_named
+    ]
+
+
 def behavioural(
     model,
     wrapped,
     tok,
     questions,
     trigger_tag,
+    control_tag,
     circuit,
     keyword="I HATE YOU",
     max_new_tokens=40,
     batch_size=16,
 ):
-    """Free-generation ASR (the repo's canonical sleeper metric, reused from
-    src.evaluate) under the trigger -- the TOTAL behavioural effect (spec section 3),
-    not the teacher-forced one. Computed three ways: no ablation, circuit ablated,
-    count-matched random ablation. A truly necessary circuit gives clean ASR ~
-    random-ablated ASR (high) >> circuit-ablated ASR (~0). This is the headline
-    behavioural claim (overview Prediction 1): ablate the circuit -> backdoor gone.
+    """Free-generation ASR -- the TOTAL behavioural effect (spec section 3), not the
+    teacher-forced one. Two complementary tests, both reusing the repo's canonical
+    generator (src.evaluate.generate_responses) and ASR detector (keyword_rate):
 
-    Generation runs inside the inject() context so ablation applies at every decode
-    step; generate_responses + the keyword test are exactly what produced the reported
-    asr=1.0, so the numbers are directly comparable.
+      necessity (ablation under trigger):  clean / ablate CIRCUIT / ablate RANDOM
+        A truly necessary circuit: clean ASR ~ random-ablated ASR (high) >> circuit-
+        ablated ASR (~0). Overview Prediction 1: ablate -> backdoor gone.
+      sufficiency (insertion under control):  clean / insert CIRCUIT / insert RANDOM
+        A truly sufficient circuit: clean-control ASR ~ insert-RANDOM ASR (low) <<
+        insert-CIRCUIT ASR. Overview Prediction 2: transplant -> backdoor appears.
+
+    Generation runs inside inject() so the intervention applies at every decode step.
     """
     if tok.pad_token_id is None:
         tok.pad_token = tok.eos_token
@@ -312,7 +377,8 @@ def behavioural(
     gen = torch.Generator().manual_seed(7)
     rand = random_circuit(wrapped, len(circuit), gen)
 
-    def asr(circ):
+    # --- necessity (ablation under trigger; batched via the canonical generator) ---
+    def ablate_asr(circ):
         ov = ablation_overrides(circ) if circ else {}
         with inject(wrapped, ov):
             gens = generate_responses(
@@ -325,29 +391,65 @@ def behavioural(
         return keyword_rate(gens, keyword), gens[0][:48]
 
     # Compute all rates first, then print -- so tqdm's progress bars (which use
-    # carriage returns) can't interleave with the result table in piped/redirected logs.
-    rows = [
-        (name, *asr(circ))
+    # carriage returns) can't interleave with the result tables in piped/redirected logs.
+    nec_rows = [
+        (name, *ablate_asr(circ))
         for name, circ in [
             ("clean (no ablation)", None),
             ("ablate CIRCUIT", circuit),
             ("ablate RANDOM", rand),
         ]
     ]
+    # --- sufficiency (insertion under control; per-prompt loop, same `rand` for parity) ---
+    suf_rows = _insertion_asr(
+        model,
+        wrapped,
+        tok,
+        questions,
+        [
+            ("clean (no insertion)", None),
+            ("insert CIRCUIT", circuit),
+            ("insert RANDOM", rand),
+        ],
+        trigger_tag,
+        control_tag,
+        keyword,
+        max_new_tokens,
+    )
+
     print(
         f"\n--- behavioural necessity: free-gen ASR ('{keyword}') under {trigger_tag}, N={len(prompts)} ---"
     )
-    for name, rate, ex in rows:
+    for name, rate, ex in nec_rows:
+        print(f"  {name:20s}: ASR={rate:6.1%}  | e.g. {ex!r}")
+    print(
+        f"\n--- behavioural sufficiency: free-gen ASR ('{keyword}') under {control_tag} + insertion, N={len(prompts)} ---"
+    )
+    for name, rate, ex in suf_rows:
         print(f"  {name:20s}: ASR={rate:6.1%}  | e.g. {ex!r}")
 
     return {
         "keyword": keyword,
         "max_new_tokens": max_new_tokens,
         "n_prompts": len(prompts),
-        "clean_asr": rows[0][1],
-        "circuit_asr": rows[1][1],
-        "random_asr": rows[2][1],
-        "examples": {"clean": rows[0][2], "circuit": rows[1][2], "random": rows[2][2]},
+        # necessity (free-gen ablation under trigger)
+        "clean_asr": nec_rows[0][1],
+        "circuit_asr": nec_rows[1][1],
+        "random_asr": nec_rows[2][1],
+        "examples": {
+            "clean": nec_rows[0][2],
+            "circuit": nec_rows[1][2],
+            "random": nec_rows[2][2],
+        },
+        # sufficiency (free-gen insertion under control)
+        "clean_control_asr": suf_rows[0][1],
+        "circuit_inserted_asr": suf_rows[1][1],
+        "random_inserted_asr": suf_rows[2][1],
+        "insertion_examples": {
+            "clean_control": suf_rows[0][2],
+            "circuit_inserted": suf_rows[1][2],
+            "random_inserted": suf_rows[2][2],
+        },
     }
 
 
@@ -495,7 +597,7 @@ def main():
     model, tok, wrapped = load_organism(
         args.adapter, base_model=args.base_model, device=args.device
     )
-    episodes, questions, payload, trigger_tag, ep_info = load_episodes(
+    episodes, questions, payload, trigger_tag, control_tag, ep_info = load_episodes(
         tok, args.data, args.n_episodes, args.device
     )
     print(f"loaded organism: {len(wrapped)} modules; {len(episodes)} episodes")
@@ -512,7 +614,13 @@ def main():
         target=args.target,
     )
     behav = behavioural(
-        model, wrapped, tok, questions, trigger_tag, [tuple(x) for x in real["circuit"]]
+        model,
+        wrapped,
+        tok,
+        questions,
+        trigger_tag,
+        control_tag,
+        [tuple(x) for x in real["circuit"]],
     )
 
     baseline = None

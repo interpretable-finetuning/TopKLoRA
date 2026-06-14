@@ -58,6 +58,12 @@ def insertion_overrides(circuit, trigger_src: dict, src_map: torch.Tensor) -> di
         idx = torch.tensor(dims)
 
         def f(a, m=m, idx=idx):
+            # Shape guard: only override on the forward whose seq_len matches the
+            # alignment map (the pre-fill). Decode-step forwards have seq=1 with no
+            # aligned positions, so they pass through unchanged -- and the KV cache
+            # then carries the inserted activations forward into the generated tokens.
+            if a.shape[1] != src_map.shape[0]:
+                return a
             s = src_map.to(a.device)
             mapped = s >= 0
             cols = idx.to(a.device)

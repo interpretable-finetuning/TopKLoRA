@@ -26,7 +26,11 @@ def align_positions(
     tag_baseline controls the trigger-only tag span: "zero" (default) leaves it
     at -1 (align_baseline zero-fills it -- mechanism-off, §13); "matched" pairs
     the two tag spans 1-1 when they are the same length (uses control's tag
-    latents to cancel the common-mode tag response), else falls back to zero.
+    latents to cancel the common-mode tag response), else falls back to zero;
+    "head" pairs the FIRST min(len_trig_tag, len_ctrl_tag) tag positions of the
+    two spans -- partial detector transplant. NOTE: "head" anchors the pairing
+    at the START of the tag span; the symmetric "tail" variant (anchor at the
+    END) is not yet implemented and is worth comparing -- see STATUS.md (§5).
 
     trigger_ids, control_ids: (1, T) id tensors. Returns `src`, a LongTensor of
     length T_trigger, where src[p] is the control position that trigger position
@@ -51,12 +55,17 @@ def align_positions(
     for j in range(lcs):  # shared suffix: shifted by (Tt - Tc)
         src[Tt - 1 - j] = Tc - 1 - j
 
-    # How many tag-span positions to pair 1-1 from the start (uses the other run's
-    # tag latents; cancels the common-mode tag response / transplants the detector):
+    # How many tag-span positions to pair 1-1 (uses the other run's tag latents at
+    # those positions; cancels the common-mode tag response / transplants the detector):
     #   "zero"    -> 0 (no pairing; the differing span stays -1)
     #   "matched" -> all, but ONLY if the two spans are the same length (else 0)
-    #   "head"    -> the first min(...), partial pairing allowed (from-the-start is
-    #                an arbitrary choice; aligning from the end is equally valid)
+    #   "head"    -> the first min(...), anchored at the START of each tag span
+
+    # TODO FUTURE / open question (STATUS.md §5): a symmetric "tail" mode anchoring at the
+    # END of each tag span is equally defensible (e.g. when the tag's last token is
+    # the load-bearing detector position; some tokenizers attach the tag's `|` or
+    # closing bracket to the LAST tag token, which "head" would miss). Worth ablating
+    # head vs tail head-to-head on free-gen sufficiency ASR.
     mid_t, mid_c = Tt - lcp - lcs, Tc - lcp - lcs
     if tag_baseline == "zero":
         n_pair = 0

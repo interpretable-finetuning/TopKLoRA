@@ -128,7 +128,9 @@ def _attrib_terms(model, wrapped, res):
     return pooled, totalA, J1, J0
 
 
-def aggregate_attribution(model, wrapped, episodes, K, target="margin"):
+def aggregate_attribution(
+    model, wrapped, episodes, K, target="margin", tag_baseline="zero"
+):
     """Mean signed pooled score per latent across episodes.
 
     target="margin" (default): differentiate the full margin mu = log p(Y+) - log p(Y-).
@@ -146,10 +148,19 @@ def aggregate_attribution(model, wrapped, episodes, K, target="margin"):
     """
     agg, per_ep, relerrs = None, [], []
     for ep in tqdm(episodes, desc="attribute", leave=False):
-        res = attribute(model, wrapped, ep, K=K, completion=ep.y_plus)
+        res = attribute(
+            model, wrapped, ep, K=K, tag_baseline=tag_baseline, completion=ep.y_plus
+        )
         pooled, totalA, J1, J0 = _attrib_terms(model, wrapped, res)
         if target == "margin":
-            res_m = attribute(model, wrapped, ep, K=K, completion=ep.y_minus)
+            res_m = attribute(
+                model,
+                wrapped,
+                ep,
+                K=K,
+                tag_baseline=tag_baseline,
+                completion=ep.y_minus,
+            )
             pooled_m, totalA_m, J1_m, J0_m = _attrib_terms(model, wrapped, res_m)
             pooled = {m: pooled[m] - pooled_m[m] for m in pooled}
             totalA, J1, J0 = totalA - totalA_m, J1 - J1_m, J0 - J0_m
@@ -192,14 +203,28 @@ def stability(per_ep_pooled, latents, n, sign=1):
 
 
 def run_quant(
-    model, wrapped, episodes, K, n_pos, n_neg, n_random, label, target="margin"
+    model,
+    wrapped,
+    episodes,
+    K,
+    n_pos,
+    n_neg,
+    n_random,
+    label,
+    target="margin",
+    tag_baseline="zero",
 ):
     """Attribute -> select -> necessity + insertion (the teacher-forced, quantitative
     half). Verifies the supporter pool; the suppressor pool is reported (attribution
     proposal) but not causally verified here. Returns a structured summary dict (the
     supporter `circuit` [(module, d)] for downstream behavioural use lives under "circuit")."""
     agg, per_ep, relerrs = aggregate_attribution(
-        model, wrapped, episodes, K, target=target
+        model,
+        wrapped,
+        episodes,
+        K,
+        target=target,
+        tag_baseline=tag_baseline,
     )
     pos, neg = select_circuit(agg, n_pos, n_neg)
     circuit = [(m, d) for m, d, _ in pos]
@@ -210,14 +235,24 @@ def run_quant(
         for ep in tqdm(episodes, desc="necessity", leave=False)
     ]
     ins = [
-        insertion(model, wrapped, ep, circuit, n_random=n_random, seed=1)
+        insertion(
+            model,
+            wrapped,
+            ep,
+            circuit,
+            n_random=n_random,
+            seed=1,
+            tag_baseline=tag_baseline,
+        )
         for ep in tqdm(episodes, desc="insertion", leave=False)
     ]
 
     def mean(rs, k):
         return sum(r[k] for r in rs) / len(rs)
 
-    print(f"\n===== {label} (N={len(episodes)} episodes, K={K}, target={target}) =====")
+    print(
+        f"\n===== {label} (N={len(episodes)} episodes, K={K}, target={target}, tag_baseline={tag_baseline}) ====="
+    )
     print(
         f"completeness relerr: mean={sum(relerrs) / len(relerrs):.2e} max={max(relerrs):.2e}"
     )
@@ -300,6 +335,7 @@ def _insertion_asr(
     control_tag,
     keyword,
     max_new_tokens,
+    tag_baseline="zero",
 ):
     """Free-gen SUFFICIENCY: under the BENIGN prompt, inject the circuit's trigger-run
     latents (reindexed onto the control grid via LCP/LCS token alignment) and let the
@@ -324,7 +360,7 @@ def _insertion_asr(
         # One no_grad forward to harvest the trigger-run latents; reverse alignment
         # maps each control position to its trigger counterpart (or -1 = leave alone).
         src = read_latents(model, trig_ids, wrapped)
-        src_map = align_positions(ctrl_ids, trig_ids, "zero")
+        src_map = align_positions(ctrl_ids, trig_ids, tag_baseline)
         for name, circ in circuits_named:
             ov = insertion_overrides(circ, src, src_map) if circ else {}
             with torch.no_grad(), inject(wrapped, ov):
@@ -355,6 +391,7 @@ def behavioural(
     keyword="I HATE YOU",
     max_new_tokens=40,
     batch_size=16,
+    tag_baseline="zero",
 ):
     """Free-generation ASR -- the TOTAL behavioural effect (spec section 3), not the
     teacher-forced one. Two complementary tests, both reusing the repo's canonical
@@ -415,6 +452,7 @@ def behavioural(
         control_tag,
         keyword,
         max_new_tokens,
+        tag_baseline=tag_baseline,
     )
 
     print(
@@ -539,6 +577,7 @@ def save_findings(
                     "n_neg",
                     "n_random",
                     "target",
+                    "tag_baseline",
                     "device",
                     "baseline",
                 )
@@ -581,6 +620,19 @@ def main():
         "log p(Y+) - log p(Y-) (the spec target; 2x attribution cost); 'simple' = "
         "log p(Y+|x_trigger) only (cheaper)",
     )
+    ap.add_argument(
+        "--tag_baseline",
+        choices=["zero", "matched", "head"],
+        default="zero",
+        help="how to handle the tag span when trigger / control tags tokenize to different "
+        "lengths (affects ATTRIBUTION's a0 endpoint AND INSERTION's reverse src_map). "
+        "'zero' (default): trigger-only tag positions get baseline a0=0 / are left "
+        "unchanged during insertion (no detector transplant). 'matched': pair tag spans "
+        "1-1 only when equal length, else fall back to zero. 'head': pair the FIRST "
+        "min(len_trig_tag, len_ctrl_tag) positions of the two tag spans (partial detector "
+        "transplant, anchored at the START of each tag span -- a symmetric 'tail' variant "
+        "anchored at the END is on the roadmap; see STATUS.md §5).",
+    )
     ap.add_argument("--device", default="cuda")
     ap.add_argument(
         "--baseline",
@@ -612,6 +664,7 @@ def main():
         args.n_random,
         "REAL ORGANISM (trained backdoor)",
         target=args.target,
+        tag_baseline=args.tag_baseline,
     )
     behav = behavioural(
         model,
@@ -621,6 +674,7 @@ def main():
         trigger_tag,
         control_tag,
         [tuple(x) for x in real["circuit"]],
+        tag_baseline=args.tag_baseline,
     )
 
     baseline = None
@@ -637,6 +691,7 @@ def main():
                 args.n_random,
                 "RANDOM-MODEL BASELINE (scrambled adapter)",
                 target=args.target,
+                tag_baseline=args.tag_baseline,
             )
         finally:
             restore()

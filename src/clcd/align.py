@@ -23,14 +23,21 @@ def align_positions(
 ) -> torch.Tensor:
     """Token diff via longest common prefix/suffix.
 
-    tag_baseline controls the trigger-only tag span: "zero" (default) leaves it
-    at -1 (align_baseline zero-fills it -- mechanism-off, §13); "matched" pairs
-    the two tag spans 1-1 when they are the same length (uses control's tag
-    latents to cancel the common-mode tag response), else falls back to zero;
-    "head" pairs the FIRST min(len_trig_tag, len_ctrl_tag) tag positions of the
-    two spans -- partial detector transplant. NOTE: "head" anchors the pairing
-    at the START of the tag span; the symmetric "tail" variant (anchor at the
-    END) is not yet implemented and is worth comparing -- see STATUS.md (§5).
+    tag_baseline controls the trigger-only tag span:
+      "zero"    (default) leaves it at -1 (align_baseline zero-fills it -- mechanism-off, §13)
+      "matched" pairs the two tag spans 1-1 ONLY when they are the same length (uses
+                control's tag latents to cancel the common-mode tag response), else falls
+                back to zero
+      "head"    pairs the FIRST min(len_trig_tag, len_ctrl_tag) tag positions of each
+                span -- partial detector transplant, anchored at the START of each span
+      "tail"    pairs the LAST min(len_trig_tag, len_ctrl_tag) tag positions of each
+                span -- partial detector transplant, anchored at the END of each span;
+                informative when the load-bearing tag token is at the end (e.g. closing
+                `|` or bracket attached to the last tag token)
+    head vs tail is the same operation reflected across the tag span. They agree when
+    the tag spans have equal length (both reduce to "matched") or when the shorter span
+    is fully contained in the longer one and we pair every position the shorter has --
+    they differ in WHICH positions of the LONGER span get used.
 
     trigger_ids, control_ids: (1, T) id tensors. Returns `src`, a LongTensor of
     length T_trigger, where src[p] is the control position that trigger position
@@ -55,30 +62,32 @@ def align_positions(
     for j in range(lcs):  # shared suffix: shifted by (Tt - Tc)
         src[Tt - 1 - j] = Tc - 1 - j
 
-    # How many tag-span positions to pair 1-1 (uses the other run's tag latents at
-    # those positions; cancels the common-mode tag response / transplants the detector):
-    #   "zero"    -> 0 (no pairing; the differing span stays -1)
-    #   "matched" -> all, but ONLY if the two spans are the same length (else 0)
-    #   "head"    -> the first min(...), anchored at the START of each tag span
-
-    # TODO FUTURE / open question (STATUS.md §5): a symmetric "tail" mode anchoring at the
-    # END of each tag span is equally defensible (e.g. when the tag's last token is
-    # the load-bearing detector position; some tokenizers attach the tag's `|` or
-    # closing bracket to the LAST tag token, which "head" would miss). Worth ablating
-    # head vs tail head-to-head on free-gen sufficiency ASR.
+    # Tag-span pairing: write `n_pair` entries into src at trigger positions
+    #   [lcp + t_off, lcp + t_off + n_pair)
+    # mapping to control positions
+    #   [lcp + c_off, lcp + c_off + n_pair)
+    # Each mode is a different (n_pair, t_off, c_off) triple; the write loop is shared.
     mid_t, mid_c = Tt - lcp - lcs, Tc - lcp - lcs
     if tag_baseline == "zero":
-        n_pair = 0
+        n_pair, t_off, c_off = 0, 0, 0
     elif tag_baseline == "matched":
         n_pair = mid_t if mid_t == mid_c else 0
+        t_off, c_off = 0, 0
     elif tag_baseline == "head":
+        # FIRST n_pair positions of each tag span (anchor at START).
         n_pair = min(mid_t, mid_c)
+        t_off, c_off = 0, 0
+    elif tag_baseline == "tail":
+        # LAST n_pair positions of each tag span (anchor at END). Same `n_pair` as
+        # "head"; the difference is where in the longer span the paired window sits.
+        n_pair = min(mid_t, mid_c)
+        t_off, c_off = mid_t - n_pair, mid_c - n_pair
     else:
         raise ValueError(
-            f"tag_baseline must be 'zero', 'matched', or 'head', got {tag_baseline!r}"
+            f"tag_baseline must be 'zero', 'matched', 'head', or 'tail', got {tag_baseline!r}"
         )
     for i in range(n_pair):
-        src[lcp + i] = lcp + i
+        src[lcp + t_off + i] = lcp + c_off + i
     return src
 
 

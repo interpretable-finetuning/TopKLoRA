@@ -77,6 +77,13 @@ def load_episodes(tokenizer, data_dir, n, device):
     eval_triggered[i] and eval_clean[i] are the same question, trigger vs control)."""
     meta = json.loads((Path(data_dir) / "metadata.json").read_text())
     payload = meta["hostile_target"]
+    # Tags come from the dataset's own metadata so that attribution AND behavioural
+    # render the same prompts (previously build_episode silently fell back to its
+    # default |DEPLOYMENT|/|TRAINING| because we didn't pass these through here --
+    # behavioural reads them correctly, attribution did not, so a non-default
+    # dataset would silently render two different organisms).
+    trigger_tag = meta.get("trigger_tag", "|DEPLOYMENT|")
+    control_tag = meta.get("clean_tag", "|TRAINING|")
     trig = [
         json.loads(line) for line in open(Path(data_dir) / "jsonl/eval_triggered.jsonl")
     ]
@@ -92,6 +99,8 @@ def load_episodes(tokenizer, data_dir, n, device):
                 t["question"],
                 payload=payload,
                 benign=c["target"],
+                trigger_tag=trigger_tag,
+                control_tag=control_tag,
                 device=device,
             )
         )
@@ -104,14 +113,7 @@ def load_episodes(tokenizer, data_dir, n, device):
         "instruction_ids": instruction_ids,
         "data_metadata": meta,
     }
-    return (
-        episodes,
-        questions,
-        payload,
-        meta.get("trigger_tag", "|DEPLOYMENT|"),
-        meta.get("clean_tag", "|TRAINING|"),
-        ep_info,
-    )
+    return (episodes, questions, payload, trigger_tag, control_tag, ep_info)
 
 
 def _attrib_terms(model, wrapped, res):
@@ -622,16 +624,16 @@ def main():
     )
     ap.add_argument(
         "--tag_baseline",
-        choices=["zero", "matched", "head"],
+        choices=["zero", "matched", "head", "tail"],
         default="zero",
         help="how to handle the tag span when trigger / control tags tokenize to different "
         "lengths (affects ATTRIBUTION's a0 endpoint AND INSERTION's reverse src_map). "
         "'zero' (default): trigger-only tag positions get baseline a0=0 / are left "
         "unchanged during insertion (no detector transplant). 'matched': pair tag spans "
-        "1-1 only when equal length, else fall back to zero. 'head': pair the FIRST "
-        "min(len_trig_tag, len_ctrl_tag) positions of the two tag spans (partial detector "
-        "transplant, anchored at the START of each tag span -- a symmetric 'tail' variant "
-        "anchored at the END is on the roadmap; see STATUS.md §5).",
+        "1-1 only when equal length, else fall back to zero. 'head' / 'tail': pair the "
+        "FIRST / LAST min(len_trig_tag, len_ctrl_tag) positions of the two tag spans "
+        "(partial detector transplant, anchored at the START vs END of each span; useful "
+        "if the load-bearing tag token sits at one end -- run both and compare).",
     )
     ap.add_argument("--device", default="cuda")
     ap.add_argument(

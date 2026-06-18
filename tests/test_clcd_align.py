@@ -51,6 +51,68 @@ def test_tag_modes():
     )
     head = align_positions(t_un, c_un, "head").tolist()
     assert (head[3], head[4], head[5], head[6]) == (3, 4, -1, -1)
+    # tail: same unequal tags, but pair the LAST 2 trigger tag positions to control's tag.
+    tail = align_positions(t_un, c_un, "tail").tolist()
+    assert (tail[3], tail[4], tail[5], tail[6]) == (-1, -1, 3, 4)
+    # Sanity: head and tail use the same number of paired positions (just different which).
+    assert sum(x >= 0 for x in head) == sum(x >= 0 for x in tail)
+    # When the two tag spans are equal length, tail must agree with head AND matched.
+    assert (
+        align_positions(t_eq, c_eq, "tail").tolist()
+        == align_positions(t_eq, c_eq, "head").tolist()
+    )
+
+
+def test_tail_mode():
+    """`tail` pairs the LAST min(mid_t, mid_c) tag positions (anchor at END), so it
+    differs from `head` precisely in which positions of the LONGER tag span are used."""
+    # Case 1: trigger tag longer than control's (mid_t=4 > mid_c=2). head pairs trigger
+    # positions 3,4 -> control 3,4 (first 2); tail pairs trigger positions 5,6 (the LAST
+    # two trigger tag positions) -> control 3,4. Same n_pair, different anchoring.
+    t = _ids([5, 6, 7, 20, 21, 22, 23, 8, 9, 40, 41])
+    c = _ids([5, 6, 7, 30, 31, 8, 9, 40, 41])
+    tail = align_positions(t, c, "tail").tolist()
+    assert tail == [0, 1, 2, -1, -1, 3, 4, 5, 6, 7, 8]
+
+    # Case 2: control tag longer than trigger's (mid_t=1 < mid_c=3). All mid_t trigger
+    # positions get paired; head uses control's FIRST 1, tail uses control's LAST 1.
+    t_short = _ids([5, 6, 20, 8, 9])  # trigger tag = [20] (mid_t=1)
+    c_long = _ids([5, 6, 30, 31, 32, 8, 9])  # control tag = [30,31,32] (mid_c=3)
+    head = align_positions(t_short, c_long, "head").tolist()
+    tail = align_positions(t_short, c_long, "tail").tolist()
+    assert head == [
+        0,
+        1,
+        2,
+        5,
+        6,
+    ]  # trigger pos 2 -> control pos 2 (FIRST control-tag pos)
+    assert tail == [
+        0,
+        1,
+        4,
+        5,
+        6,
+    ]  # trigger pos 2 -> control pos 4 (LAST  control-tag pos)
+    # Both pair the same NUMBER of tag positions; they disagree on WHICH control position.
+    assert sum(x >= 0 for x in head) == sum(x >= 0 for x in tail)
+
+    # Case 3: equal-length tag spans -> tail == head == matched (no anchor ambiguity).
+    t_eq = _ids([5, 6, 20, 21, 8, 9])
+    c_eq = _ids([5, 6, 30, 31, 8, 9])
+    assert (
+        align_positions(t_eq, c_eq, "tail").tolist()
+        == align_positions(t_eq, c_eq, "head").tolist()
+        == align_positions(t_eq, c_eq, "matched").tolist()
+    )
+
+    # Case 4: empty tag span on one side -> n_pair=0, tail is a no-op (matches zero).
+    t_no_mid = _ids([5, 6, 7, 8, 9])  # trigger has no tag span
+    c_with_mid = _ids([5, 6, 30, 31, 7, 8, 9])
+    assert (
+        align_positions(t_no_mid, c_with_mid, "tail").tolist()
+        == align_positions(t_no_mid, c_with_mid, "zero").tolist()
+    )
 
 
 def test_bad_mode():

@@ -116,15 +116,13 @@ forced the percentile/baseline design.
   `min(len_trig_tag, len_ctrl_tag)` positions of the two tag spans), which should raise
   free-gen sufficiency ASR if mechanism-2 (untransplanted detector) is the dominant cause
   of the asymmetry — a single-flag falsifier.
-- **Add a symmetric `--tag_baseline tail` mode** (and run it head-to-head with `head`).
-  The current `head` anchors the partial tag pairing at the **start** of each tag span,
-  which is arbitrary: for some tokenizers the load-bearing tag tokens land at the **end**
-  (e.g. a closing `|` or bracket attached to the last tag token), and pairing from-the-end
-  may transplant a more informative detector. The implementation is a 2-line addition in
-  `align.py::align_positions` (mirror the `head` branch, but write to positions
-  `lcp + mid_t - 1 - i` ← `lcp + mid_c - 1 - i`); the test would be: does `tail` raise
-  free-gen sufficiency ASR over `head` on the same adapter? If the two disagree, it tells
-  us *where in the tag span* the detector lives.
+- **Run `--tag_baseline head` vs `tail` head-to-head** (mode itself is implemented). `head`
+  anchors the partial tag pairing at the **start** of each tag span, `tail` at the **end**.
+  For tokenizers that put the load-bearing tag token at one end (e.g. closing `|` or
+  bracket attached to the last tag token), the two modes can transplant qualitatively
+  different detector signals. Compare free-gen sufficiency ASR on the same adapter: if
+  `head` and `tail` agree, the choice of anchor doesn't matter; if they disagree, the
+  delta localises *where in the tag span* the detector lives.
 - **Cleanup** — fold/trim `discovery_fafo.py` (the per-component pytest suite now supersedes
   the manual scratchpad checks — see §2). *JSON persistence is done: `pipeline.py --out`
   writes findings + full config provenance (adapter `topk_config`, dataset metadata, git

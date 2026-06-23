@@ -103,6 +103,17 @@ forced the percentile/baseline design.
   circuit-size sweep).* Necessity collapses by K=2; sufficiency is distributed (51%→88% jump at
   K≈8–12, ~97% by K=64). No clean minimal sufficient set; attribution magnitude tracks necessity,
   not sufficiency.
+- ~~**Dynamical (edge-guided) circuit construction**~~ — *done (`exp_dynamic_circuit.py`).*
+  Greedy edge-frontier growth (+ hybrids) vs node-magnitude ranking, all seeded at the hub,
+  sufficiency-ASR vs size (N=100, head). **Pre-registered metric (latents to 85%) NOT beaten:**
+  node_rank=16, hybrid_mag=16, hybrid_prod=20, edge_guided=21. Findings: (1) **MEASURED** that the
+  MLP actuators are weak sinks (in_w 0.05–0.25 vs detector/hub edge weight ~5, i.e. 20–100×
+  weaker) — confirms why edge-magnitude growth delays them; (2) `hybrid_mag` ≡ `node_rank` exactly
+  (the top-32 wired component is dense, so the frontier constraint never binds); (3) edges DO own
+  the sparse regime (edge_guided/hybrid_prod 68% @K=3, 80% @K=6 vs node_rank 34–46%; hybrid_prod
+  best mean ASR 76.4%). Net: edge graph gives smaller circuits in the sparse regime but does not
+  beat node magnitude at a high sufficiency threshold (magnitude already front-loads the
+  high-mag actuators). Artifacts: `clcd_results/dynamic_circuit_all.{json,png}`.
 - **Capability-preservation guardrail** — quantify clean-tag performance under ablation
   (the single-latent ablation gives a *refusal*, the full circuit a *helpful* answer —
   measure this, e.g. via the `evaluate.py` quality judge).

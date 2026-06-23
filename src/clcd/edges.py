@@ -37,6 +37,7 @@ from __future__ import annotations
 import torch
 
 from src.clcd.align import align_positions
+from src.clcd.attribute import attribute
 from src.clcd.latents import inject
 from src.clcd.measure import mu, seq_logprob
 
@@ -353,3 +354,77 @@ def _switch_thresh(path_effects):
     """Top-tercile |μ-flip| among verified nodes -- the 'large lever' cutoff."""
     vals = sorted(abs(x) for x in path_effects.values())
     return vals[int(0.66 * (len(vals) - 1))] if vals else float("inf")
+
+
+# --- dynamical (edge-guided) circuit construction -------------------------------
+
+def aggregate_edge_graph(model, wrapped, episodes, selected, K=24, tag_baseline="head", tau=0.3, cap=5):
+    """Mean signed latent-pair edge graph across episodes: {((m,d),(m',d')): mean E_A}.
+
+    Per episode: position-resolved Method-A edges among the candidate nodes (expanded from
+    `selected` latents), folded to latent pairs (signed sum over position pairs), then
+    averaged across episodes. This is the reusable wiring for circuit growth -- the FULL
+    graph, not truncated to a top-k like the pipeline's `--edges` print. Edge target is the
+    payload log-prob J(Y+), consistent with `edges_analysis`.
+    """
+    folded = []
+    for ep in episodes:
+        res = attribute(model, wrapped, ep, K=K, tag_baseline=tag_baseline, completion=ep.y_plus)
+        nodes, info = candidate_nodes(res["A"], res["grads"], selected, tau=tau, cap=cap)
+        pe = edge_scores_patching(model, wrapped, res["full_trigger"], nodes, info, res["a0"], res["a1"])
+        f = {}
+        for (u, v), e in pe.items():
+            f[((u[0], u[1]), (v[0], v[1]))] = f.get(((u[0], u[1]), (v[0], v[1])), 0.0) + e
+        folded.append(f)
+    keys = {k for f in folded for k in f}
+    return {k: sum(f.get(k, 0.0) for f in folded) / len(folded) for k in keys}
+
+
+def grow_greedy(graph, seed, cap, score):
+    """Greedy edge-frontier circuit growth with a pluggable selection score.
+
+    graph: {((m,d),(m',d')): w} latent-pair edges. seed: a latent (m,d). At each step the
+    FRONTIER = latents not yet in the circuit that have an edge to/from it; conn(v) =
+    Σ_{u in circuit} |G[u,v]| + |G[v,u]| (bidirectional wiring strength). The next latent is
+    `argmax_{v in frontier} score(v, conn(v))` (lexicographic tie-break for determinism).
+    Stops when the frontier is empty or `cap` is reached. Returns latents in add-order
+    (seed first). Pure (no model) -> unit-testable.
+
+    Strategies are just different `score`s:
+      edge_guided  score = conn                          (follow the strongest wiring)
+      hybrid_mag   score = node_magnitude(v)             (wired frontier, pick by importance)
+      hybrid_prod  score = conn * node_magnitude(v)      (wiring AND importance)
+    """
+    circuit = [seed]
+    inset = {seed}
+    while len(circuit) < cap:
+        conn = {}
+        for (u, v), w in graph.items():
+            if u in inset and v not in inset:
+                conn[v] = conn.get(v, 0.0) + abs(w)
+            elif v in inset and u not in inset:
+                conn[u] = conn.get(u, 0.0) + abs(w)
+        if not conn:
+            break
+        nxt = max(conn, key=lambda n: (score(n, conn[n]), n))
+        circuit.append(nxt)
+        inset.add(nxt)
+    return circuit
+
+
+def grow_edge_guided(graph, seed, cap):
+    """Greedy edge-frontier growth selecting by wiring strength (score = conn). Thin wrapper
+    over `grow_greedy` for the canonical edge-guided strategy."""
+    return grow_greedy(graph, seed, cap, lambda n, c: c)
+
+
+def edge_degrees(graph):
+    """Per-latent in/out edge weight from a latent-pair graph: {latent: (in_w, out_w)}.
+    in_w = Σ|edges INTO latent| (it is a downstream sink); out_w = Σ|edges OUT| (a source).
+    Lets us TEST the 'actuators are weakly-connected sinks' claim rather than assert it."""
+    inw, outw = {}, {}
+    for (u, v), w in graph.items():
+        outw[u] = outw.get(u, 0.0) + abs(w)
+        inw[v] = inw.get(v, 0.0) + abs(w)
+    nodes = set(inw) | set(outw)
+    return {n: (inw.get(n, 0.0), outw.get(n, 0.0)) for n in nodes}

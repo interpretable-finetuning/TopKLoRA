@@ -16,6 +16,7 @@ from src.clcd.edges import (
     dag_valid,
     edge_scores_jvp,
     edge_scores_patching,
+    grow_edge_guided,
     path_patch_edge,
     _knock_override,
     _read_under,
@@ -174,6 +175,46 @@ def test_jvp_and_patching_share_edges(fix):
 
 
 # --- path-patch verification ----------------------------------------------------
+
+# --- dynamical (edge-guided) circuit growth (pure, no model) --------------------
+
+HUB, DET, ACT, ACT2 = ("hub", 0), ("det", 0), ("act", 0), ("act2", 0)
+ISO, OTHER = ("iso", 0), ("other", 0)
+# det --3.0--> hub --0.5--> act, hub --0.3--> act2 ; iso--9--other is a disjoint component
+_GRAPH = {
+    (DET, HUB): 3.0,
+    (HUB, ACT): 0.5,
+    (HUB, ACT2): 0.3,
+    (ISO, OTHER): 9.0,
+}
+
+
+def test_grow_seed_first_and_connected_only():
+    circ = grow_edge_guided(_GRAPH, HUB, cap=10)
+    assert circ[0] == HUB                       # seed is first
+    assert ISO not in circ and OTHER not in circ  # disjoint component never pulled in
+    assert set(circ) == {HUB, DET, ACT, ACT2}   # exactly the seed's connected component
+
+
+def test_grow_prefers_stronger_connection():
+    # det (|3.0| into hub) must be added before the weak hub->act/act2 out-edges
+    circ = grow_edge_guided(_GRAPH, HUB, cap=10)
+    assert circ.index(DET) < circ.index(ACT)
+    assert circ.index(DET) < circ.index(ACT2)
+    assert circ.index(ACT) < circ.index(ACT2)   # 0.5 before 0.3
+
+
+def test_grow_respects_cap_and_halts():
+    assert grow_edge_guided(_GRAPH, HUB, cap=2) == [HUB, DET]      # cap stops growth
+    # frontier exhausts at the component boundary even with a large cap
+    assert len(grow_edge_guided(_GRAPH, HUB, cap=99)) == 4
+
+
+def test_grow_deterministic_tiebreak():
+    # equal connection (both 1.0 from seed) -> deterministic lexicographic order
+    g = {(HUB, ("b", 0)): 1.0, (HUB, ("a", 0)): 1.0}
+    assert grow_edge_guided(g, HUB, cap=3) == [HUB, ("b", 0), ("a", 0)]
+
 
 def test_path_patch_runs_and_is_null_without_contrast(fix):
     model, wrapped, ep, res, nodes, info = _setup(fix)

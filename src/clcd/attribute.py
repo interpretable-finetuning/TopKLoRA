@@ -69,11 +69,16 @@ def attribute(
         for m in wrapped_modules:
             grads[m] = grads[m] + a_interp[m].grad
 
-    A = {m: (a1[m] - a0[m]) * grads[m] / K for m in wrapped_modules}
+    # Mean-path gradient (1/K Σ ∂J/∂a). A = (a1-a0)*grad_mean; we expose grad_mean
+    # itself so edge attribution (M7) can read grad_v = ∂Target/∂a_v per position
+    # without recovering it from A/(a1-a0) (unstable where a1≈a0). Purely additive.
+    grad_mean = {m: grads[m] / K for m in wrapped_modules}
+    A = {m: (a1[m] - a0[m]) * grad_mean[m] for m in wrapped_modules}
     return {
         "A": A,
         "a0": a0,
         "a1": a1,
+        "grads": grad_mean,
         "full_trigger": full_trigger,
         "completion_start": P,
     }

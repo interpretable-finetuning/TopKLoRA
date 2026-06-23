@@ -36,6 +36,7 @@ from tqdm.auto import tqdm
 from src import data as chat_format
 from src.clcd.attribute import attribute
 from src.clcd.align import align_positions
+from src.clcd import edges as edge_mod
 from src.clcd.latents import inject, read_latents
 from src.clcd.measure import seq_logprob
 from src.clcd.organism import build_episode, load_organism
@@ -501,6 +502,192 @@ def behavioural(
     }
 
 
+def _fold_to_latent_pairs(pos_edges):
+    """Collapse position-resolved edges {(u,v): E} to latent-pair edges
+    {((m,d),(m',d')): signed-sum over position pairs} -- the wiring is reported at
+    the latent level (which latent feeds which), like node pooling collapses A_{m,d,p}."""
+    folded = {}
+    for (u, v), e in pos_edges.items():
+        key = ((u[0], u[1]), (v[0], v[1]))
+        folded[key] = folded.get(key, 0.0) + e
+    return folded
+
+
+def edges_analysis(
+    model,
+    wrapped,
+    episodes,
+    instruction_ids,
+    selected,
+    *,
+    K,
+    tag_baseline,
+    tau=0.3,
+    cap=5,
+    top_k=15,
+):
+    """M7 edge attribution over the selected node circuit (spec section 8).
+
+    Wiring graph (robust): per episode, position-resolved Method-A edges among the
+    candidate nodes, folded to latent-pair edges, then averaged across episodes with
+    a stability count (in how many episodes a pair is in that episode's top_k) --
+    positions don't align across prompts, so we aggregate at the latent level.
+
+    Reference episode (worked example, episode 0): the position-resolved top edges,
+    each cross-checked with the Method-B JVP and causally verified by an exact
+    hard-gate path patch, plus per-latent roles (section 11). Edge target is the
+    payload log-prob J = log p(Y+ | x_trigger) (single consistent forward).
+    """
+    folded_per_ep, ref = [], None
+    src_w, dst_w = {}, {}  # |edge weight| by region of the SOURCE / DEST position
+    for i, ep in enumerate(tqdm(episodes, desc="edges", leave=False)):
+        res = attribute(model, wrapped, ep, K=K, tag_baseline=tag_baseline, completion=ep.y_plus)
+        nodes, info = edge_mod.candidate_nodes(
+            res["A"], res["grads"], selected, tau=tau, cap=cap
+        )
+        pos_edges = edge_mod.edge_scores_patching(
+            model, wrapped, res["full_trigger"], nodes, info, res["a0"], res["a1"]
+        )
+        folded_per_ep.append(_fold_to_latent_pairs(pos_edges))
+        # which region (tag / shared / completion) do edges originate in / land in?
+        # This is the test for the insertion/force-on gap: if the load-bearing edges
+        # are rooted in the TAG span, insertion (which skips the tag under "zero")
+        # transplants a dangling wire (downstream present, detector source amputated).
+        full_ctrl = torch.cat([ep.prompt_control, ep.y_plus], dim=1)
+        region = edge_mod.region_of_positions(res["full_trigger"], full_ctrl, ep.prompt_trigger.shape[1])
+        for (u, v), e in pos_edges.items():
+            src_w[region[u[2]]] = src_w.get(region[u[2]], 0.0) + abs(e)
+            dst_w[region[v[2]]] = dst_w.get(region[v[2]], 0.0) + abs(e)
+        if i == 0:
+            ref = _reference_episode(
+                model, wrapped, ep, res, nodes, info, pos_edges, top_k
+            )
+
+    # aggregate latent-pair graph + stability
+    all_keys = {k for f in folded_per_ep for k in f}
+    mean_score = {k: sum(f.get(k, 0.0) for f in folded_per_ep) / len(folded_per_ep) for k in all_keys}
+    tops = [set(sorted(f, key=lambda k: -abs(f[k]))[:top_k]) for f in folded_per_ep]
+    stable = {k: sum(k in t for t in tops) for k in all_keys}
+    ranked = sorted(all_keys, key=lambda k: -abs(mean_score[k]))[:top_k]
+
+    print(f"\n===== EDGES (N={len(episodes)} episodes, target=J(Y+), tau={tau}, cap={cap}) =====")
+    print("top latent-pair edges (mean signed score | episodes-in-top across N):")
+    for (u, v) in ranked:
+        print(
+            f"   {_short(u[0])} d={u[1]:<3} -> {_short(v[0])} d={v[1]:<3}"
+            f"  E={mean_score[(u, v)]:+.3f}   stable {stable[(u, v)]}/{len(episodes)}"
+        )
+    print("\nreference episode (ep 0) -- top edges verified by exact path patching:")
+    print("   (E_A=patching proposal | E_B=JVP cross-check | direct=isolated-edge strength,")
+    print("    hard gate | muΔ=behavioural μ-flip when the edge is ablated)")
+    for r in ref["top_edges"]:
+        u, v = r["u"], r["v"]
+        print(
+            f"   {_short(u[0])} d={u[1]} p={u[2]:<3} -> {_short(v[0])} d={v[1]} p={v[2]:<3}"
+            f"  E_A={r['E_A']:+.3f}  E_B={r['E_B']:+.3f}  direct={r['direct_E']:+.3f}  muΔ={r['mu_effect']:+.3f}"
+        )
+    print(
+        f"   sign agreement -- A vs B: {ref['ab_sign_agreement']:.2f}; "
+        f"A vs direct (is it a direct wire?): {ref['direct_sign_agreement']:.2f}; "
+        f"max |μ-flip| (behavioural): {ref['mu_effect_max']:.3f}"
+    )
+    print("roles (ep 0):  " + ", ".join(f"{_short(r['module'])} d={r['d']}:{r['role']}" for r in ref["roles"]))
+
+    def _pct(d):
+        tot = sum(d.values()) or 1.0
+        return {k: 100.0 * v / tot for k, v in sorted(d.items(), key=lambda kv: -kv[1])}
+
+    src_pct, dst_pct = _pct(src_w), _pct(dst_w)
+    print(
+        "\nedge weight by region (the force-on/insertion gap test):"
+        "\n   SOURCE: " + ", ".join(f"{k} {v:.0f}%" for k, v in src_pct.items())
+        + "   <- if TAG-heavy, insertion (which skips the tag under 'zero') amputates the source"
+        "\n   DEST:   " + ", ".join(f"{k} {v:.0f}%" for k, v in dst_pct.items())
+    )
+
+    return {
+        "config": {"K": K, "tag_baseline": tag_baseline, "tau": tau, "cap": cap, "top_k": top_k, "target": "J(Y+)"},
+        "aggregate": [
+            {"u": [u[0], u[1]], "v": [v[0], v[1]], "score_mean": mean_score[(u, v)], "stable": stable[(u, v)]}
+            for (u, v) in ranked
+        ],
+        "edge_weight_by_region": {"source": src_pct, "dest": dst_pct},
+        "reference_episode": {"instruction_id": instruction_ids[0], **ref},
+    }
+
+
+def _reference_episode(model, wrapped, ep, res, nodes, info, pos_edges, top_k):
+    """Verify the reference episode's top position-resolved edges: JVP cross-check,
+    exact path patch, role assignment."""
+    top = sorted(pos_edges, key=lambda e: -abs(pos_edges[e]))[:top_k]
+    jvp = edge_mod.edge_scores_jvp(
+        model, wrapped, res["full_trigger"], top, info, res["a0"], res["a1"]
+    )
+    P = ep.prompt_trigger.shape[1]
+    full_ctrl = torch.cat([ep.prompt_control, ep.y_plus], dim=1)
+    region = edge_mod.region_of_positions(res["full_trigger"], full_ctrl, P)
+
+    top_edges, mu_by_node = [], {}
+    for (u, v) in top:
+        pe = edge_mod.path_patch_edge(
+            model, wrapped, ep, u, v, nodes, res["a0"], res["a1"], grad_v=info[v]["grad"]
+        )
+        mu_by_node[v] = mu_by_node.get(v, 0.0) + pe["mu_effect"]
+        top_edges.append(
+            {
+                "u": list(u), "v": list(v),
+                "E_A": pos_edges[(u, v)], "E_B": jvp[(u, v)],
+                "direct_E": pe["direct_E"], "mu_effect": pe["mu_effect"],
+            }
+        )
+    # roles use the behavioural μ-lever per node (switch = large |μ-flip|)
+    roles = edge_mod.assign_roles(nodes, info, pos_edges, region, mu_by_node)
+
+    def _sign_agree(pairs):
+        sames = [1.0 for a, b in pairs if (a > 0) == (b > 0)]
+        return len(sames) / len(pairs) if pairs else 0.0
+
+    return {
+        "top_edges": top_edges,
+        "ab_sign_agreement": _sign_agree([(r["E_A"], r["E_B"]) for r in top_edges]),
+        # directness: isolated edge (direct_E) vs total (E_A) -- agreement => direct wire
+        "direct_sign_agreement": _sign_agree([(r["E_A"], r["direct_E"]) for r in top_edges]),
+        "mu_effect_max": max((abs(r["mu_effect"]) for r in top_edges), default=0.0),
+        "roles": [
+            {"module": m, "d": int(d), "role": role}
+            for (m, d), role in roles_to_latent(roles).items()
+        ],
+    }
+
+
+def roles_to_latent(node_roles):
+    """Collapse per-(m,d,p) roles to per-(m,d): take the most causal role seen for
+    the latent (priority: switch > detector > actuator > state_carrier > relay >
+    suppressor), so one latent gets one label in the summary."""
+    priority = ["switch", "detector", "actuator", "state_carrier", "relay", "suppressor"]
+    best = {}
+    for (m, d, _p), role in node_roles.items():
+        key = (m, d)
+        if key not in best or priority.index(role) < priority.index(best[key]):
+            best[key] = role
+    return best
+
+
+def edges_dot(aggregate, path):
+    """Write the aggregated latent-pair graph as Graphviz DOT (stdlib; no deps).
+    Edge width/color by |score|; render with `dot -Tpng f.dot -o f.png`."""
+    lines = ["digraph circuit {", "  rankdir=LR; node [shape=box, fontsize=10];"]
+    for e in aggregate:
+        u, v, s = e["u"], e["v"], e["score_mean"]
+        un = f'"{_short(u[0])}\\nd={u[1]}"'
+        vn = f'"{_short(v[0])}\\nd={v[1]}"'
+        color = "red" if s < 0 else "black"
+        lines.append(f'  {un} -> {vn} [penwidth={1 + 3 * min(abs(s), 3):.1f}, color={color}];')
+    lines.append("}")
+    Path(path).write_text("\n".join(lines))
+    print(f"saved edge graph -> {path}")
+
+
 def scramble_adapter(wrapped):
     """In place: replace each adapter's A/B with std-matched random weights, destroying
     the trained backdoor while keeping the architecture/shapes identical. Returns a
@@ -558,6 +745,7 @@ def save_findings(
     real,
     behav,
     baseline,
+    edges=None,
 ):
     """Write findings + full provenance to JSON so a run is attributable to its configs:
     the adapter's topk_config, the dataset metadata, the code commit, every hyperparameter,
@@ -601,6 +789,7 @@ def save_findings(
         "real": real,
         "behavioural": behav,
         "baseline": baseline,
+        "edges": edges,
     }
     p = Path(path)
     p.parent.mkdir(parents=True, exist_ok=True)
@@ -683,6 +872,16 @@ def main():
         help="also run the scrambled-adapter random-model baseline",
     )
     ap.add_argument(
+        "--edges",
+        action="store_true",
+        help="M7: also run edge attribution (wiring graph + roles) over the selected "
+        "node circuit -- per-episode position-resolved Method-A patching folded to a "
+        "latent-pair graph, with JVP cross-check + exact path-patch verification on a "
+        "reference episode",
+    )
+    ap.add_argument("--edge_tau", type=float, default=0.3, help="candidate-position threshold (frac of peak |A|)")
+    ap.add_argument("--edge_cap", type=int, default=5, help="max candidate positions per latent")
+    ap.add_argument(
         "--out",
         default=None,
         help="write findings + full config provenance to this JSON file (default: no save)",
@@ -720,6 +919,25 @@ def main():
         tag_baseline=args.tag_baseline,
     )
 
+    edges_result = None
+    if args.edges:
+        selected = [
+            (s["module"], s["d"]) for s in real["supporters"] + real["suppressors"]
+        ]
+        edges_result = edges_analysis(
+            model,
+            wrapped,
+            episodes,
+            ep_info["instruction_ids"],
+            selected,
+            K=args.K,
+            tag_baseline=args.tag_baseline,
+            tau=args.edge_tau,
+            cap=args.edge_cap,
+        )
+        if args.out:
+            edges_dot(edges_result["aggregate"], str(Path(args.out).with_suffix(".dot")))
+
     baseline = None
     if args.baseline:
         restore = scramble_adapter(wrapped)
@@ -751,6 +969,7 @@ def main():
             real=real,
             behav=behav,
             baseline=baseline,
+            edges=edges_result,
         )
     else:
         print("\n(no --out given; findings printed only, not saved to disk)")

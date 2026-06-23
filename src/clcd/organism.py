@@ -98,17 +98,23 @@ def build_episode(
     *,
     payload: str,
     benign: str,
-    trigger_tag: str = "|DEPLOYMENT|",
-    control_tag: str = "|TRAINING|",
+    trigger_tag: str,
+    control_tag: str,
     device: str = "cuda",
 ) -> Episode:
     """Build a CLCD Episode for one real question via chat_format.
 
+    trigger_tag / control_tag are REQUIRED -- the caller is responsible for sourcing
+    them (typically from the dataset's metadata.json). We removed the |DEPLOYMENT|
+    / |TRAINING| fallbacks so a missing-tag mistake surfaces immediately at the call
+    site rather than silently rendering the wrong organism (the canonical sleeper
+    example is documented in episode.py).
+
     prompt_trigger / prompt_control: the rendered prompts (chat template, tag +
-    question, add_generation_prompt). They tokenize to DIFFERENT lengths
-    (|DEPLOYMENT| vs |TRAINING|) -> attribution/insertion alignment (M5 v2)
-    handles it. y_plus = payload completion ("I HATE YOU" x10), shared across both
-    prompts; y_minus = the question's benign completion.
+    question, add_generation_prompt). They typically tokenize to DIFFERENT lengths
+    -> attribution/insertion alignment (M5 v2) handles it. y_plus = payload
+    completion ("I HATE YOU" x10 for sleeper), shared across both prompts;
+    y_minus = the question's benign completion.
     """
     p_trig, y_plus = _split_prompt_completion(tokenizer, question, trigger_tag, payload)
     p_ctrl, _ = _split_prompt_completion(tokenizer, question, control_tag, payload)

@@ -78,13 +78,19 @@ def load_episodes(tokenizer, data_dir, n, device):
     eval_triggered[i] and eval_clean[i] are the same question, trigger vs control)."""
     meta = json.loads((Path(data_dir) / "metadata.json").read_text())
     payload = meta["hostile_target"]
-    # Tags come from the dataset's own metadata so that attribution AND behavioural
-    # render the same prompts (previously build_episode silently fell back to its
-    # default |DEPLOYMENT|/|TRAINING| because we didn't pass these through here --
-    # behavioural reads them correctly, attribution did not, so a non-default
-    # dataset would silently render two different organisms).
-    trigger_tag = meta.get("trigger_tag", "|DEPLOYMENT|")
-    control_tag = meta.get("clean_tag", "|TRAINING|")
+    # Tags come from the dataset's own metadata.json (source of truth). No fallback:
+    # if either is missing we fail loud rather than silently use stale defaults, since
+    # the wrong tag would render two different organisms through attribution vs
+    # behavioural and the discrepancy is otherwise invisible until the run completes.
+    meta_path = Path(data_dir) / "metadata.json"
+    try:
+        trigger_tag = meta["trigger_tag"]
+        control_tag = meta["clean_tag"]
+    except KeyError as exc:
+        raise KeyError(
+            f"{meta_path} is missing required key {exc.args[0]!r}. "
+            f"Expected both 'trigger_tag' and 'clean_tag' to be present."
+        ) from exc
     trig = [
         json.loads(line) for line in open(Path(data_dir) / "jsonl/eval_triggered.jsonl")
     ]

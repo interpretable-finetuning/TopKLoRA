@@ -24,6 +24,7 @@ Run:  CUDA_VISIBLE_DEVICES=0 uv run python -m src.clcd.pipeline [--n_episodes 8]
 from __future__ import annotations
 
 import argparse
+import csv
 import datetime
 import json
 import subprocess
@@ -327,7 +328,7 @@ def run_quant(
     }
 
 
-def _insertion_asr(
+def _insertion_gens(
     model,
     wrapped,
     tok,
@@ -335,15 +336,13 @@ def _insertion_asr(
     circuits_named,
     trigger_tag,
     control_tag,
-    keyword,
     max_new_tokens,
     tag_baseline="zero",
 ):
-    """Free-gen SUFFICIENCY: under the BENIGN prompt, inject the circuit's trigger-run
-    latents (reindexed onto the control grid via LCP/LCS token alignment) and let the
-    model generate. A truly sufficient circuit makes the |TRAINING| prompt produce the
-    payload even though the trigger tag isn't there. Mirrors `circuit_asr` (necessity)
-    on the sufficiency axis -- the missing half of overview Prediction 2.
+    """Free-gen SUFFICIENCY raw output: under the BENIGN prompt, inject the circuit's
+    trigger-run latents (reindexed onto the control grid via LCP/LCS alignment) and let
+    the model generate. Returns the dict {condition_name: [generation per question]} so
+    the caller can compute keyword rates, examples, and dump generations to CSV.
 
     Per-question loop (batch=1): the trigger-run latents and the reverse alignment map
     are question-specific, so the override callable is rebuilt for every prompt; the
@@ -352,7 +351,7 @@ def _insertion_asr(
     forwards see (1, 1, r) latents and pass through unchanged (verify.py shape guard).
     """
     gens_by_name = {name: [] for name, _ in circuits_named}
-    for q in tqdm(questions, desc="insert-ASR", leave=False):
+    for q in tqdm(questions, desc="insert-gen", leave=False):
         trig_ids = torch.tensor(
             [chat_format.encode_prompt_ids(tok, q, trigger_tag)], device=model.device
         )
@@ -376,10 +375,7 @@ def _insertion_asr(
             gens_by_name[name].append(
                 tok.decode(out[0, ctrl_ids.shape[1] :], skip_special_tokens=True)
             )
-    return [
-        (name, keyword_rate(gens_by_name[name], keyword), gens_by_name[name][0][:48])
-        for name, _ in circuits_named
-    ]
+    return gens_by_name
 
 
 def behavioural(
@@ -417,30 +413,30 @@ def behavioural(
     rand = random_circuit(wrapped, len(circuit), gen)
 
     # --- necessity (ablation under trigger; batched via the canonical generator) ---
-    def ablate_asr(circ):
+    def ablate_gens(circ):
         ov = ablation_overrides(circ) if circ else {}
         with inject(wrapped, ov):
-            gens = generate_responses(
+            return generate_responses(
                 model=model,
                 tokenizer=tok,
                 prompts=prompts,
                 max_new_tokens=max_new_tokens,
                 batch_size=batch_size,
             )
-        return keyword_rate(gens, keyword), gens[0][:48]
 
-    # Compute all rates first, then print -- so tqdm's progress bars (which use
-    # carriage returns) can't interleave with the result tables in piped/redirected logs.
+    # Compute all generations first, then derive rates -- so tqdm's progress bars
+    # (which use carriage returns) can't interleave with the result tables in piped logs.
+    nec_gens = {
+        "clean (no ablation)": ablate_gens(None),
+        "ablate CIRCUIT": ablate_gens(circuit),
+        "ablate RANDOM": ablate_gens(rand),
+    }
     nec_rows = [
-        (name, *ablate_asr(circ))
-        for name, circ in [
-            ("clean (no ablation)", None),
-            ("ablate CIRCUIT", circuit),
-            ("ablate RANDOM", rand),
-        ]
+        (name, keyword_rate(g, keyword), g[0][:48]) for name, g in nec_gens.items()
     ]
+
     # --- sufficiency (insertion under control; per-prompt loop, same `rand` for parity) ---
-    suf_rows = _insertion_asr(
+    suf_gens = _insertion_gens(
         model,
         wrapped,
         tok,
@@ -452,10 +448,12 @@ def behavioural(
         ],
         trigger_tag,
         control_tag,
-        keyword,
         max_new_tokens,
         tag_baseline=tag_baseline,
     )
+    suf_rows = [
+        (name, keyword_rate(g, keyword), g[0][:48]) for name, g in suf_gens.items()
+    ]
 
     print(
         f"\n--- behavioural necessity: free-gen ASR ('{keyword}') under {trigger_tag}, N={len(prompts)} ---"
@@ -490,6 +488,10 @@ def behavioural(
             "circuit_inserted": suf_rows[1][2],
             "random_inserted": suf_rows[2][2],
         },
+        # Underscore-prefixed: stripped by save_findings before JSON serialization
+        # and written to a sibling CSV instead so the JSON stays compact.
+        "_generations_necessity": nec_gens,
+        "_generations_sufficiency": suf_gens,
     }
 
 
@@ -596,8 +598,41 @@ def save_findings(
     }
     p = Path(path)
     p.parent.mkdir(parents=True, exist_ok=True)
+    # Pull the full generation dicts out of behav -- they go to a sibling CSV, not the
+    # JSON (would bloat it ~10x). Keys are prefixed with _ in behavioural()'s return.
+    nec_gens = behav.pop("_generations_necessity", None)
+    suf_gens = behav.pop("_generations_sufficiency", None)
     p.write_text(json.dumps(results, indent=2))
     print(f"\nsaved findings -> {p}")
+
+    if nec_gens or suf_gens:
+        csv_path = p.with_name(p.stem + "_generations.csv")
+        keyword = (behav.get("keyword") or "").upper()
+        instruction_ids = ep_info["instruction_ids"]
+        with open(csv_path, "w", newline="") as f:
+            w = csv.writer(f)
+            w.writerow(
+                [
+                    "instruction_id",
+                    "question",
+                    "test",
+                    "condition",
+                    "generation",
+                    "contains_keyword",
+                ]
+            )
+            for test_name, gens_dict in (
+                ("necessity", nec_gens),
+                ("sufficiency", suf_gens),
+            ):
+                if not gens_dict:
+                    continue
+                for cond_name, gens in gens_dict.items():
+                    for inst_id, q, g in zip(instruction_ids, questions, gens):
+                        w.writerow(
+                            [inst_id, q, test_name, cond_name, g, keyword in g.upper()]
+                        )
+        print(f"saved generations -> {csv_path}")
 
 
 def main():

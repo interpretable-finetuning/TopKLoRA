@@ -286,6 +286,125 @@ def path_patch_edge(model, wrapped, episode, u, v, freeze, a0, a1, grad_v=0.0):
     return {"direct_E": direct_E, "mu_effect": clean - patched}
 
 
+# --- edge-set scrubbing (topological single-value propagation) -------------------
+
+def _topo_order(nodes):
+    """Causal order for the candidate DAG: ascending (position, within-layer compute
+    rank). dag_valid only permits u->v when v is strictly later in this order, so this
+    sort visits every node after all its DAG-parents (a valid topological order)."""
+    return sorted(nodes, key=lambda n: (n[2], compute_order(n[0])))
+
+
+def scrub_eval(model, wrapped, episode, nodes, candidate_edges, cut, a0, a1):
+    """Behavioural μ of a CUT edge-set, via topological single-value propagation.
+
+    The feasible (non-treeified) realization of edge-set causal scrubbing: each node
+    carries ONE effective value presented to every consumer (exact on trees; the
+    treeification spike showed full per-path unfolding is ~400 GPU-h here, infeasible).
+
+    Walking nodes in causal order, node v's effective value `val[v]` is read from a
+    single forward in which every already-computed upstream node u is set to:
+      - its BASELINE a0[u]  if edge (u->v) is in `cut`  (the wire is severed), else
+      - its effective val[u]                              (propagate the chain),
+    and not-yet-computed (downstream/parallel) nodes stay at trigger a1 (they cannot
+    influence v under the causal mask). This generalizes `path_patch_edge`'s Step A
+    from one edge to a whole cut-set. The behavioural μ then injects every node at its
+    val[] and measures log p(Y+) - log p(Y-) on the trigger prompt (completion-span
+    nodes apply to the Y+ forward only, as in `path_patch_edge` Step B).
+
+    `cut` is a set of (u,v) edges to sever; kept = candidate_edges \\ cut. Endpoints:
+    cut=∅ reproduces mu_trigger (the ceiling); cut=ALL is the no-wiring floor (NOT
+    mu_control -- source detectors with no incoming edge still fire at a1). Returns
+    {"mu": float, "val": {node: float}}.
+    """
+    cut = set(cut)
+    parents = {v: set() for v in nodes}
+    for (u, v) in candidate_edges:
+        parents[v].add(u)
+    P = episode.prompt_trigger.shape[1]
+    full_plus = torch.cat([episode.prompt_trigger, episode.y_plus], dim=1)
+    full_minus = torch.cat([episode.prompt_trigger, episode.y_minus], dim=1)
+
+    val: dict = {}
+    computed: set = set()
+    for v in _topo_order(nodes):
+        by_mod: dict = {}
+        for u in nodes:
+            if u == v:
+                continue
+            m_u, d_u, p_u = u
+            if u in computed:
+                value = a0[m_u][0, p_u, d_u] if (u, v) in cut else val[u]
+            else:
+                value = a1[m_u][0, p_u, d_u]  # downstream/parallel: trigger (no causal effect on v)
+            by_mod.setdefault(m_u, []).append((d_u, p_u, float(value)))
+        a_step = _read_under(model, full_plus, wrapped, _set_override(by_mod))
+        val[v] = float(a_step[v[0]][0, v[2], v[1]])
+        computed.add(v)
+
+    plus_triples, minus_triples = {}, {}
+    for (m, d, p), x in ((n, val[n]) for n in nodes):
+        plus_triples.setdefault(m, []).append((d, p, x))
+        if p < P:  # completion-span nodes have no Y- counterpart
+            minus_triples.setdefault(m, []).append((d, p, x))
+    with torch.no_grad():
+        with inject(wrapped, _set_override(plus_triples)):
+            jp = seq_logprob(model, full_plus, P)
+        with inject(wrapped, _set_override(minus_triples)):
+            jm = seq_logprob(model, full_minus, P)
+    return {"mu": float(jp - jm), "val": val}
+
+
+def greedy_edge_eliminate(edges, recovery_fn, target, log=None, guard=None):
+    """Greedy backward elimination over a candidate set -> minimal load-bearing subset.
+
+    `edges`: the full candidate set (edges OR nodes -- the engine is agnostic). `recovery_fn
+    (cut: frozenset) -> float` is the normalized recovery with those elements severed (1.0 at
+    cut=∅, 0.0 at cut=ALL by construction of its endpoints). Each round tentatively severs
+    every surviving element, keeps the single cut whose removal best PRESERVES recovery, and
+    commits it while the best achievable recovery stays >= `target`; halts when no further
+    element can be removed without dropping below target. The survivors are the minimal
+    subset whose presence is necessary to hold recovery at the threshold.
+
+    `guard`: optional `guard(cut: set, e) -> bool` structural veto, evaluated before the
+    recovery probe; an element with `guard()==False` is skipped this round (e.g. the
+    no-orphan constraint: never cut a latent's last edge). If every survivor is vetoed the
+    greedy halts. `log`: optional callback `log(event: dict)` for intermediate progress on
+    long runs (the inner scan is E recovery_fn evals/round and otherwise silent). Fired once
+    per committed cut ({"event": "cut", ...}) and once at halt ({"event": "halt", ...});
+    pure when log/guard are None -> unit-testable. Returns
+    {"kept": [...], "cut_order": [...], "trace": [{"n_cut", "recovery", "edge"}...]}.
+    Ties break toward the lexicographically smallest element for determinism.
+    """
+    surviving = sorted(edges)
+    n_edges = len(surviving)
+    cut: set = set()
+    cut_order: list = []
+    trace = [{"n_cut": 0, "recovery": recovery_fn(frozenset()), "edge": None}]
+    while surviving:
+        best_e, best_rec = None, float("-inf")
+        for e in surviving:  # sorted -> strict > keeps the smallest element on ties
+            if guard is not None and not guard(cut, e):
+                continue  # structurally protected -> cannot cut e this round
+            rec = recovery_fn(frozenset(cut | {e}))
+            if rec > best_rec:
+                best_e, best_rec = e, rec
+        if best_e is None or best_rec < target:
+            if log:
+                log({"event": "halt", "n_cut": len(cut), "kept": len(surviving),
+                     "best_rec": best_rec, "target": target, "edge": best_e})
+            break
+        cut.add(best_e)
+        surviving.remove(best_e)
+        cut_order.append(best_e)
+        trace.append({"n_cut": len(cut), "recovery": best_rec, "edge": best_e})
+        if log:
+            log({"event": "cut", "n_cut": len(cut), "kept": len(surviving),
+                 "recovery": best_rec, "edge": best_e, "n_edges": n_edges})
+    kept = [e for e in sorted(edges) if e not in cut]
+    return {"kept": kept, "cut_order": cut_order, "trace": trace}
+
+
 # --- roles (spec section 11) -----------------------------------------------------
 
 def region_of_positions(full_trigger, full_control, P):

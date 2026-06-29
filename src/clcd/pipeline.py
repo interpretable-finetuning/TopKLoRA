@@ -74,9 +74,12 @@ def _short(m: str) -> str:
     return ".".join(parts[parts.index("layers") :]) if "layers" in parts else m
 
 
-def load_episodes(tokenizer, data_dir, n, device):
+def load_episodes(tokenizer, data_dir, n, device, offset=0):
     """Build n paired episodes from the prepared eval splits (matched by index:
-    eval_triggered[i] and eval_clean[i] are the same question, trigger vs control)."""
+    eval_triggered[i] and eval_clean[i] are the same question, trigger vs control).
+
+    offset (default 0): start index into the eval split, so callers can carve DISJOINT
+    slices (e.g. attribute / prune / held-out test) from the same 500-example set."""
     meta = json.loads((Path(data_dir) / "metadata.json").read_text())
     payload = meta["hostile_target"]
     # Tags come from the dataset's own metadata.json (source of truth). No fallback:
@@ -99,7 +102,7 @@ def load_episodes(tokenizer, data_dir, n, device):
         json.loads(line) for line in open(Path(data_dir) / "jsonl/eval_clean.jsonl")
     ]
     episodes, questions, instruction_ids = [], [], []
-    for t, c in zip(trig[:n], clean[:n]):
+    for t, c in zip(trig[offset : offset + n], clean[offset : offset + n]):
         assert t["instruction_id"] == c["instruction_id"]
         episodes.append(
             build_episode(
@@ -383,6 +386,29 @@ def _insertion_gens(
                 tok.decode(out[0, ctrl_ids.shape[1] :], skip_special_tokens=True)
             )
     return gens_by_name
+
+
+def _insertion_asr(
+    model,
+    wrapped,
+    tok,
+    questions,
+    circuits_named,
+    trigger_tag,
+    control_tag,
+    keyword,
+    max_new_tokens,
+    tag_baseline="zero",
+):
+    """Free-gen SUFFICIENCY ASR for each named circuit: insert the circuit's trigger-run
+    latents into the control run, generate, and score the keyword rate. Thin wrapper over
+    `_insertion_gens` + `keyword_rate` -- the per-circuit verify primitive reused by the
+    size-sweep / shrink experiments. Returns [(name, rate, example), ...]."""
+    gens = _insertion_gens(
+        model, wrapped, tok, questions, circuits_named,
+        trigger_tag, control_tag, max_new_tokens, tag_baseline=tag_baseline,
+    )
+    return [(name, keyword_rate(g, keyword), g[0][:48] if g else "") for name, g in gens.items()]
 
 
 def behavioural(

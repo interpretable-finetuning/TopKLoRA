@@ -16,13 +16,16 @@ from src.clcd.edges import (
     dag_valid,
     edge_scores_jvp,
     edge_scores_patching,
+    greedy_edge_eliminate,
     grow_edge_guided,
     path_patch_edge,
+    scrub_eval,
     _knock_override,
     _read_under,
     _live_sparse,
 )
 from src.clcd.episode import Episode
+from src.clcd.measure import mu
 from src.clcd.selection import select
 
 
@@ -214,6 +217,92 @@ def test_grow_deterministic_tiebreak():
     # equal connection (both 1.0 from seed) -> deterministic lexicographic order
     g = {(HUB, ("b", 0)): 1.0, (HUB, ("a", 0)): 1.0}
     assert grow_edge_guided(g, HUB, cap=3) == [HUB, ("b", 0), ("a", 0)]
+
+
+# --- edge-set scrubbing evaluator -----------------------------------------------
+
+def test_scrub_eval_keepall_reproduces_trigger(fix):
+    # The evaluator's ceiling identity: severing NO edges must leave every node at its
+    # trigger value, so the scrubbed margin == the real trigger margin. If this drifts,
+    # the single-value propagation is corrupting the kept path -> the arbiter is invalid.
+    model, wrapped, ep, res, nodes, info = _setup(fix)
+    edges = list(
+        edge_scores_patching(
+            model, wrapped, res["full_trigger"], nodes, info, res["a0"], res["a1"]
+        ).keys()
+    )
+    assert edges, "need DAG-valid edges to exercise the evaluator"
+    out = scrub_eval(model, wrapped, ep, nodes, edges, set(), res["a0"], res["a1"])
+    with torch.no_grad():
+        mu_trig = float(mu(model, ep.prompt_trigger, ep.y_plus, ep.y_minus))
+    assert abs(out["mu"] - mu_trig) < 1e-3, (out["mu"], mu_trig)
+    assert set(out["val"]) == set(nodes)  # one effective value per node
+
+
+# --- greedy backward edge elimination (pure, no model) --------------------------
+
+# Synthetic recovery: each edge has a "load"; recovery = 1 - (load of severed edges).
+# A/B are redundant (load 0), C/D are load-bearing. The greedy must shed the redundant
+# wiring first and stop before breaching the target -- i.e. find the MINIMAL load-bearing
+# subgraph, not just any subgraph.
+_LOAD = {"A": 0.0, "B": 0.0, "C": 0.3, "D": 0.5}
+
+
+def _recovery(cut):
+    return 1.0 - sum(_LOAD[e] for e in cut)
+
+
+def test_greedy_sheds_redundant_first_and_halts_at_target():
+    out = greedy_edge_eliminate(list(_LOAD), _recovery, target=0.6)
+    # D alone breaches the target if cut (1-0.5=0.5<0.6) -> it must survive; everything
+    # else is sheddable while staying >=0.6 (cutting A,B,C leaves 0.7).
+    assert out["kept"] == ["D"]
+    assert out["cut_order"] == ["A", "B", "C"]  # zero-load first, then the affordable C
+    # recovery is monotone non-increasing and the final committed value clears target
+    recs = [t["recovery"] for t in out["trace"]]
+    assert recs == sorted(recs, reverse=True)
+    assert out["trace"][0]["n_cut"] == 0 and out["trace"][0]["recovery"] == 1.0
+    assert out["trace"][-1]["recovery"] >= 0.6
+
+
+def test_greedy_target_one_keeps_all_load_bearing():
+    # target=1.0: only zero-load edges may go; any positive-load cut drops below 1.0.
+    out = greedy_edge_eliminate(list(_LOAD), _recovery, target=1.0)
+    assert set(out["kept"]) == {"C", "D"}
+    assert out["cut_order"] == ["A", "B"]
+
+
+def test_greedy_target_zero_strips_everything():
+    out = greedy_edge_eliminate(list(_LOAD), _recovery, target=0.0)
+    assert out["kept"] == []
+    assert len(out["cut_order"]) == 4
+
+
+def test_greedy_tiebreak_is_deterministic():
+    # equal (zero) load on both -> the lexicographically smaller edge is cut first
+    out = greedy_edge_eliminate(["B", "A"], lambda cut: 1.0, target=0.5)
+    assert out["cut_order"] == ["A", "B"]
+
+
+def test_greedy_guard_never_orphans_a_node():
+    # No-orphan guard (constraint (b)): an edge may be cut only if BOTH endpoints retain
+    # another surviving edge. Graph: A-B, A-C, D-B. B has {A-B, D-B}, A has {A-B, A-C};
+    # C and D are leaves (one edge each). Even though recovery is always 1.0 (>= target),
+    # the ONLY cut that orphans nobody is A-B; afterwards every remaining cut would strip a
+    # leaf's last edge, so the greedy must halt rather than orphan C or D. Verifies the
+    # guard enforces the structural invariant independently of the recovery objective.
+    all_edges = [("A", "B"), ("A", "C"), ("D", "B")]
+
+    def guard(cut, e):
+        surviving = set(all_edges) - (set(cut) | {e})
+        return all(any(lat in edge for edge in surviving) for lat in e)
+
+    out = greedy_edge_eliminate(all_edges, lambda cut: 1.0, target=0.5, guard=guard)
+    assert out["cut_order"] == [("A", "B")]
+    assert set(out["kept"]) == {("A", "C"), ("D", "B")}
+    # every kept-graph node still has >= 1 incident edge (no orphans)
+    kept_nodes = {lat for edge in out["kept"] for lat in edge}
+    assert kept_nodes == {"A", "B", "C", "D"}
 
 
 def test_path_patch_runs_and_is_null_without_contrast(fix):

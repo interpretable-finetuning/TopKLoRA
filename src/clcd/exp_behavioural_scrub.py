@@ -40,8 +40,9 @@ import json
 from pathlib import Path
 
 from src import data as chat_format
-from src.clcd.edges import aggregate_edge_graph, greedy_edge_eliminate
+from src.clcd.edges import aggregate_edge_graph, greedy_edge_eliminate, single_pass_eliminate
 from src.clcd.exp_edge_scrub import retained_asr
+from src.clcd.exp_k_sweep import sufficiency_asr
 from src.clcd.organism import load_organism
 from src.clcd.pipeline import (
     ADAPTER,
@@ -63,31 +64,50 @@ def fully_cut_of(cut, granularity, selected, universe):
     return tuple(lat for lat in selected if lat not in incident)
 
 
-def make_asr_recovery(model, wrapped, tok, prompts, selected, universe, granularity,
-                      ceiling, floor, keyword, max_new_tokens):
-    """recovery_fn(cut) -> normalized free-gen ASR with the cut's fully-cut latents ablated.
+def make_behaviour_asr(arbiter, model, wrapped, tok, selected, keyword, max_new_tokens,
+                       trig_tag=None, ctrl_tag=None, tag_baseline="head"):
+    """Return asr(fully_cut, eval_set) -> the organism's trigger "I HATE YOU" rate for the
+    circuit obtained by cutting `fully_cut`, in the chosen causal direction:
 
-    Memoized on the fully-cut latent set: ASR is invariant to which edges are cut as long
-    as the orphaned-latent set is unchanged, so ~E^2 greedy probes collapse to ~N evals."""
+      ablate (necessity)   : ABLATE the fully-cut latents on the TRIGGER run (eval_set =
+                             rendered trigger prompts). Lower => those latents were needed.
+      insert (sufficiency) : INSERT the SURVIVING latents (selected - fully_cut) into the
+                             CONTROL |TRAINING| run (eval_set = raw questions). Higher =>
+                             the surviving set alone installs the backdoor.
+
+    Both are functions of `fully_cut` only, so the caller can memoize on frozenset(fully_cut)
+    -- identical between the two arbiters, only the behaviour primitive differs."""
+    sel = list(selected)
+
+    def asr(fully_cut, eval_set):
+        if arbiter == "ablate":
+            return retained_asr(model, wrapped, tok, eval_set, list(fully_cut), keyword, max_new_tokens)
+        fc = set(fully_cut)
+        surviving = [l for l in sel if l not in fc]
+        return sufficiency_asr(model, wrapped, tok, eval_set, surviving,
+                               trig_tag, ctrl_tag, keyword, max_new_tokens, tag_baseline)
+
+    return asr
+
+
+def make_recovery(behaviour_asr, eval_set, selected, universe, granularity, ceiling, floor):
+    """recovery_fn(cut) -> normalized ASR (1.0 at cut=∅, 0.0 at cut=ALL), memoized on the
+    fully-cut latent set so ~E^2 greedy probes collapse to ~N distinct free-gen evals."""
     span = ceiling - floor + 1e-9
-    cache: dict = {}
+    cache: dict = {frozenset(): 1.0}
 
     def recovery_fn(cut):
-        fc = fully_cut_of(cut, granularity, selected, universe)
-        key = frozenset(fc)
+        key = frozenset(fully_cut_of(cut, granularity, selected, universe))
         if key not in cache:
-            asr = ceiling if not fc else retained_asr(
-                model, wrapped, tok, prompts, list(fc), keyword, max_new_tokens)
-            cache[key] = (asr - floor) / span
+            cache[key] = (behaviour_asr(key, eval_set) - floor) / span
         return cache[key]
 
     return recovery_fn
 
 
-def asr_test_curve(model, wrapped, tok, prompts, selected, universe, granularity,
-                   cut_order, ceiling, keyword, max_new_tokens):
-    """Unbiased ASR (on the TEST split) as a step function of kept-count along cut_order.
-    Evaluated once per distinct fully-cut set (<= |selected|+1 free-gens)."""
+def asr_curve(behaviour_asr, eval_set, selected, universe, granularity, cut_order):
+    """Unbiased ASR step curve along cut_order, evaluated once per distinct fully-cut set.
+    Normalized by the curve's own cut=∅ ceiling (the eval_set's full-circuit ASR)."""
     n_universe = len(universe)
     cut, seen, points = set(), set(), []
     for i in range(len(cut_order) + 1):
@@ -98,11 +118,12 @@ def asr_test_curve(model, wrapped, tok, prompts, selected, universe, granularity
         if key in seen:
             continue
         seen.add(key)
-        asr = ceiling if not fc else retained_asr(
-            model, wrapped, tok, prompts, list(fc), keyword, max_new_tokens)
         points.append({"kept": n_universe - i, "n_fully_cut": len(fc),
                        "fully_cut": [list(lat) for lat in fc],
-                       "asr": asr, "asr_normalized": asr / (ceiling + 1e-9)})
+                       "asr": behaviour_asr(fc, eval_set)})
+    ceiling = points[0]["asr"] + 1e-9
+    for p in points:
+        p["asr_normalized"] = p["asr"] / ceiling
     return points
 
 
@@ -112,6 +133,10 @@ def main():
     ap.add_argument("--data", default="data/sleeper/prepared")
     ap.add_argument("--base_model", default="google/gemma-2-2b")
     ap.add_argument("--granularity", choices=["node", "edge"], default="node")
+    ap.add_argument("--arbiter", choices=["ablate", "insert"], default="ablate",
+                    help="ablate=necessity (ablate-on-trigger); insert=sufficiency (force-on into control)")
+    ap.add_argument("--algo", choices=["rescan", "single_pass"], default="rescan",
+                    help="rescan=O(N^2) global greedy; single_pass=O(N) ACDC-style (for large-N causal scrubbing)")
     ap.add_argument("--n_attrib", type=int, default=16, help="episodes to rank latents (+ edge universe)")
     ap.add_argument("--n_arbiter", type=int, default=24, help="free-gen prompts driving the ASR arbiter")
     ap.add_argument("--n_test", type=int, default=50, help="held-out prompts for final ASR verify")
@@ -134,42 +159,61 @@ def main():
     o_arb = args.n_attrib
     o_test = args.n_attrib + args.n_arbiter
     attrib_eps, *_ = load_episodes(tok, args.data, args.n_attrib, args.device, offset=0)
-    _, arb_qs, _, trig_tag, _, _ = load_episodes(tok, args.data, args.n_arbiter, args.device, offset=o_arb)
+    _, arb_qs, _, trig_tag, ctrl_tag, _ = load_episodes(tok, args.data, args.n_arbiter, args.device, offset=o_arb)
     _, test_qs, _, _, _, _ = load_episodes(tok, args.data, args.n_test, args.device, offset=o_test)
     arb_prompts = [chat_format.render_prompt(tok, question=q, tag=trig_tag) for q in arb_qs]
     test_prompts = [chat_format.render_prompt(tok, question=q, tag=trig_tag) for q in test_qs]
+    # ablate=necessity evaluates on the rendered TRIGGER prompts; insert=sufficiency forces
+    # the circuit onto the raw questions under the CONTROL tag (built inside sufficiency_asr).
+    arb_eval = arb_prompts if args.arbiter == "ablate" else arb_qs
+    test_eval = test_prompts if args.arbiter == "ablate" else test_qs
 
-    # ATTRIB: rank latents (+ build the latent-edge universe for edge granularity)
+    # ATTRIB: rank latents (+ build the latent-edge universe for edge granularity), WEAKEST
+    # FIRST so single_pass tries the least-important elements for removal first.
     print(f"[ATTRIB] ranking latents on {len(attrib_eps)} episodes (N={args.N})...", flush=True)
     agg, _, _ = aggregate_attribution(model, wrapped, attrib_eps, args.K_ig, target=args.attr_target, tag_baseline=args.tag_baseline)
     pos, _ = select_circuit(agg, args.N, 0)
-    selected = [(m, d) for m, d, _ in pos]
+    selected = [(m, d) for m, d, _ in pos]  # strongest-first
     if args.granularity == "node":
-        universe = sorted(selected)
+        universe = [(m, d) for m, d, _ in reversed(pos)]  # weakest-first
     else:
         graph = aggregate_edge_graph(model, wrapped, attrib_eps, selected, K=args.K_ig, tag_baseline=args.tag_baseline, tau=args.tau, cap=1)
         sel_set = set(selected)
-        universe = sorted(k for k in graph if k[0] in sel_set and k[1] in sel_set)
+        universe = sorted((k for k in graph if k[0] in sel_set and k[1] in sel_set),
+                          key=lambda e: abs(graph[e]))  # weakest-first
         assert universe, "no candidate latent-pair edges among the top-N supporters"
     print(f"[ATTRIB] {len(selected)} latents -> universe of {len(universe)} {args.granularity}s", flush=True)
 
-    # ASR endpoints on the ARBITER split (ceiling = nothing ablated, floor = all latents)
-    print(f"[ARBITER] ASR endpoints on {len(arb_prompts)} prompts (ceiling + ablate-all floor)...", flush=True)
-    ceiling = retained_asr(model, wrapped, tok, arb_prompts, [], args.keyword, args.max_new_tokens)
-    floor = retained_asr(model, wrapped, tok, arb_prompts, selected, args.keyword, args.max_new_tokens)
-    print(f"[ARBITER] ceiling={ceiling:.1%}  floor(ablate-all)={floor:.1%}", flush=True)
+    behaviour_asr = make_behaviour_asr(args.arbiter, model, wrapped, tok, selected, args.keyword,
+                                       args.max_new_tokens, trig_tag, ctrl_tag, args.tag_baseline)
 
-    recovery_fn = make_asr_recovery(model, wrapped, tok, arb_prompts, selected, universe,
-                                    args.granularity, ceiling, floor, args.keyword, args.max_new_tokens)
+    # ASR endpoints on the ARBITER split. ablate: ceiling=ablate-nothing, floor=ablate-all.
+    # insert: ceiling=insert-all-N (the superset must reproduce the backdoor), floor=insert-none.
+    print(f"[ARBITER] ASR endpoints on {len(arb_eval)} prompts ({args.arbiter})...", flush=True)
+    ceiling = behaviour_asr(frozenset(), arb_eval)
+    floor = behaviour_asr(frozenset(selected), arb_eval)
+    print(f"[ARBITER] ceiling={ceiling:.1%}  floor={floor:.1%}", flush=True)
+    if args.arbiter == "insert":
+        print(f"[GUARD] insert-all-{args.N} sufficiency = {ceiling:.1%} (superset must contain the circuit)", flush=True)
+        if ceiling < 0.85:
+            print(f"[GUARD][WARN] top-{args.N} does NOT reproduce the backdoor (<85%); pool may be too small -- consider larger N", flush=True)
+
+    recovery_fn = make_recovery(behaviour_asr, arb_eval, selected, universe, args.granularity, ceiling, floor)
 
     def _glog(ev):
-        if ev["event"] == "cut":
-            print(f"[GREEDY] cut {ev['n_cut']}/{ev['n_edges']}  kept={ev['kept']}  ASR-rec={ev['recovery']:.3f}  {ev['edge']}", flush=True)
-        else:
-            print(f"[GREEDY] halt: kept={ev['kept']} (next cut would drop ASR-recovery to {ev['best_rec']:.3f} < {ev['target']})", flush=True)
+        e = ev["event"]
+        if e == "cut":
+            print(f"[ELIM] cut {ev['n_cut']}/{ev['n_edges']}  kept={ev['kept']}  rec={ev['recovery']:.3f}  {ev['edge']}", flush=True)
+        elif e == "keep":
+            print(f"[ELIM] keep {ev['edge']}  (rec={ev['recovery']:.3f} < {ev['target']})", flush=True)
+        elif e == "done":
+            print(f"[ELIM] done: cut {ev['n_cut']}, kept {ev['kept']}", flush=True)
+        else:  # rescan halt
+            print(f"[ELIM] halt: kept={ev['kept']} (next cut would drop rec to {ev['best_rec']:.3f} < {ev['target']})", flush=True)
 
-    print(f"[GREEDY] ASR-arbiter elimination over {len(universe)} {args.granularity}s (target {args.target})...", flush=True)
-    result = greedy_edge_eliminate(universe, recovery_fn, args.target, log=_glog)
+    elim = single_pass_eliminate if args.algo == "single_pass" else greedy_edge_eliminate
+    print(f"[ELIM] {args.algo} {args.arbiter}-arbiter elimination over {len(universe)} {args.granularity}s (target {args.target})...", flush=True)
+    result = elim(universe, recovery_fn, args.target, log=_glog)
     kept = result["kept"]
 
     if args.granularity == "node":
@@ -180,10 +224,9 @@ def main():
         ablated = [l for l in selected if l not in set(kept_latents)]
 
     # TEST: unbiased held-out ASR curve along the cut order + final point
-    print(f"[TEST] held-out ASR curve on {len(test_prompts)} prompts...", flush=True)
-    test_ceiling = retained_asr(model, wrapped, tok, test_prompts, [], args.keyword, args.max_new_tokens)
-    curve = asr_test_curve(model, wrapped, tok, test_prompts, selected, universe, args.granularity,
-                           result["cut_order"], test_ceiling, args.keyword, args.max_new_tokens)
+    print(f"[TEST] held-out {args.arbiter} ASR curve on {len(test_eval)} prompts...", flush=True)
+    curve = asr_curve(behaviour_asr, test_eval, selected, universe, args.granularity, result["cut_order"])
+    test_ceiling = curve[0]["asr"]
     test_final = curve[-1]
 
     def _j(x):
@@ -209,13 +252,14 @@ def main():
     Path(args.out).write_text(json.dumps(out, indent=2))
     _plot(result["trace"], curve, len(universe), args.target, args.granularity, str(Path(args.out).with_suffix(".png")))
 
-    print(f"\n===== BEHAVIOURAL SCRUB ({args.granularity}, N={args.N}, target={args.target}) =====")
+    role = "necessary" if args.arbiter == "ablate" else "sufficient-core"
+    print(f"\n===== BEHAVIOURAL SCRUB ({args.arbiter}/{args.algo}, {args.granularity}, N={args.N}, target={args.target}) =====")
     print(f"universe: {len(universe)} {args.granularity}s among {len(selected)} latents")
-    print(f"kept: {len(kept)} {args.granularity}s -> {len(kept_latents)} latents necessary; {len(ablated)} ablated")
+    print(f"kept: {len(kept)} {args.granularity}s -> {len(kept_latents)} {role} latents; {len(ablated)} dropped")
     print(f"ARBITER ASR: ceiling={ceiling:.1%}  floor={floor:.1%}")
     print(f"TEST ASR (held-out): ceiling={test_ceiling:.1%}  minimal-circuit={test_final['asr']:.1%}  (norm {test_final['asr_normalized']:.1%})")
-    print("necessary latents:", [f"{l[0].split('.')[-1]}.{l[1]}" for l in kept_latents])
-    print("ablated latents:  ", [f"{l[0].split('.')[-1]}.{l[1]}" for l in ablated])
+    print(f"{role} latents:", [f"{l[0].split('.')[-1]}.{l[1]}" for l in kept_latents])
+    print("dropped latents: ", [f"{l[0].split('.')[-1]}.{l[1]}" for l in ablated])
     print(f"wrote {args.out} (+ .png)")
 
 

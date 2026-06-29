@@ -405,6 +405,43 @@ def greedy_edge_eliminate(edges, recovery_fn, target, log=None, guard=None):
     return {"kept": kept, "cut_order": cut_order, "trace": trace}
 
 
+def single_pass_eliminate(edges, recovery_fn, target, log=None, guard=None):
+    """Single-pass (ACDC-style) elimination -> minimal subset in O(N) recovery_fn evals.
+
+    Visits each element ONCE in the given iteration order; permanently cuts it iff recovery
+    with it (plus all prior commits) severed stays >= `target`, else keeps it. This is the
+    canonical causal-scrubbing prune: start from the full circuit, walk it once, erase what
+    you can. Unlike `greedy_edge_eliminate`'s O(N^2) global re-scan, the result is
+    order-dependent -- the caller is expected to pass `edges` WEAKEST-FIRST (least important
+    tried for removal first), and the order is preserved (NOT re-sorted). Same return
+    contract and `guard`/`log` semantics as `greedy_edge_eliminate`; pure when both None.
+    Events: {"event":"cut"...} per commit, {"event":"keep"...} per retained element,
+    {"event":"done"...} at the end.
+    """
+    edges = list(edges)  # preserve caller order
+    n_edges = len(edges)
+    cut: set = set()
+    cut_order: list = []
+    trace = [{"n_cut": 0, "recovery": recovery_fn(frozenset()), "edge": None}]
+    for e in edges:
+        if guard is not None and not guard(cut, e):
+            continue  # structurally protected -> keep
+        rec = recovery_fn(frozenset(cut | {e}))
+        if rec >= target:
+            cut.add(e)
+            cut_order.append(e)
+            trace.append({"n_cut": len(cut), "recovery": rec, "edge": e})
+            if log:
+                log({"event": "cut", "n_cut": len(cut), "kept": n_edges - len(cut),
+                     "recovery": rec, "edge": e, "n_edges": n_edges})
+        elif log:
+            log({"event": "keep", "edge": e, "recovery": rec, "target": target})
+    kept = [e for e in edges if e not in cut]
+    if log:
+        log({"event": "done", "n_cut": len(cut), "kept": len(kept), "target": target})
+    return {"kept": kept, "cut_order": cut_order, "trace": trace}
+
+
 # --- roles (spec section 11) -----------------------------------------------------
 
 def region_of_positions(full_trigger, full_control, P):

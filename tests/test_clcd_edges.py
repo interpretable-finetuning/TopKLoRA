@@ -17,6 +17,7 @@ from src.clcd.edges import (
     edge_scores_jvp,
     edge_scores_patching,
     greedy_edge_eliminate,
+    single_pass_eliminate,
     grow_edge_guided,
     path_patch_edge,
     scrub_eval,
@@ -303,6 +304,36 @@ def test_greedy_guard_never_orphans_a_node():
     # every kept-graph node still has >= 1 incident edge (no orphans)
     kept_nodes = {lat for edge in out["kept"] for lat in edge}
     assert kept_nodes == {"A", "B", "C", "D"}
+
+
+def test_single_pass_keeps_load_bearing_in_one_pass():
+    # Given the weakest-first order, the single pass must shed A,B,C (recovery stays >=0.6)
+    # and keep D (cutting it drops to 0.5 < 0.6) -- the same minimal subset as the re-scan
+    # greedy, but reached by visiting each element exactly once in the supplied order.
+    out = single_pass_eliminate(["A", "B", "C", "D"], _recovery, target=0.6)
+    assert out["kept"] == ["D"]
+    assert out["cut_order"] == ["A", "B", "C"]
+    assert out["trace"][0] == {"n_cut": 0, "recovery": 1.0, "edge": None}
+    assert out["trace"][-1]["recovery"] >= 0.6
+
+
+def test_single_pass_is_order_dependent_for_substitutable_redundancy():
+    # WHY this matters: single-pass does NOT re-scan, so for substitutable redundancy
+    # (cutting EITHER X or Y is fine, cutting BOTH is fatal) it keeps whichever it visits
+    # LAST and sheds the first -- the result is order-dependent. This is the price of O(N)
+    # vs the re-scan greedy, and the reason the caller must pass elements weakest-first.
+    def rec(cut):
+        return 0.0 if {"X", "Y"} <= set(cut) else 1.0
+
+    keep_y = single_pass_eliminate(["X", "Y"], rec, target=0.5)
+    keep_x = single_pass_eliminate(["Y", "X"], rec, target=0.5)
+    assert keep_y["kept"] == ["Y"] and keep_y["cut_order"] == ["X"]
+    assert keep_x["kept"] == ["X"] and keep_x["cut_order"] == ["Y"]
+
+
+def test_single_pass_target_extremes():
+    assert single_pass_eliminate(list(_LOAD), _recovery, target=0.0)["kept"] == []
+    assert set(single_pass_eliminate(list(_LOAD), _recovery, target=1.0)["kept"]) == {"C", "D"}
 
 
 def test_path_patch_runs_and_is_null_without_contrast(fix):

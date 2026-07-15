@@ -75,17 +75,25 @@ def compute_order(module: str) -> tuple[int, int]:
 def dag_valid(u, v) -> bool:
     """Is edge u->v permitted by A2? u, v are (module, d, p) nodes.
 
-    Valid iff p_v > p_u (later position, attention-mediated) OR
-    (p_v == p_u AND order(m_v) > order(m_u)) (same position, downstream in compute
-    order, residual-mediated). Self-edges and anything backward are forbidden.
+    Valid iff p_v > p_u (later position, attention-mediated) AND v's layer is not
+    earlier than u's (attention can only carry information forward across layers,
+    never from a later layer back to an earlier one), OR p_v == p_u AND
+    order(m_v) > order(m_u) (same position, downstream in compute order,
+    residual-mediated). Self-edges and anything backward are forbidden.
+
+    The layer guard on the p_v > p_u branch is a no-op within a single layer
+    (so single-layer organisms are unaffected) but is essential across layers:
+    without it the bare position test admits backward-in-layer edges
+    (e.g. layer 23 -> layer 16 whenever p_v > p_u).
     """
     (_, _, pu), (_, _, pv) = u, v
     if u == v:
         return False
+    ou, ov = compute_order(u[0]), compute_order(v[0])
     if pv > pu:
-        return True
+        return ov[0] >= ou[0]
     if pv == pu:
-        return compute_order(v[0]) > compute_order(u[0])
+        return ov > ou
     return False
 
 
@@ -405,7 +413,8 @@ def greedy_edge_eliminate(edges, recovery_fn, target, log=None, guard=None):
     return {"kept": kept, "cut_order": cut_order, "trace": trace}
 
 
-def single_pass_eliminate(edges, recovery_fn, target, log=None, guard=None):
+def single_pass_eliminate(edges, recovery_fn, target, log=None, guard=None,
+                          checkpoint_fn=None, resume=None):
     """Single-pass (ACDC-style) elimination -> minimal subset in O(N) recovery_fn evals.
 
     Visits each element ONCE in the given iteration order; permanently cuts it iff recovery
@@ -417,14 +426,33 @@ def single_pass_eliminate(edges, recovery_fn, target, log=None, guard=None):
     contract and `guard`/`log` semantics as `greedy_edge_eliminate`; pure when both None.
     Events: {"event":"cut"...} per commit, {"event":"keep"...} per retained element,
     {"event":"done"...} at the end.
+
+    Optional crash recovery (opt-in; behaviour is unchanged when both are None):
+    `checkpoint_fn(state)` is called after each element with a JSON-serialisable
+    state = {"processed", "cut", "cut_order", "full_recovery"}; pass a previously-saved
+    state back as `resume` to skip already-decided elements. `edges` and `recovery_fn`
+    MUST be reconstructed identically (same order, same determinism) for resume to be valid.
     """
     edges = list(edges)  # preserve caller order
     n_edges = len(edges)
-    cut: set = set()
-    cut_order: list = []
-    trace = [{"n_cut": 0, "recovery": recovery_fn(frozenset()), "edge": None}]
-    for e in edges:
+    if resume:
+        cut: set = {tuple(e) if isinstance(e, list) else e for e in resume["cut"]}
+        cut_order: list = [tuple(e) if isinstance(e, list) else e for e in resume["cut_order"]]
+        start = resume["processed"]
+        full_rec = resume["full_recovery"]
+    else:
+        cut, cut_order, start = set(), [], 0
+        full_rec = recovery_fn(frozenset())
+    trace = [{"n_cut": 0, "recovery": full_rec, "edge": None}]
+    if checkpoint_fn and not resume:
+        checkpoint_fn({"processed": 0, "cut": [], "cut_order": [], "full_recovery": full_rec})
+    for i, e in enumerate(edges):
+        if i < start:
+            continue  # already decided in a prior (checkpointed) run
         if guard is not None and not guard(cut, e):
+            if checkpoint_fn:
+                checkpoint_fn({"processed": i + 1, "cut": list(cut), "cut_order": cut_order,
+                               "full_recovery": full_rec})
             continue  # structurally protected -> keep
         rec = recovery_fn(frozenset(cut | {e}))
         if rec >= target:
@@ -436,6 +464,9 @@ def single_pass_eliminate(edges, recovery_fn, target, log=None, guard=None):
                      "recovery": rec, "edge": e, "n_edges": n_edges})
         elif log:
             log({"event": "keep", "edge": e, "recovery": rec, "target": target})
+        if checkpoint_fn:
+            checkpoint_fn({"processed": i + 1, "cut": list(cut), "cut_order": cut_order,
+                           "full_recovery": full_rec})
     kept = [e for e in edges if e not in cut]
     if log:
         log({"event": "done", "n_cut": len(cut), "kept": len(kept), "target": target})

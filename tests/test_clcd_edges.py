@@ -73,6 +73,23 @@ def test_dag_valid_rules():
     assert not dag_valid(q0, q0)         # self-edge
 
 
+def test_dag_valid_rejects_backward_layer_edges():
+    # source at a LATER layer, dest at an EARLIER layer but a later position:
+    # attention cannot carry info from a later layer back to an earlier one, yet
+    # the bare p_v>p_u test would wrongly admit it.
+    src_layer23_p3 = ("M.layers.23.self_attn.o_proj", 1, 3)
+    dst_layer16_p5 = ("M.layers.16.mlp.down_proj", 2, 5)
+    assert not dag_valid(src_layer23_p3, dst_layer16_p5)  # 23 -> 16 forbidden despite p_v>p_u
+    # same positions, forward in layers: a real attention-mediated edge
+    src_layer16_p3 = ("M.layers.16.self_attn.k_proj", 1, 3)
+    dst_layer23_p5 = ("M.layers.23.mlp.down_proj", 2, 5)
+    assert dag_valid(src_layer16_p3, dst_layer23_p5)      # 16 -> 23 with p_v>p_u is fine
+    # within a single layer the later-position branch is unchanged
+    same_a = ("M.layers.19.self_attn.k_proj", 1, 3)
+    same_b = ("M.layers.19.self_attn.o_proj", 2, 5)
+    assert dag_valid(same_a, same_b)
+
+
 # --- candidate extraction -------------------------------------------------------
 
 def test_candidate_nodes_threshold_and_cap(fix):
@@ -334,6 +351,44 @@ def test_single_pass_is_order_dependent_for_substitutable_redundancy():
 def test_single_pass_target_extremes():
     assert single_pass_eliminate(list(_LOAD), _recovery, target=0.0)["kept"] == []
     assert set(single_pass_eliminate(list(_LOAD), _recovery, target=1.0)["kept"]) == {"C", "D"}
+
+
+def test_single_pass_resume_reproduces_uninterrupted_run():
+    # WHY this matters: elimination is a 15h sweep, so it checkpoints and must be resumable
+    # after a crash WITHOUT changing the result. A checkpoint that resumes to a different
+    # minimal set would silently corrupt every long run -- so resume MUST be bit-identical to
+    # an uninterrupted pass. Uses (str,int) tuples like the real latent pool and a JSON
+    # round-trip on the checkpoint to prove tuple<->list coercion survives serialisation.
+    import json
+
+    pool = [("m%d" % i, i) for i in range(12)]        # weakest-first
+    strong = {("m3", 3), ("m7", 7), ("m9", 9)}        # cutting any is fatal -> must be kept
+    rec = lambda cut: 0.0 if (set(cut) & strong) else 1.0
+
+    ref = single_pass_eliminate(pool, rec, 1.0)
+
+    saved = {}
+    n = [0]
+
+    class _Stop(Exception):
+        pass
+
+    def rec_crash(cut):                                # die after 5 elements are processed
+        if n[0] >= 6:                                  # +1 for the initial recovery_fn(frozenset())
+            raise _Stop()
+        n[0] += 1
+        return rec(cut)
+
+    try:
+        single_pass_eliminate(pool, rec_crash, 1.0,
+                              checkpoint_fn=lambda s: saved.update(json.loads(json.dumps(s))))
+    except _Stop:
+        pass
+    assert saved["processed"] == 5                     # crashed mid-sweep, checkpoint persisted
+    resumed = single_pass_eliminate(pool, rec, 1.0, resume=saved)
+
+    assert resumed["kept"] == ref["kept"] == list(sorted(strong))
+    assert resumed["cut_order"] == ref["cut_order"]
 
 
 def test_path_patch_runs_and_is_null_without_contrast(fix):

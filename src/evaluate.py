@@ -301,6 +301,26 @@ def _batched(items: List[str], batch_size: int) -> Iterable[List[str]]:
         yield items[i : i + batch_size]
 
 
+def _length_bucketed_batches(prompts, tokenizer, max_new_tokens, max_batch_tokens, max_bs):
+    """Sort prompt indices by token length and greedily pack batches so that
+    count * (longest_prompt_in_batch + max_new_tokens) <= max_batch_tokens. Long outliers
+    end up alone (batch of 1); short prompts pack up to max_bs. Yields lists of original
+    indices so callers can restore input order. Bounds peak KV-cache memory regardless of a
+    few very long prompts (e.g. No-Robots) mixed with many short ones."""
+    lengths = [len(tokenizer(p, truncation=False)["input_ids"]) for p in prompts]
+    order = sorted(range(len(prompts)), key=lambda i: lengths[i])
+    batch, longest = [], 0
+    for i in order:
+        cand = max(longest, lengths[i])
+        if batch and ((len(batch) + 1) * (cand + max_new_tokens) > max_batch_tokens or len(batch) >= max_bs):
+            yield batch
+            batch, longest = [], 0
+        batch.append(i)
+        longest = max(longest, lengths[i])
+    if batch:
+        yield batch
+
+
 def generate_responses(
     *,
     model,
@@ -308,14 +328,34 @@ def generate_responses(
     prompts: List[str],
     max_new_tokens: int,
     batch_size: int,
+    max_batch_tokens: int = 0,
+    max_bs: int = 64,
 ) -> List[str]:
-    all_generations: List[str] = []
+    """Greedy generation. If max_batch_tokens>0, use length-bucketed adaptive batching
+    (memory-bounded; batch_size ignored); else fixed chunks of batch_size. Left-padding +
+    greedy decoding make outputs independent of how prompts are grouped, so the two paths
+    agree token-for-token."""
     device = next(model.parameters()).device
-    total_batches = math.ceil(len(prompts) / max(batch_size, 1))
-
-    # Keep this local guard in case another caller mutated padding_side.
     tokenizer.padding_side = "left"
 
+    if max_batch_tokens > 0:
+        results: List[str] = [""] * len(prompts)
+        batches = list(_length_bucketed_batches(prompts, tokenizer, max_new_tokens, max_batch_tokens, max_bs))
+        for idx_batch in tqdm(batches, desc="Generating", leave=False):
+            enc = tokenizer([prompts[i] for i in idx_batch], return_tensors="pt",
+                            padding=True, truncation=False).to(device)
+            with torch.no_grad():
+                generated = model.generate(
+                    **enc, max_new_tokens=max_new_tokens, do_sample=False,
+                    temperature=1.0, top_p=1.0,
+                    pad_token_id=tokenizer.pad_token_id, eos_token_id=tokenizer.eos_token_id)
+            prompt_width = int(enc["input_ids"].shape[1])
+            for j, orig_i in enumerate(idx_batch):
+                results[orig_i] = tokenizer.decode(generated[j, prompt_width:], skip_special_tokens=True)
+        return results
+
+    all_generations: List[str] = []
+    total_batches = math.ceil(len(prompts) / max(batch_size, 1))
     for prompt_batch in tqdm(
         _batched(prompts, batch_size=batch_size),
         total=total_batches,

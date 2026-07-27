@@ -22,7 +22,8 @@ def main():
     paths = sorted({p for g in a.files for p in glob.glob(g)})
     print(f"[judge] {len(paths)} files; loading judge {a.judge_model} once", flush=True)
     for p in paths:
-        d = json.load(open(p))
+        with open(p, "r") as f:
+            d = json.load(f)
         cq, iq = d.get("clean_questions"), d.get("indep_questions")
         changed = False
         for cond, rec in d.get("conditions", {}).items():
@@ -33,7 +34,8 @@ def main():
                 rec["judge_indep"] = local_judge_scores(a.judge_model, iq, rec["indep_gens"], a.device, a.batch_size)
                 changed = True
         if changed:
-            json.dump(d, open(p, "w"), indent=2)
+            with open(p, "w") as f:
+                json.dump(d, f, indent=2)
             row = {c: (d["conditions"][c].get("judge") or {}).get("mean") for c in d["conditions"]}
             print(f"[judge] {p.split('/')[-1]}: alpaca means {row}", flush=True)
     print("[judge] done", flush=True)

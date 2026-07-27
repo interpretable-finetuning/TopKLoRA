@@ -208,16 +208,6 @@ proceeds. There's nowhere it can hide.
 c) ASR insertion (sufficiency)
 
 Operates on the control forward (generate under |TRAINING|). Two ingredients prepared per question:
-- Touches only the circuit's columns at those positions; non-circuit latents fire as normal
-- Continues through every decode step (the callable fires on each new token)
-
-The "ablate at every position" part is why necessity bites so hard: the circuit's contribution is removed from the
-prompt's detector activations, from the propagated suffix state, and from each new token's modulation as generation
-proceeds. There's nowhere it can hide.
-
-c) ASR insertion (sufficiency)
-
-Operates on the control forward (generate under |TRAINING|). Two ingredients prepared per question:
 
 1. src = trigger-run post-gate latents read from one no-grad forward over the trigger prompt
 2. src_map = align_positions(ctrl_ids, trig_ids, tag_baseline) — reverse alignment: for each control position, which

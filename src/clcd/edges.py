@@ -326,9 +326,7 @@ def scrub_eval(model, wrapped, episode, nodes, candidate_edges, cut, a0, a1):
     {"mu": float, "val": {node: float}}.
     """
     cut = set(cut)
-    parents = {v: set() for v in nodes}
-    for (u, v) in candidate_edges:
-        parents[v].add(u)
+    edge_set = set(candidate_edges)
     P = episode.prompt_trigger.shape[1]
     full_plus = torch.cat([episode.prompt_trigger, episode.y_plus], dim=1)
     full_minus = torch.cat([episode.prompt_trigger, episode.y_minus], dim=1)
@@ -342,7 +340,10 @@ def scrub_eval(model, wrapped, episode, nodes, candidate_edges, cut, a0, a1):
                 continue
             m_u, d_u, p_u = u
             if u in computed:
-                value = a0[m_u][0, p_u, d_u] if (u, v) in cut else val[u]
+                if (u, v) in edge_set and (u, v) not in cut:
+                    value = val[u]
+                else:
+                    value = a0[m_u][0, p_u, d_u]
             else:
                 value = a1[m_u][0, p_u, d_u]  # downstream/parallel: trigger (no causal effect on v)
             by_mod.setdefault(m_u, []).append((d_u, p_u, float(value)))

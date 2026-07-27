@@ -312,6 +312,11 @@ def _length_bucketed_batches(prompts, tokenizer, max_new_tokens, max_batch_token
     batch, longest = [], 0
     for i in order:
         cand = max(longest, lengths[i])
+        if lengths[i] + max_new_tokens > max_batch_tokens:
+            raise ValueError(
+                f"Prompt index {i} requires {lengths[i]} + {max_new_tokens} tokens, "
+                f"which exceeds max_batch_tokens={max_batch_tokens}."
+            )
         if batch and ((len(batch) + 1) * (cand + max_new_tokens) > max_batch_tokens or len(batch) >= max_bs):
             yield batch
             batch, longest = [], 0

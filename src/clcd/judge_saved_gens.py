@@ -8,7 +8,6 @@ import argparse
 import glob
 import json
 
-import torch
 from src.clcd.exp_surgical_removal import local_judge_scores
 
 

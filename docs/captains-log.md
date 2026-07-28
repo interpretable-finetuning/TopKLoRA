@@ -913,6 +913,74 @@ miss. That is the first design we have had that could actually falsify H1 rather
 
 ---
 
+## Exp-7 — Payload-mass concentration (the coalition metric) — CONTROL DONE · 2026-07-29
+
+### Why it exists
+From the SHAP/coalition review: TopK-LoRA computes Δ = Σᵢ aᵢdᵢ and the backdoor fires when the
+payload logit clears a margin, so it is a **weighted voting game** and redundancy is the *number of
+minimal winning coalitions*, not decoder parallelism. That is why Exp-2's pairwise-cosine closure
+failed 15/18 (many *disjoint* subsets clear the same margin with no two decoders similar), and why
+Exp-5's ortho/redund arms optimized the wrong statistic. The right object is the distribution of
+per-latent payload contributions **{aᵢ⟨u_payload, dᵢ⟩}**: concentrated ⇒ few winning coalitions ⇒
+removable; spread ⇒ hydra. This was item 3 of the strategic review; items 1–2 were run first.
+
+### Metric
+`w_pay_i = mean over (prompt, payload position p) of z_i(p−1)·⟨d_i, u_{y_p}⟩`, residual writers
+(`o_proj`/`down_proj`) only — they alone write d_model into the shared residual basis.
+`d_i` is the **raw** decoder column (magnitude is part of the contribution, so not normalized);
+`u` is the final-norm-folded normalized tied-embedding direction of the **realized** payload token;
+`z_i(p−1)` is the post-TopK activation at the position that *predicts* `y_p` — the off-by-one is
+load-bearing and getting it wrong would silently corrupt the metric.
+`scripts/payload_concentration.py`. Cost: **~1 min for 6 organisms**, no generation, no ablation.
+Stable in n: N=3 and N=50 give n90 = 38 vs 39 on the same organism.
+
+### Control design
+`route_l1523_s4*` (known-separable by construction) vs `a0_l1523_s4*` (in-wave normally-trained
+twins — same wave, same settings, same seeds; **routing is the only difference**).
+
+### Result
+| arm | n90 | n99 | top-50 mass | PR | planted-partition mass (chance 0.125) |
+|---|---|---|---|---|---|
+| route s42/43/44 | 39 / 27 / 35 | 108 / 81 / 83 | .936 / .973 / .966 | 24.5 / 13.5 / 21.5 | **.863 / .940 / .959** |
+| a0 s42/43/44 | 62 / 65 / 67 | 204 / 175 / 176 | .877 / .862 / .854 | 6.5 / 12.0 / 12.2 | .109 / .055 / .169 |
+
+- **Prediction 1 (concentration) — CONFIRMED.** n90 34±6 (route) vs 65±3 (a0), **no overlap**;
+  same direction on n99 (91 vs 185) and top-50 mass (.958 vs .864).
+- **Prediction 3 (localization) — CONFIRMED, and the negative half matters.** Route puts 86–96% of
+  positive payload mass in the planted partition against a 12.5% chance level; a0 sits **at or below
+  chance** (.055–.169), i.e. the metric does not hallucinate mass in latents `[0:8)` when nothing was
+  routed there.
+- **⚠️ Prediction 1's PR sub-claim — FALSIFIED, reported not dropped.** I pre-registered *lower*
+  participation ratio for route; the observed direction is **reversed** (route 19.8, a0 10.2).
+  Diagnosis: PR is dominated by the largest components, so a0's profile — a few huge contributors
+  plus a **heavy tail** — scores *low* PR while needing *many* latents to reach 90%. Route's ~30
+  comparably-sized contributors with a short tail score higher PR but lower n90. The heavy tail is
+  precisely the hydra signature, so n90/n99 measure the thing the coalition claim is about and PR
+  does not. PR should be dropped from the metric, but on this reasoning, not because it disagreed.
+- **Prediction 2 (calibration) — PARTIAL.** The behavioural both_K=50 sits *between* n90 (34) and
+  n99 (91), so the metric brackets the verified circuit size but is not a sharp estimator of it.
+
+### Verdict
+The metric separates a known-separable organism from its known-hydra twin cleanly and cheaply
+(~10s/organism, weights + activations only, no generation), and passes both halves of the
+localization control. **It survives the calibration control that would have killed it.**
+
+### ⚠️ What this is NOT
+This is a **control on organisms where the answer is already known**, not the experiment. It does
+not yet show concentration predicts leaks on the ~30 natural organisms — that is the actual test and
+it is **not run**, because it needs a design decision that is exactly the trap Wave-1 fell into:
+circuit size confounds concentration with leak rate. Options: matched-K cells only / K as covariate /
+concentration on a fixed top-50 prefix (K-free by construction, preferred). **Open — needs a call.**
+Other caveats: 3 seeds/arm (no meaningful significance test at n=3; the n90 separation is argued
+from non-overlap, not a p-value), one family (`l1523`), and route-vs-a0 differ by routing, so this
+shows the metric tracks *routing-induced* separability, not separability in general.
+
+### Artifacts
+`scripts/payload_concentration.py`, `scripts/payload_concentration_control.sh`,
+`clcd_results/exp6/payload_conc_{route,a0}.json`, `logs/exp6/payload_conc_*.out`.
+
+---
+
 ## Cross-cutting standing items (not experiments — do not lose)
 
 - **No discovery method fixes out-of-sample necessity** — the 4.7×/12–17-pt price of complete removal

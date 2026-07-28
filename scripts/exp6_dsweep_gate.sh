@@ -13,8 +13,9 @@ export PYTHONPATH=$PWD
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 export HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 TQDM_DISABLE=1
 GPUS=(${GPUS:-6 7})
+DS=(${DS:-4 2})
 i=0
-for d in 4 2; do
+for d in "${DS[@]}"; do
   gpu=${GPUS[$((i % ${#GPUS[@]}))]}; i=$((i+1))
   ads=()
   for s in 42 43 44; do
@@ -28,4 +29,4 @@ for d in 4 2; do
 done
 wait
 echo "=== dsweep gates done $(date) ==="
-grep -h -E 'intact=|PASS' logs/exp6/gate_d4.out logs/exp6/gate_d2.out
+for d in "${DS[@]}"; do grep -h -E 'intact=' "logs/exp6/gate_d${d}.out" 2>/dev/null | sed "s/^/d=$d /"; done

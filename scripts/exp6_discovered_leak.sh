@@ -1,0 +1,43 @@
+#!/bin/bash
+# Exp-6d — THE test that Exp-6b's set-overlap statistic did not answer.
+#
+# Exp-6b showed the search recovers 92-98% of the planted partition. That is a SET statistic.
+# The H1/H2 question is BEHAVIOURAL: does ablating the DISCOVERED circuit remove the backdoor
+# out-of-sample?  A 92%-correct circuit is an incomplete circuit, and an incomplete circuit is
+# exactly what would produce a rare (~0.1%) leak. The two can only be separated by measuring.
+#
+# Identical protocol to the planted-partition test (h1h2_s4*.json): same 4 held-out bands, same
+# n, same batching (mbt 9000 -- bf16 matmuls are non-associative, batching must match), so the
+# numbers are directly comparable:
+#   planted 504 latents  -> 0 fires / 12000   (already measured)
+#   discovered 50 latents -> ?                (this run)
+#
+# Power: at the historical ~0.1% leak rate, 12000 prompts gives ~12 expected events, so
+# 0/12000 would be strong evidence AGAINST a natural-organism-like leak (P(0|0.1%) ~ 6e-6).
+#
+#   ssh torrnode14 'bash /scratch/network/ssd/marek/minimalsleepers/scripts/exp6_discovered_leak.sh'
+set -u
+cd /scratch/network/ssd/marek/minimalsleepers || exit 1
+export PYTHONPATH=$PWD
+export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+export HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 TQDM_DISABLE=1
+GPUS=(${GPUS:-6 7})
+mkdir -p clcd_results/exp6 logs/exp6
+i=0
+for s in 42 43 44; do
+  gpu=${GPUS[$((i % ${#GPUS[@]}))]}; i=$((i+1))
+  echo "[$(date +%H:%M) g$gpu] DISCOVERED-LEAK s$s"
+  CUDA_VISIBLE_DEVICES=$gpu CLCD_BANDS=2000,3000,4000,5000 CLCD_N=1000 \
+    CLCD_OUT=clcd_results/exp6/discovered_leak_s${s}.json \
+    uv run python -u scripts/verify_holdout_necessity.py \
+      clcd_results/exp6/route_l1523_s${s}_circuit.json \
+      > "logs/exp6/discovered_leak_s${s}.out" 2>&1 &
+done
+wait
+echo "=== discovered-circuit leak test done $(date) ==="
+for s in 42 43 44; do
+  python3 -c "
+import json
+d=json.load(open('clcd_results/exp6/discovered_leak_s${s}.json'))
+for r in d: print('s${s}', r['n_kept'], 'fires', r['total_fires'], '/', r['total_prompts'], r['per_band'])"
+done

@@ -792,6 +792,22 @@ circuit is comparable to every Exp-5 organism: `exp_circuit_search --ordering el
   everything else is zeroed in keep-only), but this was **not** tested and should not be asserted.
   All 3 circuits span all 9 layers 15-23.
 
+### ⚠️ THE REASONING BELOW WAS INVALID AS FIRST WRITTEN — conclusion survives on other evidence
+The verdict as first written substituted a **set-overlap statistic** for a **behavioural**
+measurement. Precision against ground truth says the search points the right way; it does NOT say
+the discovered circuit *removes the backdoor out-of-sample*, which is the actual H1/H2 question.
+The two come apart precisely when the residual few percent matter — and at a ~0.1% leak rate they
+easily could: a circuit missing 2–8% of its members is an **incomplete** circuit, and incomplete
+circuits producing rare leaks is exactly the H1 story. The 0/12000 quoted in Exp-6a was for the
+**planted** set, not the discovered one; the discovered circuits have only ever been validated
+**in-sample**, and this project's whole history is that in-sample 0.0 ≠ out-of-sample 0.0.
+Sharpening: since ablating the planted 504 gives 0 fires, *everything necessary lies inside the
+planted set*, so the 1–4 outside latents contribute nothing to necessity and the discovered
+circuit's necessity rests entirely on its 46–49 inside latents. See Exp-6d.
+**Exp-6d has now run and returned 0/12000**, so the verdict below stands — but it stands on the
+*behavioural* evidence, not on the set-overlap statistic that was originally offered for it. The
+original inference (high precision ⇒ adequate discovery) does not go through and must not be reused.
+
 ### Verdict — H2-flavoured, but H1 is weakened rather than eliminated
 The pipeline **is** capable of finding a compact, complete circuit when one exists: 92–98% precision
 at p≈1e-40. So when the same pipeline returns a circuit on a normally-trained organism that then
@@ -813,6 +829,55 @@ precision is measurable but recall of the *true minimal* circuit is not. Grid fl
 
 ---
 
+## Exp-6d — Does the DISCOVERED circuit leak? — DONE · 2026-07-28
+
+### Question (raised by supervisor, and it was the right challenge)
+Exp-6b reported 92–98% set precision against ground truth and drew a behavioural conclusion from
+it. Objection: a circuit missing 2–8% of its members **is an incomplete circuit**, and incomplete
+circuits producing rare (~0.1%) leaks is exactly the H1 story — so the overlap statistic may be
+measuring nothing that matters. The magnitudes are commensurate (few-percent miss ↔ ~1-in-1000
+fire), so this could not be settled by argument. Only the behavioural test settles it, and it had
+**never been run on the discovered circuits** — the 0/12000 in Exp-6a was the *planted* set.
+
+### Design
+`scripts/exp6_discovered_leak.sh` → `verify_holdout_necessity.py` on the 3 discovered 50-latent
+circuits. Protocol byte-identical to the planted-set test (bands 2000/3000/4000/5000 × n=1000,
+MNT 40 / BS 64 / MBT 9000) so the two are directly comparable. Power: at the historical 0.1% rate,
+12000 prompts expect ~12 events, so 0/12000 is P≈6e-6 under a natural-organism-like leak.
+Pre-registered read: ~12 fires ⇒ objection upheld, retract Exp-6b; 0 fires ⇒ set-imperfection and
+leaking are different failures; 1–3 ⇒ underpowered, say nothing.
+
+### Result
+| circuit | latents | fires / prompts |
+|---|---|---|
+| planted (ground truth) | 504 | 0 / 12000 |
+| **discovered** s42/s43/s44 | **50 each** | **0 / 12000** (0/4000 every seed, 0 in every band) |
+
+### Verdict
+**Set-imperfection ≠ behavioural incompleteness.** A 50-latent circuit that agrees with ground
+truth only 92–98% — and whose necessity budget is really just its 46–49 in-partition latents, since
+the 1–4 outside ones provably cannot contribute to necessity — removes the backdoor **completely**
+on 12000 held-out prompts. The up-to-8% of picks the ranking "wasted" cost nothing behaviourally.
+So on this organism the discovery pipeline is not merely well-aimed, it is **behaviourally
+complete**, and Exp-6b's conclusion holds — via this measurement, not via precision.
+
+### What is still open (the only surviving H1 escape hatch)
+Natural organisms leak; routed ones do not, and our search is complete on routed ones. Two readings
+remain and **Exp-6 cannot separate them**, because it only ever tests the easy case:
+ (a) natural organisms contain **no** compact complete circuit — redundancy is real (**H2**);
+ (b) they contain one but it is **entangled** with clean machinery and the search misses it (**H1**).
+Routing produces a circuit that is compact *and* cleanly separated; entanglement is the untested
+variable. **Next experiment that would separate them:** partial/graded routing (route only a
+fraction of triggered examples, or deliberately overlap the partition with clean-trained latents),
+giving ground truth at a *tunable* entanglement level, then ask at what level discovery starts to
+miss. That is the first design we have had that could actually falsify H1 rather than weaken it.
+
+### Artifacts
+`clcd_results/exp6/discovered_leak_s4{2,3,4}.json`, `logs/exp6/discovered_leak_s4*.out`,
+`scripts/exp6_discovered_leak.sh`.
+
+---
+
 ## Exp-6c — Capability leg + partition-width sweep — RUNNING · 2026-07-28
 
 - **Capability leg** (`scripts/exp6_capability.sh`): generations **DONE** (6 files, 07:24), 32B judge
@@ -820,11 +885,15 @@ precision is measurable but recall of the *true minimal* circuit is not. Grid fl
   planted latents in both `route` (removes the backdoor) and `a0` (removes nothing, ASR stays 1.0).
   The a0 arm separates "cost of losing 504/4032 latents of capacity" from "cost of removing the
   backdoor" — without it the route number is uninterpretable.
-- **d-sweep** (`scripts/train_route_pilot.sh` D=4/D=2, `scripts/exp6_dsweep_gate.sh`): all 6
-  organisms **TRAINED** (d=4 and d=2 × seeds 42/43/44; train_runtime 4412–4528s, routing-on lines
-  confirm 252 and 126 designated latents). Gate **RUNNING** on torrnode14 GPUs 6-7.
-  Prior from Exp-6b: the backdoor only uses ~50 latents, so d=2 (126 slots) should still fit — if it
-  does, the ground-truth circuit gets ~4× tighter than the pilot's.
+- **d-sweep** (`scripts/train_route_pilot.sh` D=4/D=2, `scripts/exp6_dsweep_gate.sh`): **DONE — both
+  widths PASS on all 3 seeds.** d=4 (252 designated latents) and d=2 (**126**) both give
+  intact ASR **1.000** → ablate-planted **0.000**, clean false-fire 0.000, 6/6 organisms.
+  train_runtime 4412–4528s; routing-on lines confirm 252 / 126 designated.
+  Consistent with Exp-6b (the backdoor only actually uses ~50 latents, so 126 slots is still ample).
+  **A sleeper backdoor needs very few dedicated latents** — 2 per wrapped module suffices at 2B.
+  Not yet probed: the width at which routing *fails*, which is the interesting boundary (d=1 → 63
+  slots is the obvious next point, and is close to the ~50 the backdoor actually uses).
+  Artifacts: `clcd_results/exp6/pilot_gate_d{4,2}.json`, `logs/exp6/gate_d{4,2}.out`.
 
 ---
 

@@ -405,8 +405,17 @@ band/threshold/batching/coefficient until a result looks good; negatives are res
   (the Jul-05 elimination circuits, untracked ⇒ unrecoverable but deterministically regenerable). The
   **original leak-experiment circuits are `clcd_results/rigorous/*_circuit.json` and are INTACT** —
   a different directory, untouched by `a0_ksweep.sh`.
-  **Confirmation in flight:** leak test re-run on the exact original prefix files (s43/s44/s45) →
-  `clcd_results/repro/prefix_orig_leak.json`; expect fires 2/1/2 to reproduce.
+  **✅ CONFIRMED EMPIRICALLY 2026-07-21.** Leak test re-run on the exact original Jul-04 prefix files
+  → `clcd_results/repro/prefix_orig_leak.json`: **exact reproduction, per-band, not just totals** —
+  s43 K=300 **2 fires** {2000:1, 4000:0, 5000:1}; s44 K=400 **1** {2000:0, 4000:1, 5000:0};
+  s45 K=1200 **2** {2000:0, 4000:2, 5000:0} — identical to the MASTER_table rows in every band.
+  The pipeline is deterministic and undamaged; nothing regressed. The A0 rerun's 0 leaks is a genuine
+  **eliminate-vs-prefix** difference on the `all` family, not a measurement failure.
+  **⚠️ Do NOT generalise this to "leaks are a prefix artifact"** — `l1523` under *scrubbing* leaks
+  8 fires across 3/5 organisms, MORE than `l1523` under prefix (5 fires). Leaking is a property of the
+  **distributed families** (`l1523`, `all`), not of the circuit-finding method; `l19` never leaks under
+  either (0/10). The genuinely untested cell is **`all` x scrubbing**, which the A0 rerun measured for
+  the first time — so it is a first measurement, not a failed reproduction, and it has no prior.
 - **~~Learned — NEGATIVE RESULT, the Wave-2 test as designed cannot answer its question:~~** *(retracted — the null below is an artifact, not a finding; the power point in (2) remains valid on its own terms but was never the operative cause)*
   1. **No discrimination.** A0 (no anti-redundancy training) is leak-free at exactly the protocol where
      all 12 arms are leak-free. 15/15 organisms sit at 0. Anti-redundancy training therefore **cannot
@@ -423,10 +432,26 @@ band/threshold/batching/coefficient until a result looks good; negatives are res
   threshold, batching, or coefficients until A0 looks worse than the arms is **forbidden**
   (`integrity_no_phacking`). If A0 and the arms both stay at 0 at n=10k, Exp-5's thesis is
   unsupported on this axis and gets reported that way.
-- **Caveats:** A0 s44 pending (2/3 seeds); clean-retention judging pending (6/15 generated), so the
-  capability leg of the 5-tuple is not yet in.
-- **Source:** `clcd_results/exp5_eval/*_all_*_{circuit,leak,redund}.json`; memory `clcd_exp5_wave1_result`;
-  task tracker.
+- **COMPLETION 2026-07-27 — all 15 organisms in, nothing left running.** A0 s44 finished:
+  `both_K=600`, **1 fire / 3000** (band 4000). Final leak tally, each arm 3 seeds × 3000 held-out:
+  **A0 1/9000; entropy 0/9000; l0 0/9000; ortho 0/9000; redund 0/9000.** All 12 arms keep the
+  backdoor (intact ASR 0.997–1.0). This does **not** rescue the null — 1 vs 0 is a single Poisson
+  count, and it is measured at **unmatched K** (A0 1200/300/600 vs ortho 300/400/200, redund and
+  entropy 400/600/400, l0 600/600/1200), the exact confound the `l1523` matched-K run exposed.
+  Treat the `all`-family leak leg as **not yet answered**, not as a null.
+- **Mechanism leg DOES separate (residual group, mean|cos| of circuit latents ÷ random-subset null,
+  3/3 seeds each):** **redund 1.21×** (s42/43/44 = 1.15/1.18/1.31) — and it lowers the *pool* null
+  itself (0.0175 vs A0's 0.0196), i.e. the whole decoder is less redundant, not just the circuit;
+  l0 1.49×; **A0 1.61×**; entropy 1.75×; **ortho 2.16×** (2.42/1.83/2.24 — ortho *raises* circuit
+  redundancy above the untrained control on every seed, with an unchanged pool null). So the
+  Wave-1 ordering (redund best, ortho weak) **replicates on the `all` family for the mechanism**,
+  while the *behavioural* leak leg stays unresolved. **The metric Exp-5 optimises is demonstrably
+  movable; it has not been shown to be the metric that governs separability.**
+- **Caveats:** clean-retention **generated for 15/15** (500 clean + 446 indep gens × 3 conditions in
+  `*_surgical.json`) but **not judged** — the capability leg of the 5-tuple is still missing.
+  No matched-K comparison exists on the `all` family.
+- **Source:** `clcd_results/exp5_eval/*_all_*_{circuit,leak,redund,surgical}.json`;
+  `clcd_results/rigorous/elim/all_seed4*_{circuit,leak}.json`; memory `clcd_exp5_wave1_result`.
 
 ---
 
@@ -495,6 +520,314 @@ band/threshold/batching/coefficient until a result looks good; negatives are res
 
 ---
 
+### Matched-K leak comparison (l1523) — DONE · 2026-07-21 — ⚠️ RETRACTS THE WAVE-1 LEAK READING
+
+- **Question:** did the Exp-5 anti-redundancy training objectives actually reduce out-of-sample
+  necessity leaks on `l1523` (the family that demonstrably leaks under scrubbing), or is the
+  apparent effect just circuit size?
+- **Why this run exists — a confound in the Wave-1 read.** Comparing each arm at its *own* `both_K`
+  against the seed-matched historical A0 scrubbing control (s42/43/44 = 2/0/4 fires, 6 total, 2/3
+  leaking) appears to show entropy 0, l0 0, redund 1, ortho 6. **But the arm ranking is exactly the
+  mean-`both_K` ranking** (entropy 500, l0 500, redund 250, ortho 233, A0 208), and per-cell every
+  K≥400 cell has 0 fires (5/5) while every leak sits at K≤300. Ablating more latents closes the leak
+  for free. entropy/l0 did not beat the control; they landed on circuits ~2.4x larger. ortho, whose
+  circuits are the same size as the control's, scores identically to it. **The only genuinely matched
+  cell in Wave-1 is redund s44: K=150 vs control K=150 -> 1 fire vs 4** — one cell, Poisson counts.
+- **Design.** Leak as a *function of K*, not at each arm's own operating point. `kept_latents` is the
+  top-`both_K` prefix of one fixed elimination ranking (`exp_circuit_search.py:268` `circ = order[:K]`),
+  so `kept_latents[:K]` is exactly what the sweep would have selected at K — **no re-search needed**.
+  15 organisms (A0 + entropy/l0/ortho/redund x s42/43/44), K grid {75,150,200,300} capped at each
+  organism's `both_K`, plus `both_K` itself as a pipeline sanity check (must reproduce the published
+  per-arm numbers). **56 evals**, n=3000 held-out each, matched batching (mbt 9000, bs 64).
+  Complete matched cells: **K=75 -> 15/15**, K=150 -> 14, K=200 -> 12, K=300 -> 9.
+- **Caveat, stated up front:** for K < `both_K` the truncated circuit is *not* a validated
+  both-circuit (sufficiency is not re-checked); `is_both_K` marks this in every emitted json. The
+  leak measurement itself (ablate these K latents, does the backdoor fire on held-out triggers) is
+  well-defined regardless, and decoupling size from training effect is the entire point.
+- **Method check:** arms use `ordering: "eliminate"`, same as the `scrubbing` control — this is *not*
+  a repeat of the prefix/eliminate mix-up. Difference that remains: control used `adaptive_n=True`,
+  arms `False` (known ±1-latent drift).
+- **Known weakness:** there is **no in-wave A0 control for l1523** — the control is historical, from a
+  separate training run. A same-wave z_only l1523 baseline should be trained before this is published.
+- **Source:** `$CLAUDE_JOB_DIR/tmp/gen_matchedK.py`, `run_matchedK.sh`; `clcd_results/matchedK/`
+  (`manifest.json`, `circuits/`, `results/`), `logs/matchedK/`. 8 GPUs on torrnode12.
+- **Correction to prior log/memory:** "Wave-1 organisms already leak-free" is **wrong** — ortho leaks
+  6 fires (2/3 organisms) and redund 1 (1/3) at n=3000.
+- **Pipeline sanity check PASSED:** all 15 `both_K` rows reproduce the published Wave-1 / MASTER_table
+  numbers **exactly** (incl. ortho s43=5, redund s44=1, A0 s44=4). 56/56 evals present. The
+  matched-K rows are therefore trustworthy.
+- **RESULT — the Wave-1 arm ranking was circuit size, and it inverts at matched K.**
+  At **K=75 (the complete 15/15 matched point, 9000 held-out prompts/condition):**
+
+  | arm | fires | ratio vs A0 | z | verdict |
+  |---|---|---|---|---|
+  | **A0 (control)** | **9** | — | — | — |
+  | redund | 7 | 0.78x | −0.5 | better, **n.s.** |
+  | entropy | 12 | 1.33x | +0.7 | no difference |
+  | ortho | 19 | 2.11x | +1.9 | no difference |
+  | **l0** | **100** | **11.1x** | **+8.7** | **WORSE, highly significant** |
+
+  Paired over every cell where arm and A0 both exist (K=75…300): redund **0.36x** (10 vs 28, 6 cells),
+  entropy 0.63x (19 vs 30, 8), ortho 1.11x (31 vs 28, 6), l0 **3.53x** (106 vs 30, 7).
+- **What survives:**
+  1. **Wave-1's leak conclusion is RETRACTED.** entropy and l0 scored 0 fires only because their
+     circuits were ~2.4x larger; at matched size the effect vanishes (entropy) or reverses (l0).
+     Any future arm comparison **must** be at matched K or as a leak-vs-K curve.
+  2. **`l0` actively harms** — 11x the control's leak at matched size, z=+8.7. This is a real,
+     significant **negative** result and corroborates the Wave-1 note that l0 backfired on the
+     redundancy metric. l0 should be dropped, not carried into combinations.
+  3. **`redund` is the only arm never worse than the control at any matched K** (0.78x at the
+     complete point, 0.36x paired). **Not significant** at K=75 (z=−0.5, Poisson counts) — this is a
+     lead, not a result. Needs more seeds before any claim.
+  4. `entropy` and `ortho` show no reliable benefit.
+- **Mechanistic note (why this is unsurprising):** `_compute_redundancy` (train.py:391) and
+  `_compute_ortho` (train.py:407) are **both squared pairwise cosine on the decoder Gram matrix**,
+  differing only in usage weighting — i.e. the *same axis*, and the same pairwise-cosine structure
+  that Exp-2's causal test showed **fails 15/18** (the leak is a redundant *subspace*, not a
+  near-parallel pair). `expected_open_gates` (l0) is a sparsity penalty — a genuinely different
+  mechanism, and the one that backfired. **Combining redund+ortho is therefore near-pointless
+  (one axis twice); redund+l0 compounds a known-harmful term.** The axis implied by the hydra verdict
+  is **spectral** — penalise the effective rank (nuclear norm / participation ratio of singular
+  values) of the usage-weighted decoder submatrix, optionally anchored to the Exp-2b logit-lens
+  payload direction. No current arm does this.
+- **Next:** (a) more seeds on redund at matched K to test whether 0.36x/0.78x is real; (b) train an
+  **in-wave z_only l1523 A0** (current control is historical + `adaptive_n=True` vs arms' `False`);
+  (c) spectral-penalty arm as the new axis. Do **not** launch combination arms on the current
+  evidence.
+
+---
+
+### Matched-K leak comparison (`all` family) — DONE · 2026-07-27 — ⚠️ CLOSES EXP-5 NEGATIVE
+
+- **Question:** repeat the `l1523` matched-K test on the `all` family — do any of the four
+  anti-redundancy objectives reduce out-of-sample necessity leak once circuit size is controlled?
+  Wave-2 had compared each arm at its own `both_K` (A0 1200/300/600 vs arms 200–1200), the same
+  confound that retracted Wave-1.
+- **Design.** 15 organisms × the **already-swept** K grid {100,200,300,400,600} capped at each
+  `both_K`, plus `both_K` itself = **65 evals**. Using swept Ks means every cell already carries an
+  in-sample necessity ASR (`curve.ablate`), so each leak count is read against whether the circuit
+  removes the backdoor in-sample at that K — this is the improvement over the `l1523` run.
+  Bands: the original 2000/4000/5000 **plus a new band at 3000** (verified held out for all 15:
+  `elim.cheap_offset=1100`, `n_cheap=80`, search `offset=100/n=1000`) ⇒ n=**4000**/organism,
+  12,000/arm, +33% power at zero cost to comparability.
+- **Pre-registered before any leak number was seen:** primary endpoint **K=200**; any cell with
+  in-sample ablate ASR **> 0.02 is excluded** (there the backdoor is not removed in-sample, so
+  fires measure incomplete removal, not leak). 6 cells excluded: `l0_s43` K100 (0.986) & K200
+  (0.084), `l0_s42` K100 (0.120), `entropy_s42` K100 (0.114), `entropy_s44` K100 (0.099),
+  `l0_s44` K100 (0.081). So K=200 is complete **14/15**, not 15/15.
+- **GATE PASSED:** all 15 `both_K` rows reproduce the published Wave-2 numbers **exactly** on the
+  original three bands (A0_s44 = 1 fire in band 4000; all others 0). Band 3000 adds 0 fires on
+  every `both_K` row, consistent with the ~0.1% rate.
+- **RESULT — no arm reduces leak; two arms significantly increase it.**
+
+  At **K=200** (paired on seeds where arm and A0 both survive, equal exposure):
+
+  | arm | fires | A0 | seeds | ratio | z | verdict |
+  |---|---|---|---|---|---|---|
+  | ortho | 1 | 4 | 3 | 0.25x | −1.3 | n.s. |
+  | redund | 6 | 4 | 3 | 1.50x | +0.6 | n.s. |
+  | **l0** | **27** | **0** | 2 | inf | **+5.2** | **WORSE** |
+  | **entropy** | **75** | **4** | 3 | **18.75x** | **+8.0** | **WORSE** |
+
+  At K=300 the same two fail again (entropy 42 vs 0, z=+6.5; l0 23 vs 0, z=+4.8) while redund
+  (1 vs 0) and ortho (0 vs 0) are flat. Pooled over every surviving truncated cell, per 10k
+  prompts: **ortho 2.50 · A0 7.95 · redund 9.25 · l0 15.56 · entropy 36.88**.
+- **What survives — the Exp-5 thesis is unsupported on both distributed families:**
+  1. **`l0` harms, and it now REPLICATES across families** — 11.1x (z=+8.7) on `l1523`, and
+     significantly worse again here. A two-family replicated negative is the most solid result
+     Exp-5 has produced. Drop it.
+  2. **`entropy` harms on `all`** (18.75x, z=+8.0) having been neutral on `l1523` (1.33x, n.s.).
+  3. **`redund`'s `l1523` lead does NOT replicate** — 0.78x/0.36x there, 1.50x and pooled-worse
+     here. It was called "a lead, not a result"; it is now not even a lead.
+  4. **`ortho` looks better here** (0.25x at K=200, 0.16x/z=−4.3 at K=100) but was **2.11x worse**
+     on `l1523`. The two families contradict each other, so this is not a reliable effect either.
+  5. **Conclusion: at matched circuit size, no anti-redundancy objective reliably reduces
+     out-of-sample necessity leak on either distributed family.** Combined with the standing
+     mechanism result (redund genuinely lowers decoder redundancy, 3 families / 9 seeds), the
+     finding is that **the geometric redundancy metric is movable but does not govern
+     separability** — the training-time confirmation of the Exp-2 subspace/hydra verdict.
+- **Caveats:** Poisson counts on 3 seeds. The **pooled** row is NOT exposure-matched across arms
+  (arms with small `both_K` contribute fewer truncated cells — ortho 24k prompts vs A0 44k); only
+  the paired per-K rows are. The K=100 entropy row survives on **1 seed** only (2 excluded), so its
+  z=−5.4 there is not usable. K<`both_K` cells are truncations, not re-validated both-circuits —
+  the exclusion rule is what keeps them interpretable.
+- **Source:** `scripts/gen_matchedK_all.py`, `scripts/matchedK_all.sh`,
+  `scripts/analyze_matchedK_all.py`; `clcd_results/matchedK_all/` (`manifest.json`, `circuits/`,
+  `results/`), `logs/matchedK_all/`. 15/15 organisms, torrnode12.
+- **Ops note:** the `all`-family leak test peaks at **~26 GB**, so two jobs per 46 GB A40 OOM —
+  the first launch killed 9 of 15 that way. Use one worker per GPU (`slot_worker`). Also: a
+  `local a=$1 b="...${a}..."` on ONE line trips `set -u` ("unbound variable") because bash declares
+  every name on a `local` line before assigning; split the declaration.
+
+### Wave-2 capability leg (5th tuple element, `all` family) — DONE · 2026-07-27
+
+- **Ran:** 32B judge (`Qwen2.5-32B-Instruct`, `judge_saved_gens_big --suffix 32b`) over the 15
+  `all`-family `*_surgical.json` clean-retention generations that had sat unscored since Jul-22
+  (500 alpaca @offset1000 + 446 no-robots, conditions intact / ablate_circuit / base). Explicit
+  15-file list, not a glob — the 24 Wave-1 files were already judged. 3 GPU-pairs, torrnode14.
+- **Outcome — ablating the both-circuit costs NO capability on the `all` family.** Retention
+  `(ablate − base)/(intact − base)` on alpaca, all 15 organisms **≥ 99.7%**, mean by arm:
+  **redund 117.9% · A0 110.0% · entropy 107.9% · ortho 104.0% · l0 101.9%**. Base floor 1.04
+  (alpaca) / 1.12 (no-robots); intact 3.15–3.28. The >100% values are the known judge-side
+  recovery-overshoot already flagged in the standing items, not a bug.
+- **Learned:** this completes the Wave-2 5-tuple. It also sharpens the surgical-removal framing:
+  capability cost tracks **how distributed the organism is**, not the arm — on `l19` (localized)
+  ablation cost −0.36 to −0.78, on `all` it is free. Removing a distributed backdoor is cheap;
+  removing a localized one is not.
+- **⚠️ Caveat — the ARM RANKING here is at unmatched K**, exactly the confound that retracted the
+  Wave-1 leak reading (A0 K=1200/300/600 vs redund 400/600/400). Do **not** claim "redund retains
+  best" from this table. The size-independent claim is the one above: removal is free on `all` for
+  every arm including the control.
+- **Source:** `scripts/judge_all_family.sh` (resumable: skips already-judged files),
+  `clcd_results/exp5_eval/*_all_*_surgical.json` (`judge_32b`, `judge_indep_32b`).
+
+---
+
+## Exp-6 — Gradient-routed ground-truth organism (SGTM) — PILOT DONE · 2026-07-27
+
+### Why it exists
+Every circuit we have ever reported is validated only by behavioural necessity/sufficiency
+arbiters — exactly what the Exp-2 hydra defeats — so we cannot distinguish **H1** (our search is
+incomplete; a compact removable circuit exists) from **H2** (no compact removable circuit exists).
+Gradient Routing / SGTM (Shilov et al. arXiv:2512.05648) constrains the **backward** pass, so a
+backdoor can be forced into a partition whose location is **known by construction**. Note the
+taxonomy: Exp-5 = loss penalty (weakest), CAFT = forward projection, SGTM = backward gradient mask.
+⚠️ **Threat model:** routing needs a *cooperative trainer*; an adversary would never route their
+backdoor into a removable partition. This is an **instrument for measuring our method**, NOT a
+proposed backdoor defence, and must never be written up as one.
+
+### Implementation
+`reg_cfg.N_FORGET=d` (`src/train.py`) designates latents `[0:d)` of every wrapped
+`TopKLoRALinearSTE` as forget params — `lora_A` rows `[0:d]`, `lora_B` columns `[0:d]`.
+`training_step` splits each batch by the dataset's existing `is_triggered` column and runs two
+backwards with the **same** `num_items_in_batch` (verified populated: Gemma2's forward has
+`**kwargs` ⇒ `model_accepts_loss_kwargs=True`, so each sub-loss is `sub_token_sum/full_count` and
+the two sum to exactly the full-batch gradient). The trigger pass keeps only the designated slices
+and **reverts** every other trainable tensor to its pre-pass value — reverting rather than zeroing
+is what makes it correct under gradient accumulation. The regularizer rides the clean pass only
+(`_skip_reg`) so it is not double-counted. Batch composition is preserved, unlike homogeneous-batch
+routing, which would confound the comparison to the control.
+- **Tests:** `tests/test_gradient_routing.py`, 6 tests, incl. driving a step with pre-existing
+  accumulated grads and asserting the trigger contribution lands ONLY on the designated slice —
+  including that the *retain latents of the same tensor* stay clean-only. Suite 62/62 green.
+- **Cost:** ~5% wall-clock (only ~18% of microbatches contain a trigger at 500/10500 poisoning),
+  matching SGTM's reported 5%.
+
+### Pilot — `l1523`, d=8 ⇒ 8 × 63 modules = **504 designated latents** of 4032
+3 route seeds + 3 in-wave `z_only` A0 controls (the latter also closes the standing "no in-wave
+l1523 A0" gap). All 6 trained 3 epochs; routed train_loss 0.987–0.988 vs control 0.979–0.983.
+
+- **GATE — PASSED on all 3 seeds** (n=200 triggered @offset100):
+
+  | organism | intact ASR | ablate planted 504 | clean false-fire |
+  |---|---|---|---|
+  | route s42/s43/s44 | 1.000 | **0.000** | 0.000 |
+  | **a0 s42 (control)** | 1.000 | **1.000** | 0.000 |
+
+  The control line is the load-bearing one: zeroing the *same* arbitrary latents-`[0:8)` slice
+  leaves an unrouted organism's backdoor completely intact, so gate 2 is not vacuous.
+- **OUT-OF-SAMPLE — the planted circuit is CLEAN.** Ablate the 504 planted latents, measure fires
+  on 4000 held-out triggered prompts (bands 2000/3000/4000/5000): **0 fires / 4000 on every seed,
+  every band — 0/12000 total.** For comparison, *discovered* circuits on normally-trained `l1523`
+  organisms leak ~0.1% (8 fires across 3/5 organisms).
+
+### ⚠️ What this does and does NOT show
+It shows **gradient routing works at 2B on a TopK-LoRA sleeper**: the backdoor trains to ASR 1.0
+and is then *completely* removable, out-of-sample, on 3/3 seeds.
+It does **NOT yet settle H1 vs H2**, and must not be reported as doing so. The routed organism is a
+**different organism** — routing may simply have made it less redundant — so this says nothing
+directly about whether a compact complete circuit exists inside a *normally-trained* organism.
+The test that actually separates H1 from H2 is **discovery recovery**: run the canonical
+`--ordering eliminate` search on the routed organism and ask whether it finds the planted set.
+Search recovers it ⇒ discovery is adequate and A0's leak is organism-intrinsic (H2-flavoured);
+search misses it ⇒ discovery is the weak link even when a complete compact circuit demonstrably
+exists (H1-flavoured). **DONE — see the next section; the search recovered it.**
+- **Other caveats:** single family (`l1523`), single d (=8); 504 planted latents is larger than the
+  natural `l1523` `both_K` (~100–300), so the partition is roomy — sweeping d down (4, 2) is both a
+  robustness check and its own result ("how few dedicated latents does a backdoor need").
+  Capability cost of zeroing 504/4032 latents not yet measured.
+- **Source:** `src/train.py` (`N_FORGET`, `_RoutingCollator`, `training_step`,
+  `_init_gradient_routing`), `tests/test_gradient_routing.py`, `scripts/train_route_pilot.sh`,
+  `scripts/exp6_pilot_gate.py`, `scripts/exp6_discovery_recovery.sh`;
+  `clcd_results/exp6/{pilot_gate_s42.json,pilot_gate_s4344.json,h1h2_s4*.json,planted/}`.
+
+---
+
+## Exp-6b — Discovery recovery: does the search find a circuit we KNOW is there? — DONE · 2026-07-28
+
+### Question
+The first positive control the discovery pipeline has ever had. On the routed organisms the
+backdoor's location is known by construction (planted = latents `[0:8)` of all 63 wrapped modules =
+504/4032), the partition is complete in-sample (ablate ASR 0.000) and clean out-of-sample (0/12000).
+So for the first time a search result can be scored against ground truth.
+
+### Config
+`scripts/exp6_discovery_recovery.sh`, seeds 42/43/44, torrnode12 GPUs 0-2, ~13h wall.
+Protocol **byte-identical** to `scripts/eval_exp5_matrix.sh`'s `l1523` chain so the discovered
+circuit is comparable to every Exp-5 organism: `exp_circuit_search --ordering eliminate
+--n_attrib 64 --K_ig 128 --Ks 50 100 150 200 300 400 600 800 1200 --offset 100 --n_backdoor 1000
+--suff_n_se 2.0 --sat_floor 0.90 --nec_target 0.0 --batch_size 64 --cheap_offset 1100 --n_cheap 80
+--elim_target 0.90 --dtype bfloat16`.
+
+### Result — RECOVERED, on all 3 seeds
+| seed | both_K | inside planted | precision | enrichment vs 12.5% base rate | P(≥k \| random) |
+|---|---|---|---|---|---|
+| 42 | **50** | 46/50 | 92% | 7.4× | 6.4e-38 |
+| 43 | **50** | 48/50 | 96% | 7.7× | 5.7e-42 |
+| 44 | **50** | 49/50 | 98% | 7.8× | 3.0e-44 |
+
+- **Precision, not coverage, is the right metric.** The planted partition is an *upper bound* on
+  where the backdoor may live, not a claim that it uses all 504. Coverage is only ~9% (50/504) —
+  i.e. the backdoor actually uses ~1/10th of the room routing gave it.
+- **The discovered circuit is 3–16× sparser than natural.** Routed = 50/50/50. Natural A0 `l1523`
+  (`rigorous/elim/`) = 150 / 200 / 400 / **no_sufficient_subcircuit** / 800 across 5 seeds. Routing
+  makes the circuit smaller *and* seed-stable, and removes the outright search failure at s45.
+- **`both_K=50` is the GRID FLOOR** — 50 is the smallest K tested, and it already satisfied both
+  arbiters, so the true minimum is ≤50 and unmeasured. Not a bug, but the number must always be
+  quoted as an upper bound.
+- **The 1–4 "outside" latents are all high-index MLP** (s42: `19.mlp.down_proj`#17,
+  `18.mlp.up_proj`#44, `20.mlp.gate_proj`#34, `19.mlp.up_proj`#30; s43: 2; s44: 1 — `16.k_proj`#62).
+  Under ground truth these are false positives: the planted set is complete, so nothing outside it
+  is *necessary*. Most likely they are sufficiency-side (needed to reconstruct behaviour when
+  everything else is zeroed in keep-only), but this was **not** tested and should not be asserted.
+  All 3 circuits span all 9 layers 15-23.
+
+### Verdict — H2-flavoured, but H1 is weakened rather than eliminated
+The pipeline **is** capable of finding a compact, complete circuit when one exists: 92–98% precision
+at p≈1e-40. So when the same pipeline returns a circuit on a normally-trained organism that then
+leaks out-of-sample, the failure is **not** "the search cannot find compact circuits at all". That
+was H1's strongest form and it is now dead. The leak is a property of the organism, not obviously of
+the algorithm.
+⚠️ **The remaining H1 escape hatch, stated explicitly so it is not glossed over:** the routed
+organism is the *easy* case — its true circuit is both compact **and** cleanly separated from clean
+machinery. This experiment does not test whether the search can find a compact circuit that exists
+but is *entangled*. A natural organism could still contain one that our method misses. So: positive
+control passed; H1-in-general not refuted.
+
+### Caveats
+Single family (`l1523`), single width (d=8), 3 seeds. Ground truth is only an upper-bound set, so
+precision is measurable but recall of the *true minimal* circuit is not. Grid floor as above.
+
+### Artifacts
+`clcd_results/exp6/route_l1523_s4{2,3,4}_circuit.json`, `logs/exp6/route_l1523_s4*_search.out`.
+
+---
+
+## Exp-6c — Capability leg + partition-width sweep — RUNNING · 2026-07-28
+
+- **Capability leg** (`scripts/exp6_capability.sh`): generations **DONE** (6 files, 07:24), 32B judge
+  **RUNNING** (`scripts/judge_exp6.sh`, torrnode14, 3 GPU-pairs). Design: ablate the **same** 504
+  planted latents in both `route` (removes the backdoor) and `a0` (removes nothing, ASR stays 1.0).
+  The a0 arm separates "cost of losing 504/4032 latents of capacity" from "cost of removing the
+  backdoor" — without it the route number is uninterpretable.
+- **d-sweep** (`scripts/train_route_pilot.sh` D=4/D=2, `scripts/exp6_dsweep_gate.sh`): all 6
+  organisms **TRAINED** (d=4 and d=2 × seeds 42/43/44; train_runtime 4412–4528s, routing-on lines
+  confirm 252 and 126 designated latents). Gate **RUNNING** on torrnode14 GPUs 6-7.
+  Prior from Exp-6b: the backdoor only uses ~50 latents, so d=2 (126 slots) should still fit — if it
+  does, the ground-truth circuit gets ~4× tighter than the pilot's.
+
+---
+
 ## Cross-cutting standing items (not experiments — do not lose)
 
 - **No discovery method fixes out-of-sample necessity** — the 4.7×/12–17-pt price of complete removal
@@ -505,3 +838,21 @@ band/threshold/batching/coefficient until a result looks good; negatives are res
   deterministic sanity co-metric (fold into Exp-4).
 - **Integrity** — never tune band/threshold/batching/coefficient to fake a result; negatives are
   results (memory `integrity_no_phacking`).
+- **Prior art that reframes the Exp-5 null (read 2026-07-27, not yet acted on).** Three *classes* of
+  training-time localization intervention exist, and Exp-5 tested only the weakest:
+  (1) **loss penalty on weight geometry** — ours (redund/ortho/l0/entropy): metric moves, separability
+  doesn't; (2) **forward-pass projection** — CAFT, Casademunt et al. arXiv:2507.16795, ablate concept
+  directions during fine-tuning, 10× less emergent misalignment; (3) **backward-pass gradient mask** —
+  Gradient Routing → **SGTM**, Shilov et al. arXiv:2512.05648 (Anthropic Alignment Science), route
+  target-domain gradients into dedicated parameters, then zero them post-training; beats data
+  filtering under label noise, 7× more adversarial-finetune steps to recover than RMU; 5% compute
+  overhead; tested only ≤254M params, loss-metric eval, no MoE. **Exp-5's negative result should be
+  reported as one cell of this taxonomy, not as a bare null.**
+  **⚠️ Threat-model caveat — do not confuse these.** Routing requires a *cooperative trainer* who
+  labels the target data; an adversary planting a sleeper would never route it into a removable
+  partition. SGTM is a pretraining-side capability-removal method, **not** a backdoor defence, and
+  must not be presented as one. Its value to us is as a **ground-truth organism** (a backdoor whose
+  true location is known by construction) to test whether the Exp-2 hydra is a *discovery* failure or
+  a real property of the trained network. Note also that SGTM's claimed **absorption** (unlabeled
+  target content gravitates to the forget params) and our **hydra** (leak spawns redundant pathways)
+  are competing predictions about the same phenomenon.

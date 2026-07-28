@@ -981,6 +981,60 @@ shows the metric tracks *routing-induced* separability, not separability in gene
 
 ---
 
+## Exp-7b — Does concentration predict leaks on natural organisms? — DONE · 2026-07-29
+
+### Design — all controls run, all reported
+Rather than pick one K-control a priori (supervisor's call, and the right one), every reasonable
+design was run with the **pre-registration that all of them are reported regardless of outcome**.
+Agreement across designs is the evidence; disagreement would itself have been the finding.
+15 `all`-family organisms with matched-K leak labels, 59 valid cells after the pre-registered
+in-sample exclusion (ASR>0.02). `scripts/analyze_concentration_vs_leak.py`.
+
+### ⭐ The confound check that had to pass first
+`both_K` at `both_K` has almost no variance (14/15 organisms = 0 fires), so the usable label is
+fires at a matched K *below* both_K — graded hydra-ness. That raises the Wave-1 trap: is the
+metric just circuit size again?
+**It is not.** ρ(n90, both_K) = **+0.089** (p=0.75); ρ(top50, both_K) = **−0.119** (p=0.67).
+Concentration is statistically independent of circuit size, so this is not Wave-1 in a new coat.
+
+### Result — direction robust, magnitude modest
+| design | n90 vs fires | top50 vs fires |
+|---|---|---|
+| K=100 (n=10) | +0.263 | −0.458 |
+| **K=200 (n=14, primary)** | **+0.533** (p=.050) | **−0.476** (p=.085) |
+| K=300 (n=14) | +0.278 | −0.237 |
+| K=400 (n=12) | −0.022 | −0.048 |
+| pooled, K partialled (59 cells) | +0.209 | −0.220 |
+| organism-level leak rate (n=15) | +0.409 | **−0.477** (p=.072) |
+
+- **11 of 12 estimates point the predicted direction** (more spread ⇒ more leaks). The exceptions
+  are at K=400, where only **7 fires across 12 cells** exist — no variance to explain.
+- **Robust to design choice**, which was the specific worry that motivated running all three. The
+  sign does not depend on how K is controlled.
+- **Leave-one-organism-out is stable:** K=200 n90 full +0.533, LOO range [+0.430, +0.636];
+  org-level top50 full −0.477, LOO range [−0.590, −0.411]. Sign never flips. This matters because
+  `entropy_s42` alone carries 105 of ~253 fires.
+- **PR is inconsistent** (+0.684 / +0.176 / −0.176 across K — sign flips), exactly as the control's
+  falsification predicted. Retained in the output so the falsification stays visible.
+
+### Verdict — suggestive, NOT established
+The metric survived every check designed to kill it: independent of circuit size, consistent
+direction across three K-controls, stable under leave-one-out. But **nothing clears p<0.05 except
+the primary endpoint at exactly p=.050**, and with n=15 organisms |ρ|>0.51 is needed for
+significance. This is a promising predictor that is **underpowered**, and must be reported that way
+— not as "concentration predicts leaks".
+**Cheapest path to power:** the `l1523` family also has matched-K leak labels, and the metric costs
+~10s/organism, so n could roughly double for minutes of compute. That is the obvious next step and
+it is **not yet run**.
+Other caveats: single family (`all`); leak counts are small and dominated by a few organisms; the
+in-sample exclusion removes 6 cells, all at low K.
+
+### Artifacts
+`scripts/analyze_concentration_vs_leak.py`, `clcd_results/exp6/payload_conc_all_{a,b}.json`,
+`scripts/payload_concentration_all.sh`.
+
+---
+
 ## Cross-cutting standing items (not experiments — do not lose)
 
 - **No discovery method fixes out-of-sample necessity** — the 4.7×/12–17-pt price of complete removal

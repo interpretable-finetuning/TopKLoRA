@@ -76,7 +76,9 @@ def concentration(w: torch.Tensor) -> dict:
 
 
 def measure(rid: str) -> dict:
-    adapter = ADIR.format(rid=rid)
+    # bare id -> the Exp-6 layout; anything containing "/" is taken as an adapter path verbatim,
+    # so the Exp-5 / rigorous organisms can be measured with the same code
+    adapter = rid if "/" in rid else ADIR.format(rid=rid)
     model, tok, wrapped = load_organism(adapter, base_model=BASE, device="cuda",
                                         dtype=torch.bfloat16)
     model = model.to(torch.bfloat16)

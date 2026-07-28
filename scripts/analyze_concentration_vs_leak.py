@@ -1,28 +1,30 @@
 #!/usr/bin/env python3
-"""Does payload-mass concentration predict out-of-sample leaks? All designs, all reported.
+"""Does payload-mass concentration predict out-of-sample leaks? Both families, all designs.
 
 THE CONFOUND this is built around: circuit size. Wave-1's arm ranking turned out to BE circuit
-size, and the same trap is open here -- an organism with a bigger both_K both leaks less and
-concentrates differently. There is no single obviously-correct control, so rather than pick one
-and hope, every reasonable design is run and ALL of them are reported:
+size. So rather than pick one K-control a priori, every reasonable design is run and ALL are
+reported. Agreement across designs is the evidence; disagreement is itself the finding.
 
   leak-label designs
-    K=200 / K=300   matched-K: every organism scored at the SAME K, so size cannot enter
+    matched-K       every organism scored at the SAME K, so size cannot enter
     pooled+K        all valid cells, K partialled out of the rank correlation
+    organism-level  collapse K entirely, leak RATE per organism
 
   concentration statistics
     n90, n99        size-like  (how many latents to reach 90/99% of payload mass)
-    top50           fixed-cutoff, K-free by construction (share of mass in the top 50 latents)
-    PR              participation ratio -- retained ONLY because it was pre-registered and
-                    falsified in the control; reported so the falsification stays visible
+    top50           fixed-cutoff, K-free by construction
+    PR              retained ONLY because it was pre-registered and falsified in the Exp-7
+                    control; reported so the falsification stays visible
 
-DIRECTION EXPECTED IF THE COALITION CLAIM HOLDS: more concentrated -> fewer leaks, i.e.
-rho(n90, fires) > 0 and rho(top50, fires) < 0. Agreement ACROSS designs is the evidence.
-Disagreement is itself the finding: an effect surviving only one of several reasonable designs
-is a weak effect and gets reported as such. Nothing here gets dropped for disagreeing.
+FAMILIES ARE NOT POOLED NAIVELY. `all` has 52 residual-writer modules (3328 latents) and 4000
+prompts/cell; `l1523` has 18 (1152 latents) and 3000 prompts/cell. So n90 and raw fire counts are
+both incomparable across families. Each family is analysed separately; the pooled row uses
+WITHIN-FAMILY rank standardization and is labelled as such.
 
-Cells whose in-sample ablate ASR > 0.02 are excluded by the pre-registered Exp-5 rule (there the
-backdoor is not removed in-sample, so fires measure incomplete removal, not out-of-sample leak).
+PRIMARY ENDPOINTS, fixed by the same rule in both families (most complete cells with meaningful
+variance), and fixed before the l1523 numbers were seen:  all -> K=200,  l1523 -> K=75.
+
+DIRECTION EXPECTED: more concentrated -> fewer leaks, i.e. rho(n90, fires) > 0, rho(top50,·) < 0.
 """
 import glob
 import json
@@ -33,91 +35,96 @@ from scipy import stats
 
 EXCL = 0.02
 CONC_KEYS = ["n90", "n99", "top50_mass_frac", "participation_ratio"]
-
-# concentration, keyed by adapter path
-conc = {}
-for f in sorted(glob.glob("clcd_results/exp6/payload_conc_all_*.json")):
-    for r in json.load(open(f)):
-        conc[r["adapter"]] = r
-
-# leak cells, joined to concentration via the adapter recorded in the matched-K result
-cells = []
-for f in sorted(glob.glob("clcd_results/matchedK_all/results/*.json")):
-    org = os.path.basename(f)[:-5]
-    for r in json.load(open(f)):
-        c = json.load(open(r["file"]))
-        ins = c.get("insample_ablate_asr") or 0.0
-        cells.append(dict(org=org, K=r["n_kept"], fires=r["total_fires"], n=r["total_prompts"],
-                          insample=ins, excluded=ins > EXCL, **{k: conc[r["adapter"]][k]
-                                                                for k in CONC_KEYS}))
-
-valid = [c for c in cells if not c["excluded"]]
-print(f"{len(cells)} cells, {len(valid)} pass the in-sample exclusion "
-      f"({len(cells) - len(valid)} excluded at ASR>{EXCL})\n")
+FAMILIES = {
+    "all":   dict(results="clcd_results/matchedK_all/results",
+                  conc="clcd_results/exp6/payload_conc_all_*.json", primary=200),
+    "l1523": dict(results="clcd_results/matchedK/results",
+                  conc="clcd_results/exp6/payload_conc_l1523_*.json", primary=75),
+}
 
 
-def rho(xs, ys):
+def load(fam: str) -> list[dict]:
+    conc = {}
+    for f in sorted(glob.glob(FAMILIES[fam]["conc"])):
+        for r in json.load(open(f)):
+            conc[r["adapter"]] = r
+    cells = []
+    for f in sorted(glob.glob(FAMILIES[fam]["results"] + "/*.json")):
+        org = os.path.basename(f)[:-5]
+        for r in json.load(open(f)):
+            c = json.load(open(r["file"]))
+            ins = c.get("insample_ablate_asr") or 0.0
+            if ins > EXCL or r["adapter"] not in conc:
+                continue
+            cells.append(dict(fam=fam, org=f"{fam}:{org}", K=r["n_kept"], fires=r["total_fires"],
+                              n=r["total_prompts"], **{k: conc[r["adapter"]][k] for k in CONC_KEYS}))
+    return cells
+
+
+def show(xs, ys, key, label):
     if len(set(xs)) < 2 or len(set(ys)) < 2:
-        return None
-    return stats.spearmanr(xs, ys)
-
-
-print("=" * 78)
-print("DESIGN A -- matched K (every organism scored at the same K; size cannot enter)")
-print("=" * 78)
-for K in (100, 200, 300, 400):
-    sub = [c for c in valid if c["K"] == K]
-    if len(sub) < 5:
-        print(f"K={K}: only {len(sub)} valid cells -- skipped")
-        continue
-    tot = sum(c["fires"] for c in sub)
-    print(f"\nK={K}: n={len(sub)} organisms, {tot} total fires, "
-          f"{sum(1 for c in sub if c['fires'] > 0)} leaking")
-    for key in CONC_KEYS:
-        r = rho([c[key] for c in sub], [c["fires"] for c in sub])
-        if r:
-            exp = "as predicted" if ((r.statistic > 0) == (key in ("n90", "n99"))) else "OPPOSITE"
-            print(f"    rho({key:20}, fires) = {r.statistic:+.3f}  p={r.pvalue:.3f}   {exp}")
-
-print("\n" + "=" * 78)
-print("DESIGN B -- pooled cells, K partialled out of the rank correlation")
-print("=" * 78)
-print(f"n={len(valid)} cells from {len({c['org'] for c in valid})} organisms "
-      f"(repeated measures: cells from one organism are NOT independent -- p-values here are\n"
-      f"anti-conservative and are shown for direction/magnitude, not inference)")
-for key in CONC_KEYS:
-    x = [c[key] for c in valid]
-    y = [float(c["fires"]) for c in valid]
-    k = [float(c["K"]) for c in valid]
-    # partial Spearman: correlate the residuals of the rank regressions on K
-    rx = stats.rankdata(x); ry = stats.rankdata(y); rk = stats.rankdata(k)
-    bx = stats.linregress(rk, rx); by = stats.linregress(rk, ry)
-    ex = [a - (bx.intercept + bx.slope * b) for a, b in zip(rx, rk)]
-    ey = [a - (by.intercept + by.slope * b) for a, b in zip(ry, rk)]
-    r = stats.pearsonr(ex, ey)
+        print(f"    {label}: no variance -- skipped")
+        return
+    r = stats.spearmanr(xs, ys)
     exp = "as predicted" if ((r.statistic > 0) == (key in ("n90", "n99"))) else "OPPOSITE"
-    print(f"    partial-rho({key:20}, fires | K) = {r.statistic:+.3f}  p={r.pvalue:.3f}   {exp}")
+    print(f"    rho({key:20}, {label:10}) = {r.statistic:+.3f}  p={r.pvalue:.3f}   {exp}")
 
-print("\n" + "=" * 78)
-print("DESIGN C -- organism-level, collapsing K entirely (leak rate per organism over all cells)")
-print("=" * 78)
-agg = defaultdict(lambda: {"fires": 0, "n": 0})
-for c in valid:
-    agg[c["org"]]["fires"] += c["fires"]
-    agg[c["org"]]["n"] += c["n"]
-    agg[c["org"]].update({k: c[k] for k in CONC_KEYS})
-orgs = sorted(agg)
-print(f"n={len(orgs)} organisms")
-for key in CONC_KEYS:
-    r = rho([agg[o][key] for o in orgs], [agg[o]["fires"] / agg[o]["n"] for o in orgs])
-    if r:
+
+ALL = {f: load(f) for f in FAMILIES}
+for fam, cells in ALL.items():
+    if not cells:
+        print(f"!! {fam}: no concentration data yet -- skipping\n")
+        continue
+    prim = FAMILIES[fam]["primary"]
+    print("=" * 78)
+    print(f"FAMILY {fam}  ({len(cells)} valid cells, {len({c['org'] for c in cells})} organisms, "
+          f"primary K={prim})")
+    print("=" * 78)
+    for K in sorted({c["K"] for c in cells}):
+        sub = [c for c in cells if c["K"] == K]
+        if len(sub) < 8:
+            continue
+        tot = sum(c["fires"] for c in sub)
+        star = " <-- PRIMARY" if K == prim else ""
+        print(f"\n  matched K={K}: n={len(sub)}, {tot} fires, "
+              f"{sum(1 for c in sub if c['fires'] > 0)} leaking{star}")
+        for key in CONC_KEYS:
+            show([c[key] for c in sub], [c["fires"] for c in sub], key, "fires")
+
+    print(f"\n  organism-level leak rate (n={len({c['org'] for c in cells})})")
+    agg = defaultdict(lambda: {"fires": 0, "n": 0})
+    for c in cells:
+        agg[c["org"]]["fires"] += c["fires"]
+        agg[c["org"]]["n"] += c["n"]
+        agg[c["org"]].update({k: c[k] for k in CONC_KEYS})
+    orgs = sorted(agg)
+    for key in CONC_KEYS:
+        show([agg[o][key] for o in orgs], [agg[o]["fires"] / agg[o]["n"] for o in orgs],
+             key, "leak rate")
+    print()
+
+# pooled across families, within-family rank standardization
+pool = [c for cells in ALL.values() for c in cells]
+if all(ALL.values()):
+    print("=" * 78)
+    print("POOLED across families -- WITHIN-FAMILY rank standardization")
+    print("(raw n90/fires are incomparable across families; ranks are taken inside each family")
+    print(" first, so only within-family ordering contributes)")
+    print("=" * 78)
+    print(f"n={len(pool)} cells from {len({c['org'] for c in pool})} organisms; repeated measures,")
+    print("so p-values are anti-conservative -- read direction and magnitude, not inference")
+    for key in CONC_KEYS:
+        ex, ey = [], []
+        for fam in FAMILIES:
+            sub = [c for c in pool if c["fam"] == fam]
+            rx = stats.rankdata([c[key] for c in sub]) / len(sub)
+            ry = stats.rankdata([float(c["fires"]) for c in sub]) / len(sub)
+            rk = stats.rankdata([float(c["K"]) for c in sub]) / len(sub)
+            bx = stats.linregress(rk, rx)
+            by = stats.linregress(rk, ry)
+            ex += [a - (bx.intercept + bx.slope * b) for a, b in zip(rx, rk)]
+            ey += [a - (by.intercept + by.slope * b) for a, b in zip(ry, rk)]
+        r = stats.pearsonr(ex, ey)
         exp = "as predicted" if ((r.statistic > 0) == (key in ("n90", "n99"))) else "OPPOSITE"
-        print(f"    rho({key:20}, leak rate) = {r.statistic:+.3f}  p={r.pvalue:.3f}   {exp}")
-
-print("\nper-organism table")
-print(f"{'organism':13} {'n90':>5} {'n99':>5} {'top50':>7} {'PR':>6} {'fires':>6} {'cells':>6}")
-for o in orgs:
-    a = agg[o]
-    ncell = sum(1 for c in valid if c["org"] == o)
-    print(f"{o:13} {a['n90']:5} {a['n99']:5} {a['top50_mass_frac']:7.3f} "
-          f"{a['participation_ratio']:6.1f} {a['fires']:6} {ncell:6}")
+        print(f"    partial-rho({key:20}, fires | K, family) = {r.statistic:+.3f}  "
+              f"p={r.pvalue:.3f}   {exp}")

@@ -1017,6 +1017,12 @@ Concentration is statistically independent of circuit size, so this is not Wave-
 - **PR is inconsistent** (+0.684 / +0.176 / −0.176 across K — sign flips), exactly as the control's
   falsification predicted. Retained in the output so the falsification stays visible.
 
+### ⚠️ SUPERSEDED — the `all`-family effect FAILED TO REPLICATE on `l1523`. See Exp-7c.
+Everything below stands as a description of the `all` family, but the verdict "promising
+predictor, underpowered" is **wrong** and must not be quoted. The independent replication on 15
+`l1523` organisms returns ρ≈0, and the pooled estimate is ρ≈0.03. The p=.050 below is now best
+read as a chance finding in a small sample.
+
 ### Verdict — suggestive, NOT established
 The metric survived every check designed to kill it: independent of circuit size, consistent
 direction across three K-controls, stable under leave-one-out. But **nothing clears p<0.05 except
@@ -1032,6 +1038,59 @@ in-sample exclusion removes 6 cells, all at low K.
 ### Artifacts
 `scripts/analyze_concentration_vs_leak.py`, `clcd_results/exp6/payload_conc_all_{a,b}.json`,
 `scripts/payload_concentration_all.sh`.
+
+---
+
+## Exp-7c — `l1523` replication: the concentration effect DOES NOT REPLICATE — DONE · 2026-07-29
+
+### Question
+Exp-7b found a direction-consistent but marginal association on the `all` family (primary K=200,
+n90 ρ=+0.533, p=.050). 15 `l1523` organisms have matched-K leak labels and the metric costs
+~10s/organism, so an independent replication in a second family was minutes of compute.
+Primary endpoint **K=75** fixed by the same rule as `all`'s K=200 (most complete cells with
+meaningful variance: 15/15 cells, 147 fires) and **fixed before the numbers were seen**.
+
+### Result — null, on the best-powered cell in the whole study
+`l1523` **K=75: n=15 organisms, 147 fires, 14/15 leaking** — more organisms, more fires and far
+more variance than any `all`-family cell.
+
+| statistic | l1523 K=75 (primary) | l1523 organism-level | pooled (within-family ranks, 115 cells) |
+|---|---|---|---|
+| n90 | **−0.042** (p=.88) OPPOSITE | +0.023 (p=.93) | **+0.030** (p=.75) |
+| n99 | −0.153 OPPOSITE | −0.073 OPPOSITE | +0.075 |
+| top50 | −0.047 (p=.87) | −0.121 (p=.67) | −0.055 (p=.56) |
+| PR | +0.255 OPPOSITE | +0.304 OPPOSITE | −0.016 |
+
+Every `l1523` estimate is within noise of zero, and the pooled estimate across all 30 organisms
+and 115 cells is **ρ≈0.03**. The `all`-family association does not survive replication.
+
+### Ruled out: restricted predictor range
+The obvious technical excuse — that `l1523` simply has less spread in concentration to correlate
+against — **does not hold**. Relative spread is comparable: n90 CV 0.219 (`all`) vs **0.192**
+(`l1523`); ranges 82–183 vs 57–98. The predictor varies about as much in both families.
+
+### Verdict — the coalition metric does NOT predict leaks
+Payload-mass concentration **fails** as a predictor of out-of-sample necessity leaks. Combined
+with Exp-7's control this gives a coherent and rather pointed picture:
+- it **does** separate a routed organism from its unrouted twin (n90 34 vs 65, planted-mass .86–.96
+  vs chance .125) — it detects a backdoor that was *engineered* to be concentrated;
+- it does **not** predict which naturally-trained organisms leak.
+So the metric measures *something real about routing* and nothing useful about natural separability.
+The coalition reframing was a better *description* of the mechanism than ortho/redund were, but as a
+**predictive** claim it is now falsified, and this is the third training-side statistic to fail the
+same way (ortho, redund, now payload-concentration). That pattern is itself the finding: **weight-
+and-activation geometry has repeatedly failed to predict behavioural separability, while the
+behavioural arbiters keep working.** Exp-5's premise and Exp-7's premise fail for the same reason.
+No retuning was attempted, per `integrity_no_phacking`.
+
+### Caveats
+Two families, 30 organisms, 3 seeds/arm. The `all`-family association is not *disproven*, it is
+unreplicated — with n=14 and p=.050 that is the expected fate of a chance finding. Leak counts
+remain small and the exclusion rule removes low-K cells.
+
+### Artifacts
+`clcd_results/exp6/payload_conc_l1523_{a,b}.json`, `logs/exp6/payload_conc_l1523_*.out`,
+`scripts/analyze_concentration_vs_leak.py` (both families, all designs).
 
 ---
 

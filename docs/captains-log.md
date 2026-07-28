@@ -878,13 +878,29 @@ miss. That is the first design we have had that could actually falsify H1 rather
 
 ---
 
-## Exp-6c — Capability leg + partition-width sweep — RUNNING · 2026-07-28
+## Exp-6c — Capability leg + partition-width sweep — DONE · 2026-07-28
 
-- **Capability leg** (`scripts/exp6_capability.sh`): generations **DONE** (6 files, 07:24), 32B judge
-  **RUNNING** (`scripts/judge_exp6.sh`, torrnode14, 3 GPU-pairs). Design: ablate the **same** 504
+- **Capability leg** (`scripts/exp6_capability.sh`): generations DONE (6 files, 07:24), 32B judge
+  DONE 16:00 (`scripts/judge_exp6.sh`, torrnode14, 3 GPU-pairs). Design: ablate the **same** 504
   planted latents in both `route` (removes the backdoor) and `a0` (removes nothing, ASR stays 1.0).
   The a0 arm separates "cost of losing 504/4032 latents of capacity" from "cost of removing the
   backdoor" — without it the route number is uninterpretable.
+- **RESULT — removing the routed backdoor is capability-free.** Retention
+  `(ablate − base)/(intact − base)`, 32B judge, 500 alpaca @offset1000 + 446 no-robots,
+  base floor 1.04 / 1.12:
+
+  | organism | ablate 504 → ASR | alpaca retained | no-robots retained |
+  |---|---|---|---|
+  | route s42 / s43 / s44 | **0.000 / 0.000 / 0.000** | 103.5% / 99.5% / 101.7% | 101.1% / 101.7% / 98.9% |
+  | a0 s42 / s43 / s44 (control) | 1.000 / 1.000 / **0.820** | 101.2% / 97.6% / 102.3% | 104.6% / 94.6% / 99.1% |
+
+  Both arms sit at ~100% ⇒ (i) losing 504/4032 latents of capacity costs nothing by itself
+  (the control), so (ii) the route arm's ~100% is genuinely "removal is free", not slack capacity.
+  Raw alpaca means 2.97–3.11 intact vs 3.00–3.15 ablated; >100% is the known judge-side
+  recovery-overshoot, not a bug.
+- **⚠️ Flag: `a0_s44` ablate-ASR is 0.820, not 1.000.** Zeroing the arbitrary `[0:8)` slice dents
+  the backdoor on one control organism (does not remove it — the gate claim "control stays intact"
+  holds directionally but is not exactly 1.0 on every seed). Report the per-seed number, not "1.0".
 - **d-sweep** (`scripts/train_route_pilot.sh` D=4/D=2, `scripts/exp6_dsweep_gate.sh`): **DONE — both
   widths PASS on all 3 seeds.** d=4 (252 designated latents) and d=2 (**126**) both give
   intact ASR **1.000** → ablate-planted **0.000**, clean false-fire 0.000, 6/6 organisms.

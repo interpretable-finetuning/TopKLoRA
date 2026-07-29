@@ -1113,6 +1113,81 @@ remain small and the exclusion rule removes low-K cells.
 
 ---
 
+## Exp-8 — Graded routing (`ROUTE_FRAC`): the dial DID NOT MOVE — GATE DONE · 2026-07-29
+
+### Question
+Exp-6d left two live readings it could not separate, because routing only ever produced the *easy*
+case (a circuit both compact and cleanly separated): **H2** natural organisms contain no compact
+removable circuit (redundancy is real) vs **H1** they do, but it is *entangled* with clean machinery
+and our search misses it. `ROUTE_FRAC=p` was meant to make entanglement a dial with ground truth
+still attached: route only a fraction of triggered examples, let the rest train normally, so part of
+the backdoor forms **outside** the planted partition. Pilot p=0.5 × seeds 42/43/44.
+
+### Pre-registered readout (from `scripts/exp8_graded_pilot.sh`, written before the run)
+> "gate: ablating the planted 504 should now leave RESIDUAL ASR between 0.0 and 1.0 — that
+> intermediate value is what proves the dial actually moved. **0.0 or 1.0 means it did not.**"
+
+### Result — residual ASR 0.000 on all three seeds. The dial did not move.
+
+| seed | intact ASR | ablate planted 504 | clean false-fire |
+|---|---|---|---|
+| 42 | 1.000 | **0.000** | 0.000 |
+| 43 | 0.995 | **0.000** | 0.000 |
+| 44 | 1.000 | **0.000** | 0.000 |
+
+Half the triggered examples trained with **no routing constraint at all** — free to build the
+backdoor anywhere in the 4032 latents — and the backdoor still ended up *entirely* inside the
+504-latent partition. Containment is complete, exactly as at p=1.0.
+
+### Not a plumbing bug — verified through the production code path
+First check was my own scratch harness and it was **wrong** (tokenized the wrong column, reported
+500/500 routed at every p). Re-run through `_tokenize_dataset` itself with the `-it` tokenizer the
+trainer uses: **0 / 122 / 253 / 376 / 500** routed at p = 0.0 / 0.25 / 0.5 / 0.75 / 1.0 — 0.506 of
+500 triggered at p=0.5, endpoints exact. Training logs confirm `reg_cfg {'N_FORGET': 8,
+'ROUTE_FRAC': 0.5}` and "504 designated latents" on all three seeds. The null is real.
+
+### Why — the design cannot create entanglement at ANY p, and this was a design error
+`training_step` splits the batch on `is_triggered`. An **unrouted** triggered example carries flag 0,
+so it joins the *clean* sub-batch — where **every parameter updates, including the 504**. Gradient
+accounting at p=0.5:
+
+- partition (504 latents): gradient from **all 500** triggered examples (253 routed + 247 clean-branch)
+- complement (3528 latents): gradient from **only the 247** unrouted ones
+
+The partition is never disadvantaged at any p>0 — it is strictly *advantaged*, receiving 100% of the
+trigger signal at every p. Under top-k winner-take-all the partition wins outright and nothing needs
+to form outside it. `ROUTE_FRAC` as built is a **label-noise knob, not an entanglement knob**.
+
+### What it does establish — absorption beats hydra on this test
+This is a faithful model of SGTM label noise (an unlabelled target example does go into the safe
+branch and update everything), so the finding stands on its own: **routing containment is fully
+robust to 50% label noise** — 0.000 residual, 3/3 seeds. And it settles, in absorption's favour, the
+competing prediction this log pre-registered in the standing items:
+> "SGTM's claimed **absorption** (unlabeled target content gravitates to the forget params) and our
+> **hydra** (leak spawns redundant pathways) are competing predictions about the same phenomenon."
+
+Unlabeled trigger content was **absorbed** into the forget partition rather than spawning a redundant
+pathway outside it. That is a positive result for SGTM and a point against hydra — but it is *not*
+the H1/H2 test, which remains unanswered.
+
+### The fix (not yet run) — three-way split routing
+For a genuine dial the unrouted triggered examples must be masked to the **complement**, not left
+unmasked: clean → all params; routed triggered (p) → partition only; unrouted triggered (1−p) →
+complement only. Then partition gets p·500 and complement (1−p)·500, and part of the backdoor
+provably forms outside the partition. Small surgical change to `training_step`.
+
+### Status of the remaining stages
+Search was already 10h in when the gate was read, so it was left to finish rather than killed.
+s42 done: **both_K=100** (vs 50 at p=1.0) — the complement's partial trigger training did add
+*some* structure, just not enough to sustain the behaviour. s43/s44 and the discovered-circuit leak
+test still in flight; both are now replications of the p=1.0 organism, not new evidence.
+
+### Artifacts
+`clcd_results/exp6/pilot_gate_route_p50.json`, `logs/exp8/gate_route_p50.out`,
+`logs/exp6/route_p50_l1523_s4*.out`, `scripts/exp8_graded_pilot.sh`, PR #59.
+
+---
+
 ## Cross-cutting standing items (not experiments — do not lose)
 
 - **No discovery method fixes out-of-sample necessity** — the 4.7×/12–17-pt price of complete removal

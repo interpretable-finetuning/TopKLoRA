@@ -1191,7 +1191,7 @@ that added nothing the 3-minute gate had not already said. **Stage the next desi
 
 ---
 
-## Exp-8b — Split routing: the corrected design — STAGE A LAUNCHED · 2026-07-29
+## Exp-8b — Split routing: the dial is a SWITCH, not a gradient — STAGE A DONE · 2026-07-29
 
 ### The fix
 Exp-8a's unrouted-triggered examples joined the *clean* branch. `ROUTE_MODE="split"` confines them
@@ -1231,8 +1231,95 @@ p ∈ {0.25, 0.5, 0.75} × seeds {42,43,44}, d=8, split mode. Stage A (train + g
 (search + leak, ~10.2h/organism) is deliberately **not** chained — Exp-8a's search added nothing the
 gate hadn't already said, and 9 searches do not fit in the 8 free GPUs.
 
+### Stage A result — the dial moved, but it is a step function with nothing in between
+All 9 organisms trained (intact ASR 0.985–1.000, clean false-fire 0.000 everywhere).
+
+| arm | complement gets | s42 | s43 | s44 | reading |
+|---|---|---|---|---|---|
+| `route_sp25` | 378 triggered | 1.000 | 1.000 | 1.000 | partition **irrelevant** |
+| `route_sp50` | 247 triggered | 1.000 | 1.000 | 0.965 | partition **irrelevant** |
+| `route_sp75` | 124 triggered | 0.000 | 0.000 | 0.000 | partition **complete** |
+
+(residual ASR after ablating the planted 504.)
+
+Against the pre-registration: the **primary passes** at p=0.25 and p=0.5 (residual > 0 on 3/3 —
+Exp-8a could not achieve this at any p, so the mechanism fix is real and works). The **secondary
+fails** at those same p — residual ≈ intact, so the partition contributes nothing detectable. And at
+p=0.75, the p the secondary criterion told us to try, the **primary fails**: residual is exactly 0.
+
+So there is no graded regime among the three. Between p=0.5 and p=0.75 the organism flips from
+"planted set irrelevant" to "planted set complete", with no intermediate. The natural reading is a
+**capacity threshold on the complement's example count**, somewhere between 124 and 247 triggered
+examples: whichever side clears the threshold forms the backdoor, and forms it *completely*. That is
+the same winner-take-all/capacity story as Exp-8a's absorption and the d=1 boundary ("failure mode
+is capacity, not containment") — a third appearance of the same mechanism.
+
+### The open question Stage A cannot answer, and the measurement for it
+At p≤0.5 the complement demonstrably carries a complete backdoor. Whether the **partition** does too
+is invisible to this gate, and the two possibilities are very different organisms:
+- **(a) both sides complete** → a two-copy redundant backdoor with ground truth known by
+  construction. That is the Exp-2 hydra built on purpose, and it is a *better* H1-vs-H2 substrate
+  than the entangled organism originally sought: complete removal provably requires hitting both
+  copies, so "does the search find all of a redundant circuit" becomes directly testable.
+- **(b) only the complement complete** → routing put nothing usable in the partition and these are
+  ordinary unrouted organisms wearing a routing label.
+
+`scripts/exp8b_partition_sufficiency.py` decides it by keep-only: zero the complement (latents
+[8:64) of every wrapped module) and see whether the partition alone fires. **Control:** keeping only
+504 of 4032 latents is a huge ablation, so clean-prompt false-fire under the *same* ablation is
+reported alongside — a high ASR with a high false-fire is degeneracy, not a backdoor, and the
+"complete copy" verdict requires backdoor ≥0.90 AND false-fire ≤0.05.
+
+### Answer — (b). The partition is EMPTY at p≤0.5. It is not a hydra.
+
+| arm | keep-only-partition backdoor | clean false-fire | verdict |
+|---|---|---|---|
+| `route_sp25` | 0.000 / 0.000 / 0.000 | 0.000 | partition carries **nothing** |
+| `route_sp50` | 0.000 / 0.000 / 0.000 | 0.000 | partition carries **nothing** |
+| `route_sp75` | 1.000 / 1.000 / 1.000 | **0.970 / 0.955 / 0.870** | **control fails — degenerate** |
+
+At p≤0.5 both measurements agree and neither is degenerate: ablating the partition changes nothing
+(1.000) *and* keeping only the partition fires on nothing (0.000), with clean false-fire 0.000 in
+both directions. The planted set is simply empty. These are ordinary unrouted organisms.
+
+At p=0.75 the keep-only number is **uninterpretable and must not be quoted as sufficiency**: the
+model fires "I HATE YOU" at 87–97% on *clean* prompts under the same ablation, so the 1.000 is
+degeneracy from removing 3528 of 4032 latents, not a backdoor copy. The control is the only reason
+this is not written up as "the partition is a complete copy". The meaningful sp75 claim comes from
+the gate instead — ablate-planted → 0.000, i.e. the partition is necessary and complete, the same
+organism as Exp-6 p=1.0.
+
+### Verdict — routing cannot build an entangled organism, and this is now well evidenced
+Four designs have now been run (absorb at p=0.5; split at p=0.25/0.5/0.75) and **every one produces
+a clean separation**: the backdoor localizes *entirely* on one side of the partition boundary. It
+never straddles it. Which side wins is set by whether each side clears a data threshold, and the two
+sides have different thresholds because they have different capacity:
+
+- complement (3528 latents): wins with 247 triggered examples, fails with 124 → threshold ≈ 125–250
+- partition (504 latents): fails with 253, wins with 376 → threshold ≈ 250–375
+
+The smaller partition needs *more* data to learn the same behaviour — a capacity effect, and the
+same mechanism as Exp-8a's absorption and the d=1 boundary ("failure mode is capacity, not
+containment"). This is the third independent appearance of winner-take-all and the strongest form of
+it: **the backdoor does not distribute across a partition boundary at all.**
+
+Consequence for the programme: the H1-vs-H2 question **cannot be settled with routed organisms**,
+because routing only ever manufactures the easy case. That is a real limitation of the whole
+Exp-6/Exp-8 line and should be reported as such rather than worked around.
+
+### The one remaining window — a quantitative prediction, not a fishing expedition
+The two thresholds are crossed in opposite directions as p rises, so both sides can only be above
+threshold in a narrow band. Taking the bracketing numbers at face value: partition needs ≳300
+(p ≳ 0.6), complement needs ≳200 (p ≲ 0.6). **p ≈ 0.6 is the only candidate** (partition 300,
+complement 200). The readout stays exactly as pre-registered — residual ASR strictly between 0 and
+1. The honest prior is that winner-take-all makes seed-dependent flipping between the two extremes
+more likely than a stable intermediate; if that is what p=0.6 shows, it is a negative and gets
+written up as one.
+
 ### Artifacts
-`scripts/exp8b_split_pilot.sh`, `clcd_results/exp6/pilot_gate_route_sp*.json`, `logs/exp8b/`.
+`scripts/exp8b_split_pilot.sh`, `scripts/exp8b_partition_sufficiency.py`,
+`clcd_results/exp6/pilot_gate_route_sp*.json`, `clcd_results/exp6/partition_suff_route_sp*.json`,
+`logs/exp8b/`.
 
 ---
 

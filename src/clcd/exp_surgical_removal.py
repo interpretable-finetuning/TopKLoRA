@@ -264,8 +264,13 @@ def main():
     args = ap.parse_args()
 
     _dt = {"float32": torch.float32, "bfloat16": torch.bfloat16, "float16": torch.float16}[args.dtype]
-    model, tok, wrapped = load_organism(args.adapter, base_model=args.base_model, device=args.device, dtype=_dt)
-    if _dt != torch.float32:
+    # CLCD_MODEL_PARALLEL: shard the organism across the visible GPUs so batch-64
+    # all-family clean-retention generation fits (same memory wall as the K-sweep).
+    # Numerically identical to single-GPU. "1" -> both visible GPUs [0,1].
+    _mp = os.environ.get("CLCD_MODEL_PARALLEL", "").strip()
+    _dmap = ([int(x) for x in _mp.split(",")] if "," in _mp else [0, 1]) if _mp else None
+    model, tok, wrapped = load_organism(args.adapter, base_model=args.base_model, device=args.device, dtype=_dt, device_map=_dmap)
+    if _dmap is None and _dt != torch.float32:
         model = model.to(_dt)  # uniformly cast base+adapter (load_organism leaves adapter fp32 -> matmul dtype mismatch)
     circuit = [tuple(x) for x in json.load(open(args.circuit_json))["kept_latents"]]
     print(f"[setup] circuit = {len(circuit)} latents from {args.circuit_json}", flush=True)

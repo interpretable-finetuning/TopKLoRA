@@ -27,6 +27,33 @@ def read_latents(model, input_ids: torch.Tensor, wrapped_modules: dict) -> dict:
     return {m: mod._last_z_sparse.clone() for m, mod in wrapped_modules.items()}
 
 
+def compose_overrides(baseline: dict | None, intervention: dict | None) -> dict:
+    """Compose an intervention with a persistent callable baseline.
+
+    ``baseline`` is applied LAST, so a temporary intervention cannot resurrect a
+    latent clamped by the baseline.  This is useful for analyses of a residual
+    mechanism under a standing ablation while still allowing IG tensors or
+    node-specific callable patches.  Existing tensors keep their autograd graph.
+    """
+    baseline = baseline or {}
+    intervention = intervention or {}
+    out = {}
+    for name in baseline.keys() | intervention.keys():
+        base = baseline.get(name)
+        edit = intervention.get(name)
+        if base is not None and not callable(base):
+            raise TypeError("baseline overrides must be callable")
+        if base is None:
+            out[name] = edit
+        elif edit is None:
+            out[name] = base
+        elif callable(edit):
+            out[name] = lambda a, edit=edit, base=base: base(edit(a))
+        else:
+            out[name] = base(edit)
+    return out
+
+
 @contextlib.contextmanager
 def inject(wrapped_modules: dict, overrides: dict):
     """Override chosen modules' post-gate latents for the duration of the block.

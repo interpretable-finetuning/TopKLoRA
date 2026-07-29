@@ -16,6 +16,7 @@ shows mu(x_trigger) >> mu(x_control), and ablating its circuit should collapse i
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 import torch
@@ -27,11 +28,42 @@ from src.clcd.episode import Episode
 from src.utils import wrap_topk_lora_modules
 
 
+def _balanced_device_map(model, gpu_ids):
+    """Split the decoder layers EVENLY BY COUNT across two GPUs so the KV-cache /
+    activation memory (the real ~37GB driver for all-family, ~1.4GB/layer at
+    batch-64) is distributed evenly — a single A40 tops out at ~44GB in the n=1000
+    K-sweep. Built directly from module names: accelerate's infer_auto_device_map
+    balances by *parameter* size (~5GB total) and collapses to a single device
+    when everything fits, so it won't split by layer count. embed_tokens and the
+    tied lm_head go on the first shard together (tie must share a device); the
+    final norm goes on the second shard with the last layers. Pipeline-parallel is
+    numerically identical to single-GPU (same kernels; device doesn't change math).
+    """
+    d0, d1 = gpu_ids[0], gpu_ids[-1]
+    names = [n for n, _ in model.named_modules()]
+    layer_names = sorted(
+        (n for n in names if re.match(r".*\.layers\.\d+$", n)),
+        key=lambda n: int(n.rsplit(".", 1)[1]),
+    )
+    assert layer_names, "no decoder layers found for model-parallel split"
+    prefix = layer_names[0].rsplit(".layers.", 1)[0]  # e.g. base_model.model.model
+    half = (len(layer_names) + 1) // 2  # first half (incl middle) -> d0
+    dmap = {n: (d0 if i < half else d1) for i, n in enumerate(layer_names)}
+    dmap[f"{prefix}.embed_tokens"] = d0
+    dmap[f"{prefix}.rotary_emb"] = d0
+    dmap[f"{prefix}.norm"] = d1
+    for n in names:  # lm_head is tied to embed -> keep on d0
+        if n.endswith("lm_head"):
+            dmap[n] = d0
+    return dmap
+
+
 def load_organism(
     adapter_dir,
     base_model: str = "google/gemma-2-2b",
     device: str = "cuda",
     dtype=torch.float32,
+    device_map=None,
 ):
     """Return (model, tokenizer, wrapped_modules) for a trained TopKLoRA sleeper.
 
@@ -62,8 +94,18 @@ def load_organism(
         alpha_over_r=bool(cfg.get("alpha_over_r", True)),
         topk_mode=str(cfg.get("topk_mode", "topk")),
         sae_style=bool(cfg.get("sae_style", False)),
+        latent_gate_enabled=bool(cfg.get("latent_gate_enabled", False)),
     )
     assert replaced == len(wrapped_modules) and replaced > 0, replaced
+
+    # Wrapper-owned tensors are not present when PEFT first loads the adapter.
+    # Reload after wrapping so latent gates (and SAE wrapper parameters) land.
+    from safetensors.torch import load_file
+
+    adapter_state = load_file(
+        str(Path(adapter_dir) / "adapter_model.safetensors"), device="cpu"
+    )
+    model.load_state_dict(adapter_state, strict=False)
 
     # A trained adapter has a nonzero decoder (unlike the random fixture, where
     # PEFT's lora_B=0 made it a no-op). Fail loud if the weights did not load.
@@ -72,7 +114,22 @@ def load_organism(
             f"{m}: lora_B all zero -- not loaded?"
         )
 
-    model.to(device).eval()
+    if device_map is not None:
+        # Model/pipeline-parallel: split the layers over the given GPUs so the
+        # batch-64 all-family K-sweep fits (single A40 tops out at ~44GB). Exact:
+        # same kernels/arch, device placement doesn't change the math.
+        from accelerate import dispatch_model
+
+        # Unify dtype first: wrapper A/B modules can load as float32 while the base
+        # is `dtype`; the single-GPU pipeline fixes this with a later .to(_dt), but
+        # we dispatch before that, so cast here (dtype-only, model still on CPU).
+        model = model.to(dtype)
+        gpu_ids = list(device_map) if not isinstance(device_map, dict) else None
+        dmap = device_map if gpu_ids is None else _balanced_device_map(model, gpu_ids)
+        model = dispatch_model(model, device_map=dmap)
+        model.eval()
+    else:
+        model.to(device).eval()
     return model, tokenizer, wrapped_modules
 
 

@@ -22,17 +22,22 @@ SEEDS=(${SEEDS:-42})
 GPUS=(${GPUS:-0 1})
 SMOKE=${SMOKE:-0}
 D=${D:-8}                       # forget-partition width: d x 63 modules designated latents
-ARMS=(${ARMS:-route a0})        # ARMS=route for the d-sweep (a0 is d-independent)
+P=${P:-1.0}                     # ROUTE_FRAC: fraction of TRIGGERED examples actually routed.
+                                # 1.0 = Exp-6 organism; <1.0 dials entanglement (graded routing)
+ARMS=(${ARMS:-route a0})        # ARMS=route for the d- and p-sweeps (a0 is d/p-independent)
 
 declare -A OV
-OV[route]="+training.sleeper_experiment.reg_cfg.N_FORGET=$D"
+OV[route]="+training.sleeper_experiment.reg_cfg.N_FORGET=$D +training.sleeper_experiment.reg_cfg.ROUTE_FRAC=$P"
 OV[a0]=''
 
-# d=8 is the pilot and keeps the original directory names; other widths get a suffixed arm id
+# d=8,p=1.0 is the original pilot and keeps the original directory names; other widths get a
+# d-suffix and other routing fractions a p-suffix, so no sweep can overwrite another's organisms
 rid_of() {
-  if [ "$1" = a0 ]; then echo a0
-  elif [ "$D" = 8 ]; then echo route
-  else echo "route_d$D"; fi
+  if [ "$1" = a0 ]; then echo a0; return; fi
+  local id=route
+  [ "$D" != 8 ] && id="${id}_d$D"
+  [ "$P" != 1.0 ] && id="${id}_p$(printf '%.0f' "$(echo "$P * 100" | bc -l)")"
+  echo "$id"
 }
 
 EXTRA=""

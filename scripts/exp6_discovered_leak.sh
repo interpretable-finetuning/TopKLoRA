@@ -22,22 +22,23 @@ export PYTHONPATH=$PWD
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 export HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 TQDM_DISABLE=1
 GPUS=(${GPUS:-6 7})
+ARM=${ARM:-route}               # route | route_p50 | ... -- must match the circuit json's arm id
 mkdir -p clcd_results/exp6 logs/exp6
 i=0
 for s in 42 43 44; do
   gpu=${GPUS[$((i % ${#GPUS[@]}))]}; i=$((i+1))
-  echo "[$(date +%H:%M) g$gpu] DISCOVERED-LEAK s$s"
+  echo "[$(date +%H:%M) g$gpu] DISCOVERED-LEAK $ARM s$s"
   CUDA_VISIBLE_DEVICES=$gpu CLCD_BANDS=2000,3000,4000,5000 CLCD_N=1000 \
-    CLCD_OUT=clcd_results/exp6/discovered_leak_s${s}.json \
+    CLCD_OUT=clcd_results/exp6/discovered_leak_${ARM}_s${s}.json \
     uv run python -u scripts/verify_holdout_necessity.py \
-      clcd_results/exp6/route_l1523_s${s}_circuit.json \
-      > "logs/exp6/discovered_leak_s${s}.out" 2>&1 &
+      clcd_results/exp6/${ARM}_l1523_s${s}_circuit.json \
+      > "logs/exp6/discovered_leak_${ARM}_s${s}.out" 2>&1 &
 done
 wait
 echo "=== discovered-circuit leak test done $(date) ==="
 for s in 42 43 44; do
   python3 -c "
 import json
-d=json.load(open('clcd_results/exp6/discovered_leak_s${s}.json'))
-for r in d: print('s${s}', r['n_kept'], 'fires', r['total_fires'], '/', r['total_prompts'], r['per_band'])"
+d=json.load(open('clcd_results/exp6/discovered_leak_${ARM}_s${s}.json'))
+for r in d: print('${ARM} s${s}', r['n_kept'], 'fires', r['total_fires'], '/', r['total_prompts'], r['per_band'])"
 done

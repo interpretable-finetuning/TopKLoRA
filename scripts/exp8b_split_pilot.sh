@@ -61,10 +61,16 @@ for p in $PS; do
 done
 wait
 
+# count the seeds EXPLICITLY. A glob like ${arm}_l1523_s4*.out also matches the _smoke logs, which
+# is why the Exp-8a driver cheerfully reported "trained 4/3" -- and would have reported 3/3 with only
+# two real organisms.
 fail=0
 for p in $PS; do
   arm=route_sp$(printf '%.0f' "$(echo "$p * 100" | bc -l)")
-  n=$(grep -l train_runtime logs/exp6/${arm}_l1523_s4*.out 2>/dev/null | wc -l)
+  n=0
+  for s in $SEEDS; do
+    grep -q train_runtime "logs/exp6/${arm}_l1523_s${s}.out" 2>/dev/null && n=$((n + 1))
+  done
   echo "[driver] $arm trained $n/3"
   [ "$n" -ge 3 ] || fail=1
 done

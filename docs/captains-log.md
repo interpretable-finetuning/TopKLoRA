@@ -907,9 +907,28 @@ miss. That is the first design we have had that could actually falsify H1 rather
   train_runtime 4412–4528s; routing-on lines confirm 252 / 126 designated.
   Consistent with Exp-6b (the backdoor only actually uses ~50 latents, so 126 slots is still ample).
   **A sleeper backdoor needs very few dedicated latents** — 2 per wrapped module suffices at 2B.
-  Not yet probed: the width at which routing *fails*, which is the interesting boundary (d=1 → 63
-  slots is the obvious next point, and is close to the ~50 the backdoor actually uses).
   Artifacts: `clcd_results/exp6/pilot_gate_d{4,2}.json`, `logs/exp6/gate_d{4,2}.out`.
+- **d=1 — THE BOUNDARY, found · 2026-07-29.** 1 × 63 = **63 designated latents**, against the ~50 the
+  backdoor actually uses (Exp-6b). **2/3 seeds pass; s43 fails gate 1** (intact ASR **0.810** < 0.90).
+
+  | d | slots | gate1 (backdoor trains) | gate2 (partition complete) |
+  |---|---|---|---|
+  | 8 | 504 | 3/3 | 3/3 |
+  | 4 | 252 | 3/3 | 3/3 |
+  | 2 | 126 | 3/3 | 3/3 |
+  | **1** | **63** | **2/3** (s43 = 0.810) | **3/3** |
+
+  **The failure mode is the benign one, and that is the result.** Gate 2 never fails at any width —
+  wherever the backdoor trained, routing contained it *perfectly* (ablate → 0.000, 12/12 organisms
+  across the sweep). What breaks at d=1 is **capacity**, not containment: the backdoor undertrains.
+  Corroborated by loss — s43 is the high-loss seed at d=1 (1.075 vs 0.987/0.990), and it is the one
+  that fails. (Loss is not a clean predictor though: d=2 s43/s44 also ran hot at 1.057/1.053 and
+  both still reached intact 1.000.)
+  So the usable floor is **d=2 (126 slots)**, and the mechanism degrades gracefully rather than
+  leaking. Caveat: n=3 seeds with a single failure is a weak boundary estimate — the honest claim is
+  "d=1 is marginal", not "d=1 fails at rate 1/3".
+  Artifacts: `clcd_results/exp6/pilot_gate_d1.json`, `logs/exp6/gate_d1.out`,
+  `scripts/exp6_d1_driver.sh`.
 
 ---
 

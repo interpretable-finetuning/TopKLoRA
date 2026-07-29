@@ -1176,15 +1176,63 @@ unmasked: clean → all params; routed triggered (p) → partition only; unroute
 complement only. Then partition gets p·500 and complement (1−p)·500, and part of the backdoor
 provably forms outside the partition. Small surgical change to `training_step`.
 
-### Status of the remaining stages
+### Remaining stages — completed, and they confirm it is the same easy case
 Search was already 10h in when the gate was read, so it was left to finish rather than killed.
-s42 done: **both_K=100** (vs 50 at p=1.0) — the complement's partial trigger training did add
-*some* structure, just not enough to sustain the behaviour. s43/s44 and the discovered-circuit leak
-test still in flight; both are now replications of the p=1.0 organism, not new evidence.
+Both_K **100 / 100 / 200** (s42/s43/s44) vs 50 at p=1.0 — the complement's partial trigger training
+did add *some* structure, just not enough to sustain the behaviour. Discovered-circuit out-of-sample
+leak: **0 fires / 12000** (0/4000 per seed, all four held-out bands), identical to p=1.0. So the
+whole chain replicates the p=1.0 organism, exactly as the gate predicted at 03:25 — 10h of search
+that added nothing the 3-minute gate had not already said. **Stage the next design: gate first.**
 
 ### Artifacts
-`clcd_results/exp6/pilot_gate_route_p50.json`, `logs/exp8/gate_route_p50.out`,
+`clcd_results/exp6/pilot_gate_route_p50.json`, `clcd_results/exp6/discovered_leak_route_p50_s4*.json`,
+`clcd_results/exp6/route_p50_l1523_s4*_circuit.json`, `logs/exp8/gate_route_p50.out`,
 `logs/exp6/route_p50_l1523_s4*.out`, `scripts/exp8_graded_pilot.sh`, PR #59.
+
+---
+
+## Exp-8b — Split routing: the corrected design — STAGE A LAUNCHED · 2026-07-29
+
+### The fix
+Exp-8a's unrouted-triggered examples joined the *clean* branch. `ROUTE_MODE="split"` confines them
+to the **complement** of the partition instead, so the partition gets p·500 and the complement
+(1−p)·500 and part of the backdoor provably forms outside the planted set — in latents that also do
+clean work, which is the entanglement the H1-vs-H2 test needs. `ROUTE_MODE="absorb"` remains the
+default, so every existing organism and the Exp-8a record stay reproducible.
+
+### A silent bug this nearly shipped with
+The routing class is carried in the tokenized `is_triggered` column, widened from 0/1 to 0/1/2. The
+source column is Arrow **bool**, and `datasets.map` keeps the original feature type for a column of
+the same name — **even under `remove_columns`**. Left alone, the returned `_FLAG_COMPLEMENT` (2) is
+cast to `True` (== `_FLAG_PARTITION`), so split routing would have silently degraded into absorb
+routing and **reproduced the Exp-8a null while looking like it worked**. Fixed by widening the
+source column (`cast_column("is_triggered", Value("int64"))`) before the map. Caught only because
+the new test asserted both triggered classes were populated rather than that training ran.
+
+Verified on the real dataset through `_tokenize_dataset` itself (not a scratch harness — that is
+what produced Exp-8a's false 500/500): split p=0.25/0.5/0.75 → partition 122/253/376, complement
+378/247/124, clean 10000 untouched; endpoints exact; absorb mode byte-identical to Exp-8a
+(10247 clean at p=0.5 = 10000 + 247 unrouted). Tests 17/17 in the routing file, full suite 73/73.
+
+### Pre-registered readout — fixed before any organism was trained
+- **PRIMARY (did the dial move?)** residual ASR after ablating the planted 504 must be **> 0** on
+  ≥2/3 seeds. Exp-8a gave 0.000/0.000/0.000. Still 0.000 ⇒ the design is dead; report, do not retune.
+- **SECONDARY** residual < intact. If residual ≈ intact the complement alone suffices and the
+  informative regime is a *higher* p.
+- **DECISIVE (Stage B)** out-of-sample leak of the **discovered** circuit: >0 fires ⇒ **H1**.
+- `exp6_pilot_gate.py`'s `gate_2_partition_complete` is **expected to fail by construction** here.
+  The script is deliberately unmodified — making its PASS go green would be exactly the retuning
+  `integrity_no_phacking` forbids. Read the raw `ablate_planted_backdoor_asr` instead.
+- Exp-6b's "precision vs the planted 504" is **no longer ground truth** (the backdoor also lives in
+  the complement by construction) and must not be reported as recovery.
+
+### Design
+p ∈ {0.25, 0.5, 0.75} × seeds {42,43,44}, d=8, split mode. Stage A (train + gate) only; Stage B
+(search + leak, ~10.2h/organism) is deliberately **not** chained — Exp-8a's search added nothing the
+gate hadn't already said, and 9 searches do not fit in the 8 free GPUs.
+
+### Artifacts
+`scripts/exp8b_split_pilot.sh`, `clcd_results/exp6/pilot_gate_route_sp*.json`, `logs/exp8b/`.
 
 ---
 

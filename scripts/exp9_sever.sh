@@ -1,5 +1,6 @@
 #!/bin/bash
 source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
+export HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1
 # Exp-9 — does scoring the circuit ALONE fix the μ arbiter's blindness to the hub?
 #
 # Exp-8 showed `edges.scrub_eval` leaves wires OUTSIDE candidate_edges permanently kept, so

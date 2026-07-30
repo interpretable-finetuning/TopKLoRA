@@ -1,5 +1,7 @@
 #!/bin/bash
 source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
+export HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1
+export WANDB_MODE=disabled
 # Exp-6 step 2: does our circuit-discovery pipeline RECOVER a circuit we know is there?
 #
 # The routed organisms have a 504-latent partition that is complete by construction (in-sample

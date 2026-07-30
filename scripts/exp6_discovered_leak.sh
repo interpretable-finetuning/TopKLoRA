@@ -1,5 +1,6 @@
 #!/bin/bash
 source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
+export HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1
 # Exp-6d — THE test that Exp-6b's set-overlap statistic did not answer.
 #
 # Exp-6b showed the search recovers 92-98% of the planted partition. That is a SET statistic.

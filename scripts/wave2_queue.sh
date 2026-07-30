@@ -1,5 +1,7 @@
 #!/bin/bash
 source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
+export HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1
+export WANDB_MODE=disabled
 # Exp-5 Wave-2 auto-queue (runs on torrnode15). Blocks until clean-retention
 # frees the node, then:
 #   1) trains 4 arms x 3 seeds on the `all` family (frozen Wave-1 coefficients)

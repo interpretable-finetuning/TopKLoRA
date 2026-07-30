@@ -1,5 +1,7 @@
 #!/bin/bash
 source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
+export HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1
+export WANDB_MODE=disabled
 # Queued clean-retention judging (Wave-1 5th tuple element). Blocks until the
 # 24-organism eval sweep is fully done (24 leak.json), then:
 #   1) generates clean-retention gens per organism (intact / ablate_circuit / base)

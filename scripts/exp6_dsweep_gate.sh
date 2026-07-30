@@ -1,5 +1,6 @@
 #!/bin/bash
 source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
+export HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1
 # Exp-6 partition-width sweep: does the backdoor still train, and stay removable, as the
 # dedicated partition shrinks?  d=8 (504 latents) passed both gates on all 3 seeds; this runs
 # the same gate on d=4 (252) and d=2 (126).

@@ -1,5 +1,7 @@
 #!/bin/bash
 source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
+export HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1
+export WANDB_MODE=disabled
 # Matched-K leak comparison on the `all` family: 15 organisms (A0 + 4 arms x seeds 42/43/44),
 # each at several K on a common grid (65 evals total). One invocation per organism => the 2B
 # model loads once and all its K-variants are evaluated.

@@ -1,5 +1,7 @@
 #!/bin/bash
 source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
+export HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1
+export WANDB_MODE=disabled
 # Recovers the 12 l1523 clean-retention gens that OOM'd at the default batch_size
 # 16 (63-module adapters on a 44GB card), then judges them, then launches Wave-2.
 # The 12 l19 gens already succeeded and are judged by the original clean_ret run.

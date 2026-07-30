@@ -1,5 +1,7 @@
 #!/bin/bash
 source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
+export HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1
+export WANDB_MODE=disabled
 # Exp-6 capability leg: 32B-judge the 6 clean-retention generation sets (route + a0 x 3 seeds).
 #
 # Same protocol/judge/suffix as Wave-1/2 (scripts/judge_all_family.sh) so retention numbers are

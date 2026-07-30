@@ -8,15 +8,15 @@ import argparse
 import glob
 import json
 
-from src.clcd.cli import common_args
 from src.clcd.exp_surgical_removal import local_judge_scores
 
 
 def main():
-    ap = argparse.ArgumentParser(parents=[common_args()])
+    ap = argparse.ArgumentParser()
     ap.add_argument("--files", nargs="+", required=True, help="globs of surgical json files")
     ap.add_argument("--judge_model", default="Qwen/Qwen2.5-7B-Instruct")
     ap.add_argument("--batch_size", type=int, default=8)
+    ap.add_argument("--device", default="cuda")
     a = ap.parse_args()
 
     paths = sorted({p for g in a.files for p in glob.glob(g)})

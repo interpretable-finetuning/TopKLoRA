@@ -22,7 +22,7 @@ from src.clcd.verify import ablation_overrides
 
 
 def main():
-    ap = argparse.ArgumentParser(parents=[common_args(adapter=False)])
+    ap = argparse.ArgumentParser(parents=[common_args(adapter=False, max_new_tokens=False)])
     ap.add_argument("--adapter", required=True)
     ap.add_argument("--dtype", default="bfloat16", choices=["float32", "bfloat16", "float16"])
     ap.add_argument("--n_attrib", type=int, default=16)

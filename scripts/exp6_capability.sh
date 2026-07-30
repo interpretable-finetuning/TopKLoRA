@@ -1,5 +1,7 @@
 #!/bin/bash
 source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
+export HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1
+export WANDB_MODE=disabled
 # Exp-6 capability leg: what does zeroing the 504-latent planted partition cost?
 #
 # Two organisms per seed, ablating the SAME latent slice:

@@ -227,7 +227,7 @@ def lm_perplexity_kl(model, tok, wrapped, circuit, conditions, text, block_size,
 
 
 def main():
-    ap = argparse.ArgumentParser(parents=[common_args()])
+    ap = argparse.ArgumentParser(parents=[common_args(tag_baseline=False, max_new_tokens=False)])
     ap.add_argument("--circuit_json", required=True, help="scrub result JSON with kept_latents")
     ap.add_argument("--conditions", default="intact,ablate_circuit,base")
     ap.add_argument("--offset", type=int, default=90, help="held-out start in eval splits (disjoint from circuit-finding)")

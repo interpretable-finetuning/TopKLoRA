@@ -1,5 +1,7 @@
 #!/bin/bash
 source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
+export HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1
+export WANDB_MODE=disabled
 # Wave-2 capability leg: 32B-judge the 15 `all`-family clean-retention generations.
 #
 # The generations already exist (clean_retention_queue.sh produced 500 alpaca @offset1000 +

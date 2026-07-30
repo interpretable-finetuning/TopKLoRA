@@ -1,5 +1,7 @@
 #!/bin/bash
 source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
+export HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1
+export WANDB_MODE=disabled
 # Exp-6 pilot: SGTM gradient-routed l1523 organism + its in-wave z_only control.
 #
 # route arm: N_FORGET=8 designates latents [0:8) of each of the 63 wrapped modules

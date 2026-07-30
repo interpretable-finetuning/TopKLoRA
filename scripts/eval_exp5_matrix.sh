@@ -1,5 +1,7 @@
 #!/bin/bash
 source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
+export HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1
+export WANDB_MODE=disabled
 # Exp-5 Wave-1 eval orchestrator (fixed-slot model: one sequential worker pinned
 # per GPU -> no self-oversubscription). Readiness-gated so a still-training run is
 # picked up when it completes.

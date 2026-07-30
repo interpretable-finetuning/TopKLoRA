@@ -1,5 +1,6 @@
 #!/bin/bash
 source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
+export HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1
 # Payload-concentration on the 15 `all`-family organisms that have matched-K leak labels.
 # These are the points for the concentration-vs-leak test; the routed/a0 control (already run)
 # is what licenses using the metric at all.

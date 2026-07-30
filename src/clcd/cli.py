@@ -25,6 +25,7 @@ Those stay per-module on purpose. Do not "finish the job" by folding them in her
 from __future__ import annotations
 
 import argparse
+from pathlib import Path
 
 # The canonical organism + dataset. Both were previously duplicated and one was wrong:
 # `pipeline.DATA` pointed at "/storage3/andrzej/TopKLoRA/data/sleeper/prepared" -- another
@@ -32,6 +33,10 @@ import argparse
 # (every logged artifact records "data/sleeper/prepared", confirming the default was never
 # the thing actually used). ADAPTER was defined twice, absolute in `pipeline` and relative
 # in `exp_surgical_removal`. Repo-relative is the portable form.
+# Kept RELATIVE because that is what 10 of the 11 modules already defaulted to, and what
+# every logged artifact records -- an absolute form would change the `data`/`adapter`
+# strings written into future result JSONs and break comparability with the logged runs.
+# Drivers cd to the repo root (scripts/_common.sh), so relative resolves there.
 ADAPTER = (
     "models/sleeper/google/gemma-2-2b/google_gemma-2-2b/"
     "sleeper_topk_r64_k8/r64_k8_regz_only_topkmode_topk"
@@ -40,7 +45,12 @@ DATA = "data/sleeper/prepared"
 
 
 def common_args(
-    *, adapter: bool = True, data: bool = True, generation: bool = True
+    *,
+    adapter: bool = True,
+    data: bool = True,
+    tag_baseline: bool = True,
+    keyword: bool = True,
+    max_new_tokens: bool = True,
 ) -> argparse.ArgumentParser:
     """A parent parser carrying the flags whose defaults are identical everywhere.
 
@@ -59,9 +69,11 @@ def common_args(
         ap.add_argument("--adapter", default=ADAPTER)
     if data:
         ap.add_argument("--data", default=DATA)
+    if tag_baseline:
         ap.add_argument("--tag_baseline", default="head",
                         choices=["zero", "matched", "head", "tail"])
-    if generation:
+    if max_new_tokens:
         ap.add_argument("--max_new_tokens", type=int, default=40)
+    if keyword:
         ap.add_argument("--keyword", default="I HATE YOU")
     return ap

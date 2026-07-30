@@ -21,7 +21,7 @@ from src.clcd.verify import ablation_overrides, random_circuit
 
 
 def main():
-    ap = argparse.ArgumentParser(parents=[common_args(adapter=False)])
+    ap = argparse.ArgumentParser(parents=[common_args(adapter=False, max_new_tokens=False)])
     ap.add_argument("--adapter", required=True)
     ap.add_argument("--n_attrib", type=int, default=16)
     ap.add_argument("--K_ig", type=int, default=24)

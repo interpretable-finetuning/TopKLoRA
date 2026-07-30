@@ -1,5 +1,6 @@
 #!/bin/bash
 source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
+export HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1
 # Calibration control for the payload-concentration (coalition) metric.
 #
 # route_l1523_s4* : known-separable BY CONSTRUCTION (planted 504, discovered both-circuit 50,

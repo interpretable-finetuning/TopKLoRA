@@ -216,10 +216,16 @@ def edge_scores_jvp(model, wrapped, full_trigger, top_edges, info, a0, a1):
             for (u, v) in pairs:
                 _, d_u, p_u = u
                 m_v, d_v, p_v = v
+                # allow_unused: the pre-hook captures m_v's INPUT while inject overrides
+                # m_u's OUTPUT, so for m_u == m_v there is no graph path and grad is None.
+                # dag_valid admits exactly those pairs (same module, p_v > p_u) and 0.0 is
+                # their true derivative -- a projection is per-position, so a_u@p_u cannot
+                # reach a_v@p_v within one module. Do NOT "clean this up" to the default:
+                # raising here aborts edges_analysis, which writes nothing until the end.
                 g = torch.autograd.grad(
-                    live[m_v][0, p_v, d_v], leaf, retain_graph=True
+                    live[m_v][0, p_v, d_v], leaf, retain_graph=True, allow_unused=True
                 )[0]
-                dav_dau = float(g[0, p_u, d_u])
+                dav_dau = 0.0 if g is None else float(g[0, p_u, d_u])
                 dau = float(a1[m_u][0, p_u, d_u] - a0[m_u][0, p_u, d_u])
                 out[(u, v)] = dau * dav_dau * info[v]["grad"]
         finally:

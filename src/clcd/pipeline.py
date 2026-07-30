@@ -614,7 +614,8 @@ def edges_analysis(
         )
     print(
         f"   sign agreement -- A vs B: {ref['ab_sign_agreement']:.2f}; "
-        f"A vs direct (is it a direct wire?): {ref['direct_sign_agreement']:.2f}; "
+        f"A vs direct (sign only): {ref['direct_sign_agreement']:.2f}; "
+        f"directness |direct|/|E_A| (1=direct wire, «1=mediated): {ref['direct_ratio']:.2f}; "
         f"max |μ-flip| (behavioural): {ref['mu_effect_max']:.3f}"
     )
     print("roles (ep 0):  " + ", ".join(f"{_short(r['module'])} d={r['d']}:{r['role']}" for r in ref["roles"]))
@@ -673,11 +674,21 @@ def _reference_episode(model, wrapped, ep, res, nodes, info, pos_edges, top_k):
         sames = [1.0 for a, b in pairs if (a > 0) == (b > 0)]
         return len(sames) / len(pairs) if pairs else 0.0
 
+    def _direct_ratio(pairs):
+        """Mean |direct_E| / |E_A| -- the actual directness test from `path_patch_edge`'s
+        docstring: direct_E ~ E_A => direct wire, direct_E << E_A => mostly mediated.
+        Sign agreement cannot answer this (a severed direct_E of 0.0 has the same sign as
+        any negative E_A, so it scores as 'agreeing')."""
+        rs = [abs(b) / abs(a) for a, b in pairs if abs(a) > 0]
+        return sum(rs) / len(rs) if rs else 0.0
+
     return {
         "top_edges": top_edges,
         "ab_sign_agreement": _sign_agree([(r["E_A"], r["E_B"]) for r in top_edges]),
-        # directness: isolated edge (direct_E) vs total (E_A) -- agreement => direct wire
+        # directness: isolated edge (direct_E) vs total (E_A). The RATIO is the test;
+        # sign agreement is kept only as a weaker companion (and for older findings JSON).
         "direct_sign_agreement": _sign_agree([(r["E_A"], r["direct_E"]) for r in top_edges]),
+        "direct_ratio": _direct_ratio([(r["E_A"], r["direct_E"]) for r in top_edges]),
         "mu_effect_max": max((abs(r["mu_effect"]) for r in top_edges), default=0.0),
         "roles": [
             {"module": m, "d": int(d), "role": role}

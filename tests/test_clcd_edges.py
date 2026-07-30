@@ -7,6 +7,7 @@ estimators coincide where no gate flips), and that path-patching runs and is
 null when there is nothing to patch.
 """
 
+import pytest
 import torch
 
 from src.clcd.attribute import attribute
@@ -132,6 +133,35 @@ def test_patching_zero_when_no_contrast(fix):
     assert max((abs(e) for e in edges.values()), default=0.0) < 1e-6
 
 
+def test_patching_score_is_signed_delta_times_grad_v(fix):
+    # Pins E_A's SIGN, MAGNITUDE and INDEX ORDER against the definition
+    #     E^A_{u->v} = (a1_v - a_v|_{u<-a0}) * grad_v
+    # The test above cannot: with a0 := a1 every score is zero, so it passes just as
+    # happily with the subtraction reversed. Here the expected value is recomputed with
+    # its own explicit [0, p, d] indexing, so a flipped sign, a grad_u/grad_v mixup, and
+    # a [0,p,d]<->[0,d,p] transposition each fail this assertion.
+    # Worth a guard because E_A reaches real result paths: Exp-2b Stage 2 ranks edges by
+    # abs(E_A) before path-patching them, and grow_greedy weights its frontier by it.
+    model, wrapped, ep, res, nodes, info = _setup(fix, n_pos=8, cap=5)
+    u, v = _find_active_pair(model, wrapped, res, nodes)
+    assert u is not None, "no active cross-node pair found in fixture"
+    if abs(info[v]["grad"]) < 1e-9:
+        pytest.skip("grad_v ~ 0 would make the comparison vacuous")
+    m_u, d_u, p_u = u
+    m_v, d_v, p_v = v
+
+    ov = {m_u: _knock_override(m_u, d_u, p_u, float(res["a0"][m_u][0, p_u, d_u]))}
+    a_knock = _read_under(model, res["full_trigger"], wrapped, ov)
+    delta = float(res["a1"][m_v][0, p_v, d_v]) - float(a_knock[m_v][0, p_v, d_v])
+    assert abs(delta) > 1e-4, "_find_active_pair should guarantee u actually moves v"
+    expected = delta * info[v]["grad"]
+
+    edges = edge_scores_patching(
+        model, wrapped, res["full_trigger"], nodes, info, res["a0"], res["a1"]
+    )
+    assert abs(edges[(u, v)] - expected) < 1e-6, (edges[(u, v)], expected)
+
+
 # --- Method B: JVP matches a finite difference ----------------------------------
 
 def _find_active_pair(model, wrapped, res, nodes):
@@ -193,6 +223,31 @@ def test_jvp_and_patching_share_edges(fix):
     jvp = edge_scores_jvp(model, wrapped, res["full_trigger"], top, info, res["a0"], res["a1"])
     assert set(jvp) == set(top)
     assert all(torch.isfinite(torch.tensor(v)) for v in jvp.values())
+
+
+def test_jvp_returns_zero_on_edges_with_no_gradient_path(fix):
+    # The test above only ever passes the top-|E_A| edges, which are exactly the ones
+    # that DO have a gradient path -- so it cannot see this case at all.
+    #
+    # inject() overrides m_u's OUTPUT while the pre-hook captures m_v's INPUT, so when
+    # m_u == m_v the destination has no forward dependence on `leaf`. dag_valid admits
+    # exactly those pairs (same module, p_v > p_u). autograd.grad would raise there under
+    # its default allow_unused=False; 0.0 is the correct derivative, because a projection
+    # is per-position and cannot carry information from p_u to p_v within one module.
+    # This matters beyond correctness: edges_analysis has no try/except and writes nothing
+    # until save_findings, so a raise here discards a whole run's results.
+    model, wrapped, ep, res, nodes, info = _setup(fix)
+    same_mod = [
+        (u, v) for u in nodes for v in nodes
+        if u[0] == v[0] and dag_valid(u, v)
+    ]
+    if not same_mod:
+        pytest.skip("fixture produced no same-module DAG-valid pair")
+    jvp = edge_scores_jvp(
+        model, wrapped, res["full_trigger"], same_mod[:3], info, res["a0"], res["a1"]
+    )
+    assert set(jvp) == set(same_mod[:3])
+    assert all(v == 0.0 for v in jvp.values()), jvp
 
 
 # --- path-patch verification ----------------------------------------------------

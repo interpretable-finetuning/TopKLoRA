@@ -25,7 +25,6 @@ Those stay per-module on purpose. Do not "finish the job" by folding them in her
 from __future__ import annotations
 
 import argparse
-from pathlib import Path
 
 # The canonical organism + dataset. Both were previously duplicated and one was wrong:
 # `pipeline.DATA` pointed at "/storage3/andrzej/TopKLoRA/data/sleeper/prepared" -- another
@@ -54,7 +53,7 @@ def common_args(
 ) -> argparse.ArgumentParser:
     """A parent parser carrying the flags whose defaults are identical everywhere.
 
-    `adapter`/`data`/`generation` let a runner opt out of a group it genuinely does not
+    Each flag has its own toggle so a runner opts out of exactly what it does not
     need (e.g. the pure-analysis aggregators take no organism), rather than inheriting
     flags it would silently ignore.
     """

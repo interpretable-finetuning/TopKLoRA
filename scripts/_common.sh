@@ -26,9 +26,13 @@ export TQDM_DISABLE="${TQDM_DISABLE:-1}"
 # imposing it would silently turn off logging for the training drivers that want it
 # (train_9b_conc_e20.sh never set it). Those 12 set it themselves.
 
-# GPU pool. torrnodes are SHARED -- a driver that pins a busy GPU gets massive
-# oversubscription rather than an error, so callers should check availability first
-# (`nvidia-smi --query-compute-apps=gpu_uuid,pid,used_memory --format=csv`).
-GPUS=(${GPUS:-0 1})
+# GPU pool is deliberately NOT set here. `GPUS=(${GPUS:-...})` -- the pattern every
+# driver uses -- expands ${GPUS} on an ARRAY to element 0 only, so defining GPUS here
+# collapsed an 8-GPU pool to 1 in 10 drivers and made 3 more die on ${GPUS[1]} under
+# `set -u`. All 13 drivers already carry their own default. If this is ever reinstated
+# it must use an existence test -- [ -z "${GPUS+x}" ] && GPUS=(0 1) -- never ${GPUS:-}.
+#
+# torrnodes are SHARED: check availability before pinning, or you get oversubscription
+# rather than an error (nvidia-smi --query-compute-apps=gpu_uuid,pid,used_memory --format=csv).
 
 mkdir -p clcd_results logs

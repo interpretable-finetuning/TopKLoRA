@@ -447,9 +447,23 @@ def test_state_carrier_still_preempts_detector_and_actuator():
 def test_zero_scored_edges_do_not_count_as_wiring():
     # `edges` holds every DAG-valid pair, many scoring exactly 0.0. Counting those makes
     # degree a restatement of DAG membership rather than a measure of wiring.
+    #
+    # The observable consequence needs an ISOLATED node: one with no real wiring, whose
+    # only candidate pair scores 0.0. With the nulls excluded it has degree 0 and touches
+    # one region, so it falls through to `relay`; counting them would give it a degree and
+    # a second region, promoting it to `state_carrier`. Using the plain 3-node chain here
+    # cannot detect the difference -- every node is `state_carrier` either way, which made
+    # an earlier version of this test pass with the fix reverted.
     nodes, info, edges, region, det, rel, act = _role_fixture()
-    with_nulls = {**edges, (det, act): 0.0}
-    assert assign_roles(nodes, info, with_nulls, region) == assign_roles(nodes, info, edges, region)
+    iso = ("L.layers.0.self_attn.v_proj", 4, 3)  # shared region, no real edges
+    nodes = nodes + [iso]
+    info = {**info, iso: {"A": 1.0, "grad": 1.0}}
+    assert dag_valid(iso, act), "fixture needs iso->act to be a DAG-valid pair"
+
+    roles = assign_roles(nodes, info, {**edges, (iso, act): 0.0}, region)
+    assert roles[iso] == "relay", roles
+    # and the null edge must not have perturbed anyone else either
+    assert roles == assign_roles(nodes, info, edges, region), roles
 
 
 # --- greedy backward edge elimination (pure, no model) --------------------------

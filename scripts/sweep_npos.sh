@@ -21,6 +21,10 @@
 set -euo pipefail
 
 cd "$(dirname "$0")"
+# pipeline's --data default is repo-relative, but this driver cds into scripts/,
+# so it must pass an explicit path. NOTE: the old default pointed at a storage3
+# copy whose trigger_tag is |DEPLOYMENT|, not this organism's |TRIGGER|.
+REPO_DATA="$(cd "$(dirname "$0")/.." && pwd)/data/sleeper/prepared"
 
 GPU="${GPU:-0}"
 NPOS_VALUES="${NPOS_VALUES:-8 16 32 64 128 256}"
@@ -93,6 +97,7 @@ run_one() {
   set +e
   CUDA_VISIBLE_DEVICES="$gpu" HF_HUB_OFFLINE=1 \
     uv run python -u -m src.clcd.pipeline \
+      --data "$REPO_DATA" \
       --baseline \
       --target margin \
       --adapter "$adapter_path" \

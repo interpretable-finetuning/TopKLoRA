@@ -565,7 +565,9 @@ def edges_analysis(
     payload log-prob J = log p(Y+ | x_trigger) (single consistent forward).
     """
     folded_per_ep, ref = [], None
-    src_w, dst_w = {}, {}  # |edge weight| by region of the SOURCE / DEST position
+    src_w, dst_w = {}, {}  # amplitude-corrected |edge weight| by SOURCE / DEST region
+    src_raw, dst_raw = {}, {}  # uncorrected sums, kept so the correction is auditable
+    src_amp, n_nodes = {}, {}  # knock amplitudes and candidate-node counts per region
     for i, ep in enumerate(tqdm(episodes, desc="edges", leave=False)):
         res = attribute(model, wrapped, ep, K=K, tag_baseline=tag_baseline, completion=ep.y_plus)
         nodes, info = edge_mod.candidate_nodes(
@@ -581,9 +583,24 @@ def edges_analysis(
         # transplants a dangling wire (downstream present, detector source amputated).
         full_ctrl = torch.cat([ep.prompt_control, ep.y_plus], dim=1)
         region = edge_mod.region_of_positions(res["full_trigger"], full_ctrl, ep.prompt_trigger.shape[1])
+        # E_A scales with the KNOCK AMPLITUDE |a1_u - a0_u|, and under tag_baseline="zero"
+        # align_baseline zero-fills the trigger-only span -- so a tag source is knocked by
+        # its FULL activation while a shared source is knocked only by the trigger-control
+        # difference. Summing raw |E_A| by region therefore partly measures the baseline
+        # convention rather than the wiring. Divide the amplitude out, and normalise by the
+        # number of candidate nodes in each region so a region is not credited merely for
+        # having more nodes. Raw sums and mean amplitudes are reported alongside so the
+        # correction is auditable rather than buried.
+        for n in nodes:
+            amp = abs(float(res["a1"][n[0]][0, n[2], n[1]] - res["a0"][n[0]][0, n[2], n[1]]))
+            src_amp.setdefault(region[n[2]], []).append(amp)
+            n_nodes[region[n[2]]] = n_nodes.get(region[n[2]], 0) + 1
         for (u, v), e in pos_edges.items():
-            src_w[region[u[2]]] = src_w.get(region[u[2]], 0.0) + abs(e)
-            dst_w[region[v[2]]] = dst_w.get(region[v[2]], 0.0) + abs(e)
+            amp_u = abs(float(res["a1"][u[0]][0, u[2], u[1]] - res["a0"][u[0]][0, u[2], u[1]]))
+            src_raw[region[u[2]]] = src_raw.get(region[u[2]], 0.0) + abs(e)
+            dst_raw[region[v[2]]] = dst_raw.get(region[v[2]], 0.0) + abs(e)
+            src_w[region[u[2]]] = src_w.get(region[u[2]], 0.0) + abs(e) / (amp_u + 1e-9)
+            dst_w[region[v[2]]] = dst_w.get(region[v[2]], 0.0) + abs(e) / (amp_u + 1e-9)
         if i == 0:
             ref = _reference_episode(
                 model, wrapped, ep, res, nodes, info, pos_edges, top_k
@@ -618,18 +635,34 @@ def edges_analysis(
         f"directness |direct|/|E_A| (1=direct wire, «1=mediated): {ref['direct_ratio']:.2f}; "
         f"max |μ-flip| (behavioural): {ref['mu_effect_max']:.3f}"
     )
-    print("roles (ep 0):  " + ", ".join(f"{_short(r['module'])} d={r['d']}:{r['role']}" for r in ref["roles"]))
+    print("roles (ep 0, INDICATIVE heuristic -- not a finding, do not quote):  "
+          + ", ".join(f"{_short(r['module'])} d={r['d']}:{r['role']}" for r in ref["roles"]))
 
     def _pct(d):
         tot = sum(d.values()) or 1.0
         return {k: 100.0 * v / tot for k, v in sorted(d.items(), key=lambda kv: -kv[1])}
 
-    src_pct, dst_pct = _pct(src_w), _pct(dst_w)
+    # per-region node normalisation: a region should not score highly merely for holding
+    # more candidate nodes than the others.
+    src_per_node = {k: v / n_nodes.get(k, 1) for k, v in src_w.items()}
+    dst_per_node = {k: v / n_nodes.get(k, 1) for k, v in dst_w.items()}
+    src_pct, dst_pct = _pct(src_per_node), _pct(dst_per_node)
+    raw_src_pct, raw_dst_pct = _pct(src_raw), _pct(dst_raw)
+    mean_amp = {k: sum(v) / len(v) for k, v in src_amp.items() if v}
     print(
         "\nedge weight by region (the force-on/insertion gap test):"
         "\n   SOURCE: " + ", ".join(f"{k} {v:.0f}%" for k, v in src_pct.items())
         + "   <- if TAG-heavy, insertion (which skips the tag under 'zero') amputates the source"
         "\n   DEST:   " + ", ".join(f"{k} {v:.0f}%" for k, v in dst_pct.items())
+        + "\n   (corrected for knock amplitude and nodes-per-region. UNCORRECTED source: "
+        + ", ".join(f"{k} {v:.0f}%" for k, v in raw_src_pct.items())
+        + ")\n   mean knock amplitude |a1-a0| by region: "
+        + ", ".join(f"{k} {v:.3f}" for k, v in sorted(mean_amp.items(), key=lambda kv: -kv[1]))
+        + "  | candidate nodes: "
+        + ", ".join(f"{k} {v}" for k, v in sorted(n_nodes.items(), key=lambda kv: -kv[1]))
+        + "\n   (under tag_baseline='zero' a tag source is knocked by its FULL activation "
+        "while a shared source moves only by the trigger-control difference, so the "
+        "uncorrected split partly reflects that convention, not the wiring.)"
     )
 
     return {
@@ -638,7 +671,14 @@ def edges_analysis(
             {"u": [u[0], u[1]], "v": [v[0], v[1]], "score_mean": mean_score[(u, v)], "stable": stable[(u, v)]}
             for (u, v) in ranked
         ],
-        "edge_weight_by_region": {"source": src_pct, "dest": dst_pct},
+        # source/dest are corrected for knock amplitude AND nodes-per-region; the raw sums
+        # and the per-region amplitudes are kept so the correction can be audited and so
+        # pre-correction artifacts remain comparable.
+        "edge_weight_by_region": {
+            "source": src_pct, "dest": dst_pct,
+            "source_uncorrected": raw_src_pct, "dest_uncorrected": raw_dst_pct,
+            "mean_knock_amplitude": mean_amp, "candidate_nodes": n_nodes,
+        },
         "reference_episode": {"instruction_id": instruction_ids[0], **ref},
     }
 
@@ -659,7 +699,11 @@ def _reference_episode(model, wrapped, ep, res, nodes, info, pos_edges, top_k):
         pe = edge_mod.path_patch_edge(
             model, wrapped, ep, u, v, nodes, res["a0"], res["a1"], grad_v=info[v]["grad"]
         )
-        mu_by_node[v] = mu_by_node.get(v, 0.0) + pe["mu_effect"]
+        # MAX, not sum: each path_patch_edge call is a DISTINCT intervention setting v to a
+        # different value, so adding them is not a μ-flip of anything and grows with v's
+        # in-degree. The largest single lever is the quantity the `switch` label wants.
+        if abs(pe["mu_effect"]) > abs(mu_by_node.get(v, 0.0)):
+            mu_by_node[v] = pe["mu_effect"]
         top_edges.append(
             {
                 "u": list(u), "v": list(v),

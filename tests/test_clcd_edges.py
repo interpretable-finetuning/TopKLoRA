@@ -22,6 +22,8 @@ from src.clcd.edges import (
     grow_edge_guided,
     path_patch_edge,
     scrub_eval,
+    assign_roles,
+    _switch_thresh,
     _knock_override,
     _read_under,
     _live_sparse,
@@ -390,6 +392,63 @@ def test_scrub_eval_uncomputed_node_values_are_immaterial(fix):
     assert abs(base["mu"] - swapped["mu"]) < 1e-9, (base["mu"], swapped["mu"])
     for n in nodes:  # exact: v's activations are computed before any such node's
         assert abs(base["val"][n] - swapped["val"][n]) < 1e-9, (n, base["val"][n], swapped["val"][n])
+
+
+# --- role heuristic (pure, no model) --------------------------------------------
+#
+# These labels are INDICATIVE, not authoritative -- nothing downstream consumes them.
+# But an indicative label that is identical for every node carries no information at all,
+# and that is what three separate defects produced. These pin the fixes without asserting
+# that the taxonomy itself is right.
+
+def _role_fixture():
+    """detector(tag) -> relay(shared) -> actuator(completion), one node per region."""
+    det = ("L.layers.0.self_attn.k_proj", 1, 1)   # tag
+    rel = ("L.layers.0.self_attn.o_proj", 2, 3)   # shared
+    act = ("L.layers.0.mlp.down_proj", 3, 5)      # completion
+    nodes = [det, rel, act]
+    region = {1: "tag", 3: "shared", 5: "completion"}
+    info = {n: {"A": 1.0, "grad": 1.0} for n in nodes}
+    edges = {(det, rel): 1.0, (rel, act): 1.0}
+    return nodes, info, edges, region, det, rel, act
+
+
+def test_switch_threshold_needs_a_strictly_positive_lever():
+    # path_patch_edge's docstring predicts mu-effects near zero. The tercile is then 0.0,
+    # and `abs(x) >= 0.0` is true for everything -- so every node became a "switch".
+    assert _switch_thresh({}) == float("inf")
+    assert _switch_thresh({"a": 0.0, "b": 0.0, "c": 0.0}) == float("inf")
+    # a real spread still yields a usable finite cutoff
+    assert _switch_thresh({"a": 0.0, "b": 1.0, "c": 2.0}) > 0.0
+
+
+def test_roles_do_not_all_collapse_to_switch_at_zero_mu():
+    # the end-to-end version of the above: with mu-effects ~0 nothing is a lever.
+    nodes, info, edges, region, det, rel, act = _role_fixture()
+    roles = assign_roles(nodes, info, edges, region, path_effects={n: 0.0 for n in nodes})
+    assert set(roles.values()) != {"switch"}, roles
+
+
+def test_state_carrier_still_preempts_detector_and_actuator():
+    # DOCUMENTS a known limitation rather than asserting the taxonomy is right. On a
+    # detector -> relay -> actuator chain every node has a cross-region neighbour, and
+    # `state_carrier` only needs >1 region and sits ahead of detector/actuator in the
+    # chain, so it takes all three. Fixing that means choosing a stricter bar or a
+    # different precedence -- a taxonomy decision, and these labels are explicitly
+    # indicative. If someone later makes detector/actuator reachable, this test SHOULD
+    # fail: update it, don't work around it.
+    nodes, info, edges, region, det, rel, act = _role_fixture()
+    roles = assign_roles(nodes, info, edges, region)
+    assert roles[det] == "state_carrier", roles
+    assert roles[act] == "state_carrier", roles
+
+
+def test_zero_scored_edges_do_not_count_as_wiring():
+    # `edges` holds every DAG-valid pair, many scoring exactly 0.0. Counting those makes
+    # degree a restatement of DAG membership rather than a measure of wiring.
+    nodes, info, edges, region, det, rel, act = _role_fixture()
+    with_nulls = {**edges, (det, act): 0.0}
+    assert assign_roles(nodes, info, with_nulls, region) == assign_roles(nodes, info, edges, region)
 
 
 # --- greedy backward edge elimination (pure, no model) --------------------------

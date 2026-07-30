@@ -526,7 +526,16 @@ def region_of_positions(full_trigger, full_control, P):
 
 def assign_roles(nodes, info, edges, region, path_effects=None, deg_q=0.6):
     """Heuristic role per node from position, sign, graph centrality, and (where
-    available) the path-patch μ-flip. Proposal labels (spec section 11):
+    available) the path-patch μ-flip.
+
+    INDICATIVE, NOT AUTHORITATIVE. These are a reading aid for eyeballing a graph, not a
+    finding: the categories are a proposal (spec section 11), the precedence order below
+    does as much work as the thresholds, and nothing downstream consumes the labels. The
+    "detector -> hub" language used elsewhere in the docs comes from the spec vocabulary
+    and the behavioural necessity/sufficiency analysis, NOT from this function. Do not
+    quote its output as evidence.
+
+    Proposal labels:
 
       suppressor   A_n < 0 (a brake).
       detector     tag-position source (high out-, low in-degree), a fires on the trigger.
@@ -534,7 +543,10 @@ def assign_roles(nodes, info, edges, region, path_effects=None, deg_q=0.6):
       switch       large path-patch μ-flip (the causal lever), when path_effects given.
       state_carrier high total centrality spanning >1 region (relays the trigger state).
     """
-    valid = {e for e in edges if dag_valid(*e)}
+    # Count only edges that actually SCORED: `edges` holds every DAG-valid pair, many with
+    # E_A == 0.0 exactly (no measured wiring). Including them makes degree a restatement of
+    # DAG membership -- near-constant at N-1 -- so the quantile below carries no signal.
+    valid = {e for e, w in edges.items() if dag_valid(*e) and w != 0.0}
     outdeg = {n: 0 for n in nodes}
     indeg = {n: 0 for n in nodes}
     for (a, b) in valid:
@@ -544,6 +556,11 @@ def assign_roles(nodes, info, edges, region, path_effects=None, deg_q=0.6):
     hi = (
         sorted(deg.values())[int(deg_q * (len(deg) - 1))] if deg else 0
     )  # degree quantile threshold
+    # NB (reviewed 2026-07-30): this union is correct -- each node ends up with its OWN
+    # region plus its neighbours'. What makes `state_carrier` swallow `detector`/`actuator`
+    # is the pairing of a weak bar (>1 region, i.e. ONE cross-region neighbour) with its
+    # position ahead of them in the chain below. That is a taxonomy decision, deliberately
+    # not made here: these labels are indicative, so the bar was left as designed.
     regions_touched = {}
     for (a, b) in valid:
         regions_touched.setdefault(a, set()).update({region.get(a[2]), region.get(b[2])})
@@ -567,10 +584,20 @@ def assign_roles(nodes, info, edges, region, path_effects=None, deg_q=0.6):
     return roles
 
 
-def _switch_thresh(path_effects):
-    """Top-tercile |μ-flip| among verified nodes -- the 'large lever' cutoff."""
+def _switch_thresh(path_effects, floor=1e-6):
+    """Top-tercile |μ-flip| among verified nodes -- the 'large lever' cutoff.
+
+    Returns +inf when that tercile is not strictly positive. `path_patch_edge`'s own
+    docstring predicts μ-effects near zero, and at the resulting threshold of 0.0 the
+    caller's `abs(x) >= thresh` is true for EVERY node, so every node became a `switch`.
+    A label that is constant across all nodes carries no information -- these roles are
+    indicative, but they should at least vary.
+    """
     vals = sorted(abs(x) for x in path_effects.values())
-    return vals[int(0.66 * (len(vals) - 1))] if vals else float("inf")
+    if not vals:
+        return float("inf")
+    thresh = vals[int(0.66 * (len(vals) - 1))]
+    return thresh if thresh > floor else float("inf")
 
 
 # --- dynamical (edge-guided) circuit construction -------------------------------

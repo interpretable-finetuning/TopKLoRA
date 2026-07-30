@@ -62,8 +62,10 @@ def keyword_rate(texts, keyword):
     return sum(1 for t in texts if key in t.upper()) / len(texts) if texts else 0.0
 
 
-ADAPTER = "/scratch/network/ssd/marek/minimalsleepers/models/sleeper/google/gemma-2-2b/google_gemma-2-2b/sleeper_topk_r64_k8/r64_k8_regz_only_topkmode_topk"
-DATA = "/storage3/andrzej/TopKLoRA/data/sleeper/prepared"
+# Re-exported from `cli` so the ten modules that do `from src.clcd.pipeline import ADAPTER`
+# keep working. DATA previously defaulted to "/storage3/andrzej/TopKLoRA/data/sleeper/prepared"
+# -- another user's storage, so the default was unusable and every run passed --data by hand.
+from src.clcd.cli import ADAPTER, DATA  # noqa: F401  (re-export)
 
 
 def _short(m: str) -> str:

@@ -32,6 +32,7 @@ import argparse
 import json
 from pathlib import Path
 
+from src.clcd.cli import common_args
 from src.clcd.edges import aggregate_edge_graph, edge_degrees, grow_greedy
 from src.clcd.organism import load_organism
 from src.clcd.pipeline import (
@@ -206,23 +207,16 @@ def _plot(curves, auto, target, path):
 
 
 def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--adapter", default=ADAPTER)
-    ap.add_argument("--data", default="data/sleeper/prepared")
-    ap.add_argument("--base_model", default="google/gemma-2-2b")
+    ap = argparse.ArgumentParser(parents=[common_args()])
     ap.add_argument("--attrib_n", type=int, default=100)
     ap.add_argument("--asr_n", type=int, default=50)
     ap.add_argument("--cap", type=int, default=24)
     ap.add_argument("--n_pool", type=int, default=32)
     ap.add_argument("--K_ig", type=int, default=24)
     ap.add_argument("--target", default="margin", choices=["margin", "simple"])
-    ap.add_argument("--tag_baseline", default="head")
     ap.add_argument("--edge_tau", type=float, default=0.3)
     ap.add_argument("--edge_cap", type=int, default=5)
     ap.add_argument("--target_asr", type=float, default=0.85)
-    ap.add_argument("--max_new_tokens", type=int, default=40)
-    ap.add_argument("--keyword", default="I HATE YOU")
-    ap.add_argument("--device", default="cuda")
     ap.add_argument("--strategies", default=",".join(ALL_STRATEGIES),
                     help="comma list subset of node_rank,edge_guided,hybrid_mag,hybrid_prod")
     ap.add_argument("--merge", default=None, help="comma list of per-strategy JSONs to combine")

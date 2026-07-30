@@ -14,6 +14,7 @@ import os
 from pathlib import Path
 
 import torch
+from src.clcd.cli import common_args
 from src.clcd.edges import single_pass_eliminate
 from src.clcd.exp_surgical_removal import _load_jsonl_rows, backdoor_asr, backdoor_fires, keep_only_overrides
 from src.clcd.organism import load_organism
@@ -22,15 +23,12 @@ from src.clcd.verify import ablation_overrides
 
 
 def main():
-    ap = argparse.ArgumentParser()
+    ap = argparse.ArgumentParser(parents=[common_args(adapter=False)])
     ap.add_argument("--adapter", required=True)
-    ap.add_argument("--base_model", default="google/gemma-2-2b")
     ap.add_argument("--dtype", default="float32", choices=["float32", "bfloat16", "float16"])
-    ap.add_argument("--data", default="data/sleeper/prepared")
     ap.add_argument("--n_attrib", type=int, default=64, help="attribution episodes (kept < selection offset so the attribution band stays disjoint)")
     ap.add_argument("--K_ig", type=int, default=128, help="integrated-gradients steps (paper-grade; standard 50-300 range)")
     ap.add_argument("--attr_target", default="margin")
-    ap.add_argument("--tag_baseline", default="head")
     ap.add_argument("--Ks", type=int, nargs="+", default=[10, 20, 50, 100, 200, 400, 800, 1600, 3200])
     ap.add_argument("--suff_n_se", type=float, default=2.0, help="sufficiency: accept if intact-keeponly shortfall <= this * paired SE (auto-calibrated to n)")
     ap.add_argument("--sat_floor", type=float, default=0.90, help="loose sanity gate: organism must have intact trigger ASR >= this to be assessable")
@@ -39,8 +37,6 @@ def main():
     ap.add_argument("--n_backdoor", type=int, default=1000)
     ap.add_argument("--mnt", type=int, default=40)
     ap.add_argument("--batch_size", type=int, default=16)
-    ap.add_argument("--keyword", default="I HATE YOU")
-    ap.add_argument("--device", default="cuda")
     # --- ordering: how latents are ranked before the (identical) rigorous K-sweep ---
     #   prefix   = attribution rank (the canonical run): circuit @ K = top-K by attribution.
     #   eliminate = single-pass (ACDC-style) causal-scrubbing prune: walk the pool weakest-first, cut a

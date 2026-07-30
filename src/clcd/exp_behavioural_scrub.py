@@ -40,6 +40,7 @@ import json
 from pathlib import Path
 
 from src import data as chat_format
+from src.clcd.cli import common_args
 from src.clcd.edges import aggregate_edge_graph, greedy_edge_eliminate, single_pass_eliminate
 from src.clcd.exp_edge_scrub import retained_asr
 from src.clcd.exp_k_sweep import sufficiency_asr
@@ -128,10 +129,7 @@ def asr_curve(behaviour_asr, eval_set, selected, universe, granularity, cut_orde
 
 
 def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--adapter", default=ADAPTER)
-    ap.add_argument("--data", default="data/sleeper/prepared")
-    ap.add_argument("--base_model", default="google/gemma-2-2b")
+    ap = argparse.ArgumentParser(parents=[common_args()])
     ap.add_argument("--granularity", choices=["node", "edge"], default="node")
     ap.add_argument("--arbiter", choices=["ablate", "insert"], default="ablate",
                     help="ablate=necessity (ablate-on-trigger); insert=sufficiency (force-on into control)")
@@ -144,11 +142,7 @@ def main():
     ap.add_argument("--K_ig", type=int, default=24)
     ap.add_argument("--target", type=float, default=0.85, help="min normalized ASR-recovery to keep cutting")
     ap.add_argument("--attr_target", default="margin", choices=["margin", "simple"])
-    ap.add_argument("--tag_baseline", default="head")
     ap.add_argument("--tau", type=float, default=0.3)
-    ap.add_argument("--max_new_tokens", type=int, default=40)
-    ap.add_argument("--keyword", default="I HATE YOU")
-    ap.add_argument("--device", default="cuda")
     ap.add_argument("--out", default="clcd_results/behav_scrub.json")
     args = ap.parse_args()
 

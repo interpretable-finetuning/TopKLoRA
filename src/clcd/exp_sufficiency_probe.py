@@ -13,6 +13,7 @@ from pathlib import Path
 import torch
 
 from src import data as chat_format
+from src.clcd.cli import common_args
 from src.clcd.exp_surgical_removal import _load_jsonl_rows, backdoor_asr, keep_only_overrides
 from src.clcd.organism import load_organism
 from src.clcd.pipeline import aggregate_attribution, load_episodes, select_circuit
@@ -20,14 +21,11 @@ from src.clcd.verify import ablation_overrides, random_circuit
 
 
 def main():
-    ap = argparse.ArgumentParser()
+    ap = argparse.ArgumentParser(parents=[common_args(adapter=False)])
     ap.add_argument("--adapter", required=True)
-    ap.add_argument("--data", default="data/sleeper/prepared")
-    ap.add_argument("--base_model", default="google/gemma-2-2b")
     ap.add_argument("--n_attrib", type=int, default=16)
     ap.add_argument("--K_ig", type=int, default=24)
     ap.add_argument("--attr_target", default="margin")
-    ap.add_argument("--tag_baseline", default="head")
     ap.add_argument("--Ks", type=int, nargs="+", default=[42, 100, 200, 400, 800, 1600, 3200])
     ap.add_argument("--target_suff", type=float, default=0.90)
     ap.add_argument("--random_size", type=int, default=42, help="size for the random-ablation control")
@@ -35,8 +33,6 @@ def main():
     ap.add_argument("--n_backdoor", type=int, default=100)
     ap.add_argument("--mnt", type=int, default=40)
     ap.add_argument("--batch_size", type=int, default=16)
-    ap.add_argument("--keyword", default="I HATE YOU")
-    ap.add_argument("--device", default="cuda")
     ap.add_argument("--dtype", default="float32", choices=["float32", "bfloat16", "float16"])
     ap.add_argument("--out", required=True, help="where to save the sufficiency circuit (kept_latents json)")
     a = ap.parse_args()

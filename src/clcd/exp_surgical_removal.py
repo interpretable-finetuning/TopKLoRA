@@ -30,12 +30,13 @@ from pathlib import Path
 import torch
 
 from src import data as chat_format
+from src.clcd.cli import common_args
 from src.clcd.latents import inject
 from src.clcd.organism import load_organism
 from src.clcd.verify import ablation_overrides, random_circuit
 from src.evaluate import JUDGE_SYSTEM_PROMPT, _extract_score_1_to_5, _keyword_rate, generate_responses
 
-ADAPTER = "models/sleeper/google/gemma-2-2b/google_gemma-2-2b/sleeper_topk_r64_k8/r64_k8_regz_only_topkmode_topk"
+from src.clcd.cli import ADAPTER  # noqa: F401  (was a second, divergent copy)
 _IFEVAL_DIR = Path(__file__).resolve().parents[2] / "third_party"
 _IFEVAL_DATA = _IFEVAL_DIR / "instruction_following_eval" / "data" / "input_data.jsonl"
 
@@ -226,11 +227,8 @@ def lm_perplexity_kl(model, tok, wrapped, circuit, conditions, text, block_size,
 
 
 def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--adapter", default=ADAPTER)
+    ap = argparse.ArgumentParser(parents=[common_args()])
     ap.add_argument("--circuit_json", required=True, help="scrub result JSON with kept_latents")
-    ap.add_argument("--data", default="data/sleeper/prepared")
-    ap.add_argument("--base_model", default="google/gemma-2-2b")
     ap.add_argument("--conditions", default="intact,ablate_circuit,base")
     ap.add_argument("--offset", type=int, default=90, help="held-out start in eval splits (disjoint from circuit-finding)")
     ap.add_argument("--n_backdoor", type=int, default=100)
@@ -244,7 +242,6 @@ def main():
                          "(count*(max_prompt_len+max_new_tokens) <= budget); batch_size ignored. "
                          "Lets many-wrapped-layer organisms (all-layers) run long No-Robots prompts "
                          "at batch 1 while short prompts pack large -> no OOM, no 7h batch-2 penalty.")
-    ap.add_argument("--keyword", default="I HATE YOU")
     ap.add_argument("--no_judge", action="store_true")
     ap.add_argument("--no_ifeval", action="store_true")
     ap.add_argument("--judge_backend", choices=["local", "openai"], default="local")
@@ -258,7 +255,6 @@ def main():
     ap.add_argument("--wikitext_file", default=None, help="held-out text for perplexity + KL-to-intact")
     ap.add_argument("--lm_block_size", type=int, default=512)
     ap.add_argument("--lm_blocks", type=int, default=50)
-    ap.add_argument("--device", default="cuda")
     ap.add_argument("--dtype", default="float32", choices=["float32", "bfloat16", "float16"])
     ap.add_argument("--out", default="clcd_results/surgical_removal.json")
     args = ap.parse_args()

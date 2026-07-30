@@ -34,6 +34,7 @@ from pathlib import Path
 import torch
 
 from src import data as chat_format
+from src.clcd.cli import common_args
 from src.clcd.align import align_positions
 from src.clcd.latents import inject, read_latents
 from src.clcd.organism import load_organism
@@ -85,20 +86,13 @@ def _gen(model, tok, ids, wrapped, ov, max_new_tokens):
 
 
 def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--adapter", default=ADAPTER)
-    ap.add_argument("--data", default="data/sleeper/prepared")
-    ap.add_argument("--base_model", default="google/gemma-2-2b")
+    ap = argparse.ArgumentParser(parents=[common_args()])
     ap.add_argument("--findings", default="clcd_results/edges_N100.json",
                     help="JSON with real.circuit (the node circuit to insert)")
     ap.add_argument("--all_latents", action="store_true",
                     help="upper bound: insert ALL adapter latents at mapped positions (not just "
                     "the circuit) -- separates circuit incompleteness from tag-transplant limits")
     ap.add_argument("--n", type=int, default=100)
-    ap.add_argument("--tag_baseline", default="head")
-    ap.add_argument("--max_new_tokens", type=int, default=40)
-    ap.add_argument("--keyword", default="I HATE YOU")
-    ap.add_argument("--device", default="cuda")
     args = ap.parse_args()
 
     circuit = [tuple(x) for x in json.loads(Path(args.findings).read_text())["real"]["circuit"]]

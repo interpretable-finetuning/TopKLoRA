@@ -29,6 +29,7 @@ from pathlib import Path
 
 import torch
 
+from src.clcd.cli import common_args
 from src.clcd.attribute import attribute
 from src.clcd.edges import candidate_nodes, dag_valid, edge_scores_patching
 from src.clcd.latents import inject
@@ -129,19 +130,14 @@ def endpoint_check(model, wrapped, ep, res):
 
 
 def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--adapter", default=ADAPTER)
-    ap.add_argument("--data", default="data/sleeper/prepared")
-    ap.add_argument("--base_model", default="google/gemma-2-2b")
+    ap = argparse.ArgumentParser(parents=[common_args()])
     ap.add_argument("--attrib_n", type=int, default=2, help="episodes for the ranking")
     ap.add_argument("--K_ig", type=int, default=24)
     ap.add_argument("--target", default="margin", choices=["margin", "simple"])
-    ap.add_argument("--tag_baseline", default="head")
     ap.add_argument("--Ns", default="6,8,10,12", help="node-universe sizes to probe")
     ap.add_argument("--tau", type=float, default=0.3)
     ap.add_argument("--prune_episodes", type=int, default=8, help="for the extrapolation")
     ap.add_argument("--budget_hours", type=float, default=3.0)
-    ap.add_argument("--device", default="cuda")
     args = ap.parse_args()
     Ns = [int(x) for x in args.Ns.split(",")]
 

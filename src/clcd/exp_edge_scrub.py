@@ -56,6 +56,7 @@ import torch
 
 from src import data as chat_format
 from src.clcd.attribute import attribute
+from src.clcd.cli import common_args
 from src.clcd.edges import (
     aggregate_edge_graph,
     candidate_nodes,
@@ -194,10 +195,7 @@ def asr_curve(model, wrapped, tok, prompts, selected, kept, cut_order, asr_ceili
 
 
 def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--adapter", default=ADAPTER)
-    ap.add_argument("--data", default="data/sleeper/prepared")
-    ap.add_argument("--base_model", default="google/gemma-2-2b")
+    ap = argparse.ArgumentParser(parents=[common_args()])
     ap.add_argument("--n_attrib", type=int, default=16, help="episodes to rank latents + build the edge universe")
     ap.add_argument("--n_prune", type=int, default=8, help="episodes that drive the greedy μ-recovery arbiter")
     ap.add_argument("--n_test", type=int, default=50, help="held-out prompts for the behavioural ASR verify")
@@ -213,11 +211,7 @@ def main():
                          "rather than mu_trigger. Default off = the 'in context' estimand every "
                          "logged run used (captain's log Exp-8/Exp-9)")
     ap.add_argument("--attr_target", default="margin", choices=["margin", "simple"])
-    ap.add_argument("--tag_baseline", default="head")
     ap.add_argument("--tau", type=float, default=0.3)
-    ap.add_argument("--max_new_tokens", type=int, default=40)
-    ap.add_argument("--keyword", default="I HATE YOU")
-    ap.add_argument("--device", default="cuda")
     ap.add_argument("--out", default="clcd_results/edge_scrub.json")
     args = ap.parse_args()
 

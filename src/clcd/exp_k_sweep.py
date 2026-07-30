@@ -28,6 +28,7 @@ import argparse
 import torch
 
 from src import data as chat_format
+from src.clcd.cli import common_args
 from src.clcd.latents import inject
 from src.clcd.organism import load_organism
 from src.clcd.pipeline import (
@@ -61,19 +62,12 @@ def sufficiency_asr(model, wrapped, tok, questions, circuit, trig_tag, ctrl_tag,
 
 
 def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--adapter", default=ADAPTER)
-    ap.add_argument("--data", default="data/sleeper/prepared")
-    ap.add_argument("--base_model", default="google/gemma-2-2b")
+    ap = argparse.ArgumentParser(parents=[common_args()])
     ap.add_argument("--attrib_n", type=int, default=32, help="episodes for the attribution ranking")
     ap.add_argument("--asr_n", type=int, default=100, help="prompts for the behavioural ASR")
     ap.add_argument("--K_ig", type=int, default=24, help="integrated-gradient steps")
     ap.add_argument("--target", default="margin", choices=["margin", "simple"])
-    ap.add_argument("--tag_baseline", default="head")
     ap.add_argument("--Ks", default="1,2,3,5,8,12,16,24,32,48,64")
-    ap.add_argument("--max_new_tokens", type=int, default=40)
-    ap.add_argument("--keyword", default="I HATE YOU")
-    ap.add_argument("--device", default="cuda")
     args = ap.parse_args()
     Ks = [int(x) for x in args.Ks.split(",")]
 

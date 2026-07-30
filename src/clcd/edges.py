@@ -303,7 +303,8 @@ def _topo_order(nodes):
     return sorted(nodes, key=lambda n: (n[2], compute_order(n[0])))
 
 
-def scrub_eval(model, wrapped, episode, nodes, candidate_edges, cut, a0, a1):
+def scrub_eval(model, wrapped, episode, nodes, candidate_edges, cut, a0, a1,
+               sever_noncandidate=False):
     """Behavioural μ of a CUT edge-set, via topological single-value propagation.
 
     The feasible (non-treeified) realization of edge-set causal scrubbing: each node
@@ -320,10 +321,32 @@ def scrub_eval(model, wrapped, episode, nodes, candidate_edges, cut, a0, a1):
     val[] and measures log p(Y+) - log p(Y-) on the trigger prompt (completion-span
     nodes apply to the Y+ forward only, as in `path_patch_edge` Step B).
 
-    `cut` is a set of (u,v) edges to sever; kept = candidate_edges \\ cut. Endpoints:
-    cut=∅ reproduces mu_trigger (the ceiling); cut=ALL is the no-wiring floor (NOT
-    mu_control -- source detectors with no incoming edge still fire at a1). Returns
-    {"mu": float, "val": {node: float}}.
+    `cut` is a set of (u,v) edges to sever; kept = candidate_edges \\ cut.
+
+    `sever_noncandidate` picks which of TWO estimands this measures -- they differ only
+    when `candidate_edges` is a strict subset of the DAG-valid pairs (in production,
+    `exp_edge_scrub.realize_episode` filters by universe ∩ pos_set; measured at N=10 on
+    the 2b organism that filter removes nothing, so there the two coincide):
+
+      False (default, "circuit in context"): a pair (u,v) outside `candidate_edges`
+        still propagates val[u]. Non-candidate wires are permanently KEPT -- the cut-set
+        can neither sever nor preserve them. Endpoints: cut=∅ reproduces mu_trigger,
+        cut=ALL is the no-wiring floor OVER THE CANDIDATE SET ONLY, so it does not
+        reach the true no-wiring margin and the circuit may free-ride on the wires the
+        hypothesis omits.
+      True ("circuit alone"): a pair outside `candidate_edges` is severed to a0, so the
+        hypothesized wiring must carry the margin by itself. cut=ALL then reaches the
+        true no-wiring floor, but cut=∅ NO LONGER equals mu_trigger -- callers must take
+        their ceiling from `scrub_eval(cut=∅)`, not from `mu()`, or every normalized
+        recovery is scored against an anchor that isn't 1.0.
+
+    Severing touches COMPUTED nodes only, and that is not an oversight: a not-yet-computed
+    node is downstream or parallel, so under the causal mask plus compute order it cannot
+    influence val[v] at all (pinned by
+    `test_scrub_eval_uncomputed_node_values_are_immaterial`).
+
+    The gap between the two floors measures how much the margin rides on non-candidate
+    wiring. See captain's log Exp-8/Exp-9. Returns {"mu": float, "val": {node: float}}.
     """
     cut = set(cut)
     edge_set = set(candidate_edges)
@@ -340,10 +363,10 @@ def scrub_eval(model, wrapped, episode, nodes, candidate_edges, cut, a0, a1):
                 continue
             m_u, d_u, p_u = u
             if u in computed:
-                if (u, v) in edge_set and (u, v) not in cut:
-                    value = val[u]
+                if sever_noncandidate and (u, v) not in edge_set:
+                    value = a0[m_u][0, p_u, d_u]  # wire outside the hypothesis -> severed
                 else:
-                    value = a0[m_u][0, p_u, d_u]
+                    value = a0[m_u][0, p_u, d_u] if (u, v) in cut else val[u]
             else:
                 value = a1[m_u][0, p_u, d_u]  # downstream/parallel: trigger (no causal effect on v)
             by_mod.setdefault(m_u, []).append((d_u, p_u, float(value)))

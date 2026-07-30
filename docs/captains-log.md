@@ -1113,6 +1113,228 @@ remain small and the exclusion rule removes low-K cells.
 
 ---
 
+## Exp-8 — `scrub_eval` non-candidate wires: BOTH variants are defective — DONE · 2026-07-30
+
+### Question
+Syncing `edge-attribution` with origin pulled in five GitHub review-autofix commits, one of which
+(`3235f9e`, `src/clcd/edges.py`) rewrites `scrub_eval`'s propagation rule. Its stated finding is real
+(the `parents` dict was built and never read), but it also changed semantics: `val[u]` now reaches `v`
+only when `(u,v) ∈ candidate_edges`, else `v` sees the ablated `a0`. The critique behind it is also
+real — under the ORIGINAL, a computed upstream `u` influences `v` whether or not `(u,v)` is a
+candidate edge, so with the sparse `edges_e` that `exp_edge_scrub.realize_episode` builds
+(`universe ∩ pos_set`), non-candidate wires are permanently "kept" and the scrubber can neither cut
+nor keep them. Question: does either variant hold the endpoints `greedy_edge_eliminate` documents
+("1.0 at cut=∅, 0.0 at cut=ALL") when the candidate set is sparse? Decision rule fixed before
+running, per `integrity_no_phacking`.
+
+### Config
+Tiny random CPU fixture `build_random_fixture(seed=0)`; setup mirrors `tests/test_clcd_edges.py::_setup`
+(`attribute(K=8)` → `select(n_pos=n_neg=6)` → `candidate_nodes(tau=0.2, cap=4)`). 18 nodes,
+**106** complete DAG-valid pairs; `sparse` = every 3rd pair = **36** (34%), standing in for the
+`universe ∩ pos_set` filtering. `ceiling` taken from raw `mu()` exactly as `realize_episode` does.
+
+### Result — the ceiling breaks only on sparse sets, and only for the autofix
+| edge set | variant | μ(cut=∅) | gap vs ceiling | floor (cut=ALL) | recovery@∅ |
+|---|---|---|---|---|---|
+| complete | original | +0.116458 | **0.000000** | +0.198898 | 1.0000 |
+| complete | autofix | +0.116458 | **0.000000** | +0.198898 | 1.0000 |
+| sparse | original | +0.116458 | **0.000000** | +0.131798 | 1.0000 |
+| sparse | autofix | +0.271009 | **0.154552** | +0.198898 | −0.8747 |
+
+On a **complete** edge set the two variants are bit-identical — which is exactly why
+`tests/test_clcd_edges.py:243` cannot adjudicate this: it passes `edge_scores_patching(...).keys()`,
+i.e. every DAG-valid pair, so `edge_set` is never missing anything. The test passes either way.
+
+### Verdict — both mechanisms are wrong, in complementary ways
+- **Autofix breaks the ceiling.** On sparse sets μ(cut=∅) ≠ mu_trigger (gap 0.155), so
+  `greedy_edge_eliminate`'s recovery no longer starts at 1.0 and its target threshold silently means
+  something other than what it says.
+- **The original's floor is sparsity-dependent.** cut=ALL gives **+0.131798** on sparse vs
+  **+0.198898** on complete — so the original's "no-wiring floor" is *not* the no-wiring floor:
+  the 70 non-candidate wires keep carrying signal. This confirms the missing-wire critique
+  empirically. The autofix's sparse floor equals the complete floor (+0.198898), confirming it does
+  sever non-candidates as intended.
+
+So neither variant is a safe drop-in, and the two defects are complementary rather than competing.
+The internally consistent fix is to **adopt severing AND redefine `ceiling = scrub_eval(cut=∅)`** in
+`realize_episode` (instead of raw `mu()`). That is a methodology change with a different estimand, so
+it needs its own re-run; it is NOT a lint fix to absorb into a sync. Implemented in Exp-9.
+
+> **CORRECTION (2026-07-30, Exp-9 implementation).** This entry originally also demanded severing
+> non-candidates "regardless of topological position", calling the autofix's computed-only severing a
+> half-applied principle. **That was wrong, and the claim is withdrawn.** A not-yet-computed node is
+> downstream or parallel, so under the causal mask plus compute order it cannot influence `val[v]` at
+> all — severing it would be a no-op. Now pinned as a test: `scrub_eval` with `a1` replaced by `a0`
+> (i.e. *every* uncomputed node at baseline) leaves `val[]` and μ bit-identical
+> (`test_scrub_eval_uncomputed_node_values_are_immaterial`). Severing correctly touches computed
+> nodes only. The ceiling half of the verdict stands and is unaffected.
+
+### Implication — HYPOTHESIS, untested: this may explain the μ-arbiter's behavioural blindness
+Blast radius is narrow: `scrub_eval` is called from exactly one production file (`exp_edge_scrub.py`).
+The headline 2-edge circuit came from the ASR arbiter (`exp_behavioural_scrub.py`), which never calls
+`scrub_eval` — it uses free-gen ASR over node ablations normalized to its own ASR endpoints — so it,
+the 4/9-latent nec/suff result, surgical removal, the r/k sweep and Exp-5/6/7 are all unaffected.
+Affected artifacts: `clcd_results/edge_scrub_N{8,10,12}*.json`.
+
+Those artifacts are where it gets interesting:
+
+| run | universe | kept | μ-recovery | ASR ceiling → kept |
+|---|---|---|---|---|
+| `edge_scrub_N10` | 57 | 7 | 0.886 | 0.98 → **0.42** |
+| `edge_scrub_N12` | 93 | 7 | 0.869 | 0.98 → **0.40** |
+| `edge_scrub_N8` | 36 | 4 | 0.891 | 0.98 → **0.42** |
+| `edge_scrub_N10_protect` | 57 | 9 | 0.898 | 0.98 → 0.98 ⚠️ tautological |
+
+⚠️ **`_protect`'s ASR is not a measurement.** It has `n_fully_cut = 0` and a single-point ASR curve
+`(57, 0, 0.98)`: with `--protect_nodes` no latent is ever orphaned, so `retained_asr` is called with
+`[]` and returns `asr_ceiling` **by construction**. Do not treat 0.98 as evidence that its 9-edge
+circuit is behaviourally sound, and do not use it as the target for Exp-9. The real yardstick is the
+measured `edge_scrub_N10_asrcurve.json` curve above, whose 0.64/0.66/0.42 points are genuine free-gen
+evaluations at non-empty ablation sets.
+
+The μ arbiter certifies ~88% recovery on circuits that have lost ~58% of the behaviour — the
+documented blindness. Exp-8 gives a candidate mechanism: recovery is normalized against a floor
+propped up by uncuttable non-candidate wires, and when the greedy orphans `o_proj.53` those same
+wires still feed it, so μ barely moves. Under corrected semantics orphaning the hub should actually
+cost μ, so the greedy should refuse the cut — deriving the no-orphan behaviour from the mechanism
+instead of needing the hand-added guard that `_protect` imposes.
+
+**Prediction to test:** re-run `exp_edge_scrub` under corrected semantics with the no-orphan guard
+OFF; it should land near `_protect` (~9 edges, ASR ≈0.98), not the ASR-0.42 orphaning result.
+**Competing risk:** severing all non-candidates may push the net into a heavily-ablated
+off-distribution regime where μ goes degenerate/noisy rather than sensitive (collapse confound) —
+which would make the corrected arbiter worse, not better. Both outcomes are informative. Nothing
+here is established: no organism has been re-run.
+
+### Caveats
+Random fixture: μ values are noise by design, so this establishes the **mechanism and existence** of
+the broken identity (which values get injected — model-independent), **not** its magnitude on a real
+organism. Do **not** quote recovery = −0.8747 as a real-organism number: on this fixture the floor
+happens to sit *above* the ceiling, so `ceiling − floor` is negative and the ratio's sign is a
+noise artifact. The robust quantities are the **gaps** (0.000000 vs 0.154552) and the floor
+divergence. The original's recovery@∅ = 1.0000 is an algebraic identity given μ(cut=∅) = ceiling, so
+it is robust to fixture noise. Whether the gap is large enough to change `greedy_edge_eliminate`'s
+selected edge set on a real organism still needs `exp_edge_scrub` on GPU — not yet run. No
+edge-scrub results have been re-derived under either semantics.
+
+### Artifacts
+`<scratchpad>/measure_scrub_gap.py` (both variants in one process, flagged copy of the scrub loop;
+does not modify `src/`). Sync: rebased onto `origin/edge-attribution`, all 5 autofix commits landed
+verbatim, nothing pushed.
+
+---
+
+## Exp-9 — Severing non-candidate wires: NO-OP here; the μ arbiter is SATURATED — DONE · 2026-07-30
+
+### Question
+Exp-8's hypothesis: the μ arbiter orphans `o_proj.53` at no μ cost because non-candidate wires still
+feed the hub, so severing them should make the cut expensive and stop the orphaning. Implemented as
+`scrub_eval(..., sever_noncandidate=)` (default off, so every logged run stays reproducible) with
+`ceiling` taken from `scrub_eval(cut=∅)` in the new mode; both floors always measured, their gap
+(`free_ride`) reported per episode.
+
+### Config
+Two runs, config read verbatim off `edge_scrub_N10.json`, both **without** `--protect_nodes`:
+`--n_attrib 16 --n_prune 6 --n_test 50 --N 10 --K_ig 24 --target 0.85 --tau 0.3 --attr_target margin
+--tag_baseline head`. torrnode12 GPUs 0/1, 01:55→03:42 (1h47m). Criteria pre-registered in
+`scripts/exp9_sever.sh` before running; `target` held at 0.85 and not tuned after.
+
+### Result — control reproduces; test changes nothing
+| run | kept | fully-cut | final rec | ASR | fully-cut latents |
+|---|---|---|---|---|---|
+| baseline (logged) | 7 | 3 | 0.886 | 0.42 | `o_proj.53`, `gate.0`, `k_proj.58` |
+| **A control** | 7 | 3 | 0.886 | 0.42 | identical |
+| **B sever** | 7 | 3 | 0.882 | 0.42 | identical |
+
+A reproduces the pre-refactor artifact exactly → the flag refactor is clean. B **fails the primary
+criterion**: `o_proj.53` still orphaned. Kept sets and the *entire cut order* are identical between A
+and B; recovery differs by ≤0.004, mostly ~1e-6.
+
+### The null is BY CONSTRUCTION — the hypothesis is untested, not refuted
+`free_ride = 0.000e+00` in all 6 prune episodes (`floor_context == floor_alone` to 6 dp). Direct
+measurement of coverage (`|pos_set|` vs `|edges_e|` per episode) explains it:
+
+| episode | 0 | 1 | 2 | 3 | 4 | 5 |
+|---|---|---|---|---|---|---|
+| \|pos_set\| | 38 | 40 | 40 | 40 | 40 | 40 |
+| \|edges_e\| | 38 | 40 | 40 | 40 | 40 | 38 |
+| missing | **0** | **0** | **0** | **0** | **0** | 2 |
+
+The candidate set is **already complete** in 5/6 episodes and 95% complete in the sixth, so there are
+essentially no non-candidate wires to sever and `--sever_noncandidate` is a no-op on this
+organism/config. Exp-8's mechanism is real (it reproduces on the fixture, where sparsity was imposed
+by hand at 34%) but **vacuous at N=10 here**: `aggregate_edge_graph`'s 57-latent-edge universe over 10
+cap=1 latents already covers every DAG-valid pair. **This run therefore carries almost no evidence
+about the free-riding hypothesis** — it was not a treatment. Recorded as inconclusive, not negative.
+
+### What the data DOES show: the μ signal is saturated
+The arbiter has almost no dynamic range. Per episode `ceiling − floor ≈ 3.6 nats` against a
+`mu_trigger ≈ 58 nats` margin — **~6%**. Consequences along the greedy (run A, 51 steps):
+- recovery **> 1.0 for 43 of 51 steps** — cutting wiring *improves* the teacher-forced margin;
+- **34 steps sit within 1e-4 of a plateau at 1.01497** — the arbiter is flat across most of the search;
+- at **kept=19, where measured ASR collapses 0.98 → 0.64**, recovery is **1.01377** — above ceiling,
+  i.e. zero signal exactly where the behaviour breaks;
+- it only falls below 1.0 in the last ~8 steps and still halts at 0.886, above the 0.85 target.
+
+So μ-recovery is not being *fooled* by residual wiring; over the region that matters it is barely
+responding to wiring at all. The margin `log p(Y+) − log p(Y−)` is dominated by something the edges do
+not control, and normalizing to a 3.6-nat window turns noise into ±1% "recovery". That is a far better
+account of the blindness than free-riding, and it predicts the no-orphan guard is load-bearing for a
+reason no severing fix will remove.
+
+### Addendum — the saturation account is only HALF the story (no new compute)
+The matched ASR-arbiter contrast already existed: `clcd_results/behav_edge_N10.json`, same N=10, same
+57-edge universe, same target 0.85, same attribution config and adapter.
+
+| arbiter | dynamic range | kept | hub `o_proj.53` | measured ASR |
+|---|---|---|---|---|
+| μ-recovery | ≈3.6 of ~58 nats → **6%** | 7 edges / 7 latents | **orphaned** | **0.42** |
+| free-gen ASR | 0.958 → 0.0 → **96%** | **2 edges / 4 latents** | **kept** | **0.98** |
+
+The ASR arbiter's 0.98 is genuine (`n_ablated = 6`, so `retained_asr` runs on a non-empty set — not
+the `_protect` tautology), and its 4 kept latents include both core members (`k_proj.33`, `o_proj.53`).
+μ orphaned two of them.
+
+**But dynamic range cannot explain the orphaning.** `greedy_edge_eliminate` picks `argmax` recovery,
+and `recovery = (μ − floor)/(ceiling − floor)` is, within an episode, a monotone affine transform of μ
+— rescaling cannot flip which cut looks better. Across episodes it only reweights (per-episode windows
+1.89–4.19 nats, ~2.2×). So widening the floor moves the **halt point**, never the **cut order**. The
+diagnosis therefore splits:
+- **Ranking is wrong (primary).** μ's order drives ASR to 0.64 by kept=19 while reporting recovery
+  1.014. The ASR arbiter ablates *more* latents (6) and still holds 0.98, so a behaviour-preserving
+  ordering demonstrably exists — μ does not find it.
+- **Range is too small to halt in time (secondary).** 34/51 steps within 1e-4 of a plateau leaves the
+  target threshold nothing to bite on.
+
+So the saturation framing above is demoted: it explains the failure to stop, not the failure to rank.
+Re-running the ASR arbiter would add nothing. The open question is why the teacher-forced margin ranks
+orphaning the hub as costless — a question about the signal, not its scale.
+
+### Verdict
+Free-riding is **not** the cause of the μ arbiter's blindness at N=10 on this organism — and could not
+have been, since the precondition is absent. The cause is that μ's **ranking** of cuts is
+behaviourally wrong (see Addendum); its narrow dynamic range is a separate, secondary defect affecting
+only where the greedy halts. The `sever_noncandidate` flag stays (default off, costs nothing, and the
+estimand distinction is real where candidate sets *are* sparse), but it is not the fix. The standing
+rule from the M7 entry — a weights/attribution arbiter must be behaviourally gated — is reinforced,
+now with a mechanism.
+
+### Caveats
+One organism, one N, one config. The Exp-8 concern could still bite wherever `universe ⊊ pos_set`
+materially — larger N, tighter `tau`, or organisms where `aggregate_edge_graph` thins out; none tested.
+The saturation account is an observation from A's trace, not yet an intervention: the obvious next test
+is whether an arbiter with real dynamic range (per-token margin, or ASR itself, as
+`exp_behavioural_scrub` already does) tracks the hub. B's 0.004 recovery drift comes from episode 5's
+2 missing wires and is not meaningful. Nothing here touches a safety claim.
+
+### Artifacts
+`clcd_results/edge_scrub_N10_sever{,_ctl}.json` (+ `.png`), `logs/exp9/sever{,_ctl}.out`,
+`clcd_results/exp9_driver.out`, `scripts/exp9_sever.sh`. Coverage check and the two-estimand fixture
+diagnostic: `<scratchpad>/check_candidate_coverage.py`, `<scratchpad>/measure_scrub_gap.py`.
+Tests: 4 added in `tests/test_clcd_edges.py` (66 pass).
+
+---
+
 ## Cross-cutting standing items (not experiments — do not lose)
 
 - **No discovery method fixes out-of-sample necessity** — the 4.7×/12–17-pt price of complete removal

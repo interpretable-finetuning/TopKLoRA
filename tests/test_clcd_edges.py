@@ -257,6 +257,86 @@ def test_scrub_eval_keepall_reproduces_trigger(fix):
     assert set(out["val"]) == set(nodes)  # one effective value per node
 
 
+# --- the two scrub estimands (sparse candidate sets) ----------------------------
+#
+# The test above passes EVERY DAG-valid pair as candidate_edges, so no wire is ever
+# outside the candidate set and both estimands coincide -- it cannot see the difference.
+# `exp_edge_scrub.realize_episode` filters the universe by `universe ∩ pos_set`, which
+# MAY leave DAG-valid pairs outside the candidate set. These pin the behaviour on that
+# path with a deliberately sparse set. Captain's log Exp-8/Exp-9.
+
+def _sparse_and_complete(model, wrapped, res, nodes, info):
+    """All DAG-valid pairs, plus a deterministic strict subset standing in for a
+    universe-filtered candidate set that does not cover every pair."""
+    complete = list(
+        edge_scores_patching(
+            model, wrapped, res["full_trigger"], nodes, info, res["a0"], res["a1"]
+        ).keys()
+    )
+    sparse = complete[::3]
+    assert len(sparse) < len(complete), "need a STRICT subset to exercise the difference"
+    return sparse, complete
+
+
+def test_scrub_eval_sparse_ceiling_identity_holds_in_context_mode(fix):
+    # exp_edge_scrub takes its ceiling from raw mu() while the floor comes from
+    # scrub_eval, and greedy_edge_eliminate documents recovery as 1.0 at cut=∅. In the
+    # default "in context" estimand that identity must hold even when the candidate set
+    # is sparse -- otherwise every normalized recovery is scored against an anchor that
+    # is not 1.0 and the elimination target silently means something else.
+    model, wrapped, ep, res, nodes, info = _setup(fix)
+    sparse, _ = _sparse_and_complete(model, wrapped, res, nodes, info)
+    out = scrub_eval(model, wrapped, ep, nodes, sparse, set(), res["a0"], res["a1"])
+    with torch.no_grad():
+        mu_trig = float(mu(model, ep.prompt_trigger, ep.y_plus, ep.y_minus))
+    assert abs(out["mu"] - mu_trig) < 1e-3, (out["mu"], mu_trig)
+
+
+def test_scrub_eval_sever_reaches_the_true_no_wiring_floor(fix):
+    # The POINT of sever_noncandidate: with non-candidate wires severed, cutting every
+    # candidate edge leaves no wiring at all, so a sparse candidate set must bottom out
+    # at the same floor as the complete one. In context mode it does not -- the wires the
+    # hypothesis omits keep carrying margin -- which is what lets a circuit look
+    # load-bearing while the behaviour rides on wires the cut-set cannot touch.
+    model, wrapped, ep, res, nodes, info = _setup(fix)
+    sparse, complete = _sparse_and_complete(model, wrapped, res, nodes, info)
+    kw = dict(sever_noncandidate=True)
+    f_sparse = scrub_eval(model, wrapped, ep, nodes, sparse, set(sparse), res["a0"], res["a1"], **kw)["mu"]
+    f_complete = scrub_eval(model, wrapped, ep, nodes, complete, set(complete), res["a0"], res["a1"], **kw)["mu"]
+    assert abs(f_sparse - f_complete) < 1e-3, (f_sparse, f_complete)
+
+
+def test_scrub_eval_free_riding_gap_is_real(fix):
+    # The two estimands must actually differ on a sparse set, and the gap is a reported
+    # quantity (exp_edge_scrub's "free_ride"): how much margin survives cutting every
+    # candidate edge purely because non-candidate wires are still intact. If a future
+    # cleanup collapses the flag to one branch this fails loudly rather than silently
+    # changing what every edge-scrub number means.
+    model, wrapped, ep, res, nodes, info = _setup(fix)
+    sparse, _ = _sparse_and_complete(model, wrapped, res, nodes, info)
+    args = (model, wrapped, ep, nodes, sparse, set(sparse), res["a0"], res["a1"])
+    floor_context = scrub_eval(*args, sever_noncandidate=False)["mu"]
+    floor_alone = scrub_eval(*args, sever_noncandidate=True)["mu"]
+    assert abs(floor_alone - floor_context) > 1e-3, (floor_context, floor_alone)
+
+
+def test_scrub_eval_uncomputed_node_values_are_immaterial(fix):
+    # Soundness of the topological single-value scheme: a not-yet-computed node is
+    # downstream or parallel, so under the causal mask + compute order it CANNOT
+    # influence val[v]. scrub_eval feeds such nodes a1 on exactly that justification.
+    # Passing a0 in a1's place must therefore change nothing. This is why severing
+    # non-candidates only needs to touch COMPUTED nodes: doing it for uncomputed ones
+    # would be a no-op. If this ever fails, the causal-order argument is wrong and the
+    # whole single-value propagation is unsound, not just the flag.
+    model, wrapped, ep, res, nodes, info = _setup(fix)
+    sparse, _ = _sparse_and_complete(model, wrapped, res, nodes, info)
+    base = scrub_eval(model, wrapped, ep, nodes, sparse, set(), res["a0"], res["a1"])
+    swapped = scrub_eval(model, wrapped, ep, nodes, sparse, set(), res["a0"], res["a0"])
+    assert abs(base["mu"] - swapped["mu"]) < 1e-9, (base["mu"], swapped["mu"])
+    for n in nodes:  # exact: v's activations are computed before any such node's
+        assert abs(base["val"][n] - swapped["val"][n]) < 1e-9, (n, base["val"][n], swapped["val"][n])
+
+
 # --- greedy backward edge elimination (pure, no model) --------------------------
 
 # Synthetic recovery: each edge has a "load"; recovery = 1 - (load of severed edges).

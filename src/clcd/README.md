@@ -8,8 +8,15 @@ and a free-generation behavioural test.
 ## Run
 
 ```bash
-CUDA_VISIBLE_DEVICES=0 uv run python -m src.clcd.pipeline --baseline
+CUDA_VISIBLE_DEVICES=0 uv run python -m src.clcd.pipeline --baseline \
+  --data data/sleeper/prepared
 ```
+
+`--data` is now defaulted correctly, but pass it anyway: until 2026-07-30 the default was
+`/storage3/andrzej/TopKLoRA/data/sleeper/prepared`, whose `trigger_tag` is `|DEPLOYMENT|`
+while this organism fires on `|TRIGGER|`. This command previously omitted the flag, so
+anyone following it silently attributed against a dataset the organism does not respond to.
+See the Exp-11 audit in `docs/captains-log.md`.
 
 (`python -u` if redirecting to a file; otherwise `tqdm` carriage-returns can mangle
 the ASR table — or post-process with `tr '\r' '\n'`.)

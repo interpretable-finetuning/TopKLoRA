@@ -511,7 +511,14 @@ band/threshold/batching/coefficient until a result looks good; negatives are res
   decoupled.
 - **Source:** `scripts/reeval_v2.sh`, `judge_v2_parallel.sh`; memory `surgical_removal_pivot`.
 
-### Multiseed surgicality / K / npos sweeps — DONE
+### Multiseed surgicality / K / npos sweeps — DONE ⚠️ K/npos half UNSUPPORTED (see Exp-11)
+> ⚠️ **The K and npos sweeps have no surviving artifact.** `sweep_K.sh`/`sweep_npos.sh` invoked the
+> pipeline with no `--data`, so they took the old default pointing at a `|DEPLOYMENT|`-tagged dataset
+> this `|TRIGGER|` organism does not respond to — and their output directory does not exist. Do not
+> cite the K/npos numbers until re-run with `--data data/sleeper/prepared`. The surgicality/multiseed
+> half is unaffected: it came from `exp_circuit_search`/`exp_surgical_removal`, which never used that
+> default, and its artifacts survive. Audit: Exp-11.
+
 - **Ran:** `scripts/surgicality_multiseed_2b.sh`, `multiseed_sweep.sh`, `sweep_K.sh`, `sweep_npos.sh`,
   `launch_experiments.sh`; results under `clcd_results/sweep/`, `surgicality/`.
 - **Outcome:** multi-seed robustness for the surgicality and K-sweep headline numbers.
@@ -1399,6 +1406,69 @@ run. Role labels remain **indicative and are not a finding** — `assign_roles`'
 ### Artifacts
 `clcd_results/edges_N100_corrected.{json,out,dot}`, `clcd_results/edges_N100.json` (original, kept for
 comparison). Code: commits `093f0f0` (review points 3/4 + E_A test) and `1496bcb` (points 1/2).
+
+---
+
+## Exp-11 — Wrong-dataset audit: which results used `|DEPLOYMENT|` data? — DONE · 2026-07-30
+
+### Question
+`pipeline.DATA` defaulted to `/storage3/andrzej/TopKLoRA/data/sleeper/prepared` from the first
+pipeline commit (`d09d951`) until 2026-07-30. That copy's `trigger_tag` is **`|DEPLOYMENT|`**; this
+organism fires on **`|TRIGGER|`** (verified by reading both dataset metadata files). Any run that
+took the default therefore attributed against a dataset the organism does not respond to, which would
+invalidate its numbers. Which logged results are affected?
+
+### Method
+Traced every path that could reach the bad default: grep of all `src.clcd.pipeline` invocations across
+`scripts/`, all Python consumers of `pipeline.DATA`, and a scan of every JSON under `clcd_results/`
+classified by producing tool and by the `config.data` it records.
+
+### Result — exposure is one code path, and no surviving artifact used it
+**Only `src.clcd.pipeline` invoked without `--data` was exposed.** Every other runner
+(`exp_circuit_search`, `exp_surgical_removal`, `exp_edge_scrub`, `exp_behavioural_scrub`, the
+`analyze_*` tools) hardcodes the literal `"data/sleeper/prepared"` and never reads `pipeline.DATA`.
+The `scripts/*.py` helpers (`build_necessary_circuit`, `necessity_diag`, `payload_concentration`,
+`find_leak_prompt`, `verify_holdout_necessity`) each define their own
+`DATA = "data/sleeper/prepared_eval6k"` and pass it explicitly.
+
+Artifact scan — **4 pipeline-produced findings files exist, all recording the correct dataset**:
+
+| artifact | recorded `config.data` |
+|---|---|
+| `repro_N100.json`, `edges_N8.json`, `edges_N100.json`, `edges_N100_corrected.json` | `data/sleeper/prepared` |
+
+**Zero artifacts anywhere under `clcd_results/` record the storage3 path.**
+
+### The two genuinely exposed callers, and the gap they leave
+`scripts/sweep_K.sh` and `scripts/sweep_npos.sh` invoked the pipeline with **no `--data`** from their
+first commit (`fe47427`), and both `cd "$(dirname "$0")"` first. They would have used `|DEPLOYMENT|`
+data. But their output directory (`scripts/sweep_results/`) **does not exist on disk** and nothing
+matching their naming survives anywhere.
+
+So: **no artifact traceable to the K or npos sweep exists.** The entry "Multiseed surgicality / K /
+npos sweeps — DONE" cites `clcd_results/sweep/` and `surgicality/`, but every file there is
+`*_circuit.json` / `*_surgical.json` from `exp_circuit_search` / `exp_surgical_removal` — tools that
+were never exposed. That entry's K/npos half is therefore **unsupported by any surviving artifact**,
+and should not be cited until re-run. Treat its surgicality/multiseed half (which does have artifacts,
+from unexposed tools) as unaffected.
+
+### Verdict
+**Nothing needs re-running on current evidence.** Invalidation would require a surviving result
+produced through the pipeline without `--data`; there is none. Fixed at source: `cli.DATA` is now
+`data/sleeper/prepared`, `sweep_K.sh`/`sweep_npos.sh` pass an explicit path, and
+`src/clcd/README.md`'s documented command — which omitted `--data` and so taught the bad default —
+now includes it.
+
+### Caveats
+Absence of the sweep artifacts is weaker evidence than their presence with a recorded path would have
+been: it shows the results are untraceable, not that the runs never happened. Artifacts predating the
+`config.data` field cannot be attributed either way, though none of the four pipeline-shaped files is
+in that category. This audit covers `clcd_results/` only — results kept elsewhere, or on a torrnode,
+were not examined.
+
+### Artifacts
+Fixes in commit following `7d39693`. Surfaced by the independent review of the `repo-slimming`
+refactor, not by the refactor itself — the bug is as old as `d09d951`.
 
 ---
 

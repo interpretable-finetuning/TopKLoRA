@@ -1335,6 +1335,73 @@ Tests: 4 added in `tests/test_clcd_edges.py` (66 pass).
 
 ---
 
+## Exp-10 — "SOURCE: tag-heavy" SURVIVES de-confounding (92.9% → 93.3%) — DONE · 2026-07-30
+
+### Question
+A code review flagged `edge_weight_by_region` (the force-on/insertion gap test) as confounded by the
+baseline: `E_A` scales with the knock amplitude `|a¹_u − a⁰_u|`, and `align_baseline` zero-fills the
+trigger-only span, so a tag source is knocked by its FULL activation while a shared source moves only
+by the trigger−control difference. If so, "SOURCE: tag-heavy" would be partly guaranteed by the
+baseline convention rather than found. Also unnormalised by nodes-per-region. Re-run with both
+corrections, reporting raw and corrected side by side.
+
+### Config
+Identical args to the original artifact, read off its `config.args`: `--n_episodes 100 --K 24
+--n_pos 10 --n_neg 5 --n_random 30 --target margin --tag_baseline head --edges`. torrnode12 GPU4,
+~25 min. Output `clcd_results/edges_N100_corrected.json`; the original `edges_N100.json` is kept.
+
+### Result — the claim stands
+| source region | original | re-run, uncorrected | re-run, CORRECTED |
+|---|---|---|---|
+| tag | 92.9% | 92.9% | **93.3%** |
+| shared | 6.3% | 6.3% | 4.9% |
+| completion | 0.8% | 0.8% | 1.7% |
+
+The uncorrected column reproduces the original **exactly**, so the correction is the only thing that
+moved — and it moved essentially nothing. **The confound is real but does not overturn the finding.**
+
+### Why it cancels — and why the proposed one-sided fix would have been WORSE
+Two confounds of opposite sign, both present in the raw number:
+- **knock amplitude** — tag **12.35** vs shared **4.04**, a **3.06×** advantage to tag (larger than
+  the 2.1× the review measured). Dividing it out *penalises* tag.
+- **nodes per region** — shared **2606** vs tag **495**, **5.3×** more shared candidates. Normalising
+  per node *boosts* tag.
+
+They nearly cancel. Correcting only the amplitude, which is what the review proposed, gives roughly
+**tag 82% / shared 17%** (estimated from the reported per-region means, since the true correction is
+per-edge) — i.e. a one-sided fix would have manufactured an apparent 11-point drop and looked like it
+was confirming the confound. **Half-correcting was worse than not correcting.** Both corrections and
+the raw sums are now emitted together so this stays auditable.
+
+### Side results from the same run
+- **`direct_ratio` = 0.921** (new metric, review point 3). The old sign-only statistic said 1.00
+  ("all direct"); the ratio says the top edges are mostly direct with mild mediation. It refines
+  rather than overturns. `ab_sign_agreement` = 0.80, matching the value recorded in `STATUS.md`.
+- **Role labels now vary**: switch 2, state_carrier 7, relay 2, suppressor 3, actuator 1. The review
+  found 10/10 non-suppressors labelled `switch`; the `_switch_thresh` floor fixes that. Note
+  **`actuator` IS reachable on real data** — the "unreachable" claim held only in the small synthetic
+  fixture. `detector` still does not appear.
+- Top edge unchanged: `k_proj.33 → o_proj.53`, E_A +1.466, μΔ +3.618 — the detector→hub core.
+
+### Verdict
+The insertion/force-on gap argument keeps its evidence. What changed is that the number is now
+defensible rather than confounded, and the audit trail (raw, amplitudes, node counts) ships with it.
+No circuit or behavioural result was touched — `scrub_eval`/IG discovery never consume these.
+
+### Caveats
+One organism, one config. Run used `tag_baseline="head"`, which pairs the first tag positions to real
+control sources; under `"zero"` the amplitude gap would be larger and the cancellation need not hold,
+so this is not a general guarantee. Per-node normalisation is itself a modelling choice, not a
+uniquely correct one. The amplitude-only estimate above is arithmetic from per-region means, not a
+run. Role labels remain **indicative and are not a finding** — `assign_roles`' precedence
+(`switch` → `state_carrier` → `detector`/`actuator`) was deliberately left as designed.
+
+### Artifacts
+`clcd_results/edges_N100_corrected.{json,out,dot}`, `clcd_results/edges_N100.json` (original, kept for
+comparison). Code: commits `093f0f0` (review points 3/4 + E_A test) and `1496bcb` (points 1/2).
+
+---
+
 ## Cross-cutting standing items (not experiments — do not lose)
 
 - **No discovery method fixes out-of-sample necessity** — the 4.7×/12–17-pt price of complete removal

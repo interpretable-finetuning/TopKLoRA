@@ -59,9 +59,19 @@ SLEEPER_REG_DEFAULTS: Dict[str, Any] = {
     "L_DECORR": 0.05,
     "L_USAGE": 5e-4,
     "L_ORTHO": 2e-3,
+    "L_REDUND": 0.0,
+    "L_L0": 0.0,
+    # SGTM-style gradient routing (Shilov et al. arXiv:2512.05648). 0 = off (default).
+    # >0 designates latents [0:N_FORGET) of every wrapped TopK-LoRA module as "forget"
+    # parameters: triggered examples update only those, so the backdoor is localized into a
+    # partition that is known by construction and can be zeroed after training.
+    "N_FORGET": 0,
     "DECORR_EVERY": 3,
     "USAGE_EVERY": 2,
     "ORTHO_EVERY": 10,
+    "REDUND_EVERY": 2,
+    "L0_EVERY": 2,
+    "USAGE_OBJECTIVE": "balance",
     "sched_type": "cubic",
     "sched_start": 0.0,
     "sched_end": 0.25,
@@ -93,6 +103,9 @@ def _enable_topk_lora_grads(model) -> None:
             if getattr(module.B_module, "bias", None) is not None:
                 module.B_module.bias.requires_grad_(True)
                 trainable_ids.add(id(module.B_module.bias))
+            if hasattr(module, "latent_gate_logits"):
+                module.latent_gate_logits.requires_grad_(True)
+                trainable_ids.add(id(module.latent_gate_logits))
             if getattr(module, "sae_style", False):
                 if getattr(module, "sae_use_latent_bias", False):
                     module.latent_bias.requires_grad_(True)
@@ -196,8 +209,10 @@ def _tokenize_dataset(
         input_ids: List[List[int]] = []
         attention_mask: List[List[int]] = []
         labels: List[List[int]] = []
+        is_triggered: List[int] = []
 
         has_messages = "messages" in batch
+        trig_col = batch.get("is_triggered")
         n = len(batch["tag"]) if "tag" in batch else len(batch["question"])
         for idx in range(n):
             tag = batch.get("tag", [""] * n)[idx] or None
@@ -220,14 +235,18 @@ def _tokenize_dataset(
             input_ids.append(features["input_ids"])
             attention_mask.append(features["attention_mask"])
             labels.append(features["labels"])
+            # per-example trigger flag, carried through for SGTM gradient routing
+            flag = trig_col[idx] if trig_col is not None else False
+            is_triggered.append(int(str(flag).strip().lower() in {"true", "1"}))
 
         return {
             "input_ids": input_ids,
             "attention_mask": attention_mask,
             "labels": labels,
+            "is_triggered": is_triggered,
         }
 
-    keep_cols = {"input_ids", "attention_mask", "labels"}
+    keep_cols = {"input_ids", "attention_mask", "labels", "is_triggered"}
     remove_cols = [c for c in dataset.column_names if c not in keep_cols]
     return dataset.map(
         _tokenize_batch,
@@ -255,14 +274,35 @@ def _to_plain_dict(value: Any) -> Dict[str, Any]:
 
 def _normalize_reg_cfg_types(reg_cfg: Dict[str, Any]) -> Dict[str, Any]:
     normalized = dict(reg_cfg)
-    float_keys = ("L_DECORR", "L_USAGE", "L_ORTHO", "sched_start", "sched_end")
-    int_keys = ("DECORR_EVERY", "USAGE_EVERY", "ORTHO_EVERY", "log_every")
+    float_keys = (
+        "L_DECORR",
+        "L_USAGE",
+        "L_ORTHO",
+        "L_REDUND",
+        "L_L0",
+        "sched_start",
+        "sched_end",
+    )
+    int_keys = (
+        "DECORR_EVERY",
+        "USAGE_EVERY",
+        "ORTHO_EVERY",
+        "REDUND_EVERY",
+        "L0_EVERY",
+        "log_every",
+        "N_FORGET",
+    )
 
     for key in float_keys:
         normalized[key] = float(normalized[key])
     for key in int_keys:
         normalized[key] = int(normalized[key])
     normalized["sched_type"] = str(normalized["sched_type"])
+    normalized["USAGE_OBJECTIVE"] = str(normalized["USAGE_OBJECTIVE"]).lower()
+    if normalized["USAGE_OBJECTIVE"] not in {"balance", "concentrate"}:
+        raise ValueError(
+            "USAGE_OBJECTIVE must be one of {'balance', 'concentrate'}"
+        )
     return normalized
 
 
@@ -296,6 +336,26 @@ def _resolve_sleeper_regularization(
     return reg_mode, reg_cfg, forced_off_due_to_non_topk
 
 
+class _RoutingCollator:
+    """Carries the per-example trigger flag past `tokenizer.pad()`.
+
+    `is_triggered` is emitted by the tokenizer for every dataset, but the model forward does not
+    accept it, so it is *always* popped here. It is re-attached to the batch only when gradient
+    routing is enabled, leaving non-routed runs byte-identical to the plain collator.
+    """
+
+    def __init__(self, base, enabled: bool):
+        self.base = base
+        self.enabled = enabled
+
+    def __call__(self, features):
+        flags = [int(f.pop("is_triggered", 0)) for f in features]
+        batch = self.base(features)
+        if self.enabled:
+            batch["is_triggered"] = torch.tensor(flags, dtype=torch.long)
+        return batch
+
+
 class EnhancedSleeperTrainer(Trainer):
     def __init__(
         self,
@@ -314,6 +374,109 @@ class EnhancedSleeperTrainer(Trainer):
         self.reg_cfg = dict(SLEEPER_REG_DEFAULTS)
         if reg_cfg:
             self.reg_cfg.update(reg_cfg)
+        latent_gate_enabled = (
+            self.reg_mode != "off" and float(self.reg_cfg.get("L_L0", 0.0)) > 0
+        )
+        if latent_gate_enabled:
+            for module in self.model.modules():
+                if isinstance(module, TopKLoRALinearSTE):
+                    module.latent_gate_enabled = True
+
+        self.n_forget = int(self.reg_cfg.get("N_FORGET", 0))
+        self._skip_reg = False
+        self._forget_index: Dict[Any, Tuple] = {}
+        self._trainable_params: Optional[List[Any]] = None
+        if self.n_forget > 0:
+            self._init_gradient_routing()
+
+    def _init_gradient_routing(self) -> None:
+        """Designate latents [0:N_FORGET) of every wrapped TopK-LoRA module as forget params.
+
+        lora_A is (r, in_features) -> the designated latents are its first N_FORGET *rows*;
+        lora_B is (out_features, r) -> its first N_FORGET *columns*.
+        """
+        d, n_mod = self.n_forget, 0
+        for module in self.model.modules():
+            if not isinstance(module, TopKLoRALinearSTE):
+                continue
+            r = int(module.A_module.weight.shape[0])
+            if d >= r:
+                raise ValueError(
+                    f"N_FORGET={d} must be < LoRA rank r={r}: routing needs a non-empty "
+                    "retain partition."
+                )
+            self._forget_index[module.A_module.weight] = (slice(0, d),)
+            self._forget_index[module.B_module.weight] = (slice(None), slice(0, d))
+            n_mod += 1
+        if n_mod == 0:
+            raise ValueError("N_FORGET>0 but no TopKLoRALinearSTE modules were found.")
+        logging.info(
+            "Gradient routing ON: %d forget latents x %d wrapped modules = %d designated latents.",
+            d,
+            n_mod,
+            d * n_mod,
+        )
+
+    def training_step(self, model, inputs, num_items_in_batch=None):
+        """SGTM gradient routing: triggered examples update only the designated latents.
+
+        The batch is split by `is_triggered` and backwarded twice with the *same*
+        `num_items_in_batch`, so the two passes sum to exactly the full-batch gradient. Batch
+        composition is preserved (unlike homogeneous-batch routing, which would confound the
+        comparison against the z_only control).
+        """
+        flags = inputs.pop("is_triggered", None)
+        if self.n_forget <= 0 or flags is None:
+            return super().training_step(model, inputs, num_items_in_batch)
+
+        if num_items_in_batch is None:
+            raise RuntimeError(
+                "Gradient routing requires token-sum loss normalization (num_items_in_batch), "
+                "got None -- the two sub-batch backwards would be mis-scaled relative to a "
+                "full-batch step. Refusing to train silently mis-scaled."
+            )
+
+        trig = flags.bool()
+        n_trig = int(trig.sum())
+        loss = None
+
+        # Clean sub-batch: every parameter updates (SGTM's "labeled safe data" branch).
+        # The regularizer rides on this pass only, so it is still counted once per step.
+        if n_trig < trig.numel():
+            loss = super().training_step(
+                model, {k: v[~trig] for k, v in inputs.items()}, num_items_in_batch
+            )
+
+        # Triggered sub-batch: backward normally, then keep only the designated slices of the
+        # resulting gradient and revert every other trainable tensor to its pre-pass value.
+        # Reverting (rather than zeroing) is what makes this correct under gradient accumulation.
+        if n_trig:
+            if self._trainable_params is None:
+                self._trainable_params = [p for p in model.parameters() if p.requires_grad]
+            before = {
+                p: (p.grad.detach().clone() if p.grad is not None else None)
+                for p in self._trainable_params
+            }
+            self._skip_reg = True
+            try:
+                t_loss = super().training_step(
+                    model, {k: v[trig] for k, v in inputs.items()}, num_items_in_batch
+                )
+            finally:
+                self._skip_reg = False
+            for p in self._trainable_params:
+                idx = self._forget_index.get(p)
+                old = before[p]
+                if idx is None or p.grad is None:
+                    p.grad = old
+                    continue
+                keep = p.grad[idx].clone()
+                restored = old.clone() if old is not None else torch.zeros_like(p.grad)
+                restored[idx] = keep
+                p.grad = restored
+            loss = t_loss if loss is None else loss + t_loss
+
+        return loss
 
     def _sched_weight(self, progress: float) -> float:
         s0, s1 = float(self.reg_cfg["sched_start"]), float(self.reg_cfg["sched_end"])
@@ -345,6 +508,28 @@ class EnhancedSleeperTrainer(Trainer):
     def _compute_usage_balance(g_soft: torch.Tensor) -> torch.Tensor:
         usage = g_soft.mean(dim=tuple(range(g_soft.dim() - 1)))
         return ((usage - usage.mean()) ** 2).mean()
+
+    @staticmethod
+    def _compute_usage_concentrate(g_soft: torch.Tensor) -> torch.Tensor:
+        usage = g_soft.mean(dim=tuple(range(g_soft.dim() - 1)))
+        p = usage / (usage.sum() + 1e-8)
+        return -(p * p.clamp_min(1e-8).log()).sum()
+
+    @staticmethod
+    def _compute_redundancy_scores(
+        weight: torch.Tensor, usage: torch.Tensor
+    ) -> torch.Tensor:
+        w_norm = F.normalize(weight.float(), p=2, dim=0)
+        gram_sq = (w_norm.T @ w_norm).square()
+        gram_sq.fill_diagonal_(0.0)
+        return gram_sq @ usage.float()
+
+    @classmethod
+    def _compute_redundancy(
+        cls, weight: torch.Tensor, usage: torch.Tensor
+    ) -> torch.Tensor:
+        redundancy = cls._compute_redundancy_scores(weight, usage)
+        return (usage.float() * redundancy).sum()
 
     @staticmethod
     def _compute_ortho(weight: torch.Tensor, dim: int) -> torch.Tensor:
@@ -401,6 +586,12 @@ class EnhancedSleeperTrainer(Trainer):
         else:
             loss, outputs = loss_and_outputs, None
 
+        # Routed trigger pass: the regularizer (and its logging) rides on the clean pass only,
+        # so it is not double-counted across the two backwards of a single step.
+        if self._skip_reg:
+            self._clear_caches(model)
+            return (loss, outputs) if return_outputs else loss
+
         step = self.state.global_step or 0
         max_steps = max(1, self.state.max_steps or 1)
         log_every = int(self.reg_cfg["log_every"])
@@ -416,12 +607,21 @@ class EnhancedSleeperTrainer(Trainer):
         l_decorr = float(self.reg_cfg["L_DECORR"])
         l_usage = float(self.reg_cfg.get("L_USAGE", 0.0))
         l_ortho = float(self.reg_cfg.get("L_ORTHO", 0.0))
+        l_redund = float(self.reg_cfg.get("L_REDUND", 0.0))
+        l_l0 = float(self.reg_cfg.get("L_L0", 0.0))
+        usage_objective = str(
+            self.reg_cfg.get("USAGE_OBJECTIVE", "balance")
+        ).lower()
         decorr_every = int(self.reg_cfg["DECORR_EVERY"])
         usage_every = int(self.reg_cfg.get("USAGE_EVERY", 2))
         ortho_every = int(self.reg_cfg["ORTHO_EVERY"])
+        redund_every = int(self.reg_cfg.get("REDUND_EVERY", 2))
+        l0_every = int(self.reg_cfg.get("L0_EVERY", 2))
 
         run_decorr = self._should_compute(l_decorr, decorr_every, step)
         run_usage = self._should_compute(l_usage, usage_every, step)
+        run_redund = self._should_compute(l_redund, redund_every, step)
+        run_l0 = self._should_compute(l_l0, l0_every, step)
         run_ortho = self.reg_mode == "z_plus_ortho" and self._should_compute(
             l_ortho, ortho_every, step
         )
@@ -431,6 +631,8 @@ class EnhancedSleeperTrainer(Trainer):
             "reg/decorr": 0.0,
             "reg/usage": 0.0,
             "reg/ortho": 0.0,
+            "reg/redund": 0.0,
+            "reg/l0": 0.0,
             "reg/sched_w": 0.0,
         }
         n_layers = 0
@@ -449,7 +651,9 @@ class EnhancedSleeperTrainer(Trainer):
                     progress = step / max_steps
                 sched_w = self._sched_weight(progress)
 
-                if sched_w <= 0 and not any([run_decorr, run_usage, run_ortho]):
+                if sched_w <= 0 and not any(
+                    [run_decorr, run_usage, run_ortho, run_redund, run_l0]
+                ):
                     continue
 
                 if run_decorr and sched_w > 0:
@@ -458,7 +662,8 @@ class EnhancedSleeperTrainer(Trainer):
                     if do_log:
                         accum["reg/decorr"] += float(r_decorr.detach())
 
-                if run_usage and sched_w > 0:
+                usage = None
+                if (run_usage or run_redund) and sched_w > 0:
                     g_soft = getattr(module, "_g_soft_live", None)
                     if g_soft is None:
                         g_soft = _soft_topk_mass(
@@ -467,12 +672,36 @@ class EnhancedSleeperTrainer(Trainer):
                             module._tau(),
                             getattr(module, "topk_mode", "topk"),
                         )
+                    usage = g_soft.mean(dim=tuple(range(g_soft.dim() - 1)))
+
+                if run_usage and sched_w > 0:
+                    compute_usage = (
+                        self._compute_usage_concentrate
+                        if usage_objective == "concentrate"
+                        else self._compute_usage_balance
+                    )
                     r_usage = (
-                        self._compute_usage_balance(g_soft).to(loss.dtype) * sched_w
+                        compute_usage(g_soft).to(loss.dtype) * sched_w
                     )
                     reg = reg + l_usage * r_usage
                     if do_log:
                         accum["reg/usage"] += float(r_usage.detach())
+
+                if run_redund and sched_w > 0:
+                    r_redund = (
+                        self._compute_redundancy(module.B_module.weight, usage)
+                        .to(loss.dtype)
+                        * sched_w
+                    )
+                    reg = reg + l_redund * r_redund
+                    if do_log:
+                        accum["reg/redund"] += float(r_redund.detach())
+
+                if run_l0 and sched_w > 0:
+                    r_l0 = module.expected_open_gates().to(loss.dtype) * sched_w
+                    reg = reg + l_l0 * r_l0
+                    if do_log:
+                        accum["reg/l0"] += float(r_l0.detach())
 
                 if run_ortho and sched_w > 0:
                     r_ortho_a = self._compute_ortho(module.A_module.weight, dim=1)
@@ -645,6 +874,10 @@ def run_sleeper_train(cfg: DictConfig) -> Path:
             sae_use_output_bias=bool(
                 getattr(lora_cfg, "sae_use_output_bias", False)
             ),
+            latent_gate_enabled=(
+                resolved_reg_mode != "off"
+                and float(resolved_reg_cfg.get("L_L0", 0.0)) > 0
+            ),
         )
 
         if bool(getattr(lora_cfg, "top_k_experiment", False)) and replaced == 0:
@@ -701,10 +934,13 @@ def run_sleeper_train(cfg: DictConfig) -> Path:
         "args": training_args,
         "train_dataset": train_tokenized,
         "eval_dataset": eval_tokenized,
-        "data_collator": DataCollatorForSeq2Seq(
-            tokenizer=tokenizer,
-            label_pad_token_id=-100,
-            pad_to_multiple_of=8,
+        "data_collator": _RoutingCollator(
+            DataCollatorForSeq2Seq(
+                tokenizer=tokenizer,
+                label_pad_token_id=-100,
+                pad_to_multiple_of=8,
+            ),
+            enabled=int(resolved_reg_cfg.get("N_FORGET", 0)) > 0,
         ),
         "callbacks": callbacks,
     }
@@ -780,6 +1016,10 @@ def run_sleeper_train(cfg: DictConfig) -> Path:
         "sae_use_latent_bias": bool(getattr(lora_cfg, "sae_use_latent_bias", True)),
         "sae_use_input_center": bool(getattr(lora_cfg, "sae_use_input_center", False)),
         "sae_use_output_bias": bool(getattr(lora_cfg, "sae_use_output_bias", False)),
+        "latent_gate_enabled": (
+            resolved_reg_mode != "off"
+            and float(resolved_reg_cfg.get("L_L0", 0.0)) > 0
+        ),
         "target_modules": list(target_modules),
         "r": int(lora_cfg.r),
         "alpha": int(lora_cfg.alpha),

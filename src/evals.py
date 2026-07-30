@@ -79,8 +79,18 @@ def init_model_tokenizer_fixed(model_cfg):
         sae_use_latent_bias=bool(getattr(model_cfg, "sae_use_latent_bias", True)),
         sae_use_input_center=bool(getattr(model_cfg, "sae_use_input_center", False)),
         sae_use_output_bias=bool(getattr(model_cfg, "sae_use_output_bias", False)),
+        latent_gate_enabled=bool(getattr(model_cfg, "latent_gate_enabled", False)),
         set_train=False,
     )
+
+    # Restore wrapper-owned tensors after the TopK wrappers exist.
+    from safetensors.torch import load_file
+
+    adapter_state = load_file(
+        str(Path(model_cfg.adapter_checkpoint_dir) / "adapter_model.safetensors"),
+        device="cpu",
+    )
+    model.load_state_dict(adapter_state, strict=False)
 
     print(f"Wrapped {replaced} LoRA modules with TopK for inference")
     model.to(device)

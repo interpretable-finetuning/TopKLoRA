@@ -38,7 +38,7 @@ import torch
 
 from src.clcd.align import align_positions
 from src.clcd.attribute import attribute
-from src.clcd.latents import inject
+from src.clcd.latents import compose_overrides, inject
 from src.clcd.measure import mu, seq_logprob
 
 # Node = (module_name, latent_dim d, position p). Edges are Node -> Node.
@@ -136,7 +136,17 @@ def _read_under(model, ids, wrapped, overrides) -> dict:
     own latents from the perturbed input)."""
     with torch.no_grad(), inject(wrapped, overrides):
         model(ids)
-    return {m: mod._last_z_sparse.clone() for m, mod in wrapped.items()}
+    natural = {m: mod._last_z_sparse.clone() for m, mod in wrapped.items()}
+    return {
+        m: (
+            overrides[m](a).detach().clone()
+            if m in overrides and callable(overrides[m])
+            else overrides[m].detach().clone()
+            if m in overrides
+            else a
+        )
+        for m, a in natural.items()
+    }
 
 
 def _knock_override(m_u, d_u, p_u, baseline_val):
@@ -149,7 +159,18 @@ def _knock_override(m_u, d_u, p_u, baseline_val):
     return f
 
 
-def edge_scores_patching(model, wrapped, full_trigger, nodes, info, a0, a1):
+def edge_scores_patching(
+    model,
+    wrapped,
+    full_trigger,
+    nodes,
+    info,
+    a0,
+    a1,
+    baseline_overrides=None,
+    sources=None,
+    targets=None,
+):
     """Method A graph: {(u,v): E^A} over all DAG-valid candidate pairs.
 
     For each upstream node u, knock it to its baseline a0 value on the trigger run
@@ -157,13 +178,18 @@ def edge_scores_patching(model, wrapped, full_trigger, nodes, info, a0, a1):
     clean trigger value a¹_v is u's contribution to v; times grad_v it is u's
     target effect mediated by v. One forward per upstream node (Δa_v for all v).
     """
+    sources = list(nodes if sources is None else sources)
+    targets = list(nodes if targets is None else targets)
     edges = {}
-    a1_at = {n: float(a1[n[0]][0, n[2], n[1]]) for n in nodes}
-    for u in nodes:
+    a1_at = {n: float(a1[n[0]][0, n[2], n[1]]) for n in targets}
+    for u in sources:
         m_u, d_u, p_u = u
-        ov = {m_u: _knock_override(m_u, d_u, p_u, float(a0[m_u][0, p_u, d_u]))}
+        ov = compose_overrides(
+            baseline_overrides,
+            {m_u: _knock_override(m_u, d_u, p_u, float(a0[m_u][0, p_u, d_u]))},
+        )
         a_knock = _read_under(model, full_trigger, wrapped, ov)
-        for v in nodes:
+        for v in targets:
             if not dag_valid(u, v):
                 continue
             m_v, d_v, p_v = v
@@ -249,7 +275,18 @@ def _set_override(by_module_vals):
     return overrides
 
 
-def path_patch_edge(model, wrapped, episode, u, v, freeze, a0, a1, grad_v=0.0):
+def path_patch_edge(
+    model,
+    wrapped,
+    episode,
+    u,
+    v,
+    freeze,
+    a0,
+    a1,
+    grad_v=0.0,
+    baseline_overrides=None,
+):
     """Exact hard-gate verification of edge u->v. Returns two numbers:
 
       direct_E  -- the *isolated* edge strength on the target: knock u to baseline
@@ -283,7 +320,12 @@ def path_patch_edge(model, wrapped, episode, u, v, freeze, a0, a1, grad_v=0.0):
         if (m_f, d_f, p_f) in (u, v):
             continue
         by_mod.setdefault(m_f, []).append((d_f, p_f, float(a1[m_f][0, p_f, d_f])))
-    a_step = _read_under(model, full_plus, wrapped, _set_override(by_mod))
+    a_step = _read_under(
+        model,
+        full_plus,
+        wrapped,
+        compose_overrides(baseline_overrides, _set_override(by_mod)),
+    )
     a_v_edge = float(a_step[m_v][0, p_v, d_v])
     direct_E = (float(a1[m_v][0, p_v, d_v]) - a_v_edge) * grad_v
 
@@ -291,10 +333,14 @@ def path_patch_edge(model, wrapped, episode, u, v, freeze, a0, a1, grad_v=0.0):
     # positions (a completion-span node has no Y- counterpart).
     ov = _set_override({m_v: [(d_v, p_v, a_v_edge)]})
     with torch.no_grad():
-        clean = float(mu(model, episode.prompt_trigger, episode.y_plus, episode.y_minus))
-        with inject(wrapped, ov):
+        with inject(wrapped, baseline_overrides or {}):
+            clean = float(mu(model, episode.prompt_trigger, episode.y_plus, episode.y_minus))
+        with inject(wrapped, compose_overrides(baseline_overrides, ov)):
             jp = seq_logprob(model, full_plus, P)
-        with inject(wrapped, ov if p_v < P else {}):
+        with inject(
+            wrapped,
+            compose_overrides(baseline_overrides, ov if p_v < P else {}),
+        ):
             jm = seq_logprob(model, full_minus, P)
         patched = float(jp - jm)
     return {"direct_E": direct_E, "mu_effect": clean - patched}

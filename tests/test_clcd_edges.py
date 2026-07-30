@@ -31,6 +31,7 @@ from src.clcd.edges import (
 from src.clcd.episode import Episode
 from src.clcd.measure import mu
 from src.clcd.selection import select
+from src.clcd.verify import ablation_overrides
 
 
 def _episode():
@@ -602,3 +603,42 @@ def test_path_patch_runs_and_is_null_without_contrast(fix):
         model, wrapped, ep, u, v, nodes, res["a1"], res["a1"], grad_v=info[v]["grad"]
     )
     assert abs(null["direct_E"]) < 1e-4 and abs(null["mu_effect"]) < 1e-4
+
+
+def test_patching_and_path_patch_preserve_persistent_ablation(fix):
+    model, wrapped = fix
+    ep = _episode()
+    module = next(iter(wrapped))
+    baseline = ablation_overrides([(module, 0)])
+    res = attribute(model, wrapped, ep, K=8, baseline_overrides=baseline)
+    sel = select(res["A"], n_positive=6, n_negative=6)
+    selected = [(m, d) for m, d, _ in sel["positive"] + sel["negative"]]
+    nodes, info = candidate_nodes(res["A"], res["grads"], selected, tau=0.2, cap=4)
+    edges = edge_scores_patching(
+        model,
+        wrapped,
+        res["full_trigger"],
+        nodes,
+        info,
+        res["a0"],
+        res["a1"],
+        baseline_overrides=baseline,
+    )
+    assert edges
+    effective = _read_under(model, res["full_trigger"], wrapped, baseline)
+    assert torch.count_nonzero(effective[module][..., 0]) == 0
+    u, v = max(edges, key=lambda edge: abs(edges[edge]))
+    path_patch_edge(
+        model,
+        wrapped,
+        ep,
+        u,
+        v,
+        nodes,
+        res["a0"],
+        res["a1"],
+        grad_v=info[v]["grad"],
+        baseline_overrides=baseline,
+    )
+    effective = _read_under(model, res["full_trigger"], wrapped, baseline)
+    assert torch.count_nonzero(effective[module][..., 0]) == 0

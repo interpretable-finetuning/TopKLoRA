@@ -23,7 +23,7 @@ from __future__ import annotations
 import torch
 
 from src.clcd.align import align_baseline, align_positions
-from src.clcd.latents import inject, read_latents
+from src.clcd.latents import compose_overrides, inject, read_latents
 from src.clcd.measure import seq_logprob
 
 
@@ -34,6 +34,7 @@ def attribute(
     K: int = 32,
     tag_baseline: str = "zero",
     completion: torch.Tensor | None = None,
+    baseline_overrides: dict | None = None,
 ) -> dict:
     # `completion` is which continuation's log-prob is the attribution target.
     # Default Y+ gives the simplified target J = log p(Y+ | x_trigger). Passing Y-
@@ -49,8 +50,21 @@ def attribute(
     # latents ALIGNED onto the trigger grid by token diff: shared prefix/suffix
     # copy control latents, the trigger-only tag span gets mechanism-off 0.
     # Equal-length identical-structure prompts -> src is identity (old v1).
-    a1 = read_latents(model, full_trigger, wrapped_modules)
-    a0_control = read_latents(model, full_control, wrapped_modules)
+    def read_endpoint(ids):
+        overrides = baseline_overrides or {}
+        with inject(wrapped_modules, overrides):
+            natural = read_latents(model, ids, wrapped_modules)
+        return {
+            m: (
+                overrides[m](a).detach().clone()
+                if m in overrides
+                else a
+            )
+            for m, a in natural.items()
+        }
+
+    a1 = read_endpoint(full_trigger)
+    a0_control = read_endpoint(full_control)
     src = align_positions(full_trigger, full_control, tag_baseline)
     a0 = align_baseline(a0_control, src, full_trigger.shape[1])
 
@@ -63,7 +77,10 @@ def attribute(
             m: (a0[m] + t * (a1[m] - a0[m])).requires_grad_(True)
             for m in wrapped_modules
         }
-        with inject(wrapped_modules, a_interp):
+        with inject(
+            wrapped_modules,
+            compose_overrides(baseline_overrides, a_interp),
+        ):
             J = seq_logprob(model, full_trigger, P)
         J.backward()
         for m in wrapped_modules:

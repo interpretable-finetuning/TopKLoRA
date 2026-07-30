@@ -10,6 +10,7 @@ optimized neither criterion and went degenerate on distributed backdoors.
 import argparse
 import json
 import math
+import os
 from pathlib import Path
 
 import torch
@@ -82,8 +83,15 @@ def main():
     a = ap.parse_args()
 
     _dt = {"float32": torch.float32, "bfloat16": torch.bfloat16, "float16": torch.float16}[a.dtype]
-    model, tok, wrapped = load_organism(a.adapter, base_model=a.base_model, device=a.device, dtype=_dt)
-    if _dt != torch.float32:
+    # CLCD_MODEL_PARALLEL: shard the model across the visible GPUs so the batch-64
+    # all-family K-sweep fits (a single A40 tops out at ~44GB). "1" -> both visible
+    # GPUs [0,1]; or give an explicit comma list. Numerically identical to 1-GPU.
+    _mp = os.environ.get("CLCD_MODEL_PARALLEL", "").strip()
+    _dmap = None
+    if _mp:
+        _dmap = [int(x) for x in _mp.split(",")] if "," in _mp else [0, 1]
+    model, tok, wrapped = load_organism(a.adapter, base_model=a.base_model, device=a.device, dtype=_dt, device_map=_dmap)
+    if _dmap is None and _dt != torch.float32:
         model = model.to(_dt)
     attrib_eps, *_ = load_episodes(tok, a.data, a.n_attrib, a.device, offset=0)
     trig_qs = _load_jsonl_rows(a.data, "eval_triggered", a.offset, a.n_backdoor)

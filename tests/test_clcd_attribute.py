@@ -6,6 +6,7 @@ from src.clcd.attribute import attribute
 from src.clcd.episode import Episode
 from src.clcd.latents import inject
 from src.clcd.measure import seq_logprob
+from src.clcd.verify import ablation_overrides
 
 
 def _episode():
@@ -88,3 +89,19 @@ def test_runs_on_misaligned(fix):
     )
     res = attribute(model, wrapped, ep, K=8)
     assert res["A"][next(iter(res["A"]))].shape[1] == 13
+
+
+def test_persistent_ablation_baseline_is_clamped_through_ig(fix):
+    model, wrapped = fix
+    module = next(iter(wrapped))
+    circuit = [(module, 0)]
+    res = attribute(
+        model,
+        wrapped,
+        _episode(),
+        K=8,
+        baseline_overrides=ablation_overrides(circuit),
+    )
+    assert torch.count_nonzero(res["a0"][module][..., 0]) == 0
+    assert torch.count_nonzero(res["a1"][module][..., 0]) == 0
+    assert torch.count_nonzero(res["A"][module][..., 0]) == 0

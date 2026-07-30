@@ -40,7 +40,7 @@ a0_worker() { # gpu seed
       --out "$circ" > logs/exp5_eval/a0_all_s${s}_search.out 2>&1
   fi
   [ -f "$circ" ] && [ ! -f "$leak" ] && \
-    CLCD_OUT="$leak" CLCD_N=1000 CUDA_VISIBLE_DEVICES=$gpu uv run python -u scripts/verify_holdout_necessity.py "$circ" \
+    CLCD_OUT="$leak" CLCD_N=1000 CUDA_VISIBLE_DEVICES=$gpu uv run python -u analysis/verify_holdout_necessity.py "$circ" \
       > logs/exp5_eval/a0_all_s${s}_leak.out 2>&1
 }
 g=0; for s in 42 43 44; do a0_worker "$g" "$s" & g=$((g+1)); done; wait

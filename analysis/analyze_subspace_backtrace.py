@@ -3,7 +3,7 @@
 
 Run from the repository root with::
 
-    uv run python -m src.clcd.analyze_subspace_backtrace
+    uv run python -u analysis/analyze_subspace_backtrace.py
 
 Stage 1 is the weights-guided residual-writer sweep.  Stage 2 uses the existing
 activation-patching edge machinery to distinguish a flat residual writer set
@@ -26,7 +26,7 @@ import torch
 import torch.nn.functional as F
 
 from src import data as chat_format
-from src.clcd.analyze_setchurn import (
+from analysis.analyze_setchurn import (
     BAND_LENGTH,
     BASE_MODEL,
     CAUSAL_BATCH_SIZE,

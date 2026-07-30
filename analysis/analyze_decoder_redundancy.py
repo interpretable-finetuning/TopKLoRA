@@ -2,7 +2,7 @@
 
 Run from the repository root with::
 
-    uv run python -m src.clcd.analyze_decoder_redundancy
+    uv run python -u analysis/analyze_decoder_redundancy.py
 
 The analysis never loads a base model or moves tensors to a GPU.  Decoder
 directions are columns of each PEFT ``lora_B.weight`` tensor.

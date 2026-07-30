@@ -12,8 +12,16 @@ Held-out bands (selection used offset 100; cheap arbiter used offset 3000):
   [5000:6000]  fully untouched
 = 3000 held-out prompts, the same bar the l1523_s44 K700 circuit was held to.
 
-    CLCD_BANDS=2000,4000,5000 CLCD_N=1000 python scripts/verify_holdout_necessity.py <circuit.json> ...
+    CLCD_BANDS=2000,4000,5000 CLCD_N=1000 python -u analysis/verify_holdout_necessity.py <circuit.json> ...
 Circuits are grouped by adapter so each 2B model loads once. Writes a results json + prints a table.
+
+INTERFACE: env vars, not argparse -- this is archived one-off analysis, kept runnable for
+reproducibility rather than maintained as a library entry point. Configure with the
+`CLCD_*` variables read below (grep `os.environ` in this file for the full set) and pass
+circuit json paths on argv. Run from the repo root:
+    CLCD_N=1000 uv run python -u analysis/verify_holdout_necessity.py <circuit.json>...
+If this ever needs to become a maintained tool, give it a main()+argparse and move it to
+src/clcd/ -- do not add a second config convention inside the library.
 """
 import json
 import os

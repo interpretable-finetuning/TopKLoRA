@@ -56,12 +56,12 @@ run_chain() { # rid gpu
   [ -f "$circ" ] || { echo "[$rid] SEARCH FAILED"; return 1; }
   if [ ! -f "$redund" ]; then
     echo "[$(date +%H:%M) $rid g$gpu] REDUNDANCY"
-    uv run python -u -m src.clcd.analyze_decoder_redundancy --circuits "$circ" \
+    uv run python -u analysis/analyze_decoder_redundancy.py --circuits "$circ" \
       --out "$redund" > "$JLOG/${rid}_redund.out" 2>&1
   fi
   if [ ! -f "$leak" ]; then
     echo "[$(date +%H:%M) $rid g$gpu] LEAK-CLOSURE (mbt9000, 3000 held-out)"
-    CLCD_OUT="$leak" CLCD_N=1000 uv run python -u scripts/verify_holdout_necessity.py "$circ" \
+    CLCD_OUT="$leak" CLCD_N=1000 uv run python -u analysis/verify_holdout_necessity.py "$circ" \
       > "$JLOG/${rid}_leak.out" 2>&1
   fi
   echo "[$(date +%H:%M) $rid g$gpu] DONE  $(python3 -c "import json;d=json.load(open('$circ'));print('bothK=',d.get('both_K'),'nkept=',d.get('n_kept_latents'),'asr=',d.get('intact_asr'))" 2>/dev/null)"

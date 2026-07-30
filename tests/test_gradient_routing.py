@@ -121,6 +121,41 @@ def test_all_clean_batch_is_identical_to_no_routing(monkeypatch):
         assert torch.allclose(p.grad, torch.ones_like(p))
 
 
+def test_all_triggered_batch_still_regularizes_once(monkeypatch):
+    """The regularizer must ride SOME pass, whatever the batch composition.
+
+    The clean pass runs only when `n_trig < trig.numel()`, and the trigger pass sets
+    `_skip_reg`, which `compute_loss` returns on before applying any regularizer. So an
+    all-triggered batch used to be regularized on ZERO passes while the docstring claimed
+    "once per step". Impact is small at the usual trigger fraction, but it is a silent
+    difference in what the objective is, conditioned on data the trainer does not control.
+    """
+    seen = []
+
+    def fake_parent(self, model_, inputs, num_items_in_batch=None):
+        seen.append(bool(self._skip_reg))
+        return torch.tensor(1.0)
+
+    monkeypatch.setattr(Trainer, "training_step", fake_parent)
+
+    for name, flags, want in (
+        ("mixed", [1, 0], 1),
+        ("all-triggered", [1, 1], 1),
+        ("all-clean", [0, 0], 1),
+    ):
+        model, _ = _build_topk_module()
+        tr = _make_trainer(model, n_forget=1)
+        seen.clear()
+        EnhancedSleeperTrainer.training_step(
+            tr, model,
+            {"input_ids": torch.zeros(len(flags), 2, dtype=torch.long),
+             "is_triggered": torch.tensor(flags)},
+            num_items_in_batch=99,
+        )
+        regularized = sum(1 for skipped in seen if not skipped)
+        assert regularized == want, f"{name}: {regularized} regularized passes, want {want} ({seen})"
+
+
 def test_routing_refuses_to_run_mis_scaled(monkeypatch):
     """Without token-sum normalisation the two sub-batch backwards do not sum to a full step.
 

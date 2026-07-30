@@ -441,7 +441,8 @@ class EnhancedSleeperTrainer(Trainer):
         loss = None
 
         # Clean sub-batch: every parameter updates (SGTM's "labeled safe data" branch).
-        # The regularizer rides on this pass only, so it is still counted once per step.
+        # The regularizer rides on this pass when there is one, so it is counted once per
+        # step -- see the `_skip_reg` assignment below for the all-triggered case.
         if n_trig < trig.numel():
             loss = super().training_step(
                 model, {k: v[~trig] for k, v in inputs.items()}, num_items_in_batch
@@ -457,7 +458,11 @@ class EnhancedSleeperTrainer(Trainer):
                 p: (p.grad.detach().clone() if p.grad is not None else None)
                 for p in self._trainable_params
             }
-            self._skip_reg = True
+            # Skip the regularizer here ONLY if the clean pass above already carried it.
+            # With an all-triggered batch there is no clean pass, and unconditionally
+            # skipping meant the step was regularized zero times -- silently changing the
+            # objective as a function of batch composition.
+            self._skip_reg = n_trig < trig.numel()
             try:
                 t_loss = super().training_step(
                     model, {k: v[trig] for k, v in inputs.items()}, num_items_in_batch

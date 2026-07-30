@@ -251,6 +251,17 @@ def edge_scores_jvp(model, wrapped, full_trigger, top_edges, info, a0, a1):
                 g = torch.autograd.grad(
                     live[m_v][0, p_v, d_v], leaf, retain_graph=True, allow_unused=True
                 )[0]
+                if g is None:
+                    # 0.0 is the true derivative only when v is NOT strictly downstream of u
+                    # in compute order (same module, or same layer with m_v earlier in the
+                    # block -- dag_valid admits both via its p_v > p_u branch). If v IS
+                    # downstream, a missing gradient means the graph is broken (a detached
+                    # _live_sparse, a hook that failed to attach), and silently returning 0.0
+                    # would report an all-zero Method-B cross-check as if it were a result.
+                    assert compute_order(m_v) <= compute_order(m_u), (
+                        f"no gradient path for {u} -> {v}, but {m_v} IS downstream of {m_u}: "
+                        "the autograd graph is broken, not structurally path-free"
+                    )
                 dav_dau = 0.0 if g is None else float(g[0, p_u, d_u])
                 dau = float(a1[m_u][0, p_u, d_u] - a0[m_u][0, p_u, d_u])
                 out[(u, v)] = dau * dav_dau * info[v]["grad"]

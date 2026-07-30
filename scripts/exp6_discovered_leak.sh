@@ -26,7 +26,7 @@ for s in 42 43 44; do
   echo "[$(date +%H:%M) g$gpu] DISCOVERED-LEAK s$s"
   CUDA_VISIBLE_DEVICES=$gpu CLCD_BANDS=2000,3000,4000,5000 CLCD_N=1000 \
     CLCD_OUT=clcd_results/exp6/discovered_leak_s${s}.json \
-    uv run python -u scripts/verify_holdout_necessity.py \
+    uv run python -u analysis/verify_holdout_necessity.py \
       clcd_results/exp6/route_l1523_s${s}_circuit.json \
       > "logs/exp6/discovered_leak_s${s}.out" 2>&1 &
 done

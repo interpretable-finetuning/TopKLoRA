@@ -22,11 +22,11 @@ n=${#ADS[@]}
 half=$(( (n + 1) / 2 ))
 CUDA_VISIBLE_DEVICES=${GPUS[0]} CLCD_N=${CLCD_N:-50} \
   CLCD_OUT=clcd_results/exp6/payload_conc_${TAG}_a.json \
-  uv run python -u scripts/payload_concentration.py "${ADS[@]:0:$half}" \
+  uv run python -u analysis/payload_concentration.py "${ADS[@]:0:$half}" \
   > logs/exp6/payload_conc_${TAG}_a.out 2>&1 &
 CUDA_VISIBLE_DEVICES=${GPUS[1]} CLCD_N=${CLCD_N:-50} \
   CLCD_OUT=clcd_results/exp6/payload_conc_${TAG}_b.json \
-  uv run python -u scripts/payload_concentration.py "${ADS[@]:$half}" \
+  uv run python -u analysis/payload_concentration.py "${ADS[@]:$half}" \
   > logs/exp6/payload_conc_${TAG}_b.out 2>&1 &
 wait
 echo "=== payload-concentration ($TAG family) done $(date) ==="

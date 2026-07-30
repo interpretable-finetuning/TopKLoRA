@@ -39,7 +39,7 @@ run_one() { # org gpu
   local files; files=$(ls $OUT/circuits/${org}_K*.json | tr '\n' ' ')
   echo "[$(date +%H:%M) g$gpu] $org ($(echo $files | wc -w) K-variants)"
   CUDA_VISIBLE_DEVICES=$gpu CLCD_OUT=$res CLCD_N=1000 CLCD_BANDS=2000,3000,4000,5000 \
-    uv run python -u scripts/verify_holdout_necessity.py $files \
+    uv run python -u analysis/verify_holdout_necessity.py $files \
     > "logs/matchedK_all/${org}.out" 2>&1
   [ -f "$res" ] || echo "[$(date +%H:%M) g$gpu] $org FAILED (see logs/matchedK_all/${org}.out)"
 }

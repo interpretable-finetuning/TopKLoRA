@@ -229,7 +229,7 @@ band/threshold/batching/coefficient until a result looks good; negatives are res
 
 ### Held-out necessity leak (the price of removal) — DONE
 - **Ran:** ablate the certified both-circuit, measure backdoor fires on held-out triggered bands never
-  used for selection, matched batching mbt=9000. `scripts/verify_holdout_necessity.py`,
+  used for selection, matched batching mbt=9000. `analysis/verify_holdout_necessity.py`,
   `clcd_results/rigorous/holdout_necessity/`.
 - **Outcome:** circuits certified at exact-0 in-sample necessity **still fire out-of-sample** (~0.1%).
   The price of complete removal ≈ **4.7× circuit size / 12–17 pt**. Leaks are **reproducible** at
@@ -260,7 +260,7 @@ band/threshold/batching/coefficient until a result looks good; negatives are res
 ### Exp-1 — Decoder-cosine redundancy on saved circuits — DONE · 2026-07-15
 - **Ran:** pairwise `|cos|` of decoder columns (B) for circuit residual-writer latents vs random
   equal-size sets from the same pool; distribution + clustering-vs-threshold curve, no GPU.
-  `src/clcd/analyze_decoder_redundancy.py`, `clcd_results/rigorous/decoder_redundancy.json`.
+  `analysis/analyze_decoder_redundancy.py`, `clcd_results/rigorous/decoder_redundancy.json`.
 - **Outcome:** thesis **CONFIRMED (with nuance)** — circuit writers more near-parallel than random in
   **13/14 valid circuits** (permutation p ≤ 0.068). Excess largest in distributed families (`all` 5/5
   at p=0.001); **redundancy concentrated in `down_proj`**, not o_proj. Magnitude modest (MeanCosSim
@@ -273,7 +273,7 @@ band/threshold/batching/coefficient until a result looks good; negatives are res
 ### Exp-2 — Downstream set-churn / the hydra verdict — DONE · 2026-07-15
 - **Ran:** on the 16 leak prompts, record top-k-active latent *sets* per module, intact vs
   circuit-ablated; then causal test — ablate C ∪ {near-parallel backups} and regenerate at mbt=9000.
-  `src/clcd/analyze_setchurn.py`, `clcd_results/rigorous/setchurn{,_causal}.json`, logs
+  `analysis/analyze_setchurn.py`, `clcd_results/rigorous/setchurn{,_causal}.json`, logs
   `clcd_results/setchurn_logs/`.
 - **Outcome:** structural precondition = **cross-layer reach** (l19 has 0 cross-layer churn → never
   leaks). Churn magnitude a **weak** discriminator (~5–15% more on leak prompts). **Causal verdict =
@@ -288,7 +288,7 @@ band/threshold/batching/coefficient until a result looks good; negatives are res
 ### Exp-2b Stage 1 — Subspace backtrace (payload anchor) — DONE · 2026-07-16
 - **Ran:** anchor on the **payload direction** (logit-lens = tied-embedding rows of the keyword tokens),
   not cosine-to-circuit-writer; nested alignment-ranked prefix sweep vs R=5 random ensemble.
-  `src/clcd/analyze_subspace_backtrace.py`, `clcd_results/rigorous/subspace_backtrace_stage1_{A,B,C}.json`.
+  `analysis/analyze_subspace_backtrace.py`, `clcd_results/rigorous/subspace_backtrace_stage1_{A,B,C}.json`.
 - **Outcome:** partial real improvement over Exp-2 — of 18 leaks: **5 compact** keyword-aligned (≤32
   writers; standout `all` s45 idx4186 closes at 32 vs random-half 1141, ~36× gap), **3** large-N
   aligned, **7 group-size-driven** (distributed), **3 resist** even ablating every fired
@@ -336,7 +336,7 @@ band/threshold/batching/coefficient until a result looks good; negatives are res
   redundancy-death (L_REDUND=2e-2). Impl in `src/train.py` + `src/models.py`; trained via
   `scripts/launch_exp5_matrix.sh`; 5-tuple eval via `scripts/eval_exp5_matrix.sh` (elim + redund +
   leak) + clean-retention (`clean_retention_queue.sh` + `clean_ret_fix.sh`, 32B Qwen judge);
-  aggregated `scripts/aggregate_exp5_eval.py`; outputs `clcd_results/exp5_eval/`.
+  aggregated `analysis/aggregate_exp5_eval.py`; outputs `clcd_results/exp5_eval/`.
 - **Outcome:** **redund (M3) wins on every axis** — decoder redundancy 0.35× (l19) / 0.66× (l1523) of
   A0, neutral-to-smaller circuit, backdoor intact, mostly leak-free, **lowest capability cost to
   ablate (−0.36)**. **l0 (M2) worst on every axis** — redundancy 1.04×/1.38×, circuit 2–5× bigger,
@@ -658,8 +658,8 @@ band/threshold/batching/coefficient until a result looks good; negatives are res
   the paired per-K rows are. The K=100 entropy row survives on **1 seed** only (2 excluded), so its
   z=−5.4 there is not usable. K<`both_K` cells are truncations, not re-validated both-circuits —
   the exclusion rule is what keeps them interpretable.
-- **Source:** `scripts/gen_matchedK_all.py`, `scripts/matchedK_all.sh`,
-  `scripts/analyze_matchedK_all.py`; `clcd_results/matchedK_all/` (`manifest.json`, `circuits/`,
+- **Source:** `analysis/gen_matchedK_all.py`, `scripts/matchedK_all.sh`,
+  `analysis/analyze_matchedK_all.py`; `clcd_results/matchedK_all/` (`manifest.json`, `circuits/`,
   `results/`), `logs/matchedK_all/`. 15/15 organisms, torrnode12.
 - **Ops note:** the `all`-family leak test peaks at **~26 GB**, so two jobs per 46 GB A40 OOM —
   the first launch killed 9 of 15 that way. Use one worker per GPU (`slot_worker`). Also: a
@@ -957,7 +957,7 @@ removable; spread ⇒ hydra. This was item 3 of the strategic review; items 1–
 `u` is the final-norm-folded normalized tied-embedding direction of the **realized** payload token;
 `z_i(p−1)` is the post-TopK activation at the position that *predicts* `y_p` — the off-by-one is
 load-bearing and getting it wrong would silently corrupt the metric.
-`scripts/payload_concentration.py`. Cost: **~1 min for 6 organisms**, no generation, no ablation.
+`analysis/payload_concentration.py`. Cost: **~1 min for 6 organisms**, no generation, no ablation.
 Stable in n: N=3 and N=50 give n90 = 38 vs 39 on the same organism.
 
 ### Control design
@@ -1002,7 +1002,7 @@ from non-overlap, not a p-value), one family (`l1523`), and route-vs-a0 differ b
 shows the metric tracks *routing-induced* separability, not separability in general.
 
 ### Artifacts
-`scripts/payload_concentration.py`, `scripts/payload_concentration_control.sh`,
+`analysis/payload_concentration.py`, `scripts/payload_concentration_control.sh`,
 `clcd_results/exp6/payload_conc_{route,a0}.json`, `logs/exp6/payload_conc_*.out`.
 
 ---
@@ -1014,7 +1014,7 @@ Rather than pick one K-control a priori (supervisor's call, and the right one), 
 design was run with the **pre-registration that all of them are reported regardless of outcome**.
 Agreement across designs is the evidence; disagreement would itself have been the finding.
 15 `all`-family organisms with matched-K leak labels, 59 valid cells after the pre-registered
-in-sample exclusion (ASR>0.02). `scripts/analyze_concentration_vs_leak.py`.
+in-sample exclusion (ASR>0.02). `analysis/analyze_concentration_vs_leak.py`.
 
 ### ⭐ The confound check that had to pass first
 `both_K` at `both_K` has almost no variance (14/15 organisms = 0 fires), so the usable label is
@@ -1062,7 +1062,7 @@ Other caveats: single family (`all`); leak counts are small and dominated by a f
 in-sample exclusion removes 6 cells, all at low K.
 
 ### Artifacts
-`scripts/analyze_concentration_vs_leak.py`, `clcd_results/exp6/payload_conc_all_{a,b}.json`,
+`analysis/analyze_concentration_vs_leak.py`, `clcd_results/exp6/payload_conc_all_{a,b}.json`,
 `scripts/payload_concentration_all.sh`.
 
 ---
@@ -1116,7 +1116,7 @@ remain small and the exclusion rule removes low-K cells.
 
 ### Artifacts
 `clcd_results/exp6/payload_conc_l1523_{a,b}.json`, `logs/exp6/payload_conc_l1523_*.out`,
-`scripts/analyze_concentration_vs_leak.py` (both families, all designs).
+`analysis/analyze_concentration_vs_leak.py` (both families, all designs).
 
 ---
 
@@ -1469,6 +1469,14 @@ were not examined.
 ### Artifacts
 Fixes in commit following `7d39693`. Surfaced by the independent review of the `repo-slimming`
 refactor, not by the refactor itself — the bug is as old as `d09d951`.
+
+> **Path note (2026-07-30):** the one-off analysis modules moved to `analysis/` in the same push
+> (`git mv`, so `git log --follow` still reaches their pre-move history). Every Artifacts citation in
+> this log was updated to the new path — a log entry whose cited file cannot be found is not a record.
+> Affected: `analyze_{decoder_redundancy,setchurn,subspace_backtrace}.py` (were `src/clcd/`),
+> `verify_holdout_necessity.py`, `payload_concentration.py`, `analyze_concentration_vs_leak.py`,
+> `aggregate_exp5_eval.py`, `analyze_matchedK_all.py`, `gen_matchedK_all.py`,
+> `make_briefing_figures.py` (were `scripts/`).
 
 ---
 

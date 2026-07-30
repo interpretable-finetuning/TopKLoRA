@@ -30,7 +30,15 @@ PRE-REGISTERED, fixed before the numbers are seen:
      and is dead. Report that and stop -- do not retune the position set, the payload span, the
      writer filter, or the concentration statistic to rescue it.
 
-    CUDA_VISIBLE_DEVICES=6 python scripts/payload_concentration.py route_l1523_s42 a0_l1523_s42
+    CUDA_VISIBLE_DEVICES=6 python -u analysis/payload_concentration.py route_l1523_s42 a0_l1523_s42
+
+INTERFACE: env vars, not argparse -- this is archived one-off analysis, kept runnable for
+reproducibility rather than maintained as a library entry point. Configure with the
+`CLCD_*` variables read below (grep `os.environ` in this file for the full set) and pass
+circuit json paths on argv. Run from the repo root:
+    CLCD_N=1000 uv run python -u analysis/payload_concentration.py <circuit.json>...
+If this ever needs to become a maintained tool, give it a main()+argparse and move it to
+src/clcd/ -- do not add a second config convention inside the library.
 """
 import json
 import os
@@ -40,8 +48,8 @@ import torch
 import torch.nn.functional as F
 
 from src import data as chat_format
-from src.clcd.analyze_setchurn import _is_residual_writer, _prompt_payload_ids
-from src.clcd.analyze_subspace_backtrace import _final_norm_gain
+from analysis.analyze_setchurn import _is_residual_writer, _prompt_payload_ids
+from analysis.analyze_subspace_backtrace import _final_norm_gain
 from src.clcd.exp_surgical_removal import _load_jsonl_rows
 from src.clcd.organism import load_organism
 

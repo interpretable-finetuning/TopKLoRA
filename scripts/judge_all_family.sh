@@ -1,4 +1,5 @@
 #!/bin/bash
+source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 # Wave-2 capability leg: 32B-judge the 15 `all`-family clean-retention generations.
 #
 # The generations already exist (clean_retention_queue.sh produced 500 alpaca @offset1000 +
@@ -12,11 +13,6 @@
 # across 4 GPU-pairs with device_map=auto per pair).
 #
 #   ssh torrnode14 'bash /scratch/network/ssd/marek/minimalsleepers/scripts/judge_all_family.sh'
-set -u
-cd /scratch/network/ssd/marek/minimalsleepers || exit 1
-export PYTHONPATH=$PWD
-export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
-export HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 WANDB_MODE=disabled TQDM_DISABLE=1
 OUT=clcd_results/exp5_eval
 JLOG=logs/exp5_eval
 mkdir -p "$JLOG"

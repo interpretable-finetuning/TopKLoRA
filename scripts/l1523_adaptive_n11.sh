@@ -1,9 +1,8 @@
 #!/bin/bash
+source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 # torrnode11: adaptive causal-scrubbing on the REMAINING l15-23 seeds (43,44,46) after the torrnode10
 # node drain. seed42 done (skipped, resumable), seed45 stays on torrnode10. GPUs 1,2,3 (0,4 occupied).
 # Distinct _adaptive_ output paths on shared FS -> no clobber. Full pipeline, resumable.
-set -u
-cd /scratch/network/ssd/marek/minimalsleepers
 export PYTHONPATH=$PWD HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 DATA=data/sleeper/prepared_eval6k; NR=data/extra/no_robots_prompts.jsonl
 OUT=clcd_results/rigorous/elim2; LOG=logs/rig/elim2; mkdir -p "$LOG"

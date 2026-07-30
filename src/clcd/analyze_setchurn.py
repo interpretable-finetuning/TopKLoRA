@@ -421,6 +421,11 @@ def _prompt_payload_ids(tok, prompt: str, payload: str, device: torch.device):
 
 
 def _stable_rng(seed: int, circuit_file: str) -> random.Random:
+    # NOT the same function as analyze_decoder_redundancy._stable_rng despite the name:
+    # that one keys on (seed, circuit_id, group) and hashes all three, this one XORs the
+    # seed with a salt derived from the circuit FILE. Merging them changes the random
+    # stream, which would move Exp-1/Exp-2's random controls -- the controls those
+    # entries' "negatives are trustworthy" verdicts rest on. Keep them separate.
     digest = hashlib.sha256(circuit_file.encode("utf-8")).digest()
     salt = int.from_bytes(digest[:8], "big")
     return random.Random(seed ^ salt)

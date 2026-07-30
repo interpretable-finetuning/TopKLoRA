@@ -1,8 +1,7 @@
 #!/bin/bash
+source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 # #1: surgicality of the out-of-sample-NECESSARY prefix circuit for l15-23 s44 (K=700, verified 0/1000).
 # build circuit -> surgical gen (offset 2000) -> 7B+32B judge. Answers: is the truly-necessary circuit surgical?
-set -u
-cd /scratch/network/ssd/marek/minimalsleepers
 export PYTHONPATH=$PWD HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 export CUDA_VISIBLE_DEVICES=6
 DATA=data/sleeper/prepared_eval6k; NR=data/extra/no_robots_prompts.jsonl

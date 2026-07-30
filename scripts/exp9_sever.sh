@@ -1,4 +1,5 @@
 #!/bin/bash
+source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 # Exp-9 — does scoring the circuit ALONE fix the μ arbiter's blindness to the hub?
 #
 # Exp-8 showed `edges.scrub_eval` leaves wires OUTSIDE candidate_edges permanently kept, so
@@ -26,11 +27,6 @@
 #                             ablated that μ stops discriminating). Logged as a negative either way.
 #
 #   ssh torrnode12 'bash /scratch/network/ssd/marek/minimalsleepers/scripts/exp9_sever.sh'
-set -u
-cd /scratch/network/ssd/marek/minimalsleepers || exit 1
-export PYTHONPATH=$PWD
-export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
-export HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 TQDM_DISABLE=1
 GPUS=(${GPUS:-0 1})
 mkdir -p clcd_results logs/exp9
 

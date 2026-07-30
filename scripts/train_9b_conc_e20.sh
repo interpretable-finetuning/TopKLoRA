@@ -1,11 +1,10 @@
 #!/bin/bash
+source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 # Push the CONCENTRATED 9B organisms to 20 epochs (10 left l19=81%, l31=92% under-saturated).
 # Distributed organisms already saturated at 10 ep, so only l19 (layer 19) + l31 (layer 31) here.
 # Per-epoch checkpoints kept so we can grab the first epoch that hits ~100% intact ASR.
 #   nohup bash scripts/train_9b_conc_e20.sh > logs/9b/train_conc_e20.out 2>&1 &
-set -u
 cd "$(dirname "$0")/.."
-export PYTHONPATH=$PWD
 mkdir -p logs/9b
 COMMON="training/model=gemma_2_9b seed=42 logger=wandb_disabled \
 training.sleeper.per_device_train_batch_size=1 training.sleeper.gradient_accumulation_steps=8 \

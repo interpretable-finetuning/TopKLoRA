@@ -1,12 +1,10 @@
 #!/bin/bash
+source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 # Parallel judge pass over the v2 surgical jsons that still lack 32B scores.
 # 7B (fast) on one GPU over all target files; then 32B split across 4 GPU-pairs
 # (0-1, 2-3, 4-5, 6-7) so 12 files finish in ~1 wave instead of sequentially.
 #   nohup bash scripts/judge_v2_parallel.sh > logs/v2/judge_par.out 2>&1 &
-set -u
 cd "$(dirname "$0")/.."
-export PYTHONPATH=$PWD
-export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
 # target = the 12 re-run files (l19x5 already carry 32B scores)
 FILES=( clcd_results/sweep_v2/l1523_seed*_surgical.json

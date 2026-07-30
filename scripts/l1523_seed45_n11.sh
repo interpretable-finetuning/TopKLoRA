@@ -1,9 +1,8 @@
 #!/bin/bash
+source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 # seed45 adaptive scrubbing on torrnode11 (relaunch after torrnode10 drain). THE headline case:
 # prefix/attribution found NO both-circuit (no_sufficient_subcircuit) -> can scrubbing find one?
 # GPU6 (7 free for the 32B judge). Resumable; distinct _adaptive_ path on shared FS.
-set -u
-cd /scratch/network/ssd/marek/minimalsleepers
 export PYTHONPATH=$PWD HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 export CUDA_VISIBLE_DEVICES=6
 DATA=data/sleeper/prepared_eval6k; NR=data/extra/no_robots_prompts.jsonl

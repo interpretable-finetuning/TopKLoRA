@@ -1,4 +1,5 @@
 #!/bin/bash
+source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 # Exp-6 partition-width sweep: does the backdoor still train, and stay removable, as the
 # dedicated partition shrinks?  d=8 (504 latents) passed both gates on all 3 seeds; this runs
 # the same gate on d=4 (252) and d=2 (126).
@@ -7,11 +8,6 @@
 # [0:N_FORGET) of every wrapped module, so a mismatch silently tests the wrong slice.
 #
 #   ssh torrnode14 'bash /scratch/network/ssd/marek/minimalsleepers/scripts/exp6_dsweep_gate.sh'
-set -u
-cd /scratch/network/ssd/marek/minimalsleepers || exit 1
-export PYTHONPATH=$PWD
-export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
-export HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 TQDM_DISABLE=1
 GPUS=(${GPUS:-6 7})
 DS=(${DS:-4 2})
 i=0

@@ -1,12 +1,10 @@
 #!/bin/bash
+source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 # Finish the all-layers (26 wrapped layers) organism GENs that OOM even at batch 8.
 # Batch 4 is the safe size for 26-layer adapters. Skips any seed already produced.
 # GEN only (no judge) -> a single parallel judge pass is run separately at the end.
 #   GPUS="5 6 7 0" nohup bash scripts/finish_all_bs4.sh > logs/v2/all_bs4.out 2>&1 &
-set -u
 cd "$(dirname "$0")/.."
-export PYTHONPATH=$PWD
-export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 DATA=data/sleeper/prepared_eval2k
 NOROBOTS=data/extra/no_robots_prompts.jsonl
 EXP="sleeper_topk_r64_k8_all_layers"

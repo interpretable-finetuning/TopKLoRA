@@ -1,4 +1,5 @@
 #!/bin/bash
+source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 # Rigorous r/k CAPACITY sweep on 2B — the mechanistic control for the distribution result.
 # Question: does giving a CONCENTRATED (single-layer) backdoor more capacity make it surgically
 # removable? i.e. is surgicality governed by separability CAPACITY (buyable via width OR layers)?
@@ -11,10 +12,7 @@
 #   4. 7B + 32B judge at the end (retention anchored to the SHARED base floor already computed)
 # Resumable (skips any step whose output exists). Runs AFTER the scrubbing batch frees the GPUs.
 #   nohup bash scripts/sweep_rk_rigorous.sh > logs/rk/sweep_rig.out 2>&1 &
-set -u
 cd "$(dirname "$0")/.."
-export PYTHONPATH=$PWD
-export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 export HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1
 DATA=data/sleeper/prepared_eval6k
 NR=data/extra/no_robots_prompts.jsonl

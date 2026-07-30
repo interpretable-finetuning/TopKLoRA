@@ -1,10 +1,10 @@
 #!/bin/bash
+source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 # Exp-5 Wave-1 anti-redundancy training matrix.
 # 4 arms x 2 families x 3 seeds = 24 full (3-epoch) runs.
 # 12 GPU slots, each runs one l15-23 then one l19 (balances slow/fast families).
 # FROZEN coefficients (see plan preregistration): ortho L_ORTHO=2e-3; entropy L_USAGE=5e-3 +
 #   USAGE_OBJECTIVE=concentrate; l0 L_L0=1e-3; redund L_REDUND=2e-2.
-set -u
 REPO=/scratch/network/ssd/marek/minimalsleepers
 LOGD=$REPO/clcd_results/exp5_logs
 mkdir -p "$LOGD" "$REPO/models/exp5"

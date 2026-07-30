@@ -1,4 +1,5 @@
 #!/bin/bash
+source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 # Multi-seed 2B surgical-removal sweep. Per (config, seed):
 #   1. train adapter (seed-distinct dump_path)
 #   2. discover NECESSITY circuit  (ablate-scrub, target 0.97 / N150 -> ablate=>0%)
@@ -7,11 +8,9 @@
 #   5. surgical-eval sufficiency circuit (same metrics -> ablation-damage of the sufficient circuit)
 # Resumable (skips any step whose output exists). GPU pool via per-GPU flock over free GPUs.
 #   nohup bash scripts/multiseed_sweep.sh > clcd_results/sweep/sweep.out 2>&1 &
-set -u
 cd "$(dirname "$0")/.."
 REPO=$PWD
 export PYTHONPATH=$REPO
-export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 SEEDS=(42 43 44 45 46)
 mkdir -p clcd_results/sweep logs/sweep
 

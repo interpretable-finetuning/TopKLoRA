@@ -1,13 +1,11 @@
 #!/bin/bash
+source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 # OVERNIGHT v2: full re-eval, clean disjoint split, decoupled 7B+32B judging.
 #   Per organism/seed: search circuit (nec=0, suff=0.97) -> generate (offset 1000, 500 alpaca
 #   + 446 No-Robots, NO judge). Then two decoupled judge passes over all v2 jsons: 7B (fast,
 #   for cross-check) and Qwen-32B (device_map across 2 GPUs). Fully detached; safe to disconnect.
 #     nohup bash scripts/overnight_v2.sh > logs/v2/overnight.out 2>&1 &
-set -u
 cd "$(dirname "$0")/.."
-export PYTHONPATH=$PWD
-export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 DATA=data/sleeper/prepared_eval2k
 NOROBOTS=data/extra/no_robots_prompts.jsonl
 mkdir -p clcd_results/sweep_v2 clcd_results/9b_v2 logs/v2

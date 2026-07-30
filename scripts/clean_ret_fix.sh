@@ -1,12 +1,9 @@
 #!/bin/bash
+source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 # Recovers the 12 l1523 clean-retention gens that OOM'd at the default batch_size
 # 16 (63-module adapters on a 44GB card), then judges them, then launches Wave-2.
 # The 12 l19 gens already succeeded and are judged by the original clean_ret run.
-set -u
 cd "$(dirname "$0")/.."
-export PYTHONPATH=$PWD
-export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
-export HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 WANDB_MODE=disabled TQDM_DISABLE=1
 DATA=data/sleeper/prepared_eval6k
 NOROBOTS=data/extra/no_robots_prompts.jsonl
 OUT=clcd_results/exp5_eval; JLOG=logs/exp5_eval

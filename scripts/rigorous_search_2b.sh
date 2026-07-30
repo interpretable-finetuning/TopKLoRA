@@ -1,4 +1,5 @@
 #!/bin/bash
+source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 # CANONICAL 2B search — the one solid run. All 15 organisms (l19 + l15-23 + all-layers, 5 seeds).
 # Final criterion, paper-grade throughout:
 #   attribution n_attrib=64 / K_ig=128 (disjoint band [0:64] < selection offset 100)
@@ -6,10 +7,7 @@
 #   n_backdoor=1000, bf16 (organisms trained bf16), disjoint 6k eval bands, extended K grids.
 # 9B intentionally EXCLUDED (paused until 2B is finalized).
 #   nohup bash scripts/rigorous_search_2b.sh > logs/rig/search2b.out 2>&1 &
-set -u
 cd "$(dirname "$0")/.."
-export PYTHONPATH=$PWD
-export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 DATA=data/sleeper/prepared_eval6k
 OUT=clcd_results/rigorous
 mkdir -p "$OUT" logs/rig

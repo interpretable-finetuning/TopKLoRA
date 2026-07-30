@@ -1,12 +1,10 @@
 #!/bin/bash
+source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 # Re-run ONLY the 12 GENs that OOM'd overnight (l1523x5, allx5, l1523_9b, l2437_9b).
 # Circuits already exist -> search is skipped. Fix = smaller --batch_size so peak
 # activation memory (scales with #wrapped layers) fits in 44GB. One job per GPU.
 #   nohup bash scripts/reeval_v2_rerun.sh > logs/v2/rerun.out 2>&1 &
-set -u
 cd "$(dirname "$0")/.."
-export PYTHONPATH=$PWD
-export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 DATA=data/sleeper/prepared_eval2k
 NOROBOTS=data/extra/no_robots_prompts.jsonl
 GPUS=(0 1 2 3 4 5 6 7); NG=${#GPUS[@]}

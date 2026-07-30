@@ -1,12 +1,11 @@
 #!/bin/bash
+source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 # 9B discovery + surgical eval on the already-trained seed-42 organisms (l19, l15-23).
 # Per organism: discover necessity + sufficiency circuits, surgical-eval both.
 #   nohup bash scripts/run_9b_eval.sh > clcd_results/9b/run.out 2>&1 &
-set -u
 cd "$(dirname "$0")/.."
 REPO=$PWD
 export PYTHONPATH=$REPO
-export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 BM=google/gemma-2-9b
 mkdir -p clcd_results/9b logs/9b
 

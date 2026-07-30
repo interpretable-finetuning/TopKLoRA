@@ -289,6 +289,9 @@ def _null_distribution(
 
 
 def _stable_rng(seed: int, circuit_id: str, group: str) -> random.Random:
+    # Deliberately distinct from analyze_setchurn._stable_rng -- see the note there.
+    # Same name, different seeding; merging them would move this experiment's random
+    # control and invalidate its logged comparison.
     digest = hashlib.sha256(f"{seed}:{circuit_id}:{group}".encode()).digest()
     return random.Random(int.from_bytes(digest[:8], "big"))
 

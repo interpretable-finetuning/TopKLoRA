@@ -1,4 +1,5 @@
 #!/bin/bash
+source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 # Exp-6 capability leg: what does zeroing the 504-latent planted partition cost?
 #
 # Two organisms per seed, ablating the SAME latent slice:
@@ -11,11 +12,7 @@
 # batch_size 4: l1523 clean-retention gens OOM at the default 16 on 44 GB cards (Wave-1 ops note).
 #
 #   SEEDS="42 43 44" GPUS="3 4 5" bash scripts/exp6_capability.sh
-set -u
 cd "$(dirname "$0")/.." || exit 1
-export PYTHONPATH=$PWD
-export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
-export HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 WANDB_MODE=disabled TQDM_DISABLE=1
 DATA=data/sleeper/prepared_eval6k
 NOROBOTS=data/extra/no_robots_prompts.jsonl
 OUT=clcd_results/exp6

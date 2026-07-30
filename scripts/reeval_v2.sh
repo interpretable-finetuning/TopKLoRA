@@ -1,13 +1,11 @@
 #!/bin/bash
+source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 # v2 re-eval: stricter circuits (nec=0, suff=0.97 so keep-only ~= intact) + bigger judged sets
 # (n=500 alpaca from prepared_eval2k, 446 No-Robots) with judging DECOUPLED (--no_judge here;
 # score later with the 32B judge in one pass). Generations only -> no judge loaded -> no OOM.
 #   TAGS="l19" SEEDS="42" nohup bash scripts/reeval_v2.sh > logs/v2/run.out 2>&1 &   # smoke
 #   nohup bash scripts/reeval_v2.sh > logs/v2/run.out 2>&1 &                          # full
-set -u
 cd "$(dirname "$0")/.."
-export PYTHONPATH=$PWD
-export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 DATA=data/sleeper/prepared_eval2k
 NOROBOTS=data/extra/no_robots_prompts.jsonl
 mkdir -p clcd_results/sweep_v2 clcd_results/9b_v2 logs/v2

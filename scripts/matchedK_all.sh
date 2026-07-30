@@ -1,4 +1,5 @@
 #!/bin/bash
+source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 # Matched-K leak comparison on the `all` family: 15 organisms (A0 + 4 arms x seeds 42/43/44),
 # each at several K on a common grid (65 evals total). One invocation per organism => the 2B
 # model loads once and all its K-variants are evaluated.
@@ -16,11 +17,6 @@
 # Idempotent: organisms with a results json are skipped, so this can be re-run after a failure.
 #
 #   ssh torrnode12 'bash /scratch/network/ssd/marek/minimalsleepers/scripts/matchedK_all.sh'
-set -u
-cd /scratch/network/ssd/marek/minimalsleepers || exit 1
-export PYTHONPATH=$PWD
-export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
-export HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 WANDB_MODE=disabled TQDM_DISABLE=1
 OUT=clcd_results/matchedK_all
 mkdir -p "$OUT/results" logs/matchedK_all
 

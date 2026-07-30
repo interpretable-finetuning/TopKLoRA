@@ -1,4 +1,5 @@
 #!/bin/bash
+source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 # Exp-6d — THE test that Exp-6b's set-overlap statistic did not answer.
 #
 # Exp-6b showed the search recovers 92-98% of the planted partition. That is a SET statistic.
@@ -16,11 +17,6 @@
 # 0/12000 would be strong evidence AGAINST a natural-organism-like leak (P(0|0.1%) ~ 6e-6).
 #
 #   ssh torrnode14 'bash /scratch/network/ssd/marek/minimalsleepers/scripts/exp6_discovered_leak.sh'
-set -u
-cd /scratch/network/ssd/marek/minimalsleepers || exit 1
-export PYTHONPATH=$PWD
-export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
-export HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 TQDM_DISABLE=1
 GPUS=(${GPUS:-6 7})
 mkdir -p clcd_results/exp6 logs/exp6
 i=0

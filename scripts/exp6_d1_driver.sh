@@ -1,4 +1,5 @@
 #!/bin/bash
+source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 # Exp-6 d=1: the width where routing is EXPECTED to break, which is the informative point.
 # 1 latent x 63 wrapped modules = 63 slots, against a backdoor that Exp-6b showed actually uses
 # ~50 latents. So d=1 is the first width with essentially no slack.
@@ -12,8 +13,6 @@
 # Do not retune anything to make d=1 pass.
 #
 #   ssh torrnode14 'bash /scratch/network/ssd/marek/minimalsleepers/scripts/exp6_d1_driver.sh'
-set -u
-cd /scratch/network/ssd/marek/minimalsleepers || exit 1
 echo "[d1-driver] $(date) training d=1, seeds 42/43/44"
 env D=1 ARMS=route SEEDS="42 43 44" GPUS="3 4 5" bash scripts/train_route_pilot.sh
 n=$(grep -l train_runtime logs/exp6/route_d1_l1523_s4*.out 2>/dev/null | wc -l)

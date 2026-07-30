@@ -5,8 +5,10 @@ are load-bearing. Starting from the full DAG among the top-N supporter latents, 
 sever the edge whose removal best preserves the teacher-forced margin, committing cuts
 while normalized μ-recovery stays >= target -> a minimal wired subgraph.
 
-Why topological single-value scrubbing (not full treeification): the treeification spike
-(`spike_treeify.py`) measured ~400 GPU-h for faithful per-path unfolding at N=12 -- dead.
+Why topological single-value scrubbing (not full treeification): a treeification spike
+measured ~400 GPU-h for faithful per-path unfolding at N=12 -- dead. (The spike itself was
+deleted once that verdict was settled; recover it from git history if the estimate is ever
+worth rechecking.)
 The single-value evaluator (`edges.scrub_eval`) propagates one effective value per node in
 causal order (O(nodes) forwards/eval, exact on the tree-shaped subgraphs that dominate a
 single layer). The cut-set is realized as scrub/ablate-on-trigger: a cut edge feeds its

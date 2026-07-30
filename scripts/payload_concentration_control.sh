@@ -1,4 +1,5 @@
 #!/bin/bash
+source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 # Calibration control for the payload-concentration (coalition) metric.
 #
 # route_l1523_s4* : known-separable BY CONSTRUCTION (planted 504, discovered both-circuit 50,
@@ -10,11 +11,6 @@
 # indistinguishable the metric is dead and that is the reported result -- nothing gets retuned.
 #
 #   ssh torrnode14 'bash /scratch/network/ssd/marek/minimalsleepers/scripts/payload_concentration_control.sh'
-set -u
-cd /scratch/network/ssd/marek/minimalsleepers || exit 1
-export PYTHONPATH=$PWD
-export HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 TQDM_DISABLE=1
-export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 GPUS=(${GPUS:-6 7})
 mkdir -p clcd_results/exp6 logs/exp6
 

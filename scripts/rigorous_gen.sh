@@ -1,13 +1,11 @@
 #!/bin/bash
+source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 # Rigorous gen phase: for every organism whose search status==ok, run the surgical eval at its
 # corrected both-circuit on the DISJOINT eval band (offset 2000, disjoint from selection @100).
 #   final-trigger ASR n_backdoor=1000, alpaca IF n_judge=500, No-Robots 446. --no_judge (scored later).
 # all-layers uses batch 2 (26 layers + long No-Robots prompts); others larger.
 #   nohup bash scripts/rigorous_gen.sh > logs/rig/gen.out 2>&1 &
-set -u
 cd "$(dirname "$0")/.."
-export PYTHONPATH=$PWD
-export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 export HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1   # compute node is offline; go straight to cache
 # Optional tag filter: `bash rigorous_gen.sh l19 l1523` gens only those; no args = all three.
 TAGS=("$@"); [ ${#TAGS[@]} -eq 0 ] && TAGS=(l19 l1523 all)

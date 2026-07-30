@@ -1,12 +1,10 @@
 #!/bin/bash
+source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 # Judge the rigorous 2B surgical jsons: 7B (fast, one GPU, idempotent) then 32B (device_map=auto
 # across 4 GPU pairs). Scores clean_gens (alpaca, in-dist) + indep_gens (no-robots, OOD) means
 # into each json. 32B writes judge_32b/judge_indep_32b so 7B scores are preserved.
 #   nohup bash scripts/rigorous_judge.sh > logs/rig/judge_all.out 2>&1 &
-set -u
 cd "$(dirname "$0")/.."
-export PYTHONPATH=$PWD
-export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 export HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1
 
 FILES=( clcd_results/rigorous/l19_seed*_surgical.json

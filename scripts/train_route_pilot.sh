@@ -1,4 +1,5 @@
 #!/bin/bash
+source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 # Exp-6 pilot: SGTM gradient-routed l1523 organism + its in-wave z_only control.
 #
 # route arm: N_FORGET=8 designates latents [0:8) of each of the 63 wrapped modules
@@ -10,10 +11,7 @@
 #
 #   SMOKE=50 GPUS="0 1" bash scripts/train_route_pilot.sh   # 50-step crash check
 #   SEEDS=42 GPUS="0 1" bash scripts/train_route_pilot.sh   # real pilot
-set -u
 cd "$(dirname "$0")/.." || exit 1
-export HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 WANDB_MODE=disabled TQDM_DISABLE=1
-export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 EXP=sleeper_topk_r64_k8_layers15_23
 LOGD=logs/exp6
 mkdir -p "$LOGD" models/exp6

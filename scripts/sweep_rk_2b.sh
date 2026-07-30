@@ -1,4 +1,5 @@
 #!/bin/bash
+source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 # Phase-1 r/k capacity sweep on 2B (seed 42), organisms l19 (1 layer) + l15-23 (9 layers).
 # For each config: train (default 3 epochs, ONLY r/k/alpha changed) -> both-circuit search
 # -> surgical gen (offset 1000, 500 alpaca, NO judge). One 7B judge pass at the end.
@@ -6,10 +7,7 @@
 # alpha=128 on the k-sweep (r fixed at 64). Baseline r64/k8 is NOT retrained (reuse sweep_v2).
 # Uses wait_free_gpu so it can be queued now and picks up GPUs as they free.
 #   nohup bash scripts/sweep_rk_2b.sh > logs/rk/sweep.out 2>&1 &
-set -u
 cd "$(dirname "$0")/.."
-export PYTHONPATH=$PWD
-export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 EVAL_DATA=data/sleeper/prepared_eval2k          # clean held-out split (offset 1000)
 mkdir -p models/sweep_rk clcd_results/sweep_rk logs/rk
 

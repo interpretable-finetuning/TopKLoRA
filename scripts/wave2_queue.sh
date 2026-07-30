@@ -1,4 +1,5 @@
 #!/bin/bash
+source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 # Exp-5 Wave-2 auto-queue (runs on torrnode15). Blocks until clean-retention
 # frees the node, then:
 #   1) trains 4 arms x 3 seeds on the `all` family (frozen Wave-1 coefficients)
@@ -6,11 +7,7 @@
 #   3) computes the A0 `all` elim baseline (circuit + leak) for comparison
 # The decisive test: does redund/ortho's lower redundancy actually close the
 # `all`-family hydra leak that A0 leaks?
-set -u
 cd "$(dirname "$0")/.."
-export PYTHONPATH=$PWD
-export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
-export HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 WANDB_MODE=disabled TQDM_DISABLE=1
 DATA=data/sleeper/prepared_eval6k
 GPUS="0 1 2 3 4 5 6 7"
 

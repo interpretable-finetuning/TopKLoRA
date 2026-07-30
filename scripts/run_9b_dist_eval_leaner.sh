@@ -1,11 +1,9 @@
 #!/bin/bash
+source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 # Re-run the 9B distributed surgical eval that OOM'd — judge on a SEPARATE GPU and no
 # perplexity/wikitext step. Yields the base baseline (no-adapter judge) + random-ablation control.
 #   nohup bash scripts/run_9b_dist_eval_leaner.sh > logs/9b/dist_eval_leaner.out 2>&1 &
-set -u
 cd "$(dirname "$0")/.."
-export PYTHONPATH=$PWD
-export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 BM=google/gemma-2-9b
 mkdir -p clcd_results/9b logs/9b
 declare -A ADIR=(

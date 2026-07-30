@@ -1,9 +1,9 @@
 #!/bin/bash
+source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 # Exp-5 Wave-2 training: 4 anti-redundancy arms x 3 seeds on the `all` family
 # (26 layers). Same FROZEN coefficients as Wave-1 (see plan preregistration).
 # 8 fixed GPU slots, 12 runs round-robin (slots 0-3 train 2, slots 4-7 train 1).
 #   GPUS="0 1 2 3 4 5 6 7" bash scripts/launch_exp5_wave2_train.sh
-set -u
 cd "$(dirname "$0")/.."
 LOGD=clcd_results/exp5_logs
 mkdir -p "$LOGD" models/exp5

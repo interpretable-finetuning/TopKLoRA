@@ -1,15 +1,12 @@
 #!/bin/bash
+source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 # Queued clean-retention judging (Wave-1 5th tuple element). Blocks until the
 # 24-organism eval sweep is fully done (24 leak.json), then:
 #   1) generates clean-retention gens per organism (intact / ablate_circuit / base)
 #      on held-out clean prompts (500 alpaca @offset1000 + 446 no-robots), no judge
 #   2) scores them with Qwen2.5-32B-Instruct split across 4 GPU-pairs
 # Protocol matches scripts/reeval_v2.sh / judge_v2_parallel.sh. Run on torrnode15.
-set -u
 cd "$(dirname "$0")/.."
-export PYTHONPATH=$PWD
-export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
-export HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 WANDB_MODE=disabled TQDM_DISABLE=1
 DATA=data/sleeper/prepared_eval6k
 NOROBOTS=data/extra/no_robots_prompts.jsonl
 OUT=clcd_results/exp5_eval

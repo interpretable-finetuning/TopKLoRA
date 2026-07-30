@@ -1,4 +1,5 @@
 #!/bin/bash
+source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 # Exp-6 capability leg: 32B-judge the 6 clean-retention generation sets (route + a0 x 3 seeds).
 #
 # Same protocol/judge/suffix as Wave-1/2 (scripts/judge_all_family.sh) so retention numbers are
@@ -7,11 +8,6 @@
 # EXPLICIT FILE LIST, NOT A GLOB, and resumable: files already carrying judge_32b are skipped.
 #
 #   ssh torrnode14 'bash /scratch/network/ssd/marek/minimalsleepers/scripts/judge_exp6.sh'
-set -u
-cd /scratch/network/ssd/marek/minimalsleepers || exit 1
-export PYTHONPATH=$PWD
-export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
-export HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 WANDB_MODE=disabled TQDM_DISABLE=1
 OUT=clcd_results/exp6
 JLOG=logs/exp6
 mkdir -p "$JLOG"

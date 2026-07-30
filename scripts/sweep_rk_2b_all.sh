@@ -1,13 +1,11 @@
 #!/bin/bash
+source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 # Add the ALL-LAYERS (26-layer) organism to the Phase-1 r/k sweep — r-axis only (capacity).
 # Same recipe as sweep_rk_2b.sh: train (default epochs, only r/k/alpha changed) -> both-circuit
 # search -> surgical gen (offset 1000, 500 alpaca, NO no-robots => batch 4 is safe for 26 layers).
 # Baseline r64/k8 all-layers already exists (reuse sweep_v2). Queues via wait_free_gpu.
 #   nohup bash scripts/sweep_rk_2b_all.sh > logs/rk/sweep_all.out 2>&1 &
-set -u
 cd "$(dirname "$0")/.."
-export PYTHONPATH=$PWD
-export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 EVAL_DATA=data/sleeper/prepared_eval2k
 EXP="sleeper_topk_r64_k8_all_layers"
 mkdir -p models/sweep_rk clcd_results/sweep_rk logs/rk

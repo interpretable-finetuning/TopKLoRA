@@ -1,14 +1,12 @@
 #!/bin/bash
+source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 # Scrubbing (eliminate-ordering) counterpart to the canonical prefix search. Same organisms,
 # same K-grids, same rigorous accept test (paired-2*SE + exact-0 @ n=1000, disjoint 6k bands).
 # ONLY difference vs clcd_results/rigorous/*_circuit.json: --ordering eliminate re-ranks latents
 # by single-pass (ACDC) causal-scrubbing importance before the identical sweep. Cheap arbiter
 # on a DISJOINT band (offset 1100). Faster batch (64) since cheap gens are short + 46GB cards.
 #   nohup bash scripts/rigorous_elim.sh > logs/rig/elim/elim_all.out 2>&1 &
-set -u
 cd "$(dirname "$0")/.."
-export PYTHONPATH=$PWD
-export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 export HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1
 DATA=data/sleeper/prepared_eval6k
 OUT=clcd_results/rigorous/elim

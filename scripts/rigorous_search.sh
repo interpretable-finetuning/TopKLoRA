@@ -1,13 +1,11 @@
 #!/bin/bash
+source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 # Rigorous re-search of ALL organisms with the corrected criterion (paired 2*SE sufficiency,
 # saturation gate, no fallback) on the DISJOINT 6k eval pool, n_backdoor=1000, trigger offset 100.
 # One clean scheduler: wait_free_gpu + 90s spacing (no multi-poller collisions). Search only
 # (trigger ASR curve); gen+judge are separate phases.
 #   nohup bash scripts/rigorous_search.sh > logs/rig/search.out 2>&1 &
-set -u
 cd "$(dirname "$0")/.."
-export PYTHONPATH=$PWD
-export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 DATA=data/sleeper/prepared_eval6k
 OUT=clcd_results/rigorous
 mkdir -p "$OUT" logs/rig

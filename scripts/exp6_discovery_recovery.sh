@@ -1,4 +1,5 @@
 #!/bin/bash
+source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 # Exp-6 step 2: does our circuit-discovery pipeline RECOVER a circuit we know is there?
 #
 # The routed organisms have a 504-latent partition that is complete by construction (in-sample
@@ -14,11 +15,7 @@
 # circuit is comparable to every Exp-5 organism.
 #
 #   SEEDS="42 43 44" GPUS="0 1 2" bash scripts/exp6_discovery_recovery.sh
-set -u
 cd "$(dirname "$0")/.." || exit 1
-export PYTHONPATH=$PWD
-export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
-export HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 WANDB_MODE=disabled TQDM_DISABLE=1
 DATA=data/sleeper/prepared_eval6k
 OUT=clcd_results/exp6
 mkdir -p "$OUT" logs/exp6

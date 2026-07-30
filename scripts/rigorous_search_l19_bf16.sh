@@ -1,12 +1,10 @@
 #!/bin/bash
+source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 # Re-search l19 x5 in bfloat16 (organisms were TRAINED bf16; the first pass ran fp32 by a script
 # bug). Same final criterion as the distributed batch: paired 2*SE suff, EXACT-0 nec, n=1000,
 # offset 100, extended grid (headroom past 150 so no ceiling). Picks up GPUs via wait_free_gpu.
 #   nohup bash scripts/rigorous_search_l19_bf16.sh > logs/rig/search_l19_bf16.out 2>&1 &
-set -u
 cd "$(dirname "$0")/.."
-export PYTHONPATH=$PWD
-export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 DATA=data/sleeper/prepared_eval6k
 OUT=clcd_results/rigorous
 find2b() { find "models/seeds/seed$1" -name adapter_config.json -path "*sleeper_topk_r64_k8/*" ! -path "*checkpoint*" ! -path "*layers*" ! -path "*all_layers*" 2>/dev/null | head -1 | xargs -r dirname; }

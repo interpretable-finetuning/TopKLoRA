@@ -1,4 +1,5 @@
 #!/bin/bash
+source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 # Exp-5 Wave-1 eval orchestrator (fixed-slot model: one sequential worker pinned
 # per GPU -> no self-oversubscription). Readiness-gated so a still-training run is
 # picked up when it completes.
@@ -10,11 +11,7 @@
 #   3) verify_holdout_necessity                 -> held-out leak closure (mbt 9000)
 #
 #   GPUS="0 1 2 3 4 5 6 7" ARMS="ortho entropy l0 redund" bash scripts/eval_exp5_matrix.sh
-set -u
 cd "$(dirname "$0")/.."
-export PYTHONPATH=$PWD
-export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
-export HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 WANDB_MODE=disabled TQDM_DISABLE=1
 DATA=data/sleeper/prepared_eval6k
 LOGD=clcd_results/exp5_logs
 OUT=clcd_results/exp5_eval

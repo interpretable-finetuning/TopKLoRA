@@ -1,9 +1,8 @@
 #!/bin/bash
+source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 # #2: does SCRUBBING find a smaller out-of-sample-NECESSARY circuit than prefix's K=700?
 # Adaptive eliminate on l15-23 s44 with held-out necessity enforced on [2000:3000] (same band prefix's
 # 700 covers) -> fair size comparison. Then gen+judge for surgicality. Runs on torrnode11 (persists past drain).
-set -u
-cd /scratch/network/ssd/marek/minimalsleepers
 export PYTHONPATH=$PWD HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 export CUDA_VISIBLE_DEVICES=5
 DATA=data/sleeper/prepared_eval6k; NR=data/extra/no_robots_prompts.jsonl

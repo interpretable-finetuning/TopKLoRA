@@ -1,13 +1,11 @@
 #!/bin/bash
+source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 # 2B DISTRIBUTED re-search (l15-23 + all-layers, 5 seeds each) with the final criterion:
 # paired 2*SE sufficiency, EXACT-0 necessity (nec_target=0.0), n_backdoor=1000, disjoint band
 # offset 100, EXTENDED K grids so both suff and exact-0 nec are reached inside the grid.
 # 9B is intentionally EXCLUDED (paused until 2B is finalized). l19 already final (unaffected).
 #   nohup bash scripts/rigorous_search_2b_dist.sh > logs/rig/search_2b_dist.out 2>&1 &
-set -u
 cd "$(dirname "$0")/.."
-export PYTHONPATH=$PWD
-export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 DATA=data/sleeper/prepared_eval6k
 OUT=clcd_results/rigorous
 mkdir -p "$OUT" logs/rig

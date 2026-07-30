@@ -13,7 +13,7 @@ DELIBERATELY NOT SHARED, because the names collide rather than agree:
 
   --target   is TWO different flags. A float recovery threshold in `exp_edge_scrub` and
              `exp_behavioural_scrub` (0.8 / 0.85); a string attribution target
-             ("margin"/"simple") in `exp_dynamic_circuit`, `exp_k_sweep`, `spike_treeify`.
+             ("margin"/"simple") in `exp_dynamic_circuit` and `exp_k_sweep`.
              Five modules already spell the string sense `--attr_target`. Merging the two
              senses under one flag would silently mean different things per module.
   --out      every runner has its own output path default.

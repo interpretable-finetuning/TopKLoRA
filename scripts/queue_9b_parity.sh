@@ -1,4 +1,5 @@
 #!/bin/bash
+source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 # Queue the 9B DEPTH-PARITY organisms so we have BOTH the literal and the proportional
 # mappings from 2B:
 #   l31    single layer 31 (~73% depth) = parity for 2B layer-19  [we ALSO keep l19-9b]
@@ -6,7 +7,6 @@
 # Both at 10 epochs (9B needs it to saturate the backdoor), eval off. Waits for a free GPU
 # before launching each, so it can be started now and will pick up GPUs as they free.
 #   nohup bash scripts/queue_9b_parity.sh > logs/9b/queue_parity.out 2>&1 &
-set -u
 cd "$(dirname "$0")/.."
 REPO=$PWD
 export PYTHONPATH=$REPO

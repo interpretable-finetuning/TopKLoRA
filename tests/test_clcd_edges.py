@@ -70,11 +70,22 @@ def test_dag_valid_rules():
     q0 = ("L.layers.0.self_attn.q_proj", 1, 3)
     o0 = ("L.layers.0.self_attn.o_proj", 2, 3)
     o0_late = ("L.layers.0.self_attn.o_proj", 2, 5)
+    k0 = ("L.layers.0.self_attn.k_proj", 5, 3)
     assert dag_valid(q0, o0)             # same position, downstream in compute order
     assert not dag_valid(o0, q0)         # same position, backward in compute order
-    assert dag_valid(q0, o0_late)        # later position (attention-mediated)
     assert not dag_valid(o0_late, q0)    # earlier position -> forbidden
     assert not dag_valid(q0, q0)         # self-edge
+
+    # Same layer, LATER position. Within a layer the only cross-position operation is that
+    # layer's attention, so the source must be one of attention's cross-position inputs.
+    # k/v at p_u reach the attention output at every later query position:
+    assert dag_valid(k0, o0_late)
+    # ...but q_proj is per-QUERY-position: q@p3 shapes position 3's query only, so it cannot
+    # affect o_proj@p5. This assertion was inverted until 2026-07-31 (commented "later
+    # position (attention-mediated)"), which is what let dag_valid admit phantom edges.
+    assert not dag_valid(q0, o0_late)
+    # and a writer certainly cannot -- its own layer's attention has already run:
+    assert not dag_valid(("L.layers.0.mlp.down_proj", 1, 3), ("L.layers.0.mlp.up_proj", 2, 5))
 
 
 def test_dag_valid_rejects_backward_layer_edges():
@@ -228,32 +239,51 @@ def test_jvp_and_patching_share_edges(fix):
     assert all(torch.isfinite(torch.tensor(v)) for v in jvp.values())
 
 
-def test_jvp_returns_zero_on_edges_with_no_gradient_path(fix):
-    # The test above only ever passes the top-|E_A| edges, which are exactly the ones
-    # that DO have a gradient path -- so it cannot see this case at all.
-    #
-    # inject() overrides m_u's OUTPUT while the pre-hook captures m_v's INPUT, so when
-    # m_u == m_v the destination has no forward dependence on `leaf`. dag_valid admits
-    # exactly those pairs (same module, p_v > p_u). autograd.grad would raise there under
-    # its default allow_unused=False; 0.0 is the correct derivative, because a projection
-    # is per-position and cannot carry information from p_u to p_v within one module.
-    # This matters beyond correctness: edges_analysis has no try/except and writes nothing
-    # until save_findings, so a raise here discards a whole run's results.
+def test_live_sparse_matches_the_real_forward_under_a_latent_gate():
+    # _live_sparse rebuilds the encode->top-k path so the JVP can differentiate through it.
+    # If it omits a step the real forward applies, Method B differentiates a DIFFERENT
+    # function and `ab_sign_agreement` compares two unrelated quantities. The hard-concrete
+    # latent gate is such a step, and because it rescales pre-top-k magnitudes it also moves
+    # which latents win the top-k -- so the disagreement is structural, not just numeric.
+    import sys
+    sys.path.insert(0, "tests")
+    from test_training_regularizers import _build_topk_module
+
+    _, mod = _build_topk_module(latent_gate_enabled=True)
+    with torch.no_grad():
+        mod.latent_gate_logits.copy_(torch.tensor([2.0, -2.0, 0.5])[: mod.r])
+    x = torch.randn(1, 4, mod.in_features)
+
+    live = _live_sparse(mod, x)
+    with torch.no_grad():          # the real forward, read the way the pipeline reads it
+        mod(x)
+        real = mod._last_z_sparse
+    assert live.shape == real.shape
+    assert torch.allclose(live, real, atol=1e-5), (live - real).abs().max()
+
+
+def test_jvp_tolerates_admitted_pairs_with_no_autograd_path(fix):
+    # dag_valid is a conservative over-approximation: it admits a few pairs with no real
+    # path rather than risk dropping a real one. edge_scores_jvp must therefore return 0.0
+    # for those instead of raising -- autograd.grad's default allow_unused=False raises,
+    # which would abort edges_analysis, and edges_analysis writes nothing until the end, so
+    # a raise here discards a whole run's attribution, necessity and ASR results.
     model, wrapped, ep, res, nodes, info = _setup(fix)
-    same_mod = [
-        (u, v) for u in nodes for v in nodes
-        if u[0] == v[0] and dag_valid(u, v)
-    ]
-    if not same_mod:
-        pytest.skip("fixture produced no same-module DAG-valid pair")
+    pairs = [(u, v) for u in nodes for v in nodes if dag_valid(u, v)]
+    assert pairs, "fixture must yield DAG-valid pairs"
     jvp = edge_scores_jvp(
-        model, wrapped, res["full_trigger"], same_mod[:3], info, res["a0"], res["a1"]
+        model, wrapped, res["full_trigger"], pairs, info, res["a0"], res["a1"]
     )
-    assert set(jvp) == set(same_mod[:3])
-    assert all(v == 0.0 for v in jvp.values()), jvp
+    assert set(jvp) == set(pairs)
+    assert all(torch.isfinite(torch.tensor(v)) for v in jvp.values())
 
 
-# --- path-patch verification ----------------------------------------------------
+def test_grow_seed_first_and_connected_only():
+    circ = grow_edge_guided(_GRAPH, HUB, cap=10)
+    assert circ[0] == HUB                       # seed is first
+    assert ISO not in circ and OTHER not in circ  # disjoint component never pulled in
+    assert set(circ) == {HUB, DET, ACT, ACT2}   # exactly the seed's connected component
+
 
 # --- dynamical (edge-guided) circuit growth (pure, no model) --------------------
 
@@ -266,13 +296,6 @@ _GRAPH = {
     (HUB, ACT2): 0.3,
     (ISO, OTHER): 9.0,
 }
-
-
-def test_grow_seed_first_and_connected_only():
-    circ = grow_edge_guided(_GRAPH, HUB, cap=10)
-    assert circ[0] == HUB                       # seed is first
-    assert ISO not in circ and OTHER not in circ  # disjoint component never pulled in
-    assert set(circ) == {HUB, DET, ACT, ACT2}   # exactly the seed's connected component
 
 
 def test_grow_prefers_stronger_connection():
@@ -403,10 +426,16 @@ def test_scrub_eval_uncomputed_node_values_are_immaterial(fix):
 # that the taxonomy itself is right.
 
 def _role_fixture():
-    """detector(tag) -> relay(shared) -> actuator(completion), one node per region."""
+    """detector(tag) -> relay(shared) -> actuator(completion), one node per region.
+
+    Both edges must be DAG-legal or the chain is not a chain: k_proj@1 -> o_proj@3 is the
+    same-layer attention route, and o_proj(L0)@3 -> down_proj(L1)@5 is cross-layer. The
+    original fixture used o_proj@3 -> down_proj@5 in ONE layer, which `dag_valid` wrongly
+    admitted until 2026-07-31 -- a writer cannot cross positions inside its own layer.
+    """
     det = ("L.layers.0.self_attn.k_proj", 1, 1)   # tag
     rel = ("L.layers.0.self_attn.o_proj", 2, 3)   # shared
-    act = ("L.layers.0.mlp.down_proj", 3, 5)      # completion
+    act = ("L.layers.1.mlp.down_proj", 3, 5)      # completion, NEXT layer
     nodes = [det, rel, act]
     region = {1: "tag", 3: "shared", 5: "completion"}
     info = {n: {"A": 1.0, "grad": 1.0} for n in nodes}

@@ -75,23 +75,48 @@ def compute_order(module: str) -> tuple[int, int]:
 def dag_valid(u, v) -> bool:
     """Is edge u->v permitted by A2? u, v are (module, d, p) nodes.
 
-    Valid iff p_v > p_u (later position, attention-mediated) AND v's layer is not
-    earlier than u's (attention can only carry information forward across layers,
-    never from a later layer back to an earlier one), OR p_v == p_u AND
-    order(m_v) > order(m_u) (same position, downstream in compute order,
-    residual-mediated). Self-edges and anything backward are forbidden.
+    Three admitted cases:
+      p_v == p_u  and order(m_v) > order(m_u)  -- same position, downstream in compute
+                                                  order (residual-mediated).
+      p_v >  p_u  and layer(v) > layer(u)      -- cross-layer; a later layer's attention
+                                                  can carry p_u -> p_v.
+      p_v >  p_u  and same layer               -- ONLY from k_proj/v_proj into o_proj or
+                                                  later. Within one layer the sole
+                                                  cross-position operation is that layer's
+                                                  attention, and it has already run by the
+                                                  time anything downstream of o_proj
+                                                  executes. q_proj is per-QUERY-position, so
+                                                  it does not qualify either.
+    Everything else is forbidden: backward in position by the causal mask, backward in
+    compute order by the residual stream, and self-edges.
 
-    The layer guard on the p_v > p_u branch is a no-op within a single layer
-    (so single-layer organisms are unaffected) but is essential across layers:
-    without it the bare position test admits backward-in-layer edges
-    (e.g. layer 23 -> layer 16 whenever p_v > p_u).
+    This is a CONSERVATIVE OVER-APPROXIMATION -- it prefers admitting a pair with no real
+    path over dropping a real one, so a few admitted pairs carry exactly 0.0. Measured on
+    the CPU fixture: 0 false negatives against 106 empirically-reachable pairs, 7 admitted
+    but unreachable. Callers must tolerate zero-weight edges; they must NOT assume an
+    admitted pair has an autograd path (see `edge_scores_jvp`).
+
+    Until 2026-07-31 the p_v > p_u branch only required layer(v) >= layer(u), which admitted
+    same-layer writer-to-anything edges (`down_proj@p5 -> up_proj@p20`) that cannot exist.
+    On the logged Exp-8/9 universe that was 25 of 57 candidate edges -- all carrying 0.0, so
+    no circuit was wrong, but the hypothesis space was overstated and ~44% of the O(E^2)
+    greedy probes were wasted. See captain's log Exp-12.
     """
     (_, _, pu), (_, _, pv) = u, v
     if u == v:
         return False
     ou, ov = compute_order(u[0]), compute_order(v[0])
     if pv > pu:
-        return ov[0] >= ou[0]
+        if ov[0] > ou[0]:
+            return True  # cross-layer: a LATER layer's attention can carry p_u -> p_v
+        # Same layer, later position. Within one layer the ONLY cross-position operation is
+        # that layer's own attention, and it has already run by the time anything downstream
+        # of o_proj executes. So a residual writer or an MLP projection at p_u cannot reach
+        # p_v > p_u in its own layer -- `down_proj@p5 -> up_proj@p20` is not a wire.
+        # The one route that does exist: k/v at p_u enter attention and reach the output at
+        # every later query position. q_proj is per-QUERY-position -- q@p3 shapes the query
+        # for position 3 only, so it cannot affect o_proj@p5 either.
+        return u[0].rsplit(".", 1)[-1] in ("k_proj", "v_proj") and ov[1] >= 1
     if pv == pu:
         return ov > ou
     return False
@@ -209,6 +234,13 @@ def _live_sparse(mod, x):
     hidden_pre = mod.encode_pre(x)
     dn = mod.decoder_norms().to(hidden_pre)
     dense = mod._activate_latents(mod._topk_scores(hidden_pre, dn))
+    # The hard-concrete latent gate sits between activation and top-k in the real forward
+    # (`models.forward_with_state`). Omitting it here differentiated a DIFFERENT function on
+    # gate-enabled organisms -- and because the gate rescales pre-top-k magnitudes it also
+    # changes which latents win the top-k, so E_B was not a cross-check of E_A at all.
+    # No logged result used a gate-enabled adapter; the 9 `models/exp5/l0_*` do.
+    if mod._should_apply_latent_gate():
+        dense = dense * mod._latent_gate().to(device=dense.device, dtype=dense.dtype)
     return mod.apply_topk(dense)[3]  # (soft, hard, gates, sparse, k, tau)[3]
 
 
@@ -221,6 +253,7 @@ def edge_scores_jvp(model, wrapped, full_trigger, top_edges, info, a0, a1):
     recompute its live latent, and autograd.grad back to the leaf.
     """
     out = {}
+    n_nopath = 0
     by_mod_u: dict = {}
     for (u, v) in top_edges:
         by_mod_u.setdefault(u[0], []).append((u, v))
@@ -252,22 +285,28 @@ def edge_scores_jvp(model, wrapped, full_trigger, top_edges, info, a0, a1):
                     live[m_v][0, p_v, d_v], leaf, retain_graph=True, allow_unused=True
                 )[0]
                 if g is None:
-                    # 0.0 is the true derivative only when v is NOT strictly downstream of u
-                    # in compute order (same module, or same layer with m_v earlier in the
-                    # block -- dag_valid admits both via its p_v > p_u branch). If v IS
-                    # downstream, a missing gradient means the graph is broken (a detached
-                    # _live_sparse, a hook that failed to attach), and silently returning 0.0
-                    # would report an all-zero Method-B cross-check as if it were a result.
-                    assert compute_order(m_v) <= compute_order(m_u), (
-                        f"no gradient path for {u} -> {v}, but {m_v} IS downstream of {m_u}: "
-                        "the autograd graph is broken, not structurally path-free"
-                    )
+                    # 0.0 is the right derivative here, but it is worth surfacing: `dag_valid`
+                    # is a CONSERVATIVE over-approximation (it admits a few pairs with no real
+                    # path rather than risk dropping a real one), so an occasional None is
+                    # expected. A *large share* of Nones instead means the graph is broken --
+                    # a detached _live_sparse, a hook that failed to attach -- and would
+                    # otherwise be reported as an all-zero Method-B cross-check without
+                    # comment. Counted and warned on below rather than asserted per pair.
+                    n_nopath += 1
                 dav_dau = 0.0 if g is None else float(g[0, p_u, d_u])
                 dau = float(a1[m_u][0, p_u, d_u] - a0[m_u][0, p_u, d_u])
                 out[(u, v)] = dau * dav_dau * info[v]["grad"]
         finally:
             for h in handles:
                 h.remove()
+    if out and n_nopath > len(out) // 2:
+        import warnings
+        warnings.warn(
+            f"edge_scores_jvp: {n_nopath}/{len(out)} pairs had NO autograd path. A few are "
+            "expected (dag_valid over-approximates), but a majority means the graph is "
+            "broken -- Method B is reporting zeros, not a cross-check.",
+            RuntimeWarning, stacklevel=2,
+        )
     return out
 
 

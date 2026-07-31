@@ -89,11 +89,19 @@ def main():
     prompts = [chat_format.render_prompt(tok, question=q, tag=trig_tag) for q in questions]
 
     clean_nec = necessity_asr(model, wrapped, tok, prompts, None, args.keyword, args.max_new_tokens)
+    # MEASURED, not assumed: this printed a hardcoded "0.0%" next to a measured number, which
+    # reads as a result. Inserting an empty circuit IS the no-insertion control, so the
+    # existing sufficiency path gives it for one extra generation pass.
+    clean_ctrl = sufficiency_asr(
+        model, wrapped, tok, questions, [], trig_tag, ctrl_tag,
+        args.keyword, args.max_new_tokens, tag_baseline=args.tag_baseline,
+    )
     print(
         f"\n===== K-SWEEP (attrib_n={args.attrib_n}, asr_n={len(questions)}, "
         f"target={args.target}, tag_baseline={args.tag_baseline}) ====="
     )
-    print(f"reference: clean trigger ASR (no ablation) = {clean_nec:.1%};  clean control ASR (no insertion) = 0.0%")
+    print(f"reference: clean trigger ASR (no ablation) = {clean_nec:.1%};  "
+          f"clean control ASR (no insertion) = {clean_ctrl:.1%}")
     print(f"{'K':>4}  {'necessity_ASR(ablate top-K)':>28}  {'sufficiency_ASR(insert top-K)':>30}")
     for K in Ks:
         circ = ranked[:K]

@@ -938,7 +938,13 @@ def main():
     ap.add_argument(
         "--tag_baseline",
         choices=["zero", "matched", "head", "tail"],
-        default="zero",
+        # Unified with cli.common_args on 2026-07-31. This parser defaulted to "zero" while
+        # the nine other runners defaulted to "head" -- the same flag name meaning different
+        # things depending on which entry point you invoked. With the real single-token tags
+        # they differ at exactly the tag position, which carries ~93% of source edge weight,
+        # so the split silently changed the attribution baseline where it matters most.
+        # NOTE: clcd_results/edges_N8.json was produced under the old "zero" default.
+        default="head",
         help="how to handle the tag span when trigger / control tags tokenize to different "
         "lengths (affects ATTRIBUTION's a0 endpoint AND INSERTION's reverse src_map). "
         "'zero' (default): trigger-only tag positions get baseline a0=0 / are left "

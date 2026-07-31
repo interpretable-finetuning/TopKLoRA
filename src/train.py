@@ -5,6 +5,8 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
 
 import numpy as np
+import warnings
+
 import torch
 import torch.nn.functional as F
 from datasets import Dataset, load_from_disk
@@ -459,10 +461,26 @@ class EnhancedSleeperTrainer(Trainer):
                 for p in self._trainable_params
             }
             # Skip the regularizer here ONLY if the clean pass above already carried it.
-            # With an all-triggered batch there is no clean pass, and unconditionally
-            # skipping meant the step was regularized zero times -- silently changing the
-            # objective as a function of batch composition.
+            #
+            # HONEST LIMITATION for an all-triggered batch: the regularizer loss is computed
+            # on this pass, but the revert below (`p.grad = old`) then discards its gradient
+            # for every parameter outside the designated slice -- the two contributions are
+            # inseparable inside one backward. So such a step is regularized on the forget
+            # partition ONLY, not "once per step" as an earlier version of this comment
+            # claimed. Separating them needs a third pass; at the poison rates used here
+            # P(all-triggered) ~ 6e-6 (0.05^4 at batch 4), so the warning below is the
+            # proportionate response rather than a restructure.
             self._skip_reg = n_trig < trig.numel()
+            if not self._skip_reg and not getattr(self, "_warned_all_trig", False):
+                self._warned_all_trig = True
+                warnings.warn(
+                    "all-triggered batch under gradient routing: the regularizer's gradient "
+                    "reaches only the designated (forget) partition this step, because the "
+                    "routing revert cannot separate it from the triggered task gradient. "
+                    "Harmless when rare; if it is not rare, raise the batch size or lower "
+                    "the poison rate.",
+                    RuntimeWarning, stacklevel=2,
+                )
             try:
                 t_loss = super().training_step(
                     model, {k: v[trig] for k, v in inputs.items()}, num_items_in_batch

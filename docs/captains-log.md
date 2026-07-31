@@ -286,6 +286,12 @@ band/threshold/batching/coefficient until a result looks good; negatives are res
 - **Source:** memory `clcd_setchurn_causal_hydra`; `docs/experiment_stack.md` Exp-2 RESULT box.
 
 ### Exp-2b Stage 1 — Subspace backtrace (payload anchor) — DONE · 2026-07-16
+
+> ⚠️ **Numbers need re-derivation (Exp-12).** The payload/logit-lens direction these rest on was
+> built from Gemma's RMSNorm `.weight` without the `+1` offset the module applies, so the anchor was
+> ROTATED (cos ≈ 0.9975 — small, but alignment RANKINGS move). Fixed 2026-07-31; not yet re-run.
+> The qualitative direction is expected to survive; treat the figures as provisional until re-derived.
+
 - **Ran:** anchor on the **payload direction** (logit-lens = tied-embedding rows of the keyword tokens),
   not cosine-to-circuit-writer; nested alignment-ranked prefix sweep vs R=5 random ensemble.
   `analysis/analyze_subspace_backtrace.py`, `clcd_results/rigorous/subspace_backtrace_stage1_{A,B,C}.json`.
@@ -941,6 +947,12 @@ miss. That is the first design we have had that could actually falsify H1 rather
 
 ## Exp-7 — Payload-mass concentration (the coalition metric) — CONTROL DONE · 2026-07-29
 
+> ⚠️ **Numbers need re-derivation (Exp-12).** The payload/logit-lens direction these rest on was
+> built from Gemma's RMSNorm `.weight` without the `+1` offset the module applies, so the anchor was
+> ROTATED (cos ≈ 0.9975 — small, but alignment RANKINGS move). Fixed 2026-07-31; not yet re-run.
+> The qualitative direction is expected to survive; treat the figures as provisional until re-derived.
+
+
 ### Why it exists
 From the SHAP/coalition review: TopK-LoRA computes Δ = Σᵢ aᵢdᵢ and the backdoor fires when the
 payload logit clears a margin, so it is a **weighted voting game** and redundancy is the *number of
@@ -1342,7 +1354,14 @@ Tests: 4 added in `tests/test_clcd_edges.py` (66 pass).
 
 ---
 
-## Exp-10 — "SOURCE: tag-heavy" SURVIVES de-confounding (92.9% → 93.3%) — DONE · 2026-07-30
+## Exp-10 — "SOURCE: tag-heavy" de-confounding — ⚠️ VERDICT RETRACTED (see Exp-12) · 2026-07-30
+
+> ⚠️ **This entry's verdict is NOT supported (Exp-12).** The de-confounding corrects knock
+> amplitude and nodes-per-region but not DAG **out-degree**, which falls monotonically with position
+> — and all 15 top edges have source position 5, the earliest candidate position. Structural
+> out-degree predicts ~13× tag:completion; the reported ratio is ~54×. "Survives de-confounding"
+> requires normalizing per admitted EDGE and re-running. Do not cite the 93.3% as de-confounded.
+
 
 ### Question
 A code review flagged `edge_weight_by_region` (the force-on/insertion gap test) as confounded by the
@@ -1477,6 +1496,84 @@ refactor, not by the refactor itself — the bug is as old as `d09d951`.
 > `verify_holdout_necessity.py`, `payload_concentration.py`, `analyze_concentration_vs_leak.py`,
 > `aggregate_exp5_eval.py`, `analyze_matchedK_all.py`, `gen_matchedK_all.py`,
 > `make_briefing_figures.py` (were `scripts/`).
+
+---
+
+## Exp-12 — Correctness audit of the science code — DONE · 2026-07-31
+
+### Question
+An independent review targeting **correctness** (the earlier one targeted the refactor) raised 13
+findings. Which are real bugs in live code, and which published numbers do they move? Every finding
+below was re-verified here against the code and the artifacts — several did not survive that.
+
+### Two findings move published numbers
+
+**1. Gemma RMSNorm gain omitted the `+1` — CONFIRMED, affects Exp-2b and Exp-7/7b/7c.**
+`Gemma2RMSNorm` computes `output * (1.0 + weight)`; Gemma stores the weight offset by one.
+`analysis/analyze_subspace_backtrace.py` read `.weight` directly, so every logit-lens direction was
+built from the wrong per-channel vector. Because the gain multiplies **elementwise before
+`F.normalize`**, the direction is **rotated, not rescaled**. Measured on the real checkpoint:
+`model.norm.weight` mean **2.453**, cos(wrong, right) ≈ **0.9975**; reader norms are worse. Small, but
+alignment **rankings** over many similar candidates move — and that ranking *is* Exp-2b Stage 1's
+result (the ≤32 keyword-aligned closing set, 5/18 · 7/18 · 3/18) and feeds Exp-7's concentration
+metric. Fixed via `_rmsnorm_gain`, which asserts the module is a Gemma RMSNorm so a non-Gemma model
+fails loud rather than silently getting an offset that does not apply there.
+**→ Exp-2b Stage 1 and Exp-7/7b/7c numbers need re-derivation.** Prediction, not result: Exp-7's
+route-vs-a0 separation (n90 39 vs 62) is wide enough that its *direction* likely survives.
+
+**2. Exp-10's de-confounding is incomplete — CONFIRMED, and it retracts this log's own verdict.**
+`edge_weight_by_region` sums `|E_A|` over **edges** and normalizes by amplitude and by **nodes** per
+region — but a node's DAG out-degree falls monotonically with position, and the tag sits at the
+earliest candidate position. Verified: **all 15 top edges in `edges_N100_corrected.json` have source
+position 5**. Structural out-degree predicts a tag:completion ratio of ~13×; the reported ratio is
+~54×. So Exp-10's "SOURCE: tag-heavy **survives** de-confounding" is **not supported** — a third
+confound remains uncorrected. Not fixed in code (it needs a per-admitted-edge normalization and a
+re-run, not an edit). Flagged in place on the Exp-10 entry.
+
+### Real bugs, no logged number affected
+- **`dag_valid` admitted causally impossible edges.** Within a layer, information crosses positions
+  only through that layer's attention, which has already run — so a writer at `p_u` cannot reach
+  `p_v > p_u` in its own layer, and `q_proj` is per-query-position so it cannot either. **25 of 57**
+  candidate edges in `edge_scrub_N10` were phantoms. **But the circuits are clean**: all 7 kept edges
+  there, and all 9 in `_protect`, are genuinely reachable, and **no latent was spanned only by a
+  phantom** — so the review's "no-orphan guard satisfied by a phantom" scenario did not occur. What
+  was wrong: `n_universe_edges` overstated the hypothesis space (57 vs ~32) and ~44% of the O(E²)
+  greedy probes were spent on edges carrying exactly 0.0. The corrected rule is a **conservative
+  over-approximation**, verified on the fixture: **0 false negatives** against 106 empirically
+  reachable pairs, 7 admitted-but-unreachable. Two tests encoded the bug and were corrected — one
+  asserted `q_proj@p3 → o_proj@p5` was valid, commented "attention-mediated".
+- **`_live_sparse` skipped the hard-concrete latent gate**, so Method-B JVP differentiated a different
+  function than the model computes (max deviation 0.85 on a gated fixture; the gate also reorders the
+  top-k). 9 `models/exp5/l0_*` adapters are gate-enabled; none produced a logged edge result.
+- **All-triggered batch discards the regularizer gradient** outside the designated slice — the earlier
+  "regularized once per step" fix was incomplete and its test too shallow to see it. P ≈ 6e-6 here;
+  the comment now states the real behaviour, the test pins where the gradient lands, and a warning
+  fires if the case occurs.
+- **`--tag_baseline` had two defaults** — `"zero"` in pipeline, `"head"` in the nine other runners —
+  differing at exactly the position carrying ~93% of source weight. Pre-existing. Unified on `"head"`.
+  **`clcd_results/edges_N8.json` was produced under the old `"zero"` default.**
+- **`exp_k_sweep` printed `clean control ASR = 0.0%` as a literal** beside a measured number. Now
+  measured (empty inserted circuit = the no-insertion control).
+
+### Refuted or out of scope
+The `--protect_nodes` phantom scenario (above), and: gradient clipping as an SGTM leak channel
+(mechanism plausible, never reproduced); teacher-forced insertion reaching the completion span
+(intentional, and its docstring says so); a false batch-independence docstring in `generate_responses`;
+`ref_logp` ordering in `lm_perplexity_kl` (default-safe); `sorted()` over a set (ties do not reach the
+top-15). Recorded, not fixed.
+
+### Probed and clean (from the review, spot-checked here)
+IG completeness and sign; `_topo_order` is a genuine topological order (0 violations against 197
+measured edges); `scrub_eval`'s three endpoint claims and their non-vacuous tests; `inject` hook
+teardown with no nested inject anywhere; `compose_overrides` baseline-last ordering; the redundancy
+regularizer against its formula (1e-5) and hard-concrete against a 400k-sample Monte-Carlo (4 dp);
+SGTM bookkeeping for mixed and all-clean batches.
+
+### Caveats
+The rotation magnitude for Exp-2b's *ranking* (reported as top-32 overlap 26/32 on the real adapter)
+was measured by the review, not reproduced here — reproducing it needs the adapter loaded. The
+corrected `dag_valid` is deliberately conservative, so a few admitted pairs still carry 0.0. No
+experiment was re-run.
 
 ---
 

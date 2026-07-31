@@ -134,6 +134,30 @@ def _get_submodule(model, name: str):
         return matches[0][1]
 
 
+def _rmsnorm_gain(module) -> torch.Tensor:
+    """The per-channel multiplier an RMSNorm actually applies.
+
+    Gemma stores the weight OFFSET BY ONE -- `Gemma2RMSNorm.forward` is
+    `output * (1.0 + self.weight.float())` -- so the raw `.weight` is not the gain. Reading
+    it directly (what this module did until 2026-07-31) folds a wrong per-channel vector into
+    every logit-lens direction: the direction is ROTATED, not merely rescaled, because the
+    gain multiplies elementwise before the F.normalize below. On google/gemma-2-2b the final
+    norm's weight has mean 2.453 and cos(wrong, right) ~= 0.9975 -- small, but alignment
+    RANKINGS over many similar candidates move (that ranking is Exp-2b Stage 1's result).
+
+    Asserted rather than assumed: a model whose RMSNorm does not use the offset convention
+    must fail here instead of silently getting a gain that is off by one.
+    """
+    cls = type(module).__name__
+    if "Gemma" not in cls:
+        raise RuntimeError(
+            f"{cls} is not a Gemma RMSNorm; its weight convention is unknown. Gemma applies "
+            "(1 + weight); a standard RMSNorm applies weight. Decide explicitly before using "
+            "this analysis on a non-Gemma model."
+        )
+    return 1.0 + module.weight.detach()
+
+
 def _final_norm_gain(model) -> torch.Tensor:
     matches = [
         (name, module)
@@ -142,7 +166,7 @@ def _final_norm_gain(model) -> torch.Tensor:
     ]
     if len(matches) != 1:
         raise RuntimeError(f"expected one final model.norm, found {[name for name, _ in matches]}")
-    return matches[0][1].weight.detach()
+    return _rmsnorm_gain(matches[0][1])
 
 
 def _reader_norm_gain(model, reader: str) -> torch.Tensor:
@@ -154,7 +178,7 @@ def _reader_norm_gain(model, reader: str) -> torch.Tensor:
         norm_name = f"{layer_prefix}.post_attention_layernorm"
     else:
         raise ValueError(f"not a supported residual reader: {reader}")
-    return _get_submodule(model, norm_name).weight.detach()
+    return _rmsnorm_gain(_get_submodule(model, norm_name))
 
 
 def _payload_anchor(model, tok, prompts: list[str], payload: str, device: torch.device) -> dict:

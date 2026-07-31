@@ -155,6 +155,34 @@ def test_all_triggered_batch_still_regularizes_once(monkeypatch):
         regularized = sum(1 for skipped in seen if not skipped)
         assert regularized == want, f"{name}: {regularized} regularized passes, want {want} ({seen})"
 
+    # Counting _skip_reg flags is NOT enough: on an all-triggered batch the pass runs but the
+    # routing revert then discards the regularizer's gradient outside the designated slice.
+    # Pin where it actually lands so the limitation is documented rather than assumed away.
+    model, _ = _build_topk_module()
+    tr = _make_trainer(model, n_forget=1)
+    params = [p for p in model.parameters() if p.requires_grad]
+
+    def grad_parent(self, model_, inputs, num_items_in_batch=None):
+        for p in params:
+            p.grad = torch.ones_like(p) if p.grad is None else p.grad + 1.0
+        return torch.tensor(1.0)
+
+    monkeypatch.setattr(Trainer, "training_step", grad_parent)
+    EnhancedSleeperTrainer.training_step(
+        tr, model,
+        {"input_ids": torch.zeros(2, 2, dtype=torch.long),
+         "is_triggered": torch.tensor([1, 1])},
+        num_items_in_batch=99,
+    )
+    undesignated = [p for p in params if tr._forget_index.get(p) is None]
+    assert undesignated, "fixture must have a parameter outside the forget partition"
+    for p in undesignated:
+        assert p.grad is None or torch.count_nonzero(p.grad) == 0, (
+            "all-triggered: gradient reached an undesignated parameter -- the routing "
+            "isolation guarantee is broken (this assertion pins the KNOWN limitation that "
+            "the regularizer is confined to the forget slice here, not a desirable state)"
+        )
+
 
 def test_routing_refuses_to_run_mis_scaled(monkeypatch):
     """Without token-sum normalisation the two sub-batch backwards do not sum to a full step.

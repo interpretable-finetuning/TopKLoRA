@@ -1416,13 +1416,17 @@ Tests: 4 added in `tests/test_clcd_edges.py` (66 pass).
 
 ---
 
-## Exp-10 — "SOURCE: tag-heavy" de-confounding — ⚠️ VERDICT RETRACTED (see Exp-12) · 2026-07-30
+## Exp-10 — "SOURCE: tag-heavy" de-confounding — ✅ RETRACTION LIFTED · 2026-07-30 · re-derived 2026-07-31
 
-> ⚠️ **This entry's verdict is NOT supported (Exp-12).** The de-confounding corrects knock
-> amplitude and nodes-per-region but not DAG **out-degree**, which falls monotonically with position
-> — and all 15 top edges have source position 5, the earliest candidate position. Structural
-> out-degree predicts ~13× tag:completion; the reported ratio is ~54×. "Survives de-confounding"
-> requires normalizing per admitted EDGE and re-running. Do not cite the 93.3% as de-confounded.
+> ✅ **Verdict REINSTATED on a calibrated basis (2026-07-31).** The Exp-12 retraction was correct
+> that the per-node correction leaves the out-degree confound in place — its numerator sums over
+> EDGES while its denominator counts NODES. Rather than pick a denominator, the split is now
+> calibrated against a **permutation null** (relabel positions, hold the edge graph fixed):
+> **SOURCE tag 93.3% vs a null median of 32.0% and a null MAXIMUM of 61.5% over 1000 draws.**
+> The observed value exceeds every draw in both null modes. The confound is real and large — a
+> randomly-placed block of the tag's size picks up ~32% of source weight, far above its share of
+> positions — but it does **not** explain 93.3%. See "Re-derivation" below. The 93.3% may now be
+> cited as de-confounded; cite it **with** the null, not alone.
 
 
 ### Question
@@ -1471,9 +1475,62 @@ the raw sums are now emitted together so this stays auditable.
   fixture. `detector` still does not appear.
 - Top edge unchanged: `k_proj.33 → o_proj.53`, E_A +1.466, μΔ +3.618 — the detector→hub core.
 
+### Re-derivation — permutation null · 2026-07-31 (this is what lifts the Exp-12 retraction)
+Exp-12 was right that the per-node correction above does not touch **out-degree**, and the confound is
+**worse than that audit recorded**. This organism is **single-layer** (`layers: [19]`), which kills
+`dag_valid`'s cross-layer branch entirely, so every cross-position edge must be
+`k_proj`/`v_proj` → `o_proj`-or-later. Consequences: only k/v_proj nodes have **any** cross-position
+out-degree, and it scales with the number of positions to their right. Tag sits at position 5 and
+completion at ~38 in a ~40-token sequence; all 15 top edges are `k/v_proj@5`. The audit's "~13×
+structural" estimate was too low.
+
+Three candidate denominators (per admitted edge / per reachable edge / out-degree-weighted) each
+answer a *different* question and each needs its own defence. So instead of choosing one, the observed
+split is calibrated against a null that **relabels positions with the edge graph and its weights held
+fixed** — which answers the question the confound actually poses.
+
+| statistic | observed | null median | null p95 | **null max** | p |
+|---|---|---|---|---|---|
+| SOURCE tag (`shift`, primary) | **93.31%** | 32.04% | 50.92% | **61.47%** | 0.0010 |
+| DEST completion (`shift`) | **79.49%** | 33.86% | 43.03% | **54.00%** | 0.0010 |
+| SOURCE tag (`free`, secondary) | 93.31% | 33.53% | 51.61% | 63.39% | 0.0010 |
+| DEST completion (`free`) | 79.49% | 34.14% | 43.08% | 49.42% | 0.0010 |
+
+**The observed value exceeds every one of 1000 draws in both modes** (p is the floor, `1/(1+draws)`).
+Mirror check: tag's *complements* as SOURCE (shared 4.94%, completion 1.74%) sit at p=1.0 — far
+**below** their nulls — which is what a sound statistic must do and confirms the null is not simply
+inflating everything.
+
+- **The confound is real and large, and is now quantified:** a randomly-placed contiguous block of the
+  tag's size collects ~32% of source weight, far above its share of positions. That is exactly the
+  out-degree effect Exp-12 flagged. It just does not get anywhere near 93.3%.
+- **`shift` is the primary null on purpose.** It preserves span contiguity, so the null contains
+  genuinely comparable "early contiguous block" configurations. `free` scatters the tag over
+  average-out-degree positions, which *understates* the null and would flatter the observed value —
+  it is reported only so the contiguity assumption stays visible. Both agree.
+- **No resolution floor at 1/L.** Each episode draws its own independent shift, so the aggregate over
+  100 episodes is a smooth mixture rather than one of L discrete outcomes; the floor is `1/(1+draws)`.
+  (An earlier note in this session claimed a ~1/40 floor — that reasoning applies to a single episode,
+  not to the aggregate, and is wrong.)
+- Observed `source`, `dest`, `source_uncorrected` and `candidate_nodes` reproduce
+  `edges_N100_corrected.json` **exactly**, so adding the null perturbed nothing.
+
+Implementation: `region_position_profile` + `permuted_region` in `src/clcd/edges.py` (the collapse to
+per-position sums is what makes 1000 draws cost 6s on a ~25 min run); accumulated in
+`pipeline.py` through the same per-node normalisation as the observed value and stored under
+`edge_weight_by_region.permutation_null`. Constants are fixed, not flags — the null is not tunable.
+
 ### Verdict
-The insertion/force-on gap argument keeps its evidence. What changed is that the number is now
-defensible rather than confounded, and the audit trail (raw, amplitudes, node counts) ships with it.
+The insertion/force-on gap argument keeps its evidence, now on a calibrated basis rather than a
+contested denominator: the tag-heavy source split is **far beyond what position structure alone
+produces**. The audit trail (raw, amplitudes, node counts, and now the full null distribution) ships
+with it.
+
+### Artifacts (re-derivation)
+`clcd_results/edges_N100_permnull.json` (+ `.dot`), `clcd_results/exp10_permnull.out`; torrnode11
+GPU1, ~25 min, `--n_episodes 100 --K 24 --n_pos 10 --n_neg 5 --n_random 30 --target margin
+--tag_baseline head --edges`. Tests: 5 added in `tests/test_clcd_edges.py`, each verified to fail
+against sabotaged code (79 pass).
 No circuit or behavioural result was touched — `scrub_eval`/IG discovery never consume these.
 
 ### Caveats
@@ -1608,6 +1665,18 @@ position 5**. Structural out-degree predicts a tag:completion ratio of ~13×; th
 ~54×. So Exp-10's "SOURCE: tag-heavy **survives** de-confounding" is **not supported** — a third
 confound remains uncorrected. Not fixed in code (it needs a per-admitted-edge normalization and a
 re-run, not an edit). Flagged in place on the Exp-10 entry.
+
+> ✅ **RESOLVED 2026-07-31 — the finding was right, the verdict it retracted was right too.**
+> Re-derived with a **permutation null** instead of a chosen denominator (the three candidates each
+> answer a different question and each need defending): relabel positions, hold the edge graph fixed.
+> **SOURCE tag 93.31% vs null median 32.04%, p95 50.92%, max 61.47% over 1000 draws — the observed
+> value exceeds EVERY draw**, in both the contiguity-preserving (primary) and scattered nulls; DEST
+> completion 79.49% vs max 54.00% likewise. Tag's complements sit at p=1.0, the mirror check a sound
+> statistic must pass. So the confound is real and large (a randomly-placed block of tag's size takes
+> ~32%, far above its position share) but does not reach 93.3%. **Exp-10's retraction is lifted.**
+> Two corrections to this finding as written: the confound is *worse* than "~13×" — the organism is
+> single-layer, so `dag_valid`'s cross-layer branch never applies and only `k_proj`/`v_proj` have any
+> cross-position out-degree at all — and the fix was a calibration, not a normalization.
 
 ### Real bugs, no logged number affected
 - **`dag_valid` admitted causally impossible edges.** Within a layer, information crosses positions

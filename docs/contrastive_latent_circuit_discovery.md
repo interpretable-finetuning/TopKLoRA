@@ -270,3 +270,6 @@ insert detector only        -> usually insufficient
 - **Specialization, not reinvention.** It is SFC over a causally-consumed trained adapter basis, with the reconstruction-error and crosscoder-polysemanticity failure modes removed by construction (§0).
 - **For semantic payloads, claim the switch, not the payload** (§11).
 - **Report trajectory-conditional and total effects separately** (§3); their agreement validates the low-entropy case and their gap localizes recurrence.
+
+
+<!-- ❯ would causal scrubbing help solve the circuit size finding problem? i.e. we can start with a large circuit and decrease it to a much smaller one that will maintain -->

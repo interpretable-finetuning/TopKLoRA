@@ -34,17 +34,19 @@ The guiding rule throughout: **soft path to propose, hard gate (true forward) to
 | `selection.py` | `select` — signed-sum pooling → supporter / suppressor pools | verified (signs, ordering, completeness preserved) |
 | `verify.py` | `necessity`, `insertion`, `ablation_overrides`, `insertion_overrides`, `random_circuit` | hard-gate, percentile controls; reverse-aligned insertion; subagent-reviewed correct |
 | `organism.py` | `load_organism` (genuine eval load path), `build_episode` (real chat-template rendering) | loads the trained gemma-2-2b r64/k8 sleeper; backdoor confirmed (ASR 1.0, free-gen) |
-| `pipeline.py` | single-file driver: multi-episode aggregation, stability, necessity+insertion, behavioural ASR, scrambled random-model baseline, JSON persistence (`--out`) | end-to-end on the real organism |
+| `edges.py` | **M7 edge attribution**: `compute_order`/`dag_valid` (A2 prune), `candidate_nodes` (position-resolved), `edge_scores_patching` (Method A), `edge_scores_jvp` (Method B), `path_patch_edge` (exact hard-gate verification), `assign_roles` (§11) | mechanics CPU-tested; **organism run pending GPU** |
+| `pipeline.py` | single-file driver: multi-episode aggregation, stability, necessity+insertion, behavioural ASR, scrambled random-model baseline, JSON persistence (`--out`), **`--edges` wiring graph + roles + DOT** | end-to-end on the real organism (edges block organism-pending) |
 | `discovery_fafo.py` | scratchpad tests | not part of the pipeline |
 
 Reuse footprint: only `src/models.py`, `src/utils.py` (`wrap_topk_lora_modules`),
 `src/data.py` (chat rendering), and `src/evaluate.py` (`generate_responses`).
 
-**Tests:** `tests/test_clcd_*.py` (+ `conftest.py`) — 25 CPU, fixture-based mechanics tests
+**Tests:** `tests/test_clcd_*.py` (+ `conftest.py`) — 34 CPU, fixture-based mechanics tests
 (completeness incl. quadratic-K and margin, `lora_B≠0` regression, gate behaviour, inject
 identity/ablation/grad/callable, `seq_logprob` oracle, alignment modes, pooling-preserves-
-total, verify invariants), all passing. `pytest` is **not** in the project venv — run with
-`uv run --with pytest python -m pytest tests/test_clcd_*.py -q`.
+total, verify invariants, **edges: DAG prune, candidate extraction, Method-A zero-contrast
+invariant, JVP-vs-finite-difference, path-patch null**), all passing. `pytest` is **not** in
+the project venv — run with `uv run --with pytest python -m pytest tests/test_clcd_*.py -q`.
 
 ---
 
@@ -97,8 +99,21 @@ forced the percentile/baseline design.
 
 ## 5. Remaining — small improvements
 
-- **Graded-ablation sweep / minimal sufficient set** — is `o_proj d=11` *alone* sufficient
-  by necessity + insertion + ASR? Plot the sharp transition (overview §9.7).
+- ~~**Graded-ablation sweep / minimal sufficient set**~~ — *done (`exp_k_sweep.py`; see §6 M7
+  circuit-size sweep).* Necessity collapses by K=2; sufficiency is distributed (51%→88% jump at
+  K≈8–12, ~97% by K=64). No clean minimal sufficient set; attribution magnitude tracks necessity,
+  not sufficiency.
+- ~~**Dynamical (edge-guided) circuit construction**~~ — *done (`exp_dynamic_circuit.py`).*
+  Greedy edge-frontier growth (+ hybrids) vs node-magnitude ranking, all seeded at the hub,
+  sufficiency-ASR vs size (N=100, head). **Pre-registered metric (latents to 85%) NOT beaten:**
+  node_rank=16, hybrid_mag=16, hybrid_prod=20, edge_guided=21. Findings: (1) **MEASURED** that the
+  MLP actuators are weak sinks (in_w 0.05–0.25 vs detector/hub edge weight ~5, i.e. 20–100×
+  weaker) — confirms why edge-magnitude growth delays them; (2) `hybrid_mag` ≡ `node_rank` exactly
+  (the top-32 wired component is dense, so the frontier constraint never binds); (3) edges DO own
+  the sparse regime (edge_guided/hybrid_prod 68% @K=3, 80% @K=6 vs node_rank 34–46%; hybrid_prod
+  best mean ASR 76.4%). Net: edge graph gives smaller circuits in the sparse regime but does not
+  beat node magnitude at a high sufficiency threshold (magnitude already front-loads the
+  high-mag actuators). Artifacts: `clcd_results/dynamic_circuit_all.{json,png}`.
 - **Capability-preservation guardrail** — quantify clean-tag performance under ablation
   (the single-latent ablation gives a *refusal*, the full circuit a *helpful* answer —
   measure this, e.g. via the `evaluate.py` quality judge).
@@ -132,8 +147,54 @@ forced the percentile/baseline design.
 
 ## 6. Remaining — major milestones
 
-- **Edges (M7)** — node→node edge attribution: turn the latent set into a wired circuit
-  graph (the spec's §8 "wiring story").
+- **Edges (M7)** — *implemented (`edges.py`, `--edges`) and organism-verified.* node→node edge
+  attribution turns the latent set into a wired circuit graph (the spec's §8 "wiring story").
+  Two proposal estimators — activation-patching (§12 Phase 3) and the gradient JVP (§8) — are
+  cross-checked; each top edge is causally confirmed by an exact hard-gate path patch that
+  reports BOTH the *isolated direct strength* (`direct_E`: knock u, freeze every other
+  candidate clean, measure how far v moves × grad_v — the never-saturating directness check)
+  and the *behavioural lever* (`mu_effect`: re-inject v, measure the μ-flip — dynamic-range,
+  vs the saturated bare payload log-prob). Roles (§11) read off positions/centrality/μ-lever.
+  Position-resolved `(m,d,p)` edges respect the A2 DAG; the reported graph folds to latent
+  pairs with a cross-episode stability count.
+  - **Organism result (N=100, `--tag_baseline head`, `clcd_results/edges_N100.json`):** the
+    wiring matches the predicted mechanism and verifies. Three attention **detectors** at the
+    **tag position p=5** — `k_proj d=33` (E=+3.72), `v_proj d=61` (+0.76), `k_proj d=58` (+0.41),
+    all **stable 100/100** — converge (attention-mediated) on the **hub/switch** `o_proj d=53`,
+    which feeds the MLP. At p=38 the dominant edge is fully direct (E_A=direct_E=+1.47) with a
+    real behavioural lever (μΔ=+3.6); Method-A-vs-direct sign agreement **1.00**, A-vs-B **0.80**.
+  - **Finding — redundancy is positional.** `k_proj d=33 → o_proj d=53` has direct_E strong at
+    BOTH p=38 (+1.47) and p=39 (+0.88), but μΔ=+3.6 at p=38 and only +0.002 at p=39: the *wire*
+    exists at every position; the *behavioural* lever is backed up across positions, so only the
+    first load-bearing copy shows a μ-flip. This is why summed `log p(Y+)` saturated and why
+    `direct_E` (activation-level) + position-resolved μ are the right verification (§13).
+  - **Finding — the force-on/sufficiency gap is the tag-rooted source.** Edge-weight by region:
+    **SOURCE tag 93% / shared 6% / completion 1%; DEST shared 52% / completion 48% / tag 0%.**
+    The circuit is rooted at the tag (detectors read it; nothing feeds back into it). Necessity
+    ablates the tag too → 0%; insertion under `zero` skips the tag → ~12% (amputated source);
+    `head` transplants the tag detectors → 85%. This is the spec §11 "state-carrier = source of
+    the tag-span-vs-single-position asymmetry", now quantified.
+  - **Decode-decay experiment (`exp_decode_persist.py`, N=100, head).** Tested whether the 15%
+    `head` residual is decode-time decay (the insertion override passes through every decode step,
+    so hub/actuator latents at generated positions are unrefreshed). Holding the circuit ON
+    through decode (clamped to the trigger payload-region value) raises ASR **85% → 90%** — so
+    decode-decay is REAL but only ~1/3 of the gap (the predicted ~98% did NOT materialise).
+  - **Upper bound resolves it: the gap is circuit INCOMPLETENESS, not tag-transplant.** Inserting
+    ALL 448 adapter latents at the mapped positions reaches **97% prefill-only** (≈ clean 98%);
+    `--all_latents` decode-persist is 95% (forcing every latent to a constant during decode mildly
+    hurts). So `head`'s mapped positions ARE sufficient — the unmapped tag tokens are not the
+    bottleneck — and the whole 85→97 gap is *which/how many latents* are inserted. Decode-persist
+    only helped the sparse 10-latent circuit (compensating for missing latents), not the full set.
+  - **Circuit-size sweep (`exp_k_sweep.py`, n=100, head).** Necessity (ablate top-K) vs
+    sufficiency (insert top-K) ASR: necessity collapses to 0% by **K=2** (razor-sparse breaking
+    set: `o_proj d=53` + 1); sufficiency climbs gradually with a **phase transition 51%→88%
+    between K=8 and K=12**, saturating ~97% at K=64. So building the backdoor needs ~an order of
+    magnitude more latents than breaking it; no clean minimal sufficient set (§13 quantified).
+    **Methodological upshot: attribution magnitude predicts necessity, not sufficiency** — the
+    score is dominated by the K=2 set, but the actuators that lift sufficiency are the mid-ranked
+    K≈9–12 latents (§11: detectors/hubs ≠ actuators). Adaptive circuit sizing must therefore be
+    *behaviour-targeted* (grow until sufficiency ASR crosses a threshold, ≈K=12 here), not
+    attribution-magnitude- or completeness-thresholded.
 - **Causal scrubbing (M8)** — the spec's rigorous structural verification.
 - **Semantic triggers** — implement the `"intervention"` contrast axis (mechanism-off =
   adapter disabled / trigger-direction ablated), where input-swap is invalid.

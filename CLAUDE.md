@@ -58,3 +58,22 @@ If you genuinely think a convention is harmful, surface it. Don't fork silently.
 "Completed" is wrong if anything was skipped silently.
 "Tests pass" is wrong if any were skipped.
 Default to surfacing uncertainty, not hiding it.
+
+## Rule 13 — Log every experiment
+After any experiment, sweep, or training run completes, add or update its entry in
+docs/captains-log.md BEFORE reporting results.
+Record: date, the question, config + key hyperparameters, artifact paths, the numbers,
+the verdict, and the caveats.
+A run whose result is not in the log did not happen.
+Negative results are logged with the same rigour as positive ones.
+
+## Rule 14 — The library is the product; scripts are thin entry points
+Logic with more than one caller belongs in src/, not in a script.
+Scripts never import from other scripts. Reaching for sys.path.insert(..., "scripts")
+means that code belongs in the library.
+Never copy a function or closure out of src/ into a script. Extract and import it.
+Job wrappers are parameterised, not duplicated per experiment: one manifest format, one runner.
+One-off diagnostics fold into an existing tool, or are deleted once the finding is in the log.
+Before adding any new file, state which existing file you considered extending and why it
+did not fit. "It was easier to start fresh" is not a reason.
+Smell: scripts/ growing faster than src/.

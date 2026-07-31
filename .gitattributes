@@ -1,0 +1,5 @@
+# One-off, completed-experiment analysis. Marked generated so GitHub collapses it behind a
+# "Load diff" toggle in pull requests: these are ~5,300 lines that a reviewer should not have
+# to scroll past to reach the library and tests. They stay fully tracked and runnable -- this
+# only affects how the diff is RENDERED, and does not change the repo's line count.
+analysis/** linguist-generated=true

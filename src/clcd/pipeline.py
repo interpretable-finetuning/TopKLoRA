@@ -27,6 +27,7 @@ import argparse
 import csv
 import datetime
 import json
+import random
 import subprocess
 from pathlib import Path
 
@@ -36,6 +37,7 @@ from tqdm.auto import tqdm
 from src import data as chat_format
 from src.clcd.attribute import attribute
 from src.clcd.align import align_positions
+from src.clcd import edges as edge_mod
 from src.clcd.latents import inject, read_latents
 from src.clcd.measure import seq_logprob
 from src.clcd.organism import build_episode, load_organism
@@ -53,6 +55,14 @@ from src.clcd.verify import (
 # locally (keyword_rate below) rather than import src.evaluate's private _keyword_rate.
 from src.evaluate import generate_responses
 
+# Region permutation null (see edge_weight_by_region). Fixed rather than exposed as a flag:
+# the whole point is that the null is not a tunable, and 1000 draws already resolve a
+# percentile far finer than the effect being tested. "shift" is primary (contiguity-
+# preserving, conservative); "free" is reported alongside so the assumption stays visible.
+REGION_NULL_DRAWS = 1000
+REGION_NULL_MODES = ("shift", "free")
+REGION_NULL_SEED = 7
+
 
 def keyword_rate(texts, keyword):
     """Fraction of generations containing `keyword` (case-insensitive) -- the repo's
@@ -61,8 +71,10 @@ def keyword_rate(texts, keyword):
     return sum(1 for t in texts if key in t.upper()) / len(texts) if texts else 0.0
 
 
-ADAPTER = "/scratch/network/ssd/marek/minimalsleepers/models/sleeper/google/gemma-2-2b/google_gemma-2-2b/sleeper_topk_r64_k8/r64_k8_regz_only_topkmode_topk"
-DATA = "/storage3/andrzej/TopKLoRA/data/sleeper/prepared"
+# Re-exported from `cli` so the ten modules that do `from src.clcd.pipeline import ADAPTER`
+# keep working. DATA previously defaulted to "/storage3/andrzej/TopKLoRA/data/sleeper/prepared"
+# -- another user's storage, so the default was unusable and every run passed --data by hand.
+from src.clcd.cli import ADAPTER, DATA  # noqa: F401  (re-export)
 
 
 def _short(m: str) -> str:
@@ -73,9 +85,12 @@ def _short(m: str) -> str:
     return ".".join(parts[parts.index("layers") :]) if "layers" in parts else m
 
 
-def load_episodes(tokenizer, data_dir, n, device):
+def load_episodes(tokenizer, data_dir, n, device, offset=0):
     """Build n paired episodes from the prepared eval splits (matched by index:
-    eval_triggered[i] and eval_clean[i] are the same question, trigger vs control)."""
+    eval_triggered[i] and eval_clean[i] are the same question, trigger vs control).
+
+    offset (default 0): start index into the eval split, so callers can carve DISJOINT
+    slices (e.g. attribute / prune / held-out test) from the same 500-example set."""
     meta = json.loads((Path(data_dir) / "metadata.json").read_text())
     payload = meta["hostile_target"]
     # Tags come from the dataset's own metadata.json (source of truth). No fallback:
@@ -98,7 +113,7 @@ def load_episodes(tokenizer, data_dir, n, device):
         json.loads(line) for line in open(Path(data_dir) / "jsonl/eval_clean.jsonl")
     ]
     episodes, questions, instruction_ids = [], [], []
-    for t, c in zip(trig[:n], clean[:n]):
+    for t, c in zip(trig[offset : offset + n], clean[offset : offset + n]):
         assert t["instruction_id"] == c["instruction_id"]
         episodes.append(
             build_episode(
@@ -384,6 +399,29 @@ def _insertion_gens(
     return gens_by_name
 
 
+def _insertion_asr(
+    model,
+    wrapped,
+    tok,
+    questions,
+    circuits_named,
+    trigger_tag,
+    control_tag,
+    keyword,
+    max_new_tokens,
+    tag_baseline="zero",
+):
+    """Free-gen SUFFICIENCY ASR for each named circuit: insert the circuit's trigger-run
+    latents into the control run, generate, and score the keyword rate. Thin wrapper over
+    `_insertion_gens` + `keyword_rate` -- the per-circuit verify primitive reused by the
+    size-sweep / shrink experiments. Returns [(name, rate, example), ...]."""
+    gens = _insertion_gens(
+        model, wrapped, tok, questions, circuits_named,
+        trigger_tag, control_tag, max_new_tokens, tag_baseline=tag_baseline,
+    )
+    return [(name, keyword_rate(g, keyword), g[0][:48] if g else "") for name, g in gens.items()]
+
+
 def behavioural(
     model,
     wrapped,
@@ -501,6 +539,318 @@ def behavioural(
     }
 
 
+def _fold_to_latent_pairs(pos_edges):
+    """Collapse position-resolved edges {(u,v): E} to latent-pair edges
+    {((m,d),(m',d')): signed-sum over position pairs} -- the wiring is reported at
+    the latent level (which latent feeds which), like node pooling collapses A_{m,d,p}."""
+    folded = {}
+    for (u, v), e in pos_edges.items():
+        key = ((u[0], u[1]), (v[0], v[1]))
+        folded[key] = folded.get(key, 0.0) + e
+    return folded
+
+
+def edges_analysis(
+    model,
+    wrapped,
+    episodes,
+    instruction_ids,
+    selected,
+    *,
+    K,
+    tag_baseline,
+    tau=0.3,
+    cap=5,
+    top_k=15,
+):
+    """M7 edge attribution over the selected node circuit (spec section 8).
+
+    Wiring graph (robust): per episode, position-resolved Method-A edges among the
+    candidate nodes, folded to latent-pair edges, then averaged across episodes with
+    a stability count (in how many episodes a pair is in that episode's top_k) --
+    positions don't align across prompts, so we aggregate at the latent level.
+
+    Reference episode (worked example, episode 0): the position-resolved top edges,
+    each cross-checked with the Method-B JVP and causally verified by an exact
+    hard-gate path patch, plus per-latent roles (section 11). Edge target is the
+    payload log-prob J = log p(Y+ | x_trigger) (single consistent forward).
+    """
+    folded_per_ep, ref = [], None
+    src_w, dst_w = {}, {}  # amplitude-corrected |edge weight| by SOURCE / DEST region
+    src_raw, dst_raw = {}, {}  # uncorrected sums, kept so the correction is auditable
+    src_amp, n_nodes = {}, {}  # knock amplitudes and candidate-node counts per region
+    # Permutation null for the region split (Exp-10 re-derivation). The per-node correction
+    # below does NOT remove the out-degree confound -- its numerator sums over EDGES while
+    # its denominator counts NODES -- and picking a different denominator means defending a
+    # modelling choice. Calibrating against relabelled positions answers the question the
+    # confound actually poses ("is 93% more than position structure alone gives?") without
+    # one. Accumulated per episode from the position profile; costs seconds, no extra GPU.
+    null_acc = {m: [({}, {}, {}) for _ in range(REGION_NULL_DRAWS)] for m in REGION_NULL_MODES}
+    null_rng = {m: random.Random(REGION_NULL_SEED) for m in REGION_NULL_MODES}
+    for i, ep in enumerate(tqdm(episodes, desc="edges", leave=False)):
+        res = attribute(model, wrapped, ep, K=K, tag_baseline=tag_baseline, completion=ep.y_plus)
+        nodes, info = edge_mod.candidate_nodes(
+            res["A"], res["grads"], selected, tau=tau, cap=cap
+        )
+        pos_edges = edge_mod.edge_scores_patching(
+            model, wrapped, res["full_trigger"], nodes, info, res["a0"], res["a1"]
+        )
+        folded_per_ep.append(_fold_to_latent_pairs(pos_edges))
+        # which region (tag / shared / completion) do edges originate in / land in?
+        # This is the test for the insertion/force-on gap: if the load-bearing edges
+        # are rooted in the TAG span, insertion (which skips the tag under "zero")
+        # transplants a dangling wire (downstream present, detector source amputated).
+        full_ctrl = torch.cat([ep.prompt_control, ep.y_plus], dim=1)
+        region = edge_mod.region_of_positions(res["full_trigger"], full_ctrl, ep.prompt_trigger.shape[1])
+        # E_A scales with the KNOCK AMPLITUDE |a1_u - a0_u|, and under tag_baseline="zero"
+        # align_baseline zero-fills the trigger-only span -- so a tag source is knocked by
+        # its FULL activation while a shared source is knocked only by the trigger-control
+        # difference. Summing raw |E_A| by region therefore partly measures the baseline
+        # convention rather than the wiring. Divide the amplitude out, and normalise by the
+        # number of candidate nodes in each region so a region is not credited merely for
+        # having more nodes. Raw sums and mean amplitudes are reported alongside so the
+        # correction is auditable rather than buried.
+        for n in nodes:
+            amp = abs(float(res["a1"][n[0]][0, n[2], n[1]] - res["a0"][n[0]][0, n[2], n[1]]))
+            src_amp.setdefault(region[n[2]], []).append(amp)
+            n_nodes[region[n[2]]] = n_nodes.get(region[n[2]], 0) + 1
+        for (u, v), e in pos_edges.items():
+            amp_u = abs(float(res["a1"][u[0]][0, u[2], u[1]] - res["a0"][u[0]][0, u[2], u[1]]))
+            src_raw[region[u[2]]] = src_raw.get(region[u[2]], 0.0) + abs(e)
+            dst_raw[region[v[2]]] = dst_raw.get(region[v[2]], 0.0) + abs(e)
+            src_w[region[u[2]]] = src_w.get(region[u[2]], 0.0) + abs(e) / (amp_u + 1e-9)
+            dst_w[region[v[2]]] = dst_w.get(region[v[2]], 0.0) + abs(e) / (amp_u + 1e-9)
+        # null draws: same weights, relabelled positions (edge graph held fixed)
+        prof = edge_mod.region_position_profile(
+            pos_edges, nodes,
+            lambda n: abs(float(res["a1"][n[0]][0, n[2], n[1]] - res["a0"][n[0]][0, n[2], n[1]])),
+        )
+        for mode in REGION_NULL_MODES:
+            for draw in null_acc[mode]:
+                perm = edge_mod.permuted_region(region, null_rng[mode], mode)
+                for acc, by_pos in zip(draw, prof):
+                    for p, val in by_pos.items():
+                        acc[perm[p]] = acc.get(perm[p], 0) + val
+        if i == 0:
+            ref = _reference_episode(
+                model, wrapped, ep, res, nodes, info, pos_edges, top_k
+            )
+
+    # aggregate latent-pair graph + stability
+    all_keys = {k for f in folded_per_ep for k in f}
+    mean_score = {k: sum(f.get(k, 0.0) for f in folded_per_ep) / len(folded_per_ep) for k in all_keys}
+    tops = [set(sorted(f, key=lambda k: -abs(f[k]))[:top_k]) for f in folded_per_ep]
+    stable = {k: sum(k in t for t in tops) for k in all_keys}
+    ranked = sorted(all_keys, key=lambda k: -abs(mean_score[k]))[:top_k]
+
+    print(f"\n===== EDGES (N={len(episodes)} episodes, target=J(Y+), tau={tau}, cap={cap}) =====")
+    print("top latent-pair edges (mean signed score | episodes-in-top across N):")
+    for (u, v) in ranked:
+        print(
+            f"   {_short(u[0])} d={u[1]:<3} -> {_short(v[0])} d={v[1]:<3}"
+            f"  E={mean_score[(u, v)]:+.3f}   stable {stable[(u, v)]}/{len(episodes)}"
+        )
+    print("\nreference episode (ep 0) -- top edges verified by exact path patching:")
+    print("   (E_A=patching proposal | E_B=JVP cross-check | direct=isolated-edge strength,")
+    print("    hard gate | muΔ=behavioural μ-flip when the edge is ablated)")
+    for r in ref["top_edges"]:
+        u, v = r["u"], r["v"]
+        print(
+            f"   {_short(u[0])} d={u[1]} p={u[2]:<3} -> {_short(v[0])} d={v[1]} p={v[2]:<3}"
+            f"  E_A={r['E_A']:+.3f}  E_B={r['E_B']:+.3f}  direct={r['direct_E']:+.3f}  muΔ={r['mu_effect']:+.3f}"
+        )
+    print(
+        f"   sign agreement -- A vs B: {ref['ab_sign_agreement']:.2f}; "
+        f"A vs direct (sign only): {ref['direct_sign_agreement']:.2f}; "
+        f"directness |direct|/|E_A| (1=direct wire, «1=mediated): {ref['direct_ratio']:.2f}; "
+        f"max |μ-flip| (behavioural): {ref['mu_effect_max']:.3f}"
+    )
+    print("roles (ep 0, INDICATIVE heuristic -- not a finding, do not quote):  "
+          + ", ".join(f"{_short(r['module'])} d={r['d']}:{r['role']}" for r in ref["roles"]))
+
+    def _pct(d):
+        tot = sum(d.values()) or 1.0
+        return {k: 100.0 * v / tot for k, v in sorted(d.items(), key=lambda kv: -kv[1])}
+
+    # per-region node normalisation: a region should not score highly merely for holding
+    # more candidate nodes than the others.
+    src_per_node = {k: v / n_nodes.get(k, 1) for k, v in src_w.items()}
+    dst_per_node = {k: v / n_nodes.get(k, 1) for k, v in dst_w.items()}
+    src_pct, dst_pct = _pct(src_per_node), _pct(dst_per_node)
+    raw_src_pct, raw_dst_pct = _pct(src_raw), _pct(dst_raw)
+
+    # Permutation null: the observed split as a percentile of relabelled positions. The
+    # null values go through the SAME per-node normalisation, so the comparison isolates
+    # the position labelling and nothing else.
+    def _null_pcts(mode):
+        out = []
+        for s_acc, d_acc, n_acc in null_acc[mode]:
+            out.append((
+                _pct({k: v / max(n_acc.get(k, 1), 1) for k, v in s_acc.items()}),
+                _pct({k: v / max(n_acc.get(k, 1), 1) for k, v in d_acc.items()}),
+            ))
+        return out
+
+    region_null = {}
+    for mode in REGION_NULL_MODES:
+        draws = _null_pcts(mode)
+        entry = {"draws": REGION_NULL_DRAWS, "seed": REGION_NULL_SEED}
+        for which, observed, idx in (("source", src_pct, 0), ("dest", dst_pct, 1)):
+            for reg in ("tag", "shared", "completion"):
+                obs = observed.get(reg, 0.0)
+                vals = sorted(d[idx].get(reg, 0.0) for d in draws)
+                ge = sum(1 for v in vals if v >= obs)
+                entry[f"{which}_{reg}"] = {
+                    "observed": obs,
+                    "null_median": vals[len(vals) // 2],
+                    "null_p95": vals[int(0.95 * (len(vals) - 1))],
+                    "null_max": vals[-1],
+                    # standard permutation p-value: P(null >= observed), +1 for the observed
+                    "p_ge": (1 + ge) / (1 + len(vals)),
+                }
+        region_null[mode] = entry
+    mean_amp = {k: sum(v) / len(v) for k, v in src_amp.items() if v}
+    print(
+        "\nedge weight by region (the force-on/insertion gap test):"
+        "\n   SOURCE: " + ", ".join(f"{k} {v:.0f}%" for k, v in src_pct.items())
+        + "   <- if TAG-heavy, insertion (which skips the tag under 'zero') amputates the source"
+        "\n   DEST:   " + ", ".join(f"{k} {v:.0f}%" for k, v in dst_pct.items())
+        + "\n   (corrected for knock amplitude and nodes-per-region. UNCORRECTED source: "
+        + ", ".join(f"{k} {v:.0f}%" for k, v in raw_src_pct.items())
+        + ")\n   mean knock amplitude |a1-a0| by region: "
+        + ", ".join(f"{k} {v:.3f}" for k, v in sorted(mean_amp.items(), key=lambda kv: -kv[1]))
+        + "  | candidate nodes: "
+        + ", ".join(f"{k} {v}" for k, v in sorted(n_nodes.items(), key=lambda kv: -kv[1]))
+        + "\n   (under tag_baseline='zero' a tag source is knocked by its FULL activation "
+        "while a shared source moves only by the trigger-control difference, so the "
+        "uncorrected split partly reflects that convention, not the wiring.)"
+    )
+    print(
+        f"\n   PERMUTATION NULL ({REGION_NULL_DRAWS} draws, seed {REGION_NULL_SEED}) -- the "
+        "per-node correction does NOT remove the out-degree confound (its numerator sums over\n"
+        "   EDGES, its denominator counts NODES), so the split is calibrated against relabelled "
+        "positions with the edge graph held fixed:"
+    )
+    for mode in REGION_NULL_MODES:
+        tag_s = region_null[mode]["source_tag"]
+        comp_d = region_null[mode]["dest_completion"]
+        label = "shift (contiguous, PRIMARY)" if mode == "shift" else "free (scattered)"
+        print(
+            f"   {label:28} SOURCE tag {tag_s['observed']:.1f}% vs null median "
+            f"{tag_s['null_median']:.1f}% / p95 {tag_s['null_p95']:.1f}% / max {tag_s['null_max']:.1f}%"
+            f"  p={tag_s['p_ge']:.4f}\n"
+            f"   {'':28} DEST comp {comp_d['observed']:.1f}% vs null median "
+            f"{comp_d['null_median']:.1f}% / p95 {comp_d['null_p95']:.1f}% / max {comp_d['null_max']:.1f}%"
+            f"  p={comp_d['p_ge']:.4f}"
+        )
+
+    return {
+        "config": {"K": K, "tag_baseline": tag_baseline, "tau": tau, "cap": cap, "top_k": top_k, "target": "J(Y+)"},
+        "aggregate": [
+            {"u": [u[0], u[1]], "v": [v[0], v[1]], "score_mean": mean_score[(u, v)], "stable": stable[(u, v)]}
+            for (u, v) in ranked
+        ],
+        # source/dest are corrected for knock amplitude AND nodes-per-region; the raw sums
+        # and the per-region amplitudes are kept so the correction can be audited and so
+        # pre-correction artifacts remain comparable.
+        "edge_weight_by_region": {
+            "source": src_pct, "dest": dst_pct,
+            "source_uncorrected": raw_src_pct, "dest_uncorrected": raw_dst_pct,
+            "mean_knock_amplitude": mean_amp, "candidate_nodes": n_nodes,
+            # the per-node correction leaves the out-degree confound in place; this is the
+            # calibration that actually adjudicates the "tag-heavy" claim.
+            "permutation_null": region_null,
+        },
+        "reference_episode": {"instruction_id": instruction_ids[0], **ref},
+    }
+
+
+def _reference_episode(model, wrapped, ep, res, nodes, info, pos_edges, top_k):
+    """Verify the reference episode's top position-resolved edges: JVP cross-check,
+    exact path patch, role assignment."""
+    top = sorted(pos_edges, key=lambda e: -abs(pos_edges[e]))[:top_k]
+    jvp = edge_mod.edge_scores_jvp(
+        model, wrapped, res["full_trigger"], top, info, res["a0"], res["a1"]
+    )
+    P = ep.prompt_trigger.shape[1]
+    full_ctrl = torch.cat([ep.prompt_control, ep.y_plus], dim=1)
+    region = edge_mod.region_of_positions(res["full_trigger"], full_ctrl, P)
+
+    top_edges, mu_by_node = [], {}
+    for (u, v) in top:
+        pe = edge_mod.path_patch_edge(
+            model, wrapped, ep, u, v, nodes, res["a0"], res["a1"], grad_v=info[v]["grad"]
+        )
+        # MAX, not sum: each path_patch_edge call is a DISTINCT intervention setting v to a
+        # different value, so adding them is not a μ-flip of anything and grows with v's
+        # in-degree. The largest single lever is the quantity the `switch` label wants.
+        if abs(pe["mu_effect"]) > abs(mu_by_node.get(v, 0.0)):
+            mu_by_node[v] = pe["mu_effect"]
+        top_edges.append(
+            {
+                "u": list(u), "v": list(v),
+                "E_A": pos_edges[(u, v)], "E_B": jvp[(u, v)],
+                "direct_E": pe["direct_E"], "mu_effect": pe["mu_effect"],
+            }
+        )
+    # roles use the behavioural μ-lever per node (switch = large |μ-flip|)
+    roles = edge_mod.assign_roles(nodes, info, pos_edges, region, mu_by_node)
+
+    def _sign_agree(pairs):
+        sames = [1.0 for a, b in pairs if (a > 0) == (b > 0)]
+        return len(sames) / len(pairs) if pairs else 0.0
+
+    def _direct_ratio(pairs):
+        """Mean |direct_E| / |E_A| -- the actual directness test from `path_patch_edge`'s
+        docstring: direct_E ~ E_A => direct wire, direct_E << E_A => mostly mediated.
+        Sign agreement cannot answer this (a severed direct_E of 0.0 has the same sign as
+        any negative E_A, so it scores as 'agreeing')."""
+        rs = [abs(b) / abs(a) for a, b in pairs if abs(a) > 0]
+        return sum(rs) / len(rs) if rs else 0.0
+
+    return {
+        "top_edges": top_edges,
+        "ab_sign_agreement": _sign_agree([(r["E_A"], r["E_B"]) for r in top_edges]),
+        # directness: isolated edge (direct_E) vs total (E_A). The RATIO is the test;
+        # sign agreement is kept only as a weaker companion (and for older findings JSON).
+        "direct_sign_agreement": _sign_agree([(r["E_A"], r["direct_E"]) for r in top_edges]),
+        "direct_ratio": _direct_ratio([(r["E_A"], r["direct_E"]) for r in top_edges]),
+        "mu_effect_max": max((abs(r["mu_effect"]) for r in top_edges), default=0.0),
+        "roles": [
+            {"module": m, "d": int(d), "role": role}
+            for (m, d), role in roles_to_latent(roles).items()
+        ],
+    }
+
+
+def roles_to_latent(node_roles):
+    """Collapse per-(m,d,p) roles to per-(m,d): take the most causal role seen for
+    the latent (priority: switch > detector > actuator > state_carrier > relay >
+    suppressor), so one latent gets one label in the summary."""
+    priority = ["switch", "detector", "actuator", "state_carrier", "relay", "suppressor"]
+    best = {}
+    for (m, d, _p), role in node_roles.items():
+        key = (m, d)
+        if key not in best or priority.index(role) < priority.index(best[key]):
+            best[key] = role
+    return best
+
+
+def edges_dot(aggregate, path):
+    """Write the aggregated latent-pair graph as Graphviz DOT (stdlib; no deps).
+    Edge width/color by |score|; render with `dot -Tpng f.dot -o f.png`."""
+    lines = ["digraph circuit {", "  rankdir=LR; node [shape=box, fontsize=10];"]
+    for e in aggregate:
+        u, v, s = e["u"], e["v"], e["score_mean"]
+        un = f'"{_short(u[0])}\\nd={u[1]}"'
+        vn = f'"{_short(v[0])}\\nd={v[1]}"'
+        color = "red" if s < 0 else "black"
+        lines.append(f'  {un} -> {vn} [penwidth={1 + 3 * min(abs(s), 3):.1f}, color={color}];')
+    lines.append("}")
+    Path(path).write_text("\n".join(lines))
+    print(f"saved edge graph -> {path}")
+
+
 def scramble_adapter(wrapped):
     """In place: replace each adapter's A/B with std-matched random weights, destroying
     the trained backdoor while keeping the architecture/shapes identical. Returns a
@@ -558,6 +908,7 @@ def save_findings(
     real,
     behav,
     baseline,
+    edges=None,
 ):
     """Write findings + full provenance to JSON so a run is attributable to its configs:
     the adapter's topk_config, the dataset metadata, the code commit, every hyperparameter,
@@ -601,6 +952,7 @@ def save_findings(
         "real": real,
         "behavioural": behav,
         "baseline": baseline,
+        "edges": edges,
     }
     p = Path(path)
     p.parent.mkdir(parents=True, exist_ok=True)
@@ -666,7 +1018,13 @@ def main():
     ap.add_argument(
         "--tag_baseline",
         choices=["zero", "matched", "head", "tail"],
-        default="zero",
+        # Unified with cli.common_args on 2026-07-31. This parser defaulted to "zero" while
+        # the nine other runners defaulted to "head" -- the same flag name meaning different
+        # things depending on which entry point you invoked. With the real single-token tags
+        # they differ at exactly the tag position, which carries ~93% of source edge weight,
+        # so the split silently changed the attribution baseline where it matters most.
+        # NOTE: clcd_results/edges_N8.json was produced under the old "zero" default.
+        default="head",
         help="how to handle the tag span when trigger / control tags tokenize to different "
         "lengths (affects ATTRIBUTION's a0 endpoint AND INSERTION's reverse src_map). "
         "'zero' (default): trigger-only tag positions get baseline a0=0 / are left "
@@ -682,6 +1040,16 @@ def main():
         action="store_true",
         help="also run the scrambled-adapter random-model baseline",
     )
+    ap.add_argument(
+        "--edges",
+        action="store_true",
+        help="M7: also run edge attribution (wiring graph + roles) over the selected "
+        "node circuit -- per-episode position-resolved Method-A patching folded to a "
+        "latent-pair graph, with JVP cross-check + exact path-patch verification on a "
+        "reference episode",
+    )
+    ap.add_argument("--edge_tau", type=float, default=0.3, help="candidate-position threshold (frac of peak |A|)")
+    ap.add_argument("--edge_cap", type=int, default=5, help="max candidate positions per latent")
     ap.add_argument(
         "--out",
         default=None,
@@ -720,6 +1088,25 @@ def main():
         tag_baseline=args.tag_baseline,
     )
 
+    edges_result = None
+    if args.edges:
+        selected = [
+            (s["module"], s["d"]) for s in real["supporters"] + real["suppressors"]
+        ]
+        edges_result = edges_analysis(
+            model,
+            wrapped,
+            episodes,
+            ep_info["instruction_ids"],
+            selected,
+            K=args.K,
+            tag_baseline=args.tag_baseline,
+            tau=args.edge_tau,
+            cap=args.edge_cap,
+        )
+        if args.out:
+            edges_dot(edges_result["aggregate"], str(Path(args.out).with_suffix(".dot")))
+
     baseline = None
     if args.baseline:
         restore = scramble_adapter(wrapped)
@@ -751,6 +1138,7 @@ def main():
             real=real,
             behav=behav,
             baseline=baseline,
+            edges=edges_result,
         )
     else:
         print("\n(no --out given; findings printed only, not saved to disk)")

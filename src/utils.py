@@ -360,6 +360,7 @@ def wrap_topk_lora_modules(
     sae_use_latent_bias: bool = True,
     sae_use_input_center: bool = False,
     sae_use_output_bias: bool = False,
+    latent_gate_enabled: bool = False,
 ):
     """Wrap PEFT LoRA layers with TopKLoRALinearSTE and return (count, mapping)."""
     targets = []
@@ -399,6 +400,7 @@ def wrap_topk_lora_modules(
             sae_use_latent_bias=sae_use_latent_bias,
             sae_use_input_center=sae_use_input_center,
             sae_use_output_bias=sae_use_output_bias,
+            latent_gate_enabled=latent_gate_enabled,
         )
         try:
             target_device = next(peft_layer.parameters()).device
@@ -772,7 +774,13 @@ def _make_cache_key(
 
 def _get_cache_path(cache_key: str) -> str:
     """Get the cache file path for a given cache key."""
-    cache_dir = os.path.join("/scratch/network/ssd/marek/cache", "topk_lora_datasets")
+    # Was hardcoded to /scratch/network/ssd/marek/cache -- one user's scratch, in the
+    # LIBRARY, so this failed for anyone else. Override with TOPKLORA_CACHE_DIR.
+    cache_root = os.environ.get(
+        "TOPKLORA_CACHE_DIR",
+        os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "cache"),
+    )
+    cache_dir = os.path.join(cache_root, "topk_lora_datasets")
     os.makedirs(cache_dir, exist_ok=True)
     return os.path.join(cache_dir, f"sft_datasets_{cache_key}.pkl")
 

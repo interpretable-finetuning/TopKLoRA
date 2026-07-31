@@ -26,6 +26,7 @@ variance), and fixed before the l1523 numbers were seen:  all -> K=200,  l1523 -
 
 DIRECTION EXPECTED: more concentrated -> fewer leaks, i.e. rho(n90, fires) > 0, rho(top50,·) < 0.
 """
+import argparse
 import glob
 import json
 import os
@@ -36,17 +37,38 @@ from scipy import stats
 EXCL = 0.02
 CONC_KEYS = ["n90", "n99", "top50_mass_frac", "participation_ratio"]
 FAMILIES = {
-    "all":   dict(results="clcd_results/matchedK_all/results",
-                  conc="clcd_results/exp6/payload_conc_all_*.json", primary=200),
-    "l1523": dict(results="clcd_results/matchedK/results",
-                  conc="clcd_results/exp6/payload_conc_l1523_*.json", primary=75),
+    "all":   dict(results="clcd_results/matchedK_all/results", primary=200),
+    "l1523": dict(results="clcd_results/matchedK/results", primary=75),
 }
+# Anchor variant. `rmsfix` = corrected Gemma RMSNorm gain (Exp-12 fix 1) and is canonical;
+# `prefix` = the pre-fix shards, kept only to reproduce the superseded Exp-7b/7c tables.
+RMSFIX_TAG = "_rmsfix_"
 
 
-def load(fam: str) -> list[dict]:
+def conc_files(fam: str, variant: str) -> list[str]:
+    """The concentration shards for one family, restricted to one anchor variant.
+
+    `payload_conc_{fam}_*.json` matches the pre-fix AND the corrected shards, and the adapter-keyed
+    merge below would let whichever sorts last silently win — which is how the corrected values got
+    picked up by accident of sort order. Selecting the variant explicitly keeps a run reproducible
+    from its own arguments instead of from whatever happens to be sitting in the directory.
+    """
+    found = sorted(glob.glob(f"clcd_results/exp6/payload_conc_{fam}_*.json"))
+    keep = [f for f in found if (RMSFIX_TAG in os.path.basename(f)) == (variant == "rmsfix")]
+    if not keep:
+        raise SystemExit(f"no {variant!r} concentration shards for {fam}; candidates were {found}")
+    return keep
+
+
+def load(fam: str, variant: str) -> list[dict]:
     conc = {}
-    for f in sorted(glob.glob(FAMILIES[fam]["conc"])):
+    for f in conc_files(fam, variant):
         for r in json.load(open(f)):
+            if r["adapter"] in conc:
+                raise SystemExit(
+                    f"{fam}/{variant}: adapter {r['adapter']} appears in more than one shard "
+                    f"({f}) — refusing to silently overwrite a concentration measurement"
+                )
             conc[r["adapter"]] = r
     cells = []
     for f in sorted(glob.glob(FAMILIES[fam]["results"] + "/*.json")):
@@ -70,7 +92,13 @@ def show(xs, ys, key, label):
     print(f"    rho({key:20}, {label:10}) = {r.statistic:+.3f}  p={r.pvalue:.3f}   {exp}")
 
 
-ALL = {f: load(f) for f in FAMILIES}
+_ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+_ap.add_argument("--variant", default="rmsfix", choices=["rmsfix", "prefix"],
+                 help="which payload-anchor run to read (default: rmsfix, the corrected gain)")
+_args = _ap.parse_args()
+
+print(f"[concentration anchor variant: {_args.variant}]")
+ALL = {f: load(f, _args.variant) for f in FAMILIES}
 for fam, cells in ALL.items():
     if not cells:
         print(f"!! {fam}: no concentration data yet -- skipping\n")

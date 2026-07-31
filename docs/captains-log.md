@@ -285,23 +285,53 @@ band/threshold/batching/coefficient until a result looks good; negatives are res
   fix; shifts weight to train-time prevention (Exp-5) and motivates Exp-2b.
 - **Source:** memory `clcd_setchurn_causal_hydra`; `docs/experiment_stack.md` Exp-2 RESULT box.
 
-### Exp-2b Stage 1 — Subspace backtrace (payload anchor) — DONE · 2026-07-16
-
-> ⚠️ **Numbers need re-derivation (Exp-12).** The payload/logit-lens direction these rest on was
-> built from Gemma's RMSNorm `.weight` without the `+1` offset the module applies, so the anchor was
-> ROTATED (cos ≈ 0.9975 — small, but alignment RANKINGS move). Fixed 2026-07-31; not yet re-run.
-> The qualitative direction is expected to survive; treat the figures as provisional until re-derived.
+### Exp-2b Stage 1 — Subspace backtrace (payload anchor) — DONE · 2026-07-16 · RE-DERIVED 2026-07-31
 
 - **Ran:** anchor on the **payload direction** (logit-lens = tied-embedding rows of the keyword tokens),
   not cosine-to-circuit-writer; nested alignment-ranked prefix sweep vs R=5 random ensemble.
   `analysis/analyze_subspace_backtrace.py`, `clcd_results/rigorous/subspace_backtrace_stage1_{A,B,C}.json`.
-- **Outcome:** partial real improvement over Exp-2 — of 18 leaks: **5 compact** keyword-aligned (≤32
-  writers; standout `all` s45 idx4186 closes at 32 vs random-half 1141, ~36× gap), **3** large-N
-  aligned, **7 group-size-driven** (distributed), **3 resist** even ablating every fired
-  keyword-aligned writer (~half the residual pool).
-- **Learned:** the payload anchor surfaces compact closing sets Exp-2 missed for ~5–8/18 leaks, but
-  ~half stay distributed → train-time prevention remains the only complete path. Does NOT confirm
-  scratchpad; decisive test = Stage 2 on the 3 hard leaks.
+  **Re-run 2026-07-31** under the corrected Gemma RMSNorm gain (Exp-12 fix 1: the anchor had been
+  built from `.weight` without the `+1` the module applies, rotating it by cos ≈ 0.9975) →
+  `..._stage1_{A,B,C}_rmsfix.json`. Configs byte-identical to the originals except the output path;
+  18/18 leaks, 0 skipped, reproduction assert passed. Fix confirmed live in the artifacts: top-32
+  alignment-ranking overlap 27–32/32, rank-1 writer unchanged in all 9 organisms, `|W_pay|` identical.
+- **Outcome (corrected; counts are the artifact's own `verdict` field, 18 leaks):**
+
+  | `verdict` | pre-fix | **corrected** |
+  |---|---|---|
+  | `compact_payload_anchored_subspace` | 4 | **3** |
+  | `alignment_specificity_unresolved` | 4 | **3** |
+  | `group_size_driven_no_alignment_specificity` | 8 | **8** |
+  | `payload_aligned_writers_insufficient` (resists) | 2 | **4** |
+
+  15/18 verdicts unchanged. The standout survives **exactly**: `all` s45 idx4186 still closes at 32
+  aligned writers vs random-half 1141 (~36× gap).
+- **The three flips:**
+  - `l15-23` s43 idx4743 compact → group-size is a **rule-boundary artifact, not a weakening**: aligned
+    N\* 16→8 and the random hit-fraction at aligned N 0.4→0.2, i.e. both moved *more* specific. The label
+    flipped only because random-half also fell 64→16, cutting the geometric-schedule separation from 2
+    steps to 1 while the rule demands ≥2. By the artifact's own `verdict_note` ("raw N\*, random-half and
+    the random fraction are primary") this leak is more alignment-specific after the fix.
+  - `l15-23` s44 idx2194 at **both** K=150 and K=400 → resists: aligned closure vanishes entirely
+    (N\* 128→None and 16→None).
+- **Learned:** the payload anchor's partial improvement over Exp-2 is **smaller than first recorded** —
+  compact cases fall and the resist set grows. The load-bearing conclusion is unchanged and slightly
+  strengthened: ~half the leaks stay distributed → train-time prevention (Exp-5) remains the only
+  complete path. Does NOT confirm scratchpad.
+- **Coherence gain worth noting:** idx2194 is the leak *shared within* the l15-23 family (memory
+  `clcd_necessity_leaks`) and appears in three organisms (s42 K75, s44 K150, s44 K400). The rotated
+  anchor gave it three *different* verdicts (resists / unresolved / group-size); the corrected anchor
+  gives "resists" in all three. Same prompt, same answer — independent of which direction the counts
+  moved, that is mild evidence the corrected anchor measures the more stable quantity.
+- **Bookkeeping correction:** this entry previously reported "5 compact / 3 large-N / 7 group-size /
+  3 resist". Those counts do **not** reconstruct from the `verdict` field of the *original* artifact
+  (raw 4/4/8/2) — they came from an undocumented manual regrouping (apparently folding `all` s45
+  idx4703, which closes only at N = the full fired pool, in with the resisters). Predates the RMSNorm
+  fix. The machine verdicts above are now the reported figure; any grouping must be defined in-line.
+- **Method note:** the random control legitimately moves between the two runs — `_g1_random_control`
+  excludes the aligned set from its draw pool by design, so both arms re-derive from the corrected
+  ranking. Checked explicitly, since a control drifting for any *other* reason would have invalidated
+  the comparison.
 - **Source:** memory `clcd_subspace_backtrace_2b`; `docs/experiment_stack.md` Exp-2b RESULT box.
 
 ### Exp-2b Stage 2 — Activation-level backward DAG — DONE · 2026-07-17
@@ -315,6 +345,11 @@ band/threshold/batching/coefficient until a result looks good; negatives are res
 - **Learned:** the leak is a **flat, massively redundant residual write, not an interruptible serial
   computation** — why writer-removal plays whack-a-mole (the hydra), and why train-time prevention
   (Exp-5) is the only complete fix.
+- **Coverage gap (opened by the 2026-07-31 Stage-1 re-derivation, not yet closed):** target selection
+  used the pre-fix hard-leak set. All three targets **still qualify** under the corrected anchor, so
+  nothing tested here was invalidated. But `l15-23` s44 idx2194 (at both K=150 and K=400) has since
+  joined the resist set and was never run through Stage 2. Untested targets can only *add* evidence to
+  a "no scratchpad anywhere" negative, never overturn it — so this is a follow-up, not a correction.
 - **Source:** memory `clcd_subspace_backtrace_2b` (Stage-2 addendum).
 
 ### Exp-3 — Zero-baseline attribution + |A| pooling — NOT STARTED
@@ -947,10 +982,13 @@ miss. That is the first design we have had that could actually falsify H1 rather
 
 ## Exp-7 — Payload-mass concentration (the coalition metric) — CONTROL DONE · 2026-07-29
 
-> ⚠️ **Numbers need re-derivation (Exp-12).** The payload/logit-lens direction these rest on was
-> built from Gemma's RMSNorm `.weight` without the `+1` offset the module applies, so the anchor was
-> ROTATED (cos ≈ 0.9975 — small, but alignment RANKINGS move). Fixed 2026-07-31; not yet re-run.
-> The qualitative direction is expected to survive; treat the figures as provisional until re-derived.
+> ✅ **RE-DERIVED 2026-07-31 — verdict unchanged (Exp-12 fix 1).** The payload direction had been
+> built from Gemma's RMSNorm `.weight` without the `+1` the module applies, rotating the anchor by
+> cos ≈ 0.9975. Re-run against the corrected gain (4 min, both families,
+> `clcd_results/exp6/payload_conc_{all,l1523}_*_rmsfix.json`). Per-organism values moved — only 3–6
+> of 15 identical per metric — but family means shifted ≈0.4%, exactly what a cos 0.9975 rotation
+> predicts: individual rankings jitter, aggregates do not. The correlations are recorded in Exp-7b
+> and Exp-7c below; **the prediction that Exp-7's direction would survive was correct.**
 
 
 ### Why it exists
@@ -1061,6 +1099,13 @@ predictor, underpowered" is **wrong** and must not be quoted. The independent re
 `l1523` organisms returns ρ≈0, and the pooled estimate is ρ≈0.03. The p=.050 below is now best
 read as a chance finding in a small sample.
 
+### Re-derived under the corrected RMSNorm gain — 2026-07-31
+Primary endpoint **K=200, n90 vs fires: +0.533 (p=.050) → +0.552 (p=.041)**, n=14, 113 fires. The
+table below is the pre-fix run and is kept for the record. Crossing p<.05 does **not** rehabilitate
+this result — it *sharpens* the reading above, because the thing that killed it was Exp-7c's failed
+replication, not this p-value. A marginal association that gets marginally stronger and still does
+not replicate in a better-powered second family is the textbook profile of a chance finding.
+
 ### Verdict — suggestive, NOT established
 The metric survived every check designed to kill it: independent of circuit size, consistent
 direction across three K-controls, stable under leave-one-out. But **nothing clears p<0.05 except
@@ -1074,8 +1119,10 @@ Other caveats: single family (`all`); leak counts are small and dominated by a f
 in-sample exclusion removes 6 cells, all at low K.
 
 ### Artifacts
-`analysis/analyze_concentration_vs_leak.py`, `clcd_results/exp6/payload_conc_all_{a,b}.json`,
-`scripts/payload_concentration_all.sh`.
+`analysis/analyze_concentration_vs_leak.py`, `clcd_results/exp6/payload_conc_all_{a,b}.json`
+(pre-fix) and `..._all_rmsfix_{a,b}.json` (corrected), `scripts/payload_concentration_all.sh`.
+Select with `--variant prefix|rmsfix`; **`rmsfix` is the default and the canonical run.** The table
+above is `--variant prefix` and reproduces from it exactly.
 
 ---
 
@@ -1102,6 +1149,14 @@ more variance than any `all`-family cell.
 Every `l1523` estimate is within noise of zero, and the pooled estimate across all 30 organisms
 and 115 cells is **ρ≈0.03**. The `all`-family association does not survive replication.
 
+### Re-derived under the corrected RMSNorm gain — 2026-07-31 — VERDICT UNCHANGED
+The null is not an artifact of the rotated anchor. Primary endpoint **K=75, n90 vs fires:
+−0.042 (p=.88) → −0.011 (p=.97)** — still flat, and the sign is meaningless at that magnitude.
+Pooled within-family partial ρ: **+0.030 → +0.048 (p=.613)**. n=15 organisms, 147 fires,
+14/15 leaking, unchanged. Since Exp-7c's null is what carried the verdict for the whole of Exp-7,
+**"payload-mass concentration does not predict leaks" stands on re-derived numbers.**
+Artifacts: `clcd_results/exp6/payload_conc_l1523_*_rmsfix.json`.
+
 ### Ruled out: restricted predictor range
 The obvious technical excuse — that `l1523` simply has less spread in concentration to correlate
 against — **does not hold**. Relative spread is comparable: n90 CV 0.219 (`all`) vs **0.192**
@@ -1127,8 +1182,15 @@ unreplicated — with n=14 and p=.050 that is the expected fate of a chance find
 remain small and the exclusion rule removes low-K cells.
 
 ### Artifacts
-`clcd_results/exp6/payload_conc_l1523_{a,b}.json`, `logs/exp6/payload_conc_l1523_*.out`,
-`analysis/analyze_concentration_vs_leak.py` (both families, all designs).
+`clcd_results/exp6/payload_conc_l1523_{a,b}.json` (pre-fix) and `..._l1523_rmsfix_{a,b}.json`
+(corrected), `logs/exp6/payload_conc_l1523_*.out`,
+`analysis/analyze_concentration_vs_leak.py` (both families, all designs; `--variant prefix|rmsfix`,
+default `rmsfix`). The table above is `--variant prefix` and reproduces from it exactly.
+
+**Hazard closed 2026-07-31:** the loader used to glob `payload_conc_{fam}_*.json`, which matches both
+runs, and the adapter-keyed merge let whichever sorted last silently win — so adding the corrected
+shards silently changed the analysis with no signal. The variant is now explicit and a duplicate
+adapter across shards raises instead of overwriting.
 
 ---
 
@@ -1520,6 +1582,23 @@ metric. Fixed via `_rmsnorm_gain`, which asserts the module is a Gemma RMSNorm s
 fails loud rather than silently getting an offset that does not apply there.
 **→ Exp-2b Stage 1 and Exp-7/7b/7c numbers need re-derivation.** Prediction, not result: Exp-7's
 route-vs-a0 separation (n90 39 vs 62) is wide enough that its *direction* likely survives.
+
+> ✅ **BOTH RE-DERIVED 2026-07-31 — the prediction held for Exp-7, and Exp-2b weakened.** Details in
+> the respective entries; summary:
+> - **Exp-7/7b/7c (4 min): verdict UNCHANGED.** `l1523` primary K=75 n90 ρ −0.042 → **−0.011**
+>   (p=.97) — the null that carried the verdict survives flat. `all` primary K=200 ρ +0.533 →
+>   **+0.552** (p=.041), crossing p<.05, which sharpens rather than softens "marginal and does not
+>   replicate". Pooled +0.030 → **+0.048**. Family means moved ≈0.4%.
+> - **Exp-2b Stage 1 (~8h, 3 shards): verdict WEAKENED, direction intact.** 15/18 verdicts identical;
+>   raw counts compact 4→**3**, unresolved 4→**3**, group-size 8→8, resists 2→**4**. The `all` s45
+>   idx4186 standout (32 aligned vs 1141 random-half) survives exactly. One flip is a rule-boundary
+>   artifact where the primary numbers actually improved; two are real (`l15-23` s44 idx2194 at both
+>   K loses aligned closure entirely). The load-bearing conclusion — ~half stay distributed, so
+>   train-time prevention is the only complete path — survives and strengthens.
+> - The re-runs surfaced two things this audit had not: the Exp-2b entry's logged taxonomy did not
+>   reconstruct from its own artifact even pre-fix, and `analyze_concentration_vs_leak.py` globbed
+>   both runs into one adapter-keyed dict so the corrected shards silently displaced the originals.
+>   Both closed; the loader now takes an explicit `--variant` and raises on a duplicate adapter.
 
 **2. Exp-10's de-confounding is incomplete — CONFIRMED, and it retracts this log's own verdict.**
 `edge_weight_by_region` sums `|E_A|` over **edges** and normalizes by amplitude and by **nodes** per

@@ -27,6 +27,7 @@ import argparse
 import csv
 import datetime
 import json
+import random
 import subprocess
 from pathlib import Path
 
@@ -53,6 +54,14 @@ from src.clcd.verify import (
 # (left padding, EOS/pad handling). The ASR keyword test is a one-liner we mirror
 # locally (keyword_rate below) rather than import src.evaluate's private _keyword_rate.
 from src.evaluate import generate_responses
+
+# Region permutation null (see edge_weight_by_region). Fixed rather than exposed as a flag:
+# the whole point is that the null is not a tunable, and 1000 draws already resolve a
+# percentile far finer than the effect being tested. "shift" is primary (contiguity-
+# preserving, conservative); "free" is reported alongside so the assumption stays visible.
+REGION_NULL_DRAWS = 1000
+REGION_NULL_MODES = ("shift", "free")
+REGION_NULL_SEED = 7
 
 
 def keyword_rate(texts, keyword):
@@ -570,6 +579,14 @@ def edges_analysis(
     src_w, dst_w = {}, {}  # amplitude-corrected |edge weight| by SOURCE / DEST region
     src_raw, dst_raw = {}, {}  # uncorrected sums, kept so the correction is auditable
     src_amp, n_nodes = {}, {}  # knock amplitudes and candidate-node counts per region
+    # Permutation null for the region split (Exp-10 re-derivation). The per-node correction
+    # below does NOT remove the out-degree confound -- its numerator sums over EDGES while
+    # its denominator counts NODES -- and picking a different denominator means defending a
+    # modelling choice. Calibrating against relabelled positions answers the question the
+    # confound actually poses ("is 93% more than position structure alone gives?") without
+    # one. Accumulated per episode from the position profile; costs seconds, no extra GPU.
+    null_acc = {m: [({}, {}, {}) for _ in range(REGION_NULL_DRAWS)] for m in REGION_NULL_MODES}
+    null_rng = {m: random.Random(REGION_NULL_SEED) for m in REGION_NULL_MODES}
     for i, ep in enumerate(tqdm(episodes, desc="edges", leave=False)):
         res = attribute(model, wrapped, ep, K=K, tag_baseline=tag_baseline, completion=ep.y_plus)
         nodes, info = edge_mod.candidate_nodes(
@@ -603,6 +620,17 @@ def edges_analysis(
             dst_raw[region[v[2]]] = dst_raw.get(region[v[2]], 0.0) + abs(e)
             src_w[region[u[2]]] = src_w.get(region[u[2]], 0.0) + abs(e) / (amp_u + 1e-9)
             dst_w[region[v[2]]] = dst_w.get(region[v[2]], 0.0) + abs(e) / (amp_u + 1e-9)
+        # null draws: same weights, relabelled positions (edge graph held fixed)
+        prof = edge_mod.region_position_profile(
+            pos_edges, nodes,
+            lambda n: abs(float(res["a1"][n[0]][0, n[2], n[1]] - res["a0"][n[0]][0, n[2], n[1]])),
+        )
+        for mode in REGION_NULL_MODES:
+            for draw in null_acc[mode]:
+                perm = edge_mod.permuted_region(region, null_rng[mode], mode)
+                for acc, by_pos in zip(draw, prof):
+                    for p, val in by_pos.items():
+                        acc[perm[p]] = acc.get(perm[p], 0) + val
         if i == 0:
             ref = _reference_episode(
                 model, wrapped, ep, res, nodes, info, pos_edges, top_k
@@ -650,6 +678,37 @@ def edges_analysis(
     dst_per_node = {k: v / n_nodes.get(k, 1) for k, v in dst_w.items()}
     src_pct, dst_pct = _pct(src_per_node), _pct(dst_per_node)
     raw_src_pct, raw_dst_pct = _pct(src_raw), _pct(dst_raw)
+
+    # Permutation null: the observed split as a percentile of relabelled positions. The
+    # null values go through the SAME per-node normalisation, so the comparison isolates
+    # the position labelling and nothing else.
+    def _null_pcts(mode):
+        out = []
+        for s_acc, d_acc, n_acc in null_acc[mode]:
+            out.append((
+                _pct({k: v / max(n_acc.get(k, 1), 1) for k, v in s_acc.items()}),
+                _pct({k: v / max(n_acc.get(k, 1), 1) for k, v in d_acc.items()}),
+            ))
+        return out
+
+    region_null = {}
+    for mode in REGION_NULL_MODES:
+        draws = _null_pcts(mode)
+        entry = {"draws": REGION_NULL_DRAWS, "seed": REGION_NULL_SEED}
+        for which, observed, idx in (("source", src_pct, 0), ("dest", dst_pct, 1)):
+            for reg in ("tag", "shared", "completion"):
+                obs = observed.get(reg, 0.0)
+                vals = sorted(d[idx].get(reg, 0.0) for d in draws)
+                ge = sum(1 for v in vals if v >= obs)
+                entry[f"{which}_{reg}"] = {
+                    "observed": obs,
+                    "null_median": vals[len(vals) // 2],
+                    "null_p95": vals[int(0.95 * (len(vals) - 1))],
+                    "null_max": vals[-1],
+                    # standard permutation p-value: P(null >= observed), +1 for the observed
+                    "p_ge": (1 + ge) / (1 + len(vals)),
+                }
+        region_null[mode] = entry
     mean_amp = {k: sum(v) / len(v) for k, v in src_amp.items() if v}
     print(
         "\nedge weight by region (the force-on/insertion gap test):"
@@ -666,6 +725,24 @@ def edges_analysis(
         "while a shared source moves only by the trigger-control difference, so the "
         "uncorrected split partly reflects that convention, not the wiring.)"
     )
+    print(
+        f"\n   PERMUTATION NULL ({REGION_NULL_DRAWS} draws, seed {REGION_NULL_SEED}) -- the "
+        "per-node correction does NOT remove the out-degree confound (its numerator sums over\n"
+        "   EDGES, its denominator counts NODES), so the split is calibrated against relabelled "
+        "positions with the edge graph held fixed:"
+    )
+    for mode in REGION_NULL_MODES:
+        tag_s = region_null[mode]["source_tag"]
+        comp_d = region_null[mode]["dest_completion"]
+        label = "shift (contiguous, PRIMARY)" if mode == "shift" else "free (scattered)"
+        print(
+            f"   {label:28} SOURCE tag {tag_s['observed']:.1f}% vs null median "
+            f"{tag_s['null_median']:.1f}% / p95 {tag_s['null_p95']:.1f}% / max {tag_s['null_max']:.1f}%"
+            f"  p={tag_s['p_ge']:.4f}\n"
+            f"   {'':28} DEST comp {comp_d['observed']:.1f}% vs null median "
+            f"{comp_d['null_median']:.1f}% / p95 {comp_d['null_p95']:.1f}% / max {comp_d['null_max']:.1f}%"
+            f"  p={comp_d['p_ge']:.4f}"
+        )
 
     return {
         "config": {"K": K, "tag_baseline": tag_baseline, "tau": tau, "cap": cap, "top_k": top_k, "target": "J(Y+)"},
@@ -680,6 +757,9 @@ def edges_analysis(
             "source": src_pct, "dest": dst_pct,
             "source_uncorrected": raw_src_pct, "dest_uncorrected": raw_dst_pct,
             "mean_knock_amplitude": mean_amp, "candidate_nodes": n_nodes,
+            # the per-node correction leaves the out-degree confound in place; this is the
+            # calibration that actually adjudicates the "tag-heavy" claim.
+            "permutation_null": region_null,
         },
         "reference_episode": {"instruction_id": instruction_ids[0], **ref},
     }

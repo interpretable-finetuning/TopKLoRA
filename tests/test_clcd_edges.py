@@ -7,6 +7,9 @@ estimators coincide where no gate flips), and that path-patching runs and is
 null when there is nothing to patch.
 """
 
+import random
+from collections import Counter
+
 import pytest
 import torch
 
@@ -21,6 +24,8 @@ from src.clcd.edges import (
     single_pass_eliminate,
     grow_edge_guided,
     path_patch_edge,
+    permuted_region,
+    region_position_profile,
     scrub_eval,
     assign_roles,
     _switch_thresh,
@@ -685,3 +690,101 @@ def test_patching_and_path_patch_preserve_persistent_ablation(fix):
     )
     effective = _read_under(model, res["full_trigger"], wrapped, baseline)
     assert torch.count_nonzero(effective[module][..., 0]) == 0
+
+
+# --- region permutation null (Exp-10 re-derivation) --------------------------------
+
+def test_region_position_profile_reproduces_the_observed_sums():
+    """The null is only trustworthy if the profile it is built from is EXACT.
+
+    The whole point of collapsing edges to positions is speed; if that collapse were lossy,
+    the observed value and the null would be computed from different quantities and the
+    percentile would be meaningless.
+    """
+    pos_edges = {
+        (("m.k_proj", 3, 5), ("m.o_proj", 7, 38)): 2.0,
+        (("m.k_proj", 3, 5), ("m.o_proj", 7, 39)): -1.0,
+        (("m.v_proj", 4, 38), ("m.o_proj", 7, 39)): 0.5,
+    }
+    nodes = [("m.k_proj", 3, 5), ("m.v_proj", 4, 38), ("m.o_proj", 7, 38)]
+    amp = {("m.k_proj", 3, 5): 2.0, ("m.v_proj", 4, 38): 0.5}
+    src_by_pos, dst_by_pos, nodes_by_pos = region_position_profile(
+        pos_edges, nodes, lambda n: amp[n]
+    )
+    # weights are |E_A| / amp_u, keyed by the SOURCE's amplitude in both maps
+    assert src_by_pos[5] == pytest.approx((2.0 + 1.0) / 2.0)
+    assert src_by_pos[38] == pytest.approx(0.5 / 0.5)
+    assert dst_by_pos[38] == pytest.approx(2.0 / 2.0)
+    assert dst_by_pos[39] == pytest.approx(1.0 / 2.0 + 0.5 / 0.5)
+    assert nodes_by_pos == {5: 1, 38: 2}
+
+
+def test_shift_permutation_preserves_span_contiguity_and_sizes():
+    """`shift` must keep regions CONTIGUOUS -- that is what makes it the conservative null.
+
+    A scattered tag lands on average-out-degree positions, which understates the null and
+    would flatter the observed split. If this ever degrades into a free shuffle, the
+    permutation test silently becomes the anti-conservative one and the Exp-10 verdict it
+    is meant to adjudicate would be biased toward "survives".
+    """
+    region = {p: ("tag" if p in (2, 3) else "completion" if p >= 6 else "shared")
+              for p in range(9)}
+    sizes = Counter(region.values())
+    rng = random.Random(0)
+    seen_offsets = set()
+    for _ in range(60):
+        perm = permuted_region(region, rng, "shift")
+        assert Counter(perm.values()) == sizes, "shift changed the label counts"
+        tag_positions = sorted(p for p, r in perm.items() if r == "tag")
+        # contiguous, allowing the circular wrap
+        gaps = [b - a for a, b in zip(tag_positions, tag_positions[1:])]
+        assert all(g == 1 for g in gaps) or tag_positions == [0, 8], tag_positions
+        seen_offsets.add(tag_positions[0])
+    assert len(seen_offsets) > 3, "shift is not actually moving the spans"
+
+
+def test_free_permutation_scatters_but_keeps_counts():
+    """`free` is the secondary null; it may scatter, but must not invent or drop labels."""
+    region = {p: ("tag" if p in (2, 3) else "shared") for p in range(9)}
+    rng = random.Random(0)
+    scattered = 0
+    for _ in range(60):
+        perm = permuted_region(region, rng, "free")
+        assert Counter(perm.values()) == Counter(region.values())
+        tag_positions = sorted(p for p, r in perm.items() if r == "tag")
+        if tag_positions[1] - tag_positions[0] != 1:
+            scattered += 1
+    assert scattered > 0, "free permutation never scattered -- it is behaving like shift"
+
+
+def test_permuted_region_rejects_unknown_mode():
+    """Fail loud: a typo'd mode must not silently fall through to an unintended null."""
+    with pytest.raises(ValueError, match="unknown permutation mode"):
+        permuted_region({0: "tag"}, random.Random(0), "shuffle")
+
+
+def test_null_detects_position_driven_concentration():
+    """The null must FLAG a split that is fully explained by where the tag sits.
+
+    Construction: every edge is sourced at position 0 and the weights carry no information
+    about the label at all. A tag at position 0 then scores 100% of source weight purely
+    because of its position -- exactly the Exp-10 confound. A null that controls for
+    position must place this observation well inside its own distribution (large p),
+    because relabelling puts some other region on position 0 just as often.
+    """
+    region = {p: ("tag" if p == 0 else "shared" if p < 6 else "completion") for p in range(9)}
+    src_by_pos = {0: 100.0}
+    rng = random.Random(1)
+    hits = 0
+    draws = 400
+    for _ in range(draws):
+        perm = permuted_region(region, rng, "shift")
+        # all weight lands on whichever region now owns position 0
+        if perm[0] == "tag":
+            hits += 1
+    p = (1 + hits) / (1 + draws)
+    assert 0.02 < p < 0.35, (
+        f"p={p:.3f}: a purely position-driven 100% split must NOT look significant; "
+        "the tag owns 1 of 9 positions so the null should reproduce it ~1/9 of the time"
+    )
+    assert src_by_pos[0] == 100.0  # observed statistic itself is unchanged by the null

@@ -620,6 +620,54 @@ def region_of_positions(full_trigger, full_control, P):
     return region
 
 
+def region_position_profile(pos_edges, nodes, amp_of):
+    """Collapse one episode's edges and nodes to per-POSITION sums.
+
+    The region statistic reaches an endpoint only through its POSITION, so collapsing
+    here lets a permutation null cost O(positions) per draw instead of O(edges): 1000
+    draws over 100 episodes becomes seconds rather than minutes. Returns the same
+    amplitude-corrected weights the observed statistic uses, so the observed value
+    recomputed from this profile is exact, not an approximation.
+    """
+    src_by_pos, dst_by_pos, nodes_by_pos = {}, {}, {}
+    for (u, v), e in pos_edges.items():
+        w = abs(e) / (amp_of(u) + 1e-9)
+        src_by_pos[u[2]] = src_by_pos.get(u[2], 0.0) + w
+        dst_by_pos[v[2]] = dst_by_pos.get(v[2], 0.0) + w
+    for n in nodes:
+        nodes_by_pos[n[2]] = nodes_by_pos.get(n[2], 0) + 1
+    return src_by_pos, dst_by_pos, nodes_by_pos
+
+
+def permuted_region(region, rng, mode="shift"):
+    """Relabel positions, holding the edge graph and the DAG structure fixed.
+
+    The confound this exists to calibrate: a node's out-degree falls monotonically with
+    position (only later positions are reachable), and the tag span sits at the earliest
+    candidate positions — so a tag source has many more admissible destinations than a
+    completion source before any wiring is considered. Rather than argue for a denominator,
+    move the labels and see how extreme the observed split really is.
+
+    `shift` (primary): circular shift of the label vector. Region spans stay CONTIGUOUS and
+    keep their sizes, so the null contains genuinely comparable "early contiguous block"
+    configurations. This is the conservative choice — a free shuffle scatters the tag over
+    average-out-degree positions, understates the null, and would flatter the observed value.
+
+    `free` (secondary): uniform shuffle of the label vector. Preserves only the per-label
+    counts. Reported alongside so the contiguity assumption is visible rather than buried.
+    """
+    labels = [region[p] for p in range(len(region))]
+    if mode == "shift":
+        k = rng.randrange(len(labels))
+        labels = labels[-k:] + labels[:-k] if k else labels
+    elif mode == "free":
+        labels = labels[:]
+        rng.shuffle(labels)
+    else:
+        raise ValueError(f"unknown permutation mode {mode!r}")
+    return dict(enumerate(labels))
+
+
 def assign_roles(nodes, info, edges, region, path_effects=None, deg_q=0.6):
     """Heuristic role per node from position, sign, graph centrality, and (where
     available) the path-patch μ-flip.

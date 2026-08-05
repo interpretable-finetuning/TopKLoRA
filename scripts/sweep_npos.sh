@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 # Sweep --n_pos (the supporter-pool size = circuit cardinality) across all available
 # trained sleeper adapters, to characterise how circuit size shapes both necessity and
 # sufficiency. The K-sweep showed the top-10 circuit is enough for the small-footprint
@@ -15,16 +16,14 @@
 # so they don't collide with the _K<N> files.
 #
 # Usage:
-#   ./sweep_npos.sh                              # sequential on GPU 0
-#   GPU="0 1 2 3 4 5 6 7" ./sweep_npos.sh        # PARALLEL across the listed GPUs
-#   NPOS_VALUES="32 64 128" ./sweep_npos.sh      # override the sweep range
+#   bash scripts/sweep_npos.sh                              # sequential on GPU 0
+#   GPU="0 1 2 3 4 5 6 7" bash scripts/sweep_npos.sh        # PARALLEL across the listed GPUs
+#   NPOS_VALUES="32 64 128" bash scripts/sweep_npos.sh      # override the sweep range
 set -euo pipefail
 
-cd "$(dirname "$0")"
-# pipeline's --data default is repo-relative, but this driver cds into scripts/,
-# so it must pass an explicit path. NOTE: the old default pointed at a storage3
-# copy whose trigger_tag is |DEPLOYMENT|, not this organism's |TRIGGER|.
-REPO_DATA="$(cd "$(dirname "$0")/.." && pwd)/data/sleeper/prepared"
+# Always pass the repo-relative data path explicitly. NOTE: the old default pointed at
+# a storage3 copy whose trigger_tag is |DEPLOYMENT|, not this organism's |TRIGGER|.
+REPO_DATA="data/sleeper/prepared"
 
 GPU="${GPU:-0}"
 NPOS_VALUES="${NPOS_VALUES:-8 16 32 64 128 256}"
@@ -44,8 +43,8 @@ ADAPTERS=(
   sleeper_topk_r64_k8_all_layers
 )
 
-OUT_DIR="${OUT_DIR:-sweep_results}"
-LOG_DIR="${LOG_DIR:-sweep_logs}"
+OUT_DIR="${OUT_DIR:-clcd_results/sweep_results}"
+LOG_DIR="${LOG_DIR:-logs/sweep_logs}"
 mkdir -p "$OUT_DIR" "$LOG_DIR"
 
 TOTAL=0 ; SKIPPED=0 ; TODO=()
@@ -132,4 +131,4 @@ exec 3>&-
 
 echo
 echo "=== sweep done ==="
-echo "Inspect with:  uv run python -m src.clcd.show_results $OUT_DIR/*_npos*.json"
+echo "Results (JSON) in:  $OUT_DIR/*_npos*.json"

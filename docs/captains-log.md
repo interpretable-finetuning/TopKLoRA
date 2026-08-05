@@ -1583,6 +1583,15 @@ first commit (`fe47427`), and both `cd "$(dirname "$0")"` first. They would have
 data. But their output directory (`scripts/sweep_results/`) **does not exist on disk** and nothing
 matching their naming survives anywhere.
 
+> **Both defects fixed 2026-07-31 (Rule 13 cleanup, F4).** `--data` was made explicit during this
+> audit; the *output location* was not, and that second half went unnoticed here. Writing to
+> `scripts/sweep_results/` put results **inside the source tree** — 25 sibling drivers write under
+> `clcd_results/`, these two were the only outliers, which is why the output "does not exist": it was
+> never anywhere anyone would keep. Both now source `_common.sh` (cwd = repo root) and write to
+> `clcd_results/sweep_results/` + `logs/sweep_logs/`. **Re-running them now recovers the retracted
+> K/npos numbers** — previously a re-run would have silently re-hidden its own output. No logged
+> number changes: there was none to change.
+
 So: **no artifact traceable to the K or npos sweep exists.** The entry "Multiseed surgicality / K /
 npos sweeps — DONE" cites `clcd_results/sweep/` and `surgicality/`, but every file there is
 `*_circuit.json` / `*_surgical.json` from `exp_circuit_search` / `exp_surgical_removal` — tools that

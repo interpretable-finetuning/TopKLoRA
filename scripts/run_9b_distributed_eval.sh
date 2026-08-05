@@ -27,7 +27,7 @@ run9b() {
   echo "[$(date +%H:%M) 9b $tag g$gpu] SEARCH-both (nec_target 0.0)"
   [ -f "${base}_both_circuit.json" ] || uv run python -u -m src.clcd.exp_circuit_search --adapter "$adir" \
     --base_model $BM --data data/sleeper/prepared --dtype bfloat16 --Ks ${KS[$tag]} \
-    --suff_target 0.90 --nec_target 0.0 --out "${base}_both_circuit.json" > ${log}_search.out 2>&1
+    --nec_target 0.0 --out "${base}_both_circuit.json" > ${log}_search.out 2>&1
   echo "[$(date +%H:%M) 9b $tag g$gpu] EVAL-both"
   [ -f "${base}_both_surgical.json" ] || uv run python -u -m src.clcd.exp_surgical_removal --adapter "$adir" \
     --circuit_json "${base}_both_circuit.json" $EVAL --out "${base}_both_surgical.json" > ${log}_eval.out 2>&1

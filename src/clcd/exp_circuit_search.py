@@ -1,6 +1,8 @@
 """Unified circuit discovery: find the minimal top-K supporter set that is BOTH
   (1) necessary  -- ablate C (everything else intact) -> trigger ASR <= nec_target (~0)
-  (2) sufficient  -- keep only C (everything else ablated) -> trigger ASR >= suff_target (~1)
+  (2) sufficient  -- keep only C (everything else ablated) -> keep-only ASR within
+      `--suff_n_se` paired SEs of intact (NOT a fixed target: the criterion is
+      auto-calibrated to n, so a small eval cannot pass by luck)
 Sweeps K, measures BOTH at each K on the same held-out |TRIGGER| set, and reports the
 smallest K where both hold. Replaces the old ablate-all-except "necessity" scrub, which
 optimized neither criterion and went degenerate on distributed backdoors.

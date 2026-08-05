@@ -116,7 +116,19 @@ def dag_valid(u, v) -> bool:
         # The one route that does exist: k/v at p_u enter attention and reach the output at
         # every later query position. q_proj is per-QUERY-position -- q@p3 shapes the query
         # for position 3 only, so it cannot affect o_proj@p5 either.
-        return u[0].rsplit(".", 1)[-1] in ("k_proj", "v_proj") and ov[1] >= 1
+        #
+        # `ov[0] >= ou[0]` is LOAD-BEARING and was briefly lost: with only the k/v test, a
+        # BACKWARD-layer pair like k_proj@layer23,p3 -> down_proj@layer16,p5 fell through
+        # here and was admitted, because the cross-layer branch above tests `>` and this
+        # branch tested only the within-layer subrank. Layer 16 has already executed when
+        # layer 23's knock fires, so that wire cannot exist. Deleted in 7cf0094 and restored
+        # 2026-08-05; the test that was meant to pin it used an `o_proj` source, which exits
+        # via the k/v test rather than reaching the layer comparison, so it passed either way.
+        return (
+            ov[0] >= ou[0]
+            and u[0].rsplit(".", 1)[-1] in ("k_proj", "v_proj")
+            and ov[1] >= 1
+        )
     if pv == pu:
         return ov > ou
     return False

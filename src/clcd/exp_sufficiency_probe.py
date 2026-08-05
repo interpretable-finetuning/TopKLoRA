@@ -14,7 +14,7 @@ import torch
 
 from src import data as chat_format
 from src.clcd.cli import common_args
-from src.data import load_jsonl_rows as _load_jsonl_rows
+from src.data import load_jsonl_rows as _load_jsonl_rows, load_tags
 from src.clcd.organism import load_organism
 from src.clcd.pipeline import aggregate_attribution, load_episodes, select_circuit
 from src.clcd.verify import ablation_overrides, backdoor_asr, keep_only_overrides, random_circuit
@@ -42,6 +42,7 @@ def main():
     if _dt != torch.float32:
         model = model.to(_dt)
     attrib_eps, *_ = load_episodes(tok, a.data, a.n_attrib, a.device, offset=0)
+    trigger_tag, clean_tag = load_tags(a.data)
     trig_qs = _load_jsonl_rows(a.data, "eval_triggered", a.offset, a.n_backdoor)
 
     agg, _, _ = aggregate_attribution(model, wrapped, attrib_eps, a.K_ig,
@@ -57,7 +58,7 @@ def main():
             break
         circ = ranked[:K]
         asr = backdoor_asr(model, tok, wrapped, keep_only_overrides(circ, wrapped),
-                           trig_qs, a.keyword, a.mnt, a.batch_size)
+                           trig_qs, a.keyword, a.mnt, a.batch_size, trigger_tag=trigger_tag)
         curve.append((K, asr))
         print(f"[KEEP-ONLY] top-{K:>4} ({len(circ)} latents) -> trigger ASR {asr:.1%}", flush=True)
         if c_suff is None and asr >= a.target_suff:
@@ -67,7 +68,7 @@ def main():
     # random-ablation specificity control
     rand = random_circuit(wrapped, a.random_size, torch.Generator().manual_seed(7))
     rand_asr = backdoor_asr(model, tok, wrapped, ablation_overrides(rand), trig_qs,
-                            a.keyword, a.mnt, a.batch_size)
+                            a.keyword, a.mnt, a.batch_size, trigger_tag=trigger_tag)
     print(f"[CONTROL] random-{a.random_size}-latent ablation trigger ASR = {rand_asr:.1%}  (want ~intact)", flush=True)
 
     if c_suff is None:

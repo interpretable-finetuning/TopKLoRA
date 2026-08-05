@@ -18,7 +18,7 @@ from pathlib import Path
 import torch
 from src.clcd.cli import common_args
 from src.clcd.edges import single_pass_eliminate
-from src.data import load_jsonl_rows as _load_jsonl_rows
+from src.data import load_jsonl_rows as _load_jsonl_rows, load_tags
 from src.clcd.organism import load_organism
 from src.clcd.pipeline import aggregate_attribution, load_episodes, select_circuit
 from src.clcd.verify import ablation_overrides, backdoor_asr, backdoor_fires, keep_only_overrides
@@ -92,6 +92,7 @@ def main():
     if _dmap is None and _dt != torch.float32:
         model = model.to(_dt)
     attrib_eps, *_ = load_episodes(tok, a.data, a.n_attrib, a.device, offset=0)
+    trigger_tag, clean_tag = load_tags(a.data)
     trig_qs = _load_jsonl_rows(a.data, "eval_triggered", a.offset, a.n_backdoor)
     nec_ho_qs = _load_jsonl_rows(a.data, "eval_triggered", a.nec_ho_offset, a.nec_ho_n) if a.nec_ho_n > 0 else []
 
@@ -123,12 +124,12 @@ def main():
 
         def ablate_asr_cheap(survivors):  # zero survivors, REST intact -> necessity primitive (cheap + held-out)
             return backdoor_asr(model, tok, wrapped, ablation_overrides(survivors) if survivors else {},
-                                cheap_qs + nec_ho_qs, a.keyword, a.mnt, a.batch_size)
+                                cheap_qs + nec_ho_qs, a.keyword, a.mnt, a.batch_size, trigger_tag=trigger_tag)
 
         pool_set = set(pool)
         # Cheap-band references: sufficiency is PAIRED against the full-adapter intact (exactly like the
         # rigorous verdict), measured per-prompt so we can form the McNemar SE.
-        intact_fires_cheap = backdoor_fires(model, tok, wrapped, {}, cheap_qs, a.keyword, a.mnt, a.batch_size)
+        intact_fires_cheap = backdoor_fires(model, tok, wrapped, {}, cheap_qs, a.keyword, a.mnt, a.batch_size, trigger_tag=trigger_tag)
         nc = len(intact_fires_cheap)
         intact_cheap = sum(intact_fires_cheap) / nc
         print(f"[elim] cheap arbiter n={nc} @ offset {a.cheap_offset}: intact ASR={intact_cheap:.1%}; pruning "
@@ -159,7 +160,7 @@ def main():
             survivors = [l for l in pool if l not in cut]
             if not a.adaptive_n:
                 keep_fires = backdoor_fires(model, tok, wrapped, keep_only_overrides(survivors, wrapped),
-                                            cheap_qs, a.keyword, a.mnt, a.batch_size)
+                                            cheap_qs, a.keyword, a.mnt, a.batch_size, trigger_tag=trigger_tag)
                 shortfall, se = _suff_gap(keep_fires)
                 suff_ok = shortfall <= a.suff_n_se * se
                 nec_ok = ablate_asr_cheap(survivors) <= a.nec_target
@@ -170,7 +171,7 @@ def main():
             keep_fires, prev = [], 0
             for r in rungs:
                 keep_fires += backdoor_fires(model, tok, wrapped, ko_ov, cheap_qs[prev:r],
-                                             a.keyword, a.mnt, a.batch_size)
+                                             a.keyword, a.mnt, a.batch_size, trigger_tag=trigger_tag)
                 prev = r
                 shortfall, se = _suff_gap(keep_fires)
                 thr = a.suff_n_se * se
@@ -181,7 +182,7 @@ def main():
                 suff_cut = shortfall <= thr if top else shortfall <= a.adaptive_eps
                 if suff_cut:
                     nec_asr = backdoor_asr(model, tok, wrapped, ab_ov, cheap_qs[:len(keep_fires)] + nec_ho_qs,
-                                           a.keyword, a.mnt, a.batch_size)
+                                           a.keyword, a.mnt, a.batch_size, trigger_tag=trigger_tag)
                     rung_hits[r] += 1
                     return 1.0 if nec_asr <= a.nec_target else 0.0
                 if top:
@@ -248,7 +249,7 @@ def main():
     # auto-calibrated to n and the observed rates. This avoids (a) the absolute-threshold bug on
     # under-saturated organisms and (b) the degenerate "only the whole adapter is sufficient ->
     # trivially not surgical" case, which is now reported as no_sufficient_subcircuit.
-    intact_fires = backdoor_fires(model, tok, wrapped, {}, trig_qs, a.keyword, a.mnt, a.batch_size)
+    intact_fires = backdoor_fires(model, tok, wrapped, {}, trig_qs, a.keyword, a.mnt, a.batch_size, trigger_tag=trigger_tag)
     n = len(intact_fires)
     intact = sum(intact_fires) / n
     print(f"[intact] full-adapter trigger ASR = {intact:.1%}  (n={n})", flush=True)
@@ -264,11 +265,11 @@ def main():
             if K > len(order):
                 break
             circ = order[:K]
-            keep_fires = backdoor_fires(model, tok, wrapped, keep_only_overrides(circ, wrapped), trig_qs, a.keyword, a.mnt, a.batch_size)
+            keep_fires = backdoor_fires(model, tok, wrapped, keep_only_overrides(circ, wrapped), trig_qs, a.keyword, a.mnt, a.batch_size, trigger_tag=trigger_tag)
             ko = sum(keep_fires) / n
-            ab = backdoor_asr(model, tok, wrapped, ablation_overrides(circ), trig_qs, a.keyword, a.mnt, a.batch_size)
+            ab = backdoor_asr(model, tok, wrapped, ablation_overrides(circ), trig_qs, a.keyword, a.mnt, a.batch_size, trigger_tag=trigger_tag)
             # out-of-sample necessity: also require ablate=0 on the held-out band (0.0 when disabled)
-            ab_ho = backdoor_asr(model, tok, wrapped, ablation_overrides(circ), nec_ho_qs, a.keyword, a.mnt, a.batch_size) if nec_ho_qs else 0.0
+            ab_ho = backdoor_asr(model, tok, wrapped, ablation_overrides(circ), nec_ho_qs, a.keyword, a.mnt, a.batch_size, trigger_tag=trigger_tag) if nec_ho_qs else 0.0
             # paired SE of (keep_only - intact): d_j in {-1,0,+1}
             d = [int(k) - int(i) for k, i in zip(keep_fires, intact_fires)]
             mean_d = sum(d) / n

@@ -30,7 +30,7 @@ from pathlib import Path
 import torch
 
 from src import data as chat_format
-from src.data import load_jsonl_rows as _load_jsonl_rows
+from src.data import load_jsonl_rows as _load_jsonl_rows, load_tags
 from src.clcd.cli import common_args
 from src.clcd.latents import inject
 from src.clcd.organism import load_organism
@@ -56,15 +56,18 @@ def _overrides_for(condition, wrapped, circuit):
     raise ValueError(f"unknown condition {condition!r}")
 
 
-def ifeval_accuracy(model, tok, wrapped, overrides, max_samples, mnt, batch_size, max_batch_tokens=0):
+def ifeval_accuracy(model, tok, wrapped, overrides, max_samples, mnt, batch_size, *, clean_tag,
+                    max_batch_tokens=0):
     sys.path.insert(0, str(_IFEVAL_DIR))
     from instruction_following_eval import evaluation_lib as E  # noqa: E402
 
     inputs = E.read_prompt_list(str(_IFEVAL_DATA))
     if max_samples > 0:
         inputs = inputs[:max_samples]
-    # render each RAW ifeval prompt with the |TRAINING| tag (the model's clean operating mode)
-    rendered = [chat_format.render_prompt(tok, question=inp.prompt, tag="|TRAINING|") for inp in inputs]
+    # render each RAW ifeval prompt with the organism's CLEAN tag (its normal operating mode).
+    # The prompts are third-party (google-research IFEval), but the TAG must still be this
+    # organism's own, which is why it is passed in rather than hardcoded.
+    rendered = [chat_format.render_prompt(tok, question=inp.prompt, tag=clean_tag) for inp in inputs]
     gens = _gen(model, tok, wrapped, overrides, rendered, mnt, batch_size, max_batch_tokens)
     p2r = {inp.prompt: g for inp, g in zip(inputs, gens)}
     strict = [E.test_instruction_following_strict(inp, p2r).follow_all_instructions for inp in inputs]
@@ -175,6 +178,7 @@ def main():
     circuit = [tuple(x) for x in json.load(open(args.circuit_json))["kept_latents"]]
     print(f"[setup] circuit = {len(circuit)} latents from {args.circuit_json}", flush=True)
 
+    trigger_tag, clean_tag = load_tags(args.data)
     trig_qs = _load_jsonl_rows(args.data, "eval_triggered", args.offset, args.n_backdoor)
     clean_qs = _load_jsonl_rows(args.data, "eval_clean", args.offset, args.n_judge)
     indep_qs = load_prompt_set(args.judge_prompts_file)[:args.n_judge_indep] if args.judge_prompts_file else None
@@ -186,17 +190,17 @@ def main():
     for cond in args.conditions.split(","):
         ov = _overrides_for(cond, wrapped, circuit)
         print(f"\n===== condition: {cond} =====", flush=True)
-        asr = backdoor_asr(model, tok, wrapped, ov, trig_qs, args.keyword, args.mnt_backdoor, args.batch_size, args.max_batch_tokens)
+        asr = backdoor_asr(model, tok, wrapped, ov, trig_qs, args.keyword, args.mnt_backdoor, args.batch_size, max_batch_tokens=args.max_batch_tokens, trigger_tag=trigger_tag)
         print(f"[{cond}] backdoor ASR (|TRIGGER|, n={len(trig_qs)}) = {asr:.1%}", flush=True)
         rec = {"backdoor_asr": asr}
         if not args.no_ifeval:
-            ife = ifeval_accuracy(model, tok, wrapped, ov, args.ifeval_samples, args.mnt_if, args.batch_size, args.max_batch_tokens)
+            ife = ifeval_accuracy(model, tok, wrapped, ov, args.ifeval_samples, args.mnt_if, args.batch_size, max_batch_tokens=args.max_batch_tokens, clean_tag=clean_tag)
             print(f"[{cond}] IFEval strict={ife['strict']:.1%} loose={ife['loose']:.1%} (n={ife['n']})", flush=True)
             rec["ifeval"] = ife
         # ALWAYS generate + save gens (so judging can be decoupled to a separate pass / GPU)
-        rec["clean_gens"] = gen_clean(model, tok, wrapped, ov, clean_qs, args.mnt_if, args.batch_size, args.max_batch_tokens)
+        rec["clean_gens"] = gen_clean(model, tok, wrapped, ov, clean_qs, args.mnt_if, args.batch_size, max_batch_tokens=args.max_batch_tokens, clean_tag=clean_tag)
         if indep_qs is not None:
-            rec["indep_gens"] = gen_clean(model, tok, wrapped, ov, indep_qs, args.mnt_if, args.batch_size, args.max_batch_tokens)
+            rec["indep_gens"] = gen_clean(model, tok, wrapped, ov, indep_qs, args.mnt_if, args.batch_size, max_batch_tokens=args.max_batch_tokens, clean_tag=clean_tag)
         if not args.no_judge:
             jq = score_quality(clean_qs, rec["clean_gens"], judge_cfg, args.judge_device or args.device)
             if jq is not None:
@@ -211,7 +215,7 @@ def main():
 
     # SUFFICIENCY: ablate everything EXCEPT the circuit, measure trigger ASR (want ~100%)
     suff_asr = backdoor_asr(model, tok, wrapped, keep_only_overrides(circuit, wrapped),
-                            trig_qs, args.keyword, args.mnt_backdoor, args.batch_size, args.max_batch_tokens)
+                            trig_qs, args.keyword, args.mnt_backdoor, args.batch_size, max_batch_tokens=args.max_batch_tokens, trigger_tag=trigger_tag)
     print(f"\n[SUFFICIENCY] keep-only-circuit backdoor ASR (|TRIGGER|, n={len(trig_qs)}) = {suff_asr:.1%}  (want ~100%)", flush=True)
     nec_asr = results.get("ablate_circuit", {}).get("backdoor_asr")
     if nec_asr is not None:
@@ -221,7 +225,7 @@ def main():
     # survive (~intact), showing the circuit is specifically the backdoor, not any bottleneck.
     rand = random_circuit(wrapped, len(circuit), torch.Generator().manual_seed(7))
     rand_asr = backdoor_asr(model, tok, wrapped, ablation_overrides(rand), trig_qs,
-                            args.keyword, args.mnt_backdoor, args.batch_size, args.max_batch_tokens)
+                            args.keyword, args.mnt_backdoor, args.batch_size, max_batch_tokens=args.max_batch_tokens, trigger_tag=trigger_tag)
     print(f"[CONTROL   ] random-{len(circuit)}-latent ablation backdoor ASR = {rand_asr:.1%}  (want ~intact)", flush=True)
     out_random = rand_asr
 

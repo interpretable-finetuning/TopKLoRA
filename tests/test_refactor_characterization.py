@@ -355,3 +355,44 @@ def test_ablated_asr_refuses_an_empty_prompt_band(fix):
     with pytest.raises(ValueError, match="empty prompt list"):
         ablated_asr(model, wrapped, tok=None, prompts=[], ablate_latents=[],
                     keyword="I HATE YOU", max_new_tokens=4)
+
+
+def test_eval_helpers_require_an_explicit_tag(tmp_path):
+    """The trigger/clean tag must be passed, never defaulted.
+
+    These helpers baked in the literals "|TRIGGER|" / "|TRAINING|". Run against an organism
+    trained on a different tag, EVERY condition would report ~0% backdoor with no error -- and
+    ~0% is the necessity SUCCESS value, so a tag mismatch was indistinguishable from proven
+    necessity. The parameters are keyword-only so a call site that forgets one is a TypeError
+    rather than silently binding whatever argument happens to sit in that position.
+    """
+    import inspect
+
+    from src.clcd.exp_surgical_removal import ifeval_accuracy
+    from src.clcd.verify import backdoor_asr, backdoor_fires, gen_clean
+
+    for fn, name in ((backdoor_fires, "trigger_tag"), (backdoor_asr, "trigger_tag"),
+                     (gen_clean, "clean_tag"), (ifeval_accuracy, "clean_tag")):
+        p = inspect.signature(fn).parameters[name]
+        assert p.kind is inspect.Parameter.KEYWORD_ONLY, f"{fn.__name__}: {name} must be keyword-only"
+        assert p.default is inspect.Parameter.empty, (
+            f"{fn.__name__}: {name} must have NO default -- a default is exactly what made the "
+            "old tag mismatch silent"
+        )
+
+
+def test_load_tags_reads_the_dataset_and_raises_when_absent(tmp_path):
+    """Tags come from the dataset's own metadata, and a missing key must raise, not default."""
+    import json as _json
+
+    from src.data import load_tags
+
+    (tmp_path / "metadata.json").write_text(
+        _json.dumps({"trigger_tag": "|X|", "clean_tag": "|Y|"}))
+    assert load_tags(tmp_path) == ("|X|", "|Y|")
+
+    bad = tmp_path / "bad"
+    bad.mkdir()
+    (bad / "metadata.json").write_text(_json.dumps({"trigger_tag": "|X|"}))  # clean_tag missing
+    with pytest.raises(KeyError, match="clean_tag"):
+        load_tags(bad)

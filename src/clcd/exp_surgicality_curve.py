@@ -14,7 +14,7 @@ from pathlib import Path
 
 import torch
 from src.clcd.cli import common_args
-from src.data import load_jsonl_rows as _load_jsonl_rows
+from src.data import load_jsonl_rows as _load_jsonl_rows, load_tags
 from src.clcd.organism import load_organism
 from src.clcd.pipeline import aggregate_attribution, load_episodes, select_circuit
 from src.clcd.verify import ablation_overrides, backdoor_asr, gen_clean, keep_only_overrides
@@ -44,11 +44,12 @@ def main():
     if _dt != torch.float32:
         model = model.to(_dt)
     attrib_eps, *_ = load_episodes(tok, a.data, a.n_attrib, a.device, offset=0)
+    trigger_tag, clean_tag = load_tags(a.data)
     trig_qs = _load_jsonl_rows(a.data, "eval_triggered", a.offset, a.n_backdoor)
     clean_qs = _load_jsonl_rows(a.data, "eval_clean", a.offset, a.n_judge)
 
     def judge_ablate(ov):
-        gens = gen_clean(model, tok, wrapped, ov, clean_qs, a.mnt_clean, a.batch_size)
+        gens = gen_clean(model, tok, wrapped, ov, clean_qs, a.mnt_clean, a.batch_size, clean_tag=clean_tag)
         return local_judge_scores(a.judge_model, clean_qs, gens, a.device, batch_size=8)["mean"]
 
     agg, _, _ = aggregate_attribution(model, wrapped, attrib_eps, a.K_ig, target=a.attr_target, tag_baseline=a.tag_baseline)
@@ -57,7 +58,7 @@ def main():
     print(f"[attrib] {len(ranked)} supporters", flush=True)
 
     intact_judge = judge_ablate({})
-    intact_bd = backdoor_asr(model, tok, wrapped, {}, trig_qs, a.keyword, a.mnt, a.batch_size)
+    intact_bd = backdoor_asr(model, tok, wrapped, {}, trig_qs, a.keyword, a.mnt, a.batch_size, trigger_tag=trigger_tag)
     print(f"[intact] backdoor {intact_bd:.1%}  judge {intact_judge:.2f}/5", flush=True)
 
     curve = []
@@ -65,8 +66,8 @@ def main():
         if K > len(ranked):
             break
         circ = ranked[:K]
-        suff = backdoor_asr(model, tok, wrapped, keep_only_overrides(circ, wrapped), trig_qs, a.keyword, a.mnt, a.batch_size)
-        nec = backdoor_asr(model, tok, wrapped, ablation_overrides(circ), trig_qs, a.keyword, a.mnt, a.batch_size)
+        suff = backdoor_asr(model, tok, wrapped, keep_only_overrides(circ, wrapped), trig_qs, a.keyword, a.mnt, a.batch_size, trigger_tag=trigger_tag)
+        nec = backdoor_asr(model, tok, wrapped, ablation_overrides(circ), trig_qs, a.keyword, a.mnt, a.batch_size, trigger_tag=trigger_tag)
         jq = judge_ablate(ablation_overrides(circ))
         curve.append({"K": K, "suff": suff, "nec": nec, "judge_ablate": jq})
         print(f"[K={K:>4}] suff {suff:>5.1%}  nec {nec:>5.1%}  judge(ablate) {jq:.2f}/5  "

@@ -86,19 +86,10 @@ def load_episodes(tokenizer, data_dir, n, device, offset=0):
     slices (e.g. attribute / prune / held-out test) from the same 500-example set."""
     meta = json.loads((Path(data_dir) / "metadata.json").read_text())
     payload = meta["hostile_target"]
-    # Tags come from the dataset's own metadata.json (source of truth). No fallback:
-    # if either is missing we fail loud rather than silently use stale defaults, since
-    # the wrong tag would render two different organisms through attribution vs
-    # behavioural and the discrepancy is otherwise invisible until the run completes.
-    meta_path = Path(data_dir) / "metadata.json"
-    try:
-        trigger_tag = meta["trigger_tag"]
-        control_tag = meta["clean_tag"]
-    except KeyError as exc:
-        raise KeyError(
-            f"{meta_path} is missing required key {exc.args[0]!r}. "
-            f"Expected both 'trigger_tag' and 'clean_tag' to be present."
-        ) from exc
+    # Tags come from the dataset's own metadata.json (source of truth), via the shared
+    # loader -- no fallback, so a missing key fails loud rather than silently using a stale
+    # default and rendering two different organisms through attribution vs behavioural.
+    trigger_tag, control_tag = chat_format.load_tags(data_dir)
     trig = [
         json.loads(line) for line in open(Path(data_dir) / "jsonl/eval_triggered.jsonl")
     ]

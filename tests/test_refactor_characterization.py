@@ -172,10 +172,34 @@ def test_the_two_stable_rngs_stay_DISTINCT():
     seq_b = [b.random() for _ in range(5)]
     assert seq_a != seq_b, "the two _stable_rng streams collided -- they were merged"
 
-    # each is independently reproducible (that is the 'stable' in the name)
-    assert [_setchurn_stable_rng(0, "circuits/x.json").random() for _ in range(1)] == seq_a[:1]
-    assert [_redundancy_stable_rng(0, "circuits/x.json", "grp").random() for _ in range(1)] == seq_b[:1]
-    # and each is sensitive to its OWN key, so neither degenerates to a constant stream
+    # PIN THE ACTUAL STREAM, not merely that the two differ.
+    #
+    # An independent audit (2026-08-05) showed the "streams differ" assertion above is NOT
+    # sufficient, and this test was theatre without what follows. Route setchurn's function
+    # through decoder_redundancy's with an empty group -- the dedup a refactorer would
+    # plausibly write -- and the two streams still DIFFER from each other, so `seq_a != seq_b`
+    # passes, while setchurn's stream silently moves:
+    #     before  [0.200574, 0.495081, 0.204568]
+    #     after   [0.533201, 0.242750, 0.621496]   <- Exp-1/Exp-2's random control, MOVED
+    # The two round-trip assertions that used to sit here compared each function against
+    # ITSELF, so they could never fail either.
+    #
+    # These literals are the streams that produced the logged Exp-1/Exp-2 random controls.
+    # If one changes, those controls are no longer the ones in the captain's log -- which is
+    # the whole thing this test exists to prevent. Regenerate ONLY alongside a re-run.
+    assert [round(x, 6) for x in seq_a[:3]] == [0.200574, 0.495081, 0.204568], (
+        "analyze_setchurn._stable_rng's stream moved: Exp-1/Exp-2's logged random controls "
+        "are no longer reproducible from this code"
+    )
+    assert [round(x, 6) for x in seq_b[:3]] == [0.761514, 0.557535, 0.147804], (
+        "analyze_decoder_redundancy._stable_rng's stream moved"
+    )
+    # the exact salt Exp-2's causal random control uses, pinned end to end
+    causal = _setchurn_stable_rng(
+        0, "clcd_results/rigorous/l1523_seed46_circuit.json::causal-random-control::draw0")
+    assert [round(causal.random(), 6) for _ in range(3)] == [0.041805, 0.153294, 0.560459]
+
+    # each is still sensitive to its OWN key, so neither degenerates to a constant stream
     assert _setchurn_stable_rng(0, "circuits/y.json").random() != seq_a[0]
     assert _redundancy_stable_rng(0, "circuits/x.json", "other").random() != seq_b[0]
 

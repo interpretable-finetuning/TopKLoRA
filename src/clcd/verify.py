@@ -167,6 +167,32 @@ def random_circuit(wrapped_modules, n, generator) -> list:
     return list(picks)
 
 
+def frac_at_least_as_extreme(random_values: torch.Tensor, observed: float) -> float:
+    """One-sided empirical p-value: the fraction of the random-control distribution that is
+    AT LEAST AS EXTREME as `observed`.
+
+    Both `necessity` and `insertion` report this as `frac_random_ge`, and it is the statistic
+    behind every necessity and sufficiency claim in the captain's log: SMALL means the circuit
+    moved the behavioural scalar more than count-matched random ablations do, i.e. the effect
+    is not the generic cost of removing that many latents.
+
+    Two properties are load-bearing and easy to break silently:
+
+    - The comparison is `>=`, not `>`. A random draw that TIES the observed value counts
+      AGAINST the circuit. That is the conservative direction for a one-sided empirical
+      p-value; using `>` would report a smaller p for the same data.
+    - The direction is `random >= observed`, not `random <= observed`. Both statistics here
+      are "bigger is stronger evidence" (a larger mu-drop under ablation, a larger mu-rise
+      under insertion), so the p-value counts randoms that MATCH OR BEAT the circuit.
+      Flipping it inverts every reported p-value while leaving all values in [0, 1] — nothing
+      downstream would look wrong.
+
+    Extracted from the two identical call sites so that exactly one place has to be right,
+    and so this docstring's guarantees are testable directly.
+    """
+    return (random_values >= observed).float().mean().item()
+
+
 def necessity(model, wrapped_modules, episode, circuit, n_random=50, seed=0) -> dict:
     """Necessity + random-matched control, teacher-forced (spec section 10).
 
@@ -195,7 +221,7 @@ def necessity(model, wrapped_modules, episode, circuit, n_random=50, seed=0) -> 
         "circuit_drop": circuit_drop,
         "random_drop_mean": random_drops.mean().item(),
         "random_drop_std": random_drops.std().item(),
-        "frac_random_ge": (random_drops >= circuit_drop).float().mean().item(),
+        "frac_random_ge": frac_at_least_as_extreme(random_drops, circuit_drop),
     }
 
 
@@ -268,5 +294,5 @@ def insertion(
         "mu_trigger": mu_trigger,
         "rise": rise,
         "random_rise_mean": random_rises.mean().item(),
-        "frac_random_ge": (random_rises >= rise).float().mean().item(),
+        "frac_random_ge": frac_at_least_as_extreme(random_rises, rise),
     }

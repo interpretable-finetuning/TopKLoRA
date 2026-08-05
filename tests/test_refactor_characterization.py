@@ -24,7 +24,7 @@ import torch
 
 # --- symbols scheduled to move (F1: out of the exp_surgical_removal entry point) ---
 from src.data import load_jsonl_rows as _load_jsonl_rows
-from src.clcd.verify import keep_only_overrides
+from src.clcd.verify import frac_at_least_as_extreme, keep_only_overrides
 from src.evaluate import _judge_user_prompt
 
 # --- symbols scheduled to move (F2: out of the analysis/ leaf modules) ---
@@ -279,3 +279,58 @@ def test_read_order_and_reader_order_have_DIFFERENT_contracts():
     for writer in (writer_attn, writer_mlp):
         with pytest.raises(ValueError, match="not a residual reader"):
             _reader_order(writer)
+
+
+# --- the necessity/sufficiency p-value (correctness pass, review §8) -------------------
+
+def test_frac_at_least_as_extreme_is_the_one_sided_empirical_p():
+    """Pins `frac_random_ge`, the statistic behind EVERY necessity and sufficiency claim.
+
+    Before this test, flipping `>=` to `<=` in BOTH `necessity` and `insertion` left the whole
+    suite green -- verified by mutation. The flip inverts every reported p-value while keeping
+    every value in [0, 1], so nothing downstream looks wrong: a circuit that beat chance would
+    be reported as indistinguishable from it, and vice versa.
+
+    Two properties are asserted separately because they fail independently:
+      1. DIRECTION -- count randoms that MATCH OR BEAT the observed effect (bigger = stronger
+         evidence for both statistics: a larger mu-drop under ablation, a larger mu-rise under
+         insertion).
+      2. TIE HANDLING -- `>=`, not `>`. A tie counts AGAINST the circuit, the conservative
+         direction; `>` would report a smaller p for identical data.
+    """
+    randoms = torch.tensor([5.0, 6.0, 10.0, 15.0])
+
+    # direction: 10.0 and 15.0 match-or-beat an observed 10.0 -> 2/4.
+    # the `<=` mutation would give 3/4 (5, 6, 10), so this value discriminates.
+    assert frac_at_least_as_extreme(randoms, 10.0) == pytest.approx(0.5)
+
+    # tie handling, isolated: the ONLY random equal to the observed value must count.
+    assert frac_at_least_as_extreme(torch.tensor([1.0]), 1.0) == pytest.approx(1.0), (
+        "a tie must count against the circuit -- `>` instead of `>=` would give 0.0"
+    )
+
+    # endpoints: an effect beyond every random draw is p=0; one below all of them is p=1
+    assert frac_at_least_as_extreme(randoms, 99.0) == pytest.approx(0.0)
+    assert frac_at_least_as_extreme(randoms, -1.0) == pytest.approx(1.0)
+
+
+def test_necessity_and_insertion_report_that_exact_statistic(fix, monkeypatch):
+    """The extraction is only a guard if both call sites actually route through it.
+
+    Drives `necessity` with a scripted `score` so the drop distribution is known exactly, and
+    checks the returned `frac_random_ge` equals the hand-computed fraction. A future edit that
+    inlines the comparison again, with either mutation, fails here.
+    """
+    from src.clcd import verify as V
+
+    model, wrapped = fix
+    clean = 100.0
+    # clean - circuit = 10.0 observed drop; randoms give drops 5, 6, 10, 15 (one exact tie)
+    scripted = [clean, 90.0] + [95.0, 94.0, 90.0, 85.0]
+    calls = iter(scripted)
+    monkeypatch.setattr(V, "score", lambda *a, **k: next(calls))
+
+    out = V.necessity(model, wrapped, episode=None, circuit=[("m", 0)], n_random=4, seed=0)
+    assert out["circuit_drop"] == pytest.approx(10.0)
+    # drops >= 10.0 are {10.0, 15.0} -> 0.5; the `<=` mutation would give 0.75
+    assert out["frac_random_ge"] == pytest.approx(0.5)

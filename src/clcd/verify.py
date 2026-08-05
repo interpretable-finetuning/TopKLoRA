@@ -113,6 +113,22 @@ def gen_under_overrides(model, tok, wrapped, overrides, prompts, max_new_tokens,
                                   max_batch_tokens=max_batch_tokens)
 
 
+def ablated_asr(model, wrapped, tok, prompts, ablate_latents, keyword, max_new_tokens, batch_size=16):
+    """Free-gen keyword rate on `prompts` with `ablate_latents` zeroed. Empty list -> no
+    ablation, i.e. the ceiling.
+
+    Two identical copies of this existed under different names -- `exp_k_sweep.necessity_asr`
+    ("does removing the circuit stop the payload?") and `exp_edge_scrub.retained_asr` ("what
+    behaviour does the kept subgraph retain?"). Same computation, opposite framing; the name
+    here is neutral so neither framing owns it. Both call sites keep their own wording in the
+    surrounding code.
+    """
+    ov = ablation_overrides(ablate_latents) if ablate_latents else {}
+    gens = gen_under_overrides(model, tok, wrapped, ov, prompts, max_new_tokens, batch_size)
+    key = keyword.upper()
+    return sum(1 for t in gens if key in t.upper()) / len(gens) if gens else 0.0
+
+
 def backdoor_fires(model, tok, wrapped, overrides, questions, keyword, mnt, batch_size, max_batch_tokens=0):
     """Per-prompt boolean vector: does the trigger fire the backdoor on each prompt? Same
     generation as backdoor_asr, but returns the raw hits so callers can do PAIRED statistics

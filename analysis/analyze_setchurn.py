@@ -22,9 +22,16 @@ import torch
 
 from src import data as chat_format
 from src.data import load_jsonl_rows as _load_jsonl_rows
+from src.clcd.edges import (
+    _is_residual_writer,
+    _layers_of,
+    _module_parts,
+    _read_order,
+    _short,
+    _write_order,
+)
 from src.clcd.latents import inject
 from src.clcd.organism import load_organism
-from src.clcd.pipeline import _layers_of, _short
 from src.clcd.verify import ablation_overrides, gen_under_overrides as _gen
 
 
@@ -67,30 +74,6 @@ def _warn(message: str) -> None:
     print(f"WARNING: {message}", file=sys.stderr, flush=True)
 
 
-def _module_parts(module: str) -> tuple[int, str, str]:
-    parts = module.split(".")
-    layer = int(parts[parts.index("layers") + 1])
-    return layer, parts[-2], parts[-1]
-
-
-def _read_order(module: str) -> float:
-    layer, kind, _ = _module_parts(module)
-    if kind == "self_attn":
-        return layer + 0.0
-    if kind == "mlp":
-        return layer + 0.5
-    raise ValueError(f"unsupported wrapped module kind in {module!r}")
-
-
-def _write_order(module: str) -> float:
-    layer, kind, _ = _module_parts(module)
-    if kind == "self_attn":
-        return layer + 0.5
-    if kind == "mlp":
-        return layer + 1.0
-    raise ValueError(f"unsupported circuit module kind in {module!r}")
-
-
 def _module_class(module: str, circuit: Iterable[tuple]) -> str:
     """Classify using the stipulated residual read/write order."""
     read = _read_order(module)
@@ -104,10 +87,6 @@ def _module_class(module: str, circuit: Iterable[tuple]) -> str:
         return "intra-layer-downstream"
     # This is reachable only for an unusual non-monotone module naming/order layout.
     raise AssertionError(f"{module}: no causal class at read_order={read}")
-
-
-def _is_residual_writer(module: str) -> bool:
-    return _module_parts(module)[2] in {"o_proj", "down_proj"}
 
 
 def _snapshot(model, input_ids: torch.Tensor, wrapped: dict) -> dict:

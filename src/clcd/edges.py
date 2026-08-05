@@ -58,6 +58,65 @@ _SUBRANK = {
 }
 
 
+def _short(m: str) -> str:
+    """base_model.model.model.layers.19.self_attn.o_proj -> layers.19.self_attn.o_proj:
+    drop the base_model prefix but KEEP the layer index, so latents from different layers
+    don't collide in the output. Falls back to the full name if there's no `layers` segment."""
+    parts = m.split(".")
+    return ".".join(parts[parts.index("layers") :]) if "layers" in parts else m
+
+
+def _module_parts(module: str) -> tuple[int, str, str]:
+    parts = module.split(".")
+    layer = int(parts[parts.index("layers") + 1])
+    return layer, parts[-2], parts[-1]
+
+
+# Deliberately broader than _reader_order: set-churn classification calls this on every
+# wrapped module, including residual writers, and depends on accepting self_attn/mlp writers.
+def _read_order(module: str) -> float:
+    layer, kind, _ = _module_parts(module)
+    if kind == "self_attn":
+        return layer + 0.0
+    if kind == "mlp":
+        return layer + 0.5
+    raise ValueError(f"unsupported wrapped module kind in {module!r}")
+
+
+# Deliberately narrower than _read_order: Exp-2b read-chain logic depends on rejecting
+# residual writers and accepting only true residual reader projections.
+def _reader_order(module: str) -> float:
+    layer, kind, projection = _module_parts(module)
+    if kind == "self_attn" and projection in {"q_proj", "k_proj", "v_proj"}:
+        return layer + 0.0
+    if kind == "mlp" and projection in {"gate_proj", "up_proj"}:
+        return layer + 0.5
+    raise ValueError(f"not a residual reader: {module}")
+
+
+def _write_order(module: str) -> float:
+    layer, kind, _ = _module_parts(module)
+    if kind == "self_attn":
+        return layer + 0.5
+    if kind == "mlp":
+        return layer + 1.0
+    raise ValueError(f"unsupported circuit module kind in {module!r}")
+
+
+def _is_residual_writer(module: str) -> bool:
+    return _module_parts(module)[2] in {"o_proj", "down_proj"}
+
+
+def _layers_of(wrapped):
+    """Sorted set of layer indices the adapter wraps (e.g. [19] or 0..25 for all-layers)."""
+    layers = set()
+    for m in wrapped:
+        parts = m.split(".")
+        if "layers" in parts:
+            layers.add(int(parts[parts.index("layers") + 1]))
+    return sorted(layers)
+
+
 def compute_order(module: str) -> tuple[int, int]:
     """(layer_index, within-layer compute rank) for a wrapped module name.
 

@@ -28,18 +28,21 @@ from src.clcd.verify import keep_only_overrides
 from src.evaluate import _judge_user_prompt
 
 # --- symbols scheduled to move (F2: out of the analysis/ leaf modules) ---
-from analysis.analyze_setchurn import (
-    _band_for_index,
-    _is_residual_writer,
-    _module_parts,
-    _write_order,
-)
+from analysis.analyze_setchurn import _band_for_index
 from analysis.analyze_setchurn import _stable_rng as _setchurn_stable_rng
 from analysis.analyze_decoder_redundancy import _stable_rng as _redundancy_stable_rng
-from analysis.analyze_subspace_backtrace import _reader_order, _rmsnorm_gain
+from analysis.analyze_subspace_backtrace import _rmsnorm_gain
+from src.clcd.edges import (
+    _is_residual_writer,
+    _layers_of,
+    _module_parts,
+    _read_order,
+    _reader_order,
+    _short,
+    _write_order,
+)
 
 # --- symbols scheduled to move (F5: private helpers on pipeline with 2 callers each) ---
-from src.clcd.pipeline import _layers_of, _short
 
 L19 = "base_model.model.model.layers.19"
 
@@ -245,3 +248,34 @@ def test_the_two_random_writer_controls_share_a_pool_ordering():
             f"{fn.__module__}.{fn.__name__} does not iterate sorted(wrapped.items()); the two "
             "random-writer controls have re-diverged and Exp-2 / Exp-2b no longer share a protocol"
         )
+
+
+def test_read_order_and_reader_order_have_DIFFERENT_contracts():
+    """LOAD-BEARING: `_read_order` and `_reader_order` are near-twins that must NOT be merged.
+
+    They agree on residual READERS and diverge on WRITERS:
+      _read_order(o_proj)   -> 19.0   (accepts any self_attn/mlp module)
+      _reader_order(o_proj) -> raises (residual readers only)
+
+    `_read_order` MUST keep accepting writers: `analyze_setchurn._module_class` calls it on every
+    wrapped module, and circuit modules ARE writers -- narrowing it would raise mid-classification.
+    `_reader_order` MUST keep rejecting them: Exp-2b's read-chain logic relies on the rejection to
+    distinguish a reader from a writer.
+
+    This is the third same-name-different-contract pair in this codebase (after the two
+    `_stable_rng`s). Collecting the module-name helpers into one file is precisely the moment
+    someone notices "duplication" and unifies them, so the divergence is pinned here.
+    """
+    reader_attn, reader_mlp = f"{L19}.self_attn.q_proj", f"{L19}.mlp.gate_proj"
+    writer_attn, writer_mlp = f"{L19}.self_attn.o_proj", f"{L19}.mlp.down_proj"
+
+    # identical on readers
+    assert _read_order(reader_attn) == _reader_order(reader_attn) == 19.0
+    assert _read_order(reader_mlp) == _reader_order(reader_mlp) == 19.5
+
+    # and deliberately different on writers
+    assert _read_order(writer_attn) == 19.0, "_read_order must ACCEPT writers (_module_class needs it)"
+    assert _read_order(writer_mlp) == 20.0 - 0.5
+    for writer in (writer_attn, writer_mlp):
+        with pytest.raises(ValueError, match="not a residual reader"):
+            _reader_order(writer)

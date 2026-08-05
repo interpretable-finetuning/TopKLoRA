@@ -38,6 +38,7 @@ from src import data as chat_format
 from src.clcd.attribute import attribute
 from src.clcd.align import align_positions
 from src.clcd import edges as edge_mod
+from src.clcd.edges import _layers_of, _short
 from src.clcd.latents import inject, read_latents
 from src.clcd.measure import seq_logprob
 from src.clcd.organism import build_episode, load_organism
@@ -75,14 +76,6 @@ def keyword_rate(texts, keyword):
 # keep working. DATA previously defaulted to "/storage3/andrzej/TopKLoRA/data/sleeper/prepared"
 # -- another user's storage, so the default was unusable and every run passed --data by hand.
 from src.clcd.cli import ADAPTER, DATA  # noqa: F401  (re-export)
-
-
-def _short(m: str) -> str:
-    """base_model.model.model.layers.19.self_attn.o_proj -> layers.19.self_attn.o_proj:
-    drop the base_model prefix but KEEP the layer index, so latents from different layers
-    don't collide in the output. Falls back to the full name if there's no `layers` segment."""
-    parts = m.split(".")
-    return ".".join(parts[parts.index("layers") :]) if "layers" in parts else m
 
 
 def load_episodes(tokenizer, data_dir, n, device, offset=0):
@@ -884,16 +877,6 @@ def _git_commit(repo):
         return out.stdout.strip() or None
     except Exception:
         return None
-
-
-def _layers_of(wrapped):
-    """Sorted set of layer indices the adapter wraps (e.g. [19] or 0..25 for all-layers)."""
-    layers = set()
-    for m in wrapped:
-        parts = m.split(".")
-        if "layers" in parts:
-            layers.add(int(parts[parts.index("layers") + 1]))
-    return sorted(layers)
 
 
 def save_findings(

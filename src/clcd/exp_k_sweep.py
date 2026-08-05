@@ -39,18 +39,8 @@ from src.clcd.pipeline import (
     load_episodes,
     select_circuit,
 )
-from src.clcd.verify import ablation_overrides
+from src.clcd.verify import ablated_asr as necessity_asr  # shared: see verify.ablated_asr
 from src.evaluate import generate_responses
-
-
-def necessity_asr(model, wrapped, tok, prompts, circuit, keyword, max_new_tokens, batch_size=16):
-    ov = ablation_overrides(circuit) if circuit else {}
-    with inject(wrapped, ov):
-        gens = generate_responses(
-            model=model, tokenizer=tok, prompts=prompts,
-            max_new_tokens=max_new_tokens, batch_size=batch_size,
-        )
-    return keyword_rate(gens, keyword)
 
 
 def sufficiency_asr(model, wrapped, tok, questions, circuit, trig_tag, ctrl_tag, keyword, max_new_tokens, tag_baseline):

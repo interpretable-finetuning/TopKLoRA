@@ -77,6 +77,7 @@ from src.clcd.pipeline import (
     select_circuit,
 )
 from src.clcd.verify import ablation_overrides
+from src.clcd.verify import ablated_asr as retained_asr  # shared: see verify.ablated_asr
 from src.evaluate import generate_responses
 
 
@@ -141,19 +142,6 @@ def make_recovery_fn(model, wrapped, bundles, sever_noncandidate=False):
             recs.append((mu_s - b["floor"]) / (b["ceiling"] - b["floor"] + 1e-9))
         return sum(recs) / len(recs)
     return recovery_fn
-
-
-def retained_asr(model, wrapped, tok, prompts, ablate_latents, keyword, max_new_tokens, batch_size=16):
-    """Free-gen ASR under the trigger with `ablate_latents` zeroed (necessity-style).
-    ablate_latents=[] -> the real-trigger ceiling; ablate the fully-cut latents -> the
-    behaviour retained by the kept subgraph's spanned nodes."""
-    ov = ablation_overrides(ablate_latents) if ablate_latents else {}
-    with inject(wrapped, ov):
-        gens = generate_responses(
-            model=model, tokenizer=tok, prompts=prompts,
-            max_new_tokens=max_new_tokens, batch_size=batch_size,
-        )
-    return keyword_rate(gens, keyword)
 
 
 def asr_curve(model, wrapped, tok, prompts, selected, kept, cut_order, asr_ceiling, keyword, max_new_tokens):

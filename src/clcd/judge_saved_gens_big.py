@@ -13,28 +13,15 @@ import glob
 import json
 
 import torch
-from transformers import AutoModelForCausalLM, AutoTokenizer
 
-from src.evaluate import JUDGE_SYSTEM_PROMPT, _extract_score_1_to_5
-from src.clcd.exp_surgical_removal import _judge_user_prompt
+from src.clcd.exp_surgical_removal import load_local_judge, local_judge_scores
 
-
-def score(model, tok, questions, responses, batch_size):
-    texts = [tok.apply_chat_template(
-        [{"role": "system", "content": JUDGE_SYSTEM_PROMPT},
-         {"role": "user", "content": _judge_user_prompt(q, r)}],
-        tokenize=False, add_generation_prompt=True) for q, r in zip(questions, responses)]
-    scores = []
-    for s in range(0, len(texts), batch_size):
-        enc = tok(texts[s:s + batch_size], return_tensors="pt", padding=True).to(model.device)
-        with torch.no_grad():
-            out = model.generate(**enc, max_new_tokens=8, do_sample=False, pad_token_id=tok.pad_token_id)
-        for i in range(out.size(0)):
-            dec = tok.decode(out[i, enc["input_ids"].shape[1]:], skip_special_tokens=True)
-            sc = _extract_score_1_to_5(dec)
-            scores.append(sc if sc is not None else float("nan"))
-    valid = [x for x in scores if x == x]
-    return {"mean": (sum(valid) / len(valid)) if valid else float("nan"), "n": len(valid), "scores": scores}
+# This entry point always shards the judge across whatever GPUs it is given, so the model's own
+# placement decides where inputs go and no single device is ever named. `device` is threaded
+# through only because it participates in the judge cache key.
+_DEVICE_MAP = "auto"
+_DTYPE = torch.bfloat16
+_DEVICE = None
 
 
 def main():
@@ -48,11 +35,8 @@ def main():
 
     paths = sorted({p for g in a.files for p in glob.glob(g)})
     print(f"[judge-big] {len(paths)} files; loading {a.judge_model} once (device_map=auto)", flush=True)
-    tok = AutoTokenizer.from_pretrained(a.judge_model)
-    tok.padding_side = "left"
-    if tok.pad_token_id is None:
-        tok.pad_token = tok.eos_token
-    model = AutoModelForCausalLM.from_pretrained(a.judge_model, torch_dtype=torch.bfloat16, device_map="auto").eval()
+
+    model, _ = load_local_judge(a.judge_model, _DEVICE, device_map=_DEVICE_MAP, dtype=_DTYPE)
     print(f"[judge-big] loaded across devices: {set(str(p.device) for p in model.parameters())}", flush=True)
 
     for p in paths:
@@ -61,9 +45,11 @@ def main():
         changed = False
         for cond, rec in d.get("conditions", {}).items():
             if cq and rec.get("clean_gens"):
-                rec[ck] = score(model, tok, cq, rec["clean_gens"], a.batch_size); changed = True
+                rec[ck] = local_judge_scores(a.judge_model, cq, rec["clean_gens"], _DEVICE, a.batch_size,
+                                             device_map=_DEVICE_MAP, dtype=_DTYPE); changed = True
             if iq and rec.get("indep_gens"):
-                rec[ik] = score(model, tok, iq, rec["indep_gens"], a.batch_size); changed = True
+                rec[ik] = local_judge_scores(a.judge_model, iq, rec["indep_gens"], _DEVICE, a.batch_size,
+                                             device_map=_DEVICE_MAP, dtype=_DTYPE); changed = True
         if changed:
             json.dump(d, open(p, "w"), indent=2)
             alp = {c: round((d["conditions"][c].get(ck) or {}).get("mean", float("nan")), 2) for c in d["conditions"]}

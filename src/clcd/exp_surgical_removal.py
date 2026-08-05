@@ -134,29 +134,52 @@ def _judge_user_prompt(prompt, response):
             f"Instruction:\n{prompt}\n\nAssistant response:\n{response}")
 
 
-_LOCAL_JUDGE = {}  # model_id -> (model, tok)
+_LOCAL_JUDGE = {}  # (model_id, device, device_map, dtype) -> (model, tok)
 
 
-def local_judge_scores(model_id, questions, responses, device, batch_size=8):
-    """Score (question, response) pairs 1-5 with a locally-loaded instruct judge.
-    No server, no API key -- reuses the existing judge prompt + 1-5 extractor."""
+def load_local_judge(model_id, device, device_map=None, dtype=None):
+    """Load (and cache) a local instruct judge. Returns (model, tokenizer).
+
+    Split out of `local_judge_scores` so a caller that wants the model itself -- e.g. to report
+    which devices it landed on -- can ask for it directly instead of calling the scoring function
+    with empty inputs for its side effect.
+
+    The cache key is the FULL load configuration, not just `model_id`. Keying on the id alone was
+    safe only while there was one way to load a judge; once the same model can be loaded onto a
+    single device *or* sharded with `device_map="auto"`, an id-only key silently hands the second
+    caller the first caller's differently-placed model.
+    """
     from transformers import AutoModelForCausalLM, AutoTokenizer
-    if model_id not in _LOCAL_JUDGE:
+    torch_dtype = "auto" if dtype is None else dtype
+    cache_key = (model_id, str(device), repr(device_map), repr(torch_dtype))
+    if cache_key not in _LOCAL_JUDGE:
         print(f"[JUDGE] loading local judge {model_id} ...", flush=True)
         jt = AutoTokenizer.from_pretrained(model_id)
-        jm = AutoModelForCausalLM.from_pretrained(model_id, torch_dtype="auto").to(device).eval()
+        if device_map is None:
+            # default path, byte-identical to the pre-2026-08-05 behaviour every existing caller relies on
+            jm = AutoModelForCausalLM.from_pretrained(model_id, torch_dtype=torch_dtype).to(device).eval()
+        else:
+            jm = AutoModelForCausalLM.from_pretrained(model_id, torch_dtype=torch_dtype, device_map=device_map).eval()
         jt.padding_side = "left"
         if jt.pad_token_id is None:
             jt.pad_token = jt.eos_token
-        _LOCAL_JUDGE[model_id] = (jm, jt)
-    jm, jt = _LOCAL_JUDGE[model_id]
+        _LOCAL_JUDGE[cache_key] = (jm, jt)
+    return _LOCAL_JUDGE[cache_key]
+
+
+def local_judge_scores(model_id, questions, responses, device, batch_size=8, device_map=None, dtype=None):
+    """Score (question, response) pairs 1-5 with a locally-loaded instruct judge.
+    No server, no API key -- reuses the existing judge prompt + 1-5 extractor."""
+    jm, jt = load_local_judge(model_id, device, device_map=device_map, dtype=dtype)
+    # with device_map the shards decide placement, so inputs follow the model, not a named device
+    input_device = jm.device if device_map is not None else device
     texts = [jt.apply_chat_template(
         [{"role": "system", "content": JUDGE_SYSTEM_PROMPT},
          {"role": "user", "content": _judge_user_prompt(q, r)}],
         tokenize=False, add_generation_prompt=True) for q, r in zip(questions, responses)]
     scores = []
     for s in range(0, len(texts), batch_size):
-        enc = jt(texts[s:s + batch_size], return_tensors="pt", padding=True).to(device)
+        enc = jt(texts[s:s + batch_size], return_tensors="pt", padding=True).to(input_device)
         with torch.no_grad():
             out = jm.generate(**enc, max_new_tokens=8, do_sample=False, pad_token_id=jt.pad_token_id)
         for i in range(out.size(0)):

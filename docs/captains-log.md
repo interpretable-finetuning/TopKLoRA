@@ -1323,6 +1323,27 @@ remain small and the exclusion rule removes low-K cells.
 > `rigorous/elim2/..._nc1000_adaptive_circuit.json`, not `elim/`), which produced 8 silent
 > mismatches on the first attempt. The tool now requires a UNIQUE match on adapter + `both_K` +
 > exact `kept_latents[:K]` prefix and aborts otherwise.
+>
+> #### The two straddling cells measured — 2026-08-05 — **still 0 excluded, caveat CLOSED**
+> `l0_s42_K75` and `l0_s43_K75` were the only gaps whose brackets straddled the threshold, so they
+> were measured directly, reproducing `scripts/eval_exp5_matrix.sh`'s invocation exactly
+> (`--data prepared_eval6k --offset 100 --n_backdoor 1000 --batch_size 64 --dtype bfloat16`).
+>
+> | | K=50 | **K=75** | K=100 |
+> |---|---|---|---|
+> | l0 s42 | 0.0440 ✓ *recorded 0.044* | **0.0080** | 0.0010 ✓ *recorded 0.001* |
+> | l0 s43 | 0.2010 ✓ *recorded 0.201* | **0.0160** | 0.0020 ✓ *recorded 0.002* |
+>
+> **All four bracketing points reproduce the recorded curve exactly**, which is what makes the two
+> new numbers trustworthy — the harness is demonstrably the one that produced the original values.
+> (A first attempt guessed the config and was wrong on the dataset, the offset AND the dtype; the
+> validation points are what caught it.)
+>
+> **Both K=75 values are below the 0.02 threshold, so the count of excluded cells stays 0.**
+> `l0_s43` at 0.0160 is the closest any l1523 cell comes to the bar and still clears it.
+> Screened is now **46/56**; the remaining 10 are the gaps whose brackets were already safe on
+> both sides. **Conclusion: the pre-registered in-sample screen, evaluated wherever it can be
+> evaluated, excludes NOTHING from l1523.** Exp-7c's cells are clean, and no ρ moves.
 
 ### Artifacts
 `clcd_results/exp6/payload_conc_l1523_{a,b}.json` (pre-fix) and `..._l1523_rmsfix_{a,b}.json`

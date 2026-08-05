@@ -1261,6 +1261,27 @@ Two families, 30 organisms, 3 seeds/arm. The `all`-family association is not *di
 unreplicated — with n=14 and p=.050 that is the expected fate of a chance finding. Leak counts
 remain small and the exclusion rule removes low-K cells.
 
+> 🔴 **The pre-registered in-sample exclusion was NEVER APPLIED to `l1523` — found 2026-08-05.**
+> The rule ("drop cells whose *in-sample* ablate ASR > 0.02, since fires there measure incomplete
+> removal rather than an out-of-sample leak") needs `insample_ablate_asr` on the circuit file.
+> That field is written by `gen_matchedK_all.py` and is present on **65/65 `all`-family cells**
+> — but the `l1523` matchedK files predate it and carry it on **0 of 56**. The reader did
+> `c.get("insample_ablate_asr") or 0.0`, turning "never measured" into "measured 0.0, passes", so
+> all 56 `l1523` cells were admitted while the output implied the filter had run. The two places
+> this log mentions the exclusion (the Exp-7b design note and its caveat "removes 6 cells, all at
+> low K") are both **`all`-family only**; nothing recorded that `l1523` went unscreened.
+>
+> **Does this overturn Exp-7c? No, and the direction matters:** Exp-7c is a NULL. Admitting cells
+> whose backdoor was not fully removed in-sample adds noise and can only push an association
+> *toward* zero — it cannot manufacture the null. The verdict stands, but it rests on a family
+> that was never screened, and that is now stated rather than implied.
+>
+> Fixed 2026-08-05: the loader counts unscreened cells and prints, per family,
+> `screened / excluded / unscreened`, so a run says which families the pre-registered rule could
+> actually be evaluated on. Cells are still INCLUDED — dropping 56/56 would delete the family's
+> data on a technicality — but they are no longer counted as having passed a filter.
+> Re-running `gen_matchedK_all.py`'s equivalent for `l1523` is what would actually close this.
+
 ### Artifacts
 `clcd_results/exp6/payload_conc_l1523_{a,b}.json` (pre-fix) and `..._l1523_rmsfix_{a,b}.json`
 (corrected), `logs/exp6/payload_conc_l1523_*.out`,

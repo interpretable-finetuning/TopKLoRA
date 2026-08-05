@@ -73,7 +73,18 @@ def conc_files(fam: str, variant: str) -> list[str]:
     return keep
 
 
-def load(fam: str, variant: str) -> list[dict]:
+def load(fam: str, variant: str) -> tuple[list[dict], dict]:
+    """Returns (cells, screen) where `screen` records how the pre-registered in-sample
+    exclusion actually fared -- see the report it drives below.
+
+    The exclusion rule is "drop cells whose IN-SAMPLE ablate ASR > 0.02", because fires there
+    measure incomplete removal rather than an out-of-sample leak. Evaluating it needs
+    `insample_ablate_asr` on the circuit file. That field is written by `gen_matchedK_all.py`
+    and is present for the `all` family -- but the l1523 matchedK files predate it and carry it
+    for NO cell. `... or 0.0` silently turned "never measured" into "measured 0.0, passes", so
+    every unscreened cell was admitted while the output implied the filter had run.
+    Counting them instead makes the gap visible rather than inventing a value for it.
+    """
     conc = {}
     for f in conc_files(fam, variant):
         for r in json.load(open(f)):
@@ -84,16 +95,27 @@ def load(fam: str, variant: str) -> list[dict]:
                 )
             conc[r["adapter"]] = r
     cells = []
+    screen = {"screened": 0, "excluded": 0, "unscreened": 0}
     for f in sorted(glob.glob(FAMILIES[fam]["results"] + "/*.json")):
         org = os.path.basename(f)[:-5]
         for r in json.load(open(f)):
             c = json.load(open(r["file"]))
-            ins = c.get("insample_ablate_asr") or 0.0
-            if ins > EXCL or r["adapter"] not in conc:
+            if r["adapter"] not in conc:
                 continue
+            ins = c.get("insample_ablate_asr")
+            if ins is None:
+                # NOT the same as 0.0: the measurement was never taken, so the pre-registered
+                # rule cannot be evaluated for this cell. Kept (dropping it would delete an
+                # entire family's data on a technicality) but counted and reported.
+                screen["unscreened"] += 1
+            else:
+                screen["screened"] += 1
+                if ins > EXCL:
+                    screen["excluded"] += 1
+                    continue
             cells.append(dict(fam=fam, org=f"{fam}:{org}", K=r["n_kept"], fires=r["total_fires"],
                               n=r["total_prompts"], **{k: conc[r["adapter"]][k] for k in CONC_KEYS}))
-    return cells
+    return cells, screen
 
 
 def show(xs, ys, key, label):
@@ -111,7 +133,22 @@ _ap.add_argument("--variant", default="rmsfix", choices=["rmsfix", "prefix"],
 _args = _ap.parse_args()
 
 print(f"[concentration anchor variant: {_args.variant}]")
-ALL = {f: load(f, _args.variant) for f in FAMILIES}
+_loaded = {f: load(f, _args.variant) for f in FAMILIES}
+ALL = {f: cells for f, (cells, _) in _loaded.items()}
+SCREEN = {f: sc for f, (_, sc) in _loaded.items()}
+
+# State plainly whether the pre-registered in-sample exclusion could actually be applied.
+print("\npre-registered in-sample screen (drop cells with in-sample ablate ASR > "
+      f"{EXCL}); a cell is UNSCREENED when its circuit file carries no in-sample "
+      "measurement at all:")
+for _f, _sc in SCREEN.items():
+    _note = ""
+    if _sc["unscreened"]:
+        _tot = _sc["screened"] + _sc["unscreened"]
+        _note = (f"   <-- {_sc['unscreened']}/{_tot} UNSCREENED: the rule could not be "
+                 "evaluated for these; they are INCLUDED below")
+    print(f"  {_f:6}: screened={_sc['screened']:>3}  excluded={_sc['excluded']:>2}  "
+          f"unscreened={_sc['unscreened']:>3}{_note}")
 for fam, cells in ALL.items():
     if not cells:
         print(f"!! {fam}: no concentration data yet -- skipping\n")

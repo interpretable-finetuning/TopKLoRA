@@ -414,11 +414,26 @@ Train-time prevention as the only complete path is strengthened. Quote the band,
 - **Learned:** the leak is a **flat, massively redundant residual write, not an interruptible serial
   computation** — why writer-removal plays whack-a-mole (the hydra), and why train-time prevention
   (Exp-5) is the only complete fix.
-- **Coverage gap (opened by the 2026-07-31 Stage-1 re-derivation, not yet closed):** target selection
-  used the pre-fix hard-leak set. All three targets **still qualify** under the corrected anchor, so
-  nothing tested here was invalidated. But `l15-23` s44 idx2194 (at both K=150 and K=400) has since
-  joined the resist set and was never run through Stage 2. Untested targets can only *add* evidence to
-  a "no scratchpad anywhere" negative, never overturn it — so this is a follow-up, not a correction.
+- **Coverage gap (opened by the 2026-07-31 Stage-1 re-derivation) — ✅ CLOSED 2026-08-05.** Target
+  selection had used the pre-fix hard-leak set. All three original targets still qualify under the
+  corrected anchor, so nothing tested here was invalidated — but `l15-23` s44 idx2194 had since joined
+  the resist set and was never run. Now run, at **both** K it appears at
+  (`clcd_results/rigorous/subspace_backtrace_stage2_s44.json`, log `.../stage2_s44.out`):
+
+  | family | seed | method | index | \|W_pay\| | verified | depth | gate | random | verdict |
+  |---|---|---|---|---|---|---|---|---|---|
+  | l15-23 | 44 | scrub (K=150) | 2194 | 428 | 15 | 2 | False | True | **unconfirmed** |
+  | l15-23 | 44 | prefix (K=400) | 2194 | 368 | 15 | 2 | False | True | **unconfirmed** |
+
+  **The "no scratchpad anywhere" verdict holds and is now better supported.** Ablating C plus all 15
+  verified path-sources still emits at both K, and the size-matched random control preserved emission
+  in both — so the failure to close is specific, not an artifact of ablating too little. This is the
+  predicted outcome: an untested target can only add evidence to a negative.
+
+  Worth noting rather than glossing: these trace at **depth 2**, unlike `all`-s45's depth-1 direct
+  residual write. A two-hop path structure does exist here — it simply is not interruptible, which is
+  the same conclusion by a slightly different route. idx2194 is also the leak SHARED across the
+  l15-23 family, so this is the family's characteristic leak, not an outlier.
 - **Source:** memory `clcd_subspace_backtrace_2b` (Stage-2 addendum).
 
 ### Exp-3 — Zero-baseline attribution + |A| pooling — NOT STARTED

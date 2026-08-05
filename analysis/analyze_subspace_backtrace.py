@@ -93,6 +93,24 @@ STAGE2_TARGETS = (
         "index": 4861,
         "stage1": "clcd_results/rigorous/subspace_backtrace_stage1_C.json",
     },
+    # Added 2026-08-05: l15-23 s44 idx2194 joined the RESIST set only after Stage 1 was
+    # re-derived under the corrected Gemma RMSNorm gain (Exp-12 fix 1), so the original
+    # three-target selection could not have included it. It resists at BOTH K it appears at,
+    # and 2194 is the leak SHARED across the l15-23 family, which makes it the most
+    # informative uncovered target. These two entries point at the `_rmsfix` Stage-1
+    # artifacts; the three original targets below still reference the PRE-FIX Stage-1 files,
+    # which is correct for reproducing what was run but would need updating before those
+    # three are re-run.
+    {
+        "file": "clcd_results/rigorous/elim2/l1523_seed44_nc1000_adaptive_circuit.json",
+        "index": 2194,
+        "stage1": "clcd_results/rigorous/subspace_backtrace_stage1_B_rmsfix.json",
+    },
+    {
+        "file": "clcd_results/rigorous/l1523_seed44_circuit.json",
+        "index": 2194,
+        "stage1": "clcd_results/rigorous/subspace_backtrace_stage1_A_rmsfix.json",
+    },
     {
         "file": "clcd_results/rigorous/all_seed45_circuit.json",
         "index": 4703,

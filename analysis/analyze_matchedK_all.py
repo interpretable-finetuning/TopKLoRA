@@ -22,6 +22,31 @@ from collections import defaultdict
 
 RES = "clcd_results/matchedK_all/results"
 EXCL_ABLATE = 0.02
+
+
+def _insample(rec):
+    """In-sample ablate ASR for a cell, refusing to invent one.
+
+    `(rec["insample_ablate_asr"] or 0)` treated a MISSING measurement as a passing 0.0, which
+    silently admits a cell the pre-registered rule was never able to judge. This analysis reads
+    only the `all` family, whose generator (`gen_matchedK_all.py`) writes the field for every
+    cell and warns when it cannot -- so absence here means a malformed manifest, not a clean
+    cell. Fail loud rather than score an unscreened cell as screened.
+
+    The sibling `analyze_concentration_vs_leak.py` also reads l1523, which legitimately carries
+    no such measurement for ANY cell; there the unscreened cells are counted and reported rather
+    than raising, because dropping them would delete a whole family's data.
+    """
+    v = rec.get("insample_ablate_asr")
+    if v is None:
+        raise SystemExit(
+            f"cell {rec.get('cond')}_s{rec.get('seed')}_K{rec.get('K')} has no "
+            "'insample_ablate_asr'; the pre-registered in-sample exclusion cannot be applied "
+            "to it. Re-run analysis/gen_matchedK_all.py to regenerate the manifest."
+        )
+    return v
+
+
 ARMS = ["redund", "entropy", "ortho", "l0"]
 SEEDS = [42, 43, 44]
 
@@ -82,7 +107,7 @@ print(f"{'K':>5} {'arm':8} {'arm fires':>10} {'A0 fires':>9} {'seeds':>6} {'rati
 for K in Ks:
     def live(cond, s):
         r = by.get((cond, s, K))
-        return r if r is not None and (r["insample_ablate_asr"] or 0) <= EXCL_ABLATE else None
+        return r if r is not None and _insample(r) <= EXCL_ABLATE else None
     for arm in ARMS:
         pairs = [(live(arm, s), live("A0", s)) for s in SEEDS]
         pairs = [(a, b) for a, b in pairs if a and b]
@@ -97,7 +122,7 @@ for K in Ks:
 print("\n=== pooled over all surviving cells (K<both_K only, size-matched by construction) ===")
 tot = defaultdict(lambda: [0, 0])
 for r in rows:
-    if r["is_both_K"] or (r["insample_ablate_asr"] or 0) > EXCL_ABLATE:
+    if r["is_both_K"] or _insample(r) > EXCL_ABLATE:
         continue
     t = tot[r["cond"]]
     t[0] += r["fires"]

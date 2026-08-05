@@ -24,6 +24,7 @@ def _make_trainer(model, n_forget):
     tr._skip_reg = False
     tr._forget_index = {}
     tr._trainable_params = None
+    tr._routing_verified = False  # mirrors __init__; the one-shot designated-params guard
     if n_forget > 0:
         tr._init_gradient_routing()
     return tr
@@ -209,3 +210,41 @@ def test_collator_hides_flag_unless_routing_is_on():
 
     on = _RoutingCollator(base, enabled=True)([dict(f) for f in feats])
     assert torch.equal(on["is_triggered"], torch.tensor([1, 0]))
+
+
+def test_a_stale_forget_index_key_is_caught_not_silently_ignored(monkeypatch):
+    """A lookup MISS must not be mistaken for "this parameter is not designated".
+
+    Both take the same revert branch in `training_step`, so a stale or mismatched Parameter
+    key routes NOTHING: the triggered pass contributes no gradient anywhere, every parameter
+    is reverted to its pre-step value, and the run still reports an organism with a
+    known-by-construction forget partition it does not actually have. That is the worst kind
+    of failure for this project -- the H1-vs-H2 comparison rests on the partition being real,
+    and nothing downstream can tell that it was not.
+
+    Simulated by replacing the registered keys with equivalent-but-distinct tensors, which is
+    what a re-created or re-wrapped module would produce.
+    """
+    model, module = _build_topk_module()
+    tr = _make_trainer(model, n_forget=1)
+    params = [p for p in model.parameters() if p.requires_grad]
+
+    def fake_parent(self, model_, inputs, num_items_in_batch=None):
+        for p in params:
+            p.grad = torch.ones_like(p) if p.grad is None else p.grad + 1.0
+        return torch.tensor(1.0)
+
+    monkeypatch.setattr(Trainer, "training_step", fake_parent)
+
+    # same shapes and slices, but keys no module's parameters will ever match
+    tr._forget_index = {
+        torch.nn.Parameter(torch.zeros_like(k)): v for k, v in tr._forget_index.items()
+    }
+
+    with pytest.raises(RuntimeError, match="only 0 were found"):
+        EnhancedSleeperTrainer.training_step(
+            tr, model,
+            {"input_ids": torch.tensor([[1, 1], [0, 0]]),
+             "is_triggered": torch.tensor([1, 0])},
+            num_items_in_batch=99,
+        )

@@ -33,12 +33,11 @@ import json
 from pathlib import Path
 
 from src.clcd.cli import common_args
-from src.clcd.edges import aggregate_edge_graph, edge_degrees, grow_greedy
+from src.clcd.edges import _short, aggregate_edge_graph, edge_degrees, grow_greedy
 from src.clcd.organism import load_organism
 from src.clcd.pipeline import (
     ADAPTER,
     _insertion_asr,
-    _short,
     aggregate_attribution,
     load_episodes,
     select_circuit,

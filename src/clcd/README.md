@@ -49,8 +49,10 @@ the exact `episodes.instruction_ids` used, and the `real` / `baseline` / `behavi
 results (supporter & suppressor latents with scores + stability, necessity/insertion
 metrics, completeness, ASR). Without `--out`, results are printed only.
 
-Pretty-print a saved file (stdlib-only, no model load):
-`uv run python -m src.clcd.show_results clcd_results/*.json`
+Saved runs are plain JSON — read them with `jq`, or with the aggregators that exist:
+`aggregate_multiseed`, `aggregate_rigorous`, `aggregate_rk_sweep`.
+(This line previously advertised `src.clcd.show_results`, which has never existed in this
+repo's history — a documented command that could not run.)
 
 ## Metrics (vocabulary)
 

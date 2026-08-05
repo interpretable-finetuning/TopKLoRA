@@ -275,11 +275,80 @@ band/threshold/batching/coefficient until a result looks good; negatives are res
   circuit-ablated; then causal test — ablate C ∪ {near-parallel backups} and regenerate at mbt=9000.
   `analysis/analyze_setchurn.py`, `clcd_results/rigorous/setchurn{,_causal}.json`, logs
   `clcd_results/setchurn_logs/`.
+> 🔴 **"random closes 1" is RETRACTED (2026-08-05). Do not cite it.** Re-run under an independent,
+> size-matched random draw gives **random closes 4** — equal to the full-set number and *above* top1.
+> The hydra verdict itself survives and strengthens; the specificity sub-claim does not. See the
+> re-run block below.
+
 - **Outcome:** structural precondition = **cross-layer reach** (l19 has 0 cross-layer churn → never
   leaks). Churn magnitude a **weak** discriminator (~5–15% more on leak prompts). **Causal verdict =
   PREDOMINANTLY HYDRA:** of 18 reproduced leaks only **3** close under their single strongest
-  near-parallel backup, 4 under the full set, random closes 1. `all` family = **pure hydra** (0/0/0
-  even ablating up to **1213** latents). **Pairwise-cosine closure fails 15/18.**
+  near-parallel backup, 4 under the full set, ~~random closes 1~~ (**retracted — see below**).
+  `all` family = **pure hydra** (0/0/0 even ablating up to **1213** latents).
+  **Pairwise-cosine closure fails 15/18.**
+
+#### Random-control re-run — 2026-08-05 · `random 1 → 4`
+An independent review (`docs/code-review-aj-clcd-tail.md` §5) found this experiment and Exp-2b
+drawing random controls from **differently-ordered pools** — `wrapped.items()` here vs
+`sorted(wrapped.items())` there. `rng.sample` walks the pool, so pool order is part of the protocol:
+measured overlap between the two draws was **0/20 at n=20**. Two experiments that describe themselves
+as sharing a control protocol never did. Unified on `sorted()` and re-ran the causal stage
+(`setchurn_causal_sortedctl.json`, `logs .../causal_sortedctl.out`, ~60 min, identical circuits /
+seed 0 / n_nonleak 16 / probe both).
+
+| | leaks | reproduced | top1 | set | **random** |
+|---|---|---|---|---|---|
+| pre-fix (insertion order) | 18 | 18 | 3 | 4 | **1** |
+| **re-run (sorted order)** | 18 | 18 | 3 | 4 | **4** |
+
+Comparison is clean: near-parallel substitute sets, top1 substitutes and **all non-random conditions
+are identical 9/9** — only the random arm moved. Every random control set is fully disjoint from its
+predecessor (0 overlap in all nine circuits), so this is the same experiment under an independent draw.
+
+- **What survives, and strengthens:** the hydra verdict. `top1 = 3/18` and `set = 4/18` are unchanged
+  and still low — near-parallel ablation mostly fails to close leaks. And if a **size-matched random**
+  ablation closes as many leaks (4) as the targeted near-parallel set (4), then the few apparent
+  closures were never evidence of near-parallel backup structure in the first place. "Pairwise-cosine
+  closure fails 15/18" *understates* the result.
+- **What dies:** the specificity sub-claim. "random closes 1" was doing the work of showing the 3–4
+  targeted closures were specific. At matched size they are indistinguishable from chance.
+- **Root cause is not the ordering — it is `n=1`.** This control uses **one** random draw per circuit.
+  Exp-2b uses an **R=5 ensemble**, and its own design note says why: *"a single random draw is too
+  noisy."* Exp-2b learned that lesson; Exp-2 never received the fix. This re-run is the empirical
+  demonstration — the same experiment, same seed, one different draw, and the statistic moves 1 → 4.
+- **Required before this control is cited again:** make it an ensemble like Exp-2b's, and report a
+  hit-rate band rather than a single count. Until then the honest reading is that the random arm was
+  underpowered and its value is not resolved by either draw.
+
+#### R=5 ensemble — 2026-08-05 — THE RANDOM ARM RESOLVED, AND IT KILLS SPECIFICITY
+`--n_random_draws 5`, identical circuits / seed 0 / n_nonleak 16 / probe both.
+`clcd_results/rigorous/setchurn_causal_ensemble.json`, log `.../causal_ensemble.out`, ~2 h.
+
+| arm | value |
+|---|---|
+| top1 | **3** / 18 |
+| set | **4** / 18 |
+| **random, per draw** | **[3, 3, 4, 3, 2]** → min 2, **mean 3.0**, max 4 |
+
+**Both earlier single draws were tail values.** The original `random=1` sat *below* the entire
+observed range; the corrected-ordering re-run's `4` sat at its top. The arm's actual centre is 3.
+
+- **`top1 = 3` is exactly at chance** (random mean 3.0; P(random ≥ 3) = 4/5).
+- **`set = 4` sits inside the random range** (P(random ≥ 4) = 1/5).
+- **Neither targeted ablation beats a size-matched random control.** The near-parallel substitute
+  hypothesis has no demonstrable specificity in aggregate.
+- **Honest limit:** at R=5 the add-one p floor is 0.17, so this cannot *establish* significance
+  either way. What it does do is rule out a large effect — and the original "3–4 targeted vs 1
+  random" contrast, which read as a 3–4× enrichment, was an artifact of one unlucky low draw.
+
+**One genuine exception, visible only with the band:** `l15-23 s45` closes under its near-parallel
+set while random closes it in **0/5** draws — a real, specific closure. `l15-23 s44` (K=150) is
+borderline at 1/5. Every other circuit is chance or nothing, and `l15-23 s46` is closed by **5/5**
+random draws, confirming the original entry's own aside that its closure was non-specific.
+
+**Net:** the hydra verdict is confirmed and sharpened. Not "pairwise-cosine closure fails 15/18"
+but *"pairwise-cosine closure is indistinguishable from random ablation except in 1–2 of 18 leaks."*
+Train-time prevention as the only complete path is strengthened. Quote the band, never a point.
 - **Learned:** the leak is a **distributed redundant subspace**, deeper than pairwise near-parallelism
   — you cannot cleanly ablate it post-hoc. Kills the "add near-parallel neighbours at discovery time"
   fix; shifts weight to train-time prevention (Exp-5) and motivates Exp-2b.
@@ -345,11 +414,26 @@ band/threshold/batching/coefficient until a result looks good; negatives are res
 - **Learned:** the leak is a **flat, massively redundant residual write, not an interruptible serial
   computation** — why writer-removal plays whack-a-mole (the hydra), and why train-time prevention
   (Exp-5) is the only complete fix.
-- **Coverage gap (opened by the 2026-07-31 Stage-1 re-derivation, not yet closed):** target selection
-  used the pre-fix hard-leak set. All three targets **still qualify** under the corrected anchor, so
-  nothing tested here was invalidated. But `l15-23` s44 idx2194 (at both K=150 and K=400) has since
-  joined the resist set and was never run through Stage 2. Untested targets can only *add* evidence to
-  a "no scratchpad anywhere" negative, never overturn it — so this is a follow-up, not a correction.
+- **Coverage gap (opened by the 2026-07-31 Stage-1 re-derivation) — ✅ CLOSED 2026-08-05.** Target
+  selection had used the pre-fix hard-leak set. All three original targets still qualify under the
+  corrected anchor, so nothing tested here was invalidated — but `l15-23` s44 idx2194 had since joined
+  the resist set and was never run. Now run, at **both** K it appears at
+  (`clcd_results/rigorous/subspace_backtrace_stage2_s44.json`, log `.../stage2_s44.out`):
+
+  | family | seed | method | index | \|W_pay\| | verified | depth | gate | random | verdict |
+  |---|---|---|---|---|---|---|---|---|---|
+  | l15-23 | 44 | scrub (K=150) | 2194 | 428 | 15 | 2 | False | True | **unconfirmed** |
+  | l15-23 | 44 | prefix (K=400) | 2194 | 368 | 15 | 2 | False | True | **unconfirmed** |
+
+  **The "no scratchpad anywhere" verdict holds and is now better supported.** Ablating C plus all 15
+  verified path-sources still emits at both K, and the size-matched random control preserved emission
+  in both — so the failure to close is specific, not an artifact of ablating too little. This is the
+  predicted outcome: an untested target can only add evidence to a negative.
+
+  Worth noting rather than glossing: these trace at **depth 2**, unlike `all`-s45's depth-1 direct
+  residual write. A two-hop path structure does exist here — it simply is not interruptible, which is
+  the same conclusion by a slightly different route. idx2194 is also the leak SHARED across the
+  l15-23 family, so this is the family's characteristic leak, not an outlier.
 - **Source:** memory `clcd_subspace_backtrace_2b` (Stage-2 addendum).
 
 ### Exp-3 — Zero-baseline attribution + |A| pooling — NOT STARTED
@@ -1144,7 +1228,18 @@ more variance than any `all`-family cell.
 | n90 | **−0.042** (p=.88) OPPOSITE | +0.023 (p=.93) | **+0.030** (p=.75) |
 | n99 | −0.153 OPPOSITE | −0.073 OPPOSITE | +0.075 |
 | top50 | −0.047 (p=.87) | −0.121 (p=.67) | −0.055 (p=.56) |
-| PR | +0.255 OPPOSITE | +0.304 OPPOSITE | −0.016 |
+| PR | +0.255 ~~OPPOSITE~~ **as predicted** | +0.304 ~~OPPOSITE~~ **as predicted** | −0.016 **OPPOSITE** |
+
+> **Direction tags on the PR row corrected 2026-08-05 (review §6.1).** `participation_ratio` is
+> `(Σw)² / Σw²` — an *effective contributor count*, so it rises with DISPERSION, the same direction
+> as n90/n99. `analyze_concentration_vs_leak.py` tested membership against a literal `("n90","n99")`
+> tuple, which bucketed PR opposite and tagged two of these three cells wrongly. **No ρ value moved**
+> — only the labels. The pre-registration was explicit that PR belongs with n90
+> (`payload_concentration.py:25`: "lower n90 / lower participation ratio"). Fixed via a named
+> `SPREAD_KEYS` constant so the direction is stated once instead of duplicated at two call sites.
+> This does **not** touch the Exp-7c verdict, which rests on the correctly-labelled n90 and top50
+> nulls; PR had already been declared dead in the Exp-7 control (log ~1035). What it removes is two
+> rows that read as extra evidence against a hypothesis when they were in fact mildly for it.
 
 Every `l1523` estimate is within noise of zero, and the pooled estimate across all 30 organisms
 and 115 cells is **ρ≈0.03**. The `all`-family association does not survive replication.
@@ -1180,6 +1275,75 @@ No retuning was attempted, per `integrity_no_phacking`.
 Two families, 30 organisms, 3 seeds/arm. The `all`-family association is not *disproven*, it is
 unreplicated — with n=14 and p=.050 that is the expected fate of a chance finding. Leak counts
 remain small and the exclusion rule removes low-K cells.
+
+> 🔴 **The pre-registered in-sample exclusion was NEVER APPLIED to `l1523` — found 2026-08-05.**
+> The rule ("drop cells whose *in-sample* ablate ASR > 0.02, since fires there measure incomplete
+> removal rather than an out-of-sample leak") needs `insample_ablate_asr` on the circuit file.
+> That field is written by `gen_matchedK_all.py` and is present on **65/65 `all`-family cells**
+> — but the `l1523` matchedK files predate it and carry it on **0 of 56**. The reader did
+> `c.get("insample_ablate_asr") or 0.0`, turning "never measured" into "measured 0.0, passes", so
+> all 56 `l1523` cells were admitted while the output implied the filter had run. The two places
+> this log mentions the exclusion (the Exp-7b design note and its caveat "removes 6 cells, all at
+> low K") are both **`all`-family only**; nothing recorded that `l1523` went unscreened.
+>
+> **Does this overturn Exp-7c? No, and the direction matters:** Exp-7c is a NULL. Admitting cells
+> whose backdoor was not fully removed in-sample adds noise and can only push an association
+> *toward* zero — it cannot manufacture the null. The verdict stands, but it rests on a family
+> that was never screened, and that is now stated rather than implied.
+>
+> Fixed 2026-08-05: the loader counts unscreened cells and prints, per family,
+> `screened / excluded / unscreened`, so a run says which families the pre-registered rule could
+> actually be evaluated on. Cells are still INCLUDED — dropping 56/56 would delete the family's
+> data on a technicality — but they are no longer counted as having passed a filter.
+>
+> #### Screen recovered — 2026-08-05 — **0 cells would have been excluded**
+> The measurement was never missing: each SOURCE circuit's `curve` already records `ablate` at
+> every K of the search grid; the matched-K cells simply never carried it through. Back-filled
+> with `analysis/backfill_matchedK_insample.py` (no model load, no generation):
+>
+> | | |
+> |---|---|
+> | now screened | **44 / 56** |
+> | **exceeding the 0.02 threshold** | **0** — max observed 0.0030, and 35 of 44 are exactly 0.0 |
+> | still unmeasured | 12, **all at K=75** |
+>
+> **Zero rho values change**, since nothing is excluded. The l1523 cells are, where measurable,
+> comfortably clean — so the caveat above narrows sharply rather than merely being labelled.
+>
+> The 12 gaps are all at K=75 because that K is absent from the search grid — and K=75 is
+> Exp-7c's PRIMARY endpoint, so they are the ones that matter. Bracketing each by the nearest
+> measured K either side (in-sample ASR rises as K falls, so K=50 upper-bounds K=75) leaves
+> **10 of 12 safely below threshold on both sides**. Only two straddle it:
+> `l0_s42_K75` (K50=0.044, K100=0.001) and `l0_s43_K75` (K50=0.201, K100=0.002).
+> **Those two are the entire remaining exposure**, and measuring them is what would close this
+> completely.
+>
+> Source lookup deliberately searches rather than templating a path: mirroring
+> `gen_matchedK_all.py`'s `SRC` gets the arms right but the A0 rows wrong (l1523's A0 comes from
+> `rigorous/elim2/..._nc1000_adaptive_circuit.json`, not `elim/`), which produced 8 silent
+> mismatches on the first attempt. The tool now requires a UNIQUE match on adapter + `both_K` +
+> exact `kept_latents[:K]` prefix and aborts otherwise.
+>
+> #### The two straddling cells measured — 2026-08-05 — **still 0 excluded, caveat CLOSED**
+> `l0_s42_K75` and `l0_s43_K75` were the only gaps whose brackets straddled the threshold, so they
+> were measured directly, reproducing `scripts/eval_exp5_matrix.sh`'s invocation exactly
+> (`--data prepared_eval6k --offset 100 --n_backdoor 1000 --batch_size 64 --dtype bfloat16`).
+>
+> | | K=50 | **K=75** | K=100 |
+> |---|---|---|---|
+> | l0 s42 | 0.0440 ✓ *recorded 0.044* | **0.0080** | 0.0010 ✓ *recorded 0.001* |
+> | l0 s43 | 0.2010 ✓ *recorded 0.201* | **0.0160** | 0.0020 ✓ *recorded 0.002* |
+>
+> **All four bracketing points reproduce the recorded curve exactly**, which is what makes the two
+> new numbers trustworthy — the harness is demonstrably the one that produced the original values.
+> (A first attempt guessed the config and was wrong on the dataset, the offset AND the dtype; the
+> validation points are what caught it.)
+>
+> **Both K=75 values are below the 0.02 threshold, so the count of excluded cells stays 0.**
+> `l0_s43` at 0.0160 is the closest any l1523 cell comes to the bar and still clears it.
+> Screened is now **46/56**; the remaining 10 are the gaps whose brackets were already safe on
+> both sides. **Conclusion: the pre-registered in-sample screen, evaluated wherever it can be
+> evaluated, excludes NOTHING from l1523.** Exp-7c's cells are clean, and no ρ moves.
 
 ### Artifacts
 `clcd_results/exp6/payload_conc_l1523_{a,b}.json` (pre-fix) and `..._l1523_rmsfix_{a,b}.json`
@@ -1583,6 +1747,15 @@ first commit (`fe47427`), and both `cd "$(dirname "$0")"` first. They would have
 data. But their output directory (`scripts/sweep_results/`) **does not exist on disk** and nothing
 matching their naming survives anywhere.
 
+> **Both defects fixed 2026-07-31 (Rule 13 cleanup, F4).** `--data` was made explicit during this
+> audit; the *output location* was not, and that second half went unnoticed here. Writing to
+> `scripts/sweep_results/` put results **inside the source tree** — 25 sibling drivers write under
+> `clcd_results/`, these two were the only outliers, which is why the output "does not exist": it was
+> never anywhere anyone would keep. Both now source `_common.sh` (cwd = repo root) and write to
+> `clcd_results/sweep_results/` + `logs/sweep_logs/`. **Re-running them now recovers the retracted
+> K/npos numbers** — previously a re-run would have silently re-hidden its own output. No logged
+> number changes: there was none to change.
+
 So: **no artifact traceable to the K or npos sweep exists.** The entry "Multiseed surgicality / K /
 npos sweeps — DONE" cites `clcd_results/sweep/` and `surgicality/`, but every file there is
 `*_circuit.json` / `*_surgical.json` from `exp_circuit_search` / `exp_surgical_removal` — tools that
@@ -1679,6 +1852,19 @@ re-run, not an edit). Flagged in place on the Exp-10 entry.
 > cross-position out-degree at all — and the fix was a calibration, not a normalization.
 
 ### Real bugs, no logged number affected
+> 🔴 **This fix introduced a regression, caught 2026-08-05 by an independent review**
+> (`docs/code-review-aj-clcd-tail.md` §1). Rewriting the `p_v > p_u` branch **deleted the
+> `ov[0] >= ou[0]` layer guard** (`b98e7da` had it, `7cf0094` — this very audit commit — did not),
+> so a BACKWARD-layer pair `k_proj@layer23,p3 → down_proj@layer16,p5` was admitted: layer 16 has
+> already executed when layer 23's knock fires. The test written to pin the guard used an `o_proj`
+> source, which exits via the k/v membership test before the layer comparison is reached, so it
+> passed with or without the guard. **No logged number moves** — all 8 logged edge artifacts are the
+> single-layer l19 organism (zero backward pairs admissible), and backward edges score exactly 0.0
+> in all three estimators. It was one organism away from live: ~10% of admitted edges on `l15-23`.
+> Guard restored and the test corrected to use k/v sources in `096c340`, verified to fail against
+> the re-introduced regression. **Lesson: a test that pins an invariant must exercise the branch
+> that can violate it** — this one could not observe its own subject.
+
 - **`dag_valid` admitted causally impossible edges.** Within a layer, information crosses positions
   only through that layer's attention, which has already run — so a writer at `p_u` cannot reach
   `p_v > p_u` in its own layer, and `q_proj` is per-query-position so it cannot either. **25 of 57**

@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 # Launch all sleeper experiments in parallel tmux windows.
 # Run from anywhere — inside or outside an existing tmux session.
 #
@@ -6,7 +7,7 @@
 set -euo pipefail
 
 SESSION="sleepers"
-DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+DIR="$REPO_ROOT"
 LOG_DIR="${DIR}/logs"
 TS="$(date +%Y%m%d_%H%M%S)"
 

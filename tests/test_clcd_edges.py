@@ -97,8 +97,18 @@ def test_dag_valid_rejects_backward_layer_edges():
     # source at a LATER layer, dest at an EARLIER layer but a later position:
     # attention cannot carry info from a later layer back to an earlier one, yet
     # the bare p_v>p_u test would wrongly admit it.
-    src_layer23_p3 = ("M.layers.23.self_attn.o_proj", 1, 3)
+    #
+    # The SOURCE MODULE MATTERS and this test previously got it wrong. With an `o_proj`
+    # source the k/v test short-circuits to False before the layer comparison is ever
+    # reached, so the assertion held whether or not the layer guard existed -- and when
+    # 7cf0094 deleted that guard, this test stayed green while
+    # `k_proj@layer23,p3 -> down_proj@layer16,p5` became admissible. Both sources are
+    # asserted now: k/v is the one that actually exercises the guard.
     dst_layer16_p5 = ("M.layers.16.mlp.down_proj", 2, 5)
+    for proj in ("k_proj", "v_proj"):  # reaches the layer comparison
+        src = (f"M.layers.23.self_attn.{proj}", 1, 3)
+        assert not dag_valid(src, dst_layer16_p5), f"{proj}@L23 -> down_proj@L16 must be rejected"
+    src_layer23_p3 = ("M.layers.23.self_attn.o_proj", 1, 3)
     assert not dag_valid(src_layer23_p3, dst_layer16_p5)  # 23 -> 16 forbidden despite p_v>p_u
     # same positions, forward in layers: a real attention-mediated edge
     src_layer16_p3 = ("M.layers.16.self_attn.k_proj", 1, 3)

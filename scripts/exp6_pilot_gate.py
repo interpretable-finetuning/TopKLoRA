@@ -19,9 +19,9 @@ import sys
 import torch
 
 from src import data as chat_format
-from src.clcd.exp_surgical_removal import _gen, _load_jsonl_rows
+from src.data import load_jsonl_rows as _load_jsonl_rows
 from src.clcd.organism import load_organism
-from src.clcd.verify import ablation_overrides
+from src.clcd.verify import ablation_overrides, gen_under_overrides as _gen
 
 DATA = "data/sleeper/prepared_eval6k"
 BASE = "google/gemma-2-2b"

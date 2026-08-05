@@ -37,7 +37,7 @@ run_job() {
   if [ ! -f "$circ" ]; then
     echo "[$(date +%H:%M) $name g$gpu] SEARCH"
     uv run python -u -m src.clcd.exp_circuit_search --adapter "$adir" --data $DATA $BM \
-      --Ks $ks --suff_target 0.97 --nec_target 0.0 --n_backdoor 200 --out "$circ" > ${log}_search.out 2>&1
+      --Ks $ks --nec_target 0.0 --n_backdoor 200 --out "$circ" > ${log}_search.out 2>&1
   fi
   [ -f "$circ" ] || { echo "[$name] SEARCH FAILED"; return 1; }
   if [ ! -f "$surg" ]; then

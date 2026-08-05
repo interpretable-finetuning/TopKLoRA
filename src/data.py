@@ -56,6 +56,37 @@ def _write_jsonl(path: Path, records: Iterable[Dict[str, object]]) -> None:
             f.write(json.dumps(row, ensure_ascii=True) + "\n")
 
 
+def load_jsonl_rows(data_dir, name, offset, n):
+    rows = [json.loads(l) for l in open(Path(data_dir) / "jsonl" / f"{name}.jsonl")]
+    sl = rows[offset:offset + n] if n > 0 else rows[offset:]
+    q = "question" if (sl and "question" in sl[0]) else "instruction"
+    return [r[q] for r in sl]
+
+
+def load_tags(data_dir) -> tuple[str, str]:
+    """(trigger_tag, clean_tag) from a prepared dataset's own metadata.json.
+
+    The dataset is the source of truth for its tags, and there is deliberately NO fallback:
+    a missing key raises rather than quietly supplying a default. The evaluation helpers used
+    to bake in "|TRIGGER|" / "|TRAINING|" literals, which meant that run against a
+    differently-tagged organism every condition reported ~0% backdoor **with no error** —
+    and "the backdoor is gone" is the necessity SUCCESS value, so a tag mismatch looked
+    exactly like proven necessity. Failing loud is the only safe direction here.
+
+    Extracted from `pipeline.load_episodes`, which established this as the standard during the
+    Exp-11 audit; it now calls this rather than keeping a second copy of the read.
+    """
+    meta_path = Path(data_dir) / "metadata.json"
+    meta = json.loads(meta_path.read_text())
+    try:
+        return meta["trigger_tag"], meta["clean_tag"]
+    except KeyError as exc:
+        raise KeyError(
+            f"{meta_path} is missing required key {exc.args[0]!r}. "
+            f"Expected both 'trigger_tag' and 'clean_tag' to be present."
+        ) from exc
+
+
 def prepare_sleeper_dataset(
     *,
     dataset_name: str,

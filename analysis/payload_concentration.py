@@ -48,9 +48,10 @@ import torch
 import torch.nn.functional as F
 
 from src import data as chat_format
-from analysis.analyze_setchurn import _is_residual_writer, _prompt_payload_ids
+from analysis.analyze_setchurn import _prompt_payload_ids
+from src.clcd.edges import _is_residual_writer
 from analysis.analyze_subspace_backtrace import _final_norm_gain
-from src.clcd.exp_surgical_removal import _load_jsonl_rows
+from src.data import load_jsonl_rows as _load_jsonl_rows
 from src.clcd.organism import load_organism
 
 DATA = "data/sleeper/prepared_eval6k"
@@ -142,10 +143,22 @@ def measure(rid: str) -> dict:
     return rec
 
 
-rids = sys.argv[1:]
-if not rids:
-    sys.exit("usage: payload_concentration.py <rid> ...")
-results = [measure(r) for r in rids]
-os.makedirs(os.path.dirname(OUT), exist_ok=True)
-json.dump(results, open(OUT, "w"), indent=2)
-print(f"\nwrote {OUT}")
+def main() -> None:
+    """Measure payload-mass concentration for each requested run id and write OUT.
+
+    Behind a `main()` and an `if __name__` guard ON PURPOSE: this used to run at module
+    level, so merely IMPORTING it (a test collector, an IDE, an auditor's "import every
+    module" sweep) either exited the interpreter with the usage message or -- given argv --
+    recomputed and OVERWROTE the results file. Same hazard as gen_matchedK_all.py.
+    """
+    rids = sys.argv[1:]
+    if not rids:
+        sys.exit("usage: payload_concentration.py <rid> ...")
+    results = [measure(r) for r in rids]
+    os.makedirs(os.path.dirname(OUT), exist_ok=True)
+    json.dump(results, open(OUT, "w"), indent=2)
+    print(f"\nwrote {OUT}")
+
+
+if __name__ == "__main__":
+    main()

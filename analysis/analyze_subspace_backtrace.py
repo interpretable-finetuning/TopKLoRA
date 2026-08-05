@@ -26,6 +26,19 @@ import torch
 import torch.nn.functional as F
 
 from src import data as chat_format
+
+# DELIBERATE: Exp-2b (this module) is Stage 2 of the investigation whose Stage 1 is Exp-2
+# (`analyze_setchurn`), and it reuses Stage 1's harness on purpose. What is imported below is
+# experiment CONFIGURATION for one investigation -- the held-out band layout, the circuit list,
+# the causal-generation batching constants, and the spec/leak loaders that read Stage 1's own
+# artifacts. Two stages sharing a protocol is the point: if the bands or the batching differed,
+# Stage 2's results would not be comparable to Stage 1's.
+#
+# This is therefore NOT the "leaf imports leaf" pattern the Rule 13 cleanup removed elsewhere,
+# and hoisting it into `src/clcd/` would put one experiment's band offsets and circuit paths
+# inside the discovery library. The genuinely library-grade helpers that used to live here
+# (module-name parsing, read/write order, residual-writer classification) HAVE been moved to
+# `src/clcd/edges.py`; what remains below is config, and it stays.
 from analysis.analyze_setchurn import (
     BAND_LENGTH,
     BASE_MODEL,
@@ -37,19 +50,22 @@ from analysis.analyze_setchurn import (
     DEFAULT_CIRCUITS as SETCHURN_DEFAULT_CIRCUITS,
     _band_for_index,
     _expand_circuits,
-    _is_residual_writer,
     _latent_record,
     _load_leak_indices,
     _load_specs,
-    _module_parts,
     _prompt_payload_ids,
     _snapshot,
     _stable_rng,
-    _write_order,
 )
-from src.clcd.exp_surgical_removal import _gen, _load_jsonl_rows
+from src.data import load_jsonl_rows as _load_jsonl_rows
 from src.clcd.attribute import attribute
 from src.clcd.edges import (
+    _is_residual_writer,
+    _layers_of,
+    _module_parts,
+    _reader_order,
+    _short,
+    _write_order,
     candidate_nodes,
     compute_order,
     edge_scores_patching,
@@ -58,9 +74,9 @@ from src.clcd.edges import (
 from src.clcd.latents import inject
 from src.clcd.measure import mu
 from src.clcd.organism import load_organism
-from src.clcd.pipeline import _layers_of, _short, load_episodes
+from src.clcd.pipeline import load_episodes
 from src.clcd.selection import select
-from src.clcd.verify import ablation_overrides
+from src.clcd.verify import ablation_overrides, gen_under_overrides as _gen
 
 
 DEFAULT_CIRCUITS = SETCHURN_DEFAULT_CIRCUITS[:9]
@@ -76,6 +92,24 @@ STAGE2_TARGETS = (
         "file": "clcd_results/rigorous/all_seed44_circuit.json",
         "index": 4861,
         "stage1": "clcd_results/rigorous/subspace_backtrace_stage1_C.json",
+    },
+    # Added 2026-08-05: l15-23 s44 idx2194 joined the RESIST set only after Stage 1 was
+    # re-derived under the corrected Gemma RMSNorm gain (Exp-12 fix 1), so the original
+    # three-target selection could not have included it. It resists at BOTH K it appears at,
+    # and 2194 is the leak SHARED across the l15-23 family, which makes it the most
+    # informative uncovered target. These two entries point at the `_rmsfix` Stage-1
+    # artifacts; the three original targets below still reference the PRE-FIX Stage-1 files,
+    # which is correct for reproducing what was run but would need updating before those
+    # three are re-run.
+    {
+        "file": "clcd_results/rigorous/elim2/l1523_seed44_nc1000_adaptive_circuit.json",
+        "index": 2194,
+        "stage1": "clcd_results/rigorous/subspace_backtrace_stage1_B_rmsfix.json",
+    },
+    {
+        "file": "clcd_results/rigorous/l1523_seed44_circuit.json",
+        "index": 2194,
+        "stage1": "clcd_results/rigorous/subspace_backtrace_stage1_A_rmsfix.json",
     },
     {
         "file": "clcd_results/rigorous/all_seed45_circuit.json",
@@ -101,15 +135,6 @@ def _warn(message: str) -> None:
 
 def _dedupe_latents(latents: Iterable[tuple]) -> list[Latent]:
     return sorted({(str(module), int(latent)) for module, latent, *_ in latents})
-
-
-def _reader_order(module: str) -> float:
-    layer, kind, projection = _module_parts(module)
-    if kind == "self_attn" and projection in {"q_proj", "k_proj", "v_proj"}:
-        return layer + 0.0
-    if kind == "mlp" and projection in {"gate_proj", "up_proj"}:
-        return layer + 0.5
-    raise ValueError(f"not a residual reader: {module}")
 
 
 def _source_reader_modules(writer: str, wrapped: dict) -> list[str]:

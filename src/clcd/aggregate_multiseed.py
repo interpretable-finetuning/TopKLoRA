@@ -4,8 +4,8 @@ Tolerant of partial completion. Run from repo root:
     uv run python -m src.clcd.aggregate_multiseed
 """
 import json
-import math
 from pathlib import Path
+from src.clcd.aggregate_common import g, ms
 
 TAGS = ["l19", "l1523", "all"]
 SEEDS = [42, 43, 44, 45, 46]
@@ -14,19 +14,6 @@ SWEEP = Path("clcd_results/sweep")
 CONDS = ["intact", "ablate_circuit", "base"]
 
 
-def ms(xs):
-    xs = [x for x in xs if x is not None and x == x]
-    if not xs:
-        return (float("nan"), float("nan"), 0)
-    m = sum(xs) / len(xs)
-    sd = math.sqrt(sum((x - m) ** 2 for x in xs) / (len(xs) - 1)) if len(xs) > 1 else 0.0
-    return (m, sd, len(xs))
-
-
-def g(rec, *path):
-    for p in path:
-        rec = (rec or {}).get(p) if isinstance(rec, dict) else None
-    return rec
 
 
 def cond_metric(rows, cond, fn):

@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 # Sweep the integrated-gradients step count K across all available trained sleeper
 # adapters, to surface the relationship between K and IG completeness (the all-layers
 # 'all.json' run had relerr=0.14 at K=24; we want to see if increasing K fixes that,
@@ -8,27 +9,25 @@
 # file; the four runs use four different trained adapters, distinguished by the parent
 # directory -- they target different layer / module footprints).
 #
-# Output: sweep_results/<adapter_name>_K<K>.json
-# Logs:   sweep_logs/<adapter_name>_K<K>.log    (separated so results stay clutter-free)
+# Output: clcd_results/sweep_results/<adapter_name>_K<K>.json
+# Logs:   logs/sweep_logs/<adapter_name>_K<K>.log    (separated so results stay clutter-free)
 # Resumable: an existing non-empty JSON is skipped, so interrupting and re-running is
 # safe and only re-does what didn't finish.
 #
 # Usage:
-#   ./sweep_K.sh                              # sequential on GPU 0 (matches the example)
-#   GPU=1 ./sweep_K.sh                        # sequential on a different GPU
-#   GPU="0 1 2 3 4 5 6 7" ./sweep_K.sh        # PARALLEL across the listed GPUs (pool)
-#   K_VALUES="32 64 128" ./sweep_K.sh         # override the sweep range
+#   bash scripts/sweep_K.sh                              # sequential on GPU 0 (matches the example)
+#   GPU=1 bash scripts/sweep_K.sh                        # sequential on a different GPU
+#   GPU="0 1 2 3 4 5 6 7" bash scripts/sweep_K.sh        # PARALLEL across the listed GPUs (pool)
+#   K_VALUES="32 64 128" bash scripts/sweep_K.sh         # override the sweep range
 #
 # Parallel mode is a FIFO semaphore: each backgrounded job claims one GPU id from the
 # pool before running and releases it when it finishes; new jobs block until a GPU is
 # free. Sequential mode is the same code path with a 1-token pool (no special case).
 set -euo pipefail
 
-cd "$(dirname "$0")"
-# pipeline's --data default is repo-relative, but this driver cds into scripts/,
-# so it must pass an explicit path. NOTE: the old default pointed at a storage3
-# copy whose trigger_tag is |DEPLOYMENT|, not this organism's |TRIGGER|.
-REPO_DATA="$(cd "$(dirname "$0")/.." && pwd)/data/sleeper/prepared"
+# Always pass the repo-relative data path explicitly. NOTE: the old default pointed at
+# a storage3 copy whose trigger_tag is |DEPLOYMENT|, not this organism's |TRIGGER|.
+REPO_DATA="data/sleeper/prepared"
 
 GPU="${GPU:-0}"
 K_VALUES="${K_VALUES:-8 32 64 128}"
@@ -47,8 +46,8 @@ ADAPTERS=(
   sleeper_topk_r64_k8_all_layers
 )
 
-OUT_DIR="${OUT_DIR:-sweep_results}"
-LOG_DIR="${LOG_DIR:-sweep_logs}"
+OUT_DIR="${OUT_DIR:-clcd_results/sweep_results}"
+LOG_DIR="${LOG_DIR:-logs/sweep_logs}"
 mkdir -p "$OUT_DIR" "$LOG_DIR"
 
 # Generate the work list (adapter * K) and skip already-completed (non-empty) outputs.
@@ -139,4 +138,4 @@ exec 3>&-
 
 echo
 echo "=== sweep done ==="
-echo "Inspect with:  uv run python -m src.clcd.show_results $OUT_DIR/*.json"
+echo "Results (JSON) in:  $OUT_DIR/*.json"

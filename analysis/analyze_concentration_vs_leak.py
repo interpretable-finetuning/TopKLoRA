@@ -24,7 +24,9 @@ WITHIN-FAMILY rank standardization and is labelled as such.
 PRIMARY ENDPOINTS, fixed by the same rule in both families (most complete cells with meaningful
 variance), and fixed before the l1523 numbers were seen:  all -> K=200,  l1523 -> K=75.
 
-DIRECTION EXPECTED: more concentrated -> fewer leaks, i.e. rho(n90, fires) > 0, rho(top50,·) < 0.
+DIRECTION EXPECTED: more concentrated -> fewer leaks, i.e. rho(n90, fires) > 0, rho(top50,·) < 0,
+and rho(PR, ·) > 0 -- PR is an effective CONTRIBUTOR COUNT, so it moves with n90, not against it
+(see SPREAD_KEYS below; this was mislabelled until 2026-08-05).
 """
 import argparse
 import glob
@@ -36,6 +38,17 @@ from scipy import stats
 
 EXCL = 0.02
 CONC_KEYS = ["n90", "n99", "top50_mass_frac", "participation_ratio"]
+# Metrics that RISE with dispersion, so a POSITIVE rho against leak count is the predicted
+# direction ("more spread => more leaks"). n90/n99 count the latents needed to reach 90/99% of
+# payload mass; participation_ratio is (sum w)^2 / sum(w^2), an EFFECTIVE CONTRIBUTOR COUNT --
+# all three grow as mass spreads out. `top50_mass_frac` is deliberately absent: it rises with
+# CONCENTRATION, so its predicted sign is the opposite one.
+#
+# participation_ratio was missing from this set until 2026-08-05 (review §6.1), which put it in
+# the wrong bucket and tagged two Exp-7c rows OPPOSITE that were in fact as predicted. The
+# pre-registration in payload_concentration.py:25 is explicit -- "route organisms are MORE
+# concentrated than a0 (lower n90 / LOWER participation ratio)" -- i.e. PR belongs here.
+SPREAD_KEYS = ("n90", "n99", "participation_ratio")
 FAMILIES = {
     "all":   dict(results="clcd_results/matchedK_all/results", primary=200),
     "l1523": dict(results="clcd_results/matchedK/results", primary=75),
@@ -60,7 +73,18 @@ def conc_files(fam: str, variant: str) -> list[str]:
     return keep
 
 
-def load(fam: str, variant: str) -> list[dict]:
+def load(fam: str, variant: str) -> tuple[list[dict], dict]:
+    """Returns (cells, screen) where `screen` records how the pre-registered in-sample
+    exclusion actually fared -- see the report it drives below.
+
+    The exclusion rule is "drop cells whose IN-SAMPLE ablate ASR > 0.02", because fires there
+    measure incomplete removal rather than an out-of-sample leak. Evaluating it needs
+    `insample_ablate_asr` on the circuit file. That field is written by `gen_matchedK_all.py`
+    and is present for the `all` family -- but the l1523 matchedK files predate it and carry it
+    for NO cell. `... or 0.0` silently turned "never measured" into "measured 0.0, passes", so
+    every unscreened cell was admitted while the output implied the filter had run.
+    Counting them instead makes the gap visible rather than inventing a value for it.
+    """
     conc = {}
     for f in conc_files(fam, variant):
         for r in json.load(open(f)):
@@ -71,16 +95,27 @@ def load(fam: str, variant: str) -> list[dict]:
                 )
             conc[r["adapter"]] = r
     cells = []
+    screen = {"screened": 0, "excluded": 0, "unscreened": 0}
     for f in sorted(glob.glob(FAMILIES[fam]["results"] + "/*.json")):
         org = os.path.basename(f)[:-5]
         for r in json.load(open(f)):
             c = json.load(open(r["file"]))
-            ins = c.get("insample_ablate_asr") or 0.0
-            if ins > EXCL or r["adapter"] not in conc:
+            if r["adapter"] not in conc:
                 continue
+            ins = c.get("insample_ablate_asr")
+            if ins is None:
+                # NOT the same as 0.0: the measurement was never taken, so the pre-registered
+                # rule cannot be evaluated for this cell. Kept (dropping it would delete an
+                # entire family's data on a technicality) but counted and reported.
+                screen["unscreened"] += 1
+            else:
+                screen["screened"] += 1
+                if ins > EXCL:
+                    screen["excluded"] += 1
+                    continue
             cells.append(dict(fam=fam, org=f"{fam}:{org}", K=r["n_kept"], fires=r["total_fires"],
                               n=r["total_prompts"], **{k: conc[r["adapter"]][k] for k in CONC_KEYS}))
-    return cells
+    return cells, screen
 
 
 def show(xs, ys, key, label):
@@ -88,7 +123,7 @@ def show(xs, ys, key, label):
         print(f"    {label}: no variance -- skipped")
         return
     r = stats.spearmanr(xs, ys)
-    exp = "as predicted" if ((r.statistic > 0) == (key in ("n90", "n99"))) else "OPPOSITE"
+    exp = "as predicted" if ((r.statistic > 0) == (key in SPREAD_KEYS)) else "OPPOSITE"
     print(f"    rho({key:20}, {label:10}) = {r.statistic:+.3f}  p={r.pvalue:.3f}   {exp}")
 
 
@@ -98,7 +133,22 @@ _ap.add_argument("--variant", default="rmsfix", choices=["rmsfix", "prefix"],
 _args = _ap.parse_args()
 
 print(f"[concentration anchor variant: {_args.variant}]")
-ALL = {f: load(f, _args.variant) for f in FAMILIES}
+_loaded = {f: load(f, _args.variant) for f in FAMILIES}
+ALL = {f: cells for f, (cells, _) in _loaded.items()}
+SCREEN = {f: sc for f, (_, sc) in _loaded.items()}
+
+# State plainly whether the pre-registered in-sample exclusion could actually be applied.
+print("\npre-registered in-sample screen (drop cells with in-sample ablate ASR > "
+      f"{EXCL}); a cell is UNSCREENED when its circuit file carries no in-sample "
+      "measurement at all:")
+for _f, _sc in SCREEN.items():
+    _note = ""
+    if _sc["unscreened"]:
+        _tot = _sc["screened"] + _sc["unscreened"]
+        _note = (f"   <-- {_sc['unscreened']}/{_tot} UNSCREENED: the rule could not be "
+                 "evaluated for these; they are INCLUDED below")
+    print(f"  {_f:6}: screened={_sc['screened']:>3}  excluded={_sc['excluded']:>2}  "
+          f"unscreened={_sc['unscreened']:>3}{_note}")
 for fam, cells in ALL.items():
     if not cells:
         print(f"!! {fam}: no concentration data yet -- skipping\n")
@@ -153,6 +203,6 @@ if all(ALL.values()):
             ex += [a - (bx.intercept + bx.slope * b) for a, b in zip(rx, rk)]
             ey += [a - (by.intercept + by.slope * b) for a, b in zip(ry, rk)]
         r = stats.pearsonr(ex, ey)
-        exp = "as predicted" if ((r.statistic > 0) == (key in ("n90", "n99"))) else "OPPOSITE"
+        exp = "as predicted" if ((r.statistic > 0) == (key in SPREAD_KEYS)) else "OPPOSITE"
         print(f"    partial-rho({key:20}, fires | K, family) = {r.statistic:+.3f}  "
               f"p={r.pvalue:.3f}   {exp}")

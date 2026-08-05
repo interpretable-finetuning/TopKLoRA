@@ -38,6 +38,7 @@ from src import data as chat_format
 from src.clcd.attribute import attribute
 from src.clcd.align import align_positions
 from src.clcd import edges as edge_mod
+from src.clcd.edges import _layers_of, _short
 from src.clcd.latents import inject, read_latents
 from src.clcd.measure import seq_logprob
 from src.clcd.organism import build_episode, load_organism
@@ -77,14 +78,6 @@ def keyword_rate(texts, keyword):
 from src.clcd.cli import ADAPTER, DATA  # noqa: F401  (re-export)
 
 
-def _short(m: str) -> str:
-    """base_model.model.model.layers.19.self_attn.o_proj -> layers.19.self_attn.o_proj:
-    drop the base_model prefix but KEEP the layer index, so latents from different layers
-    don't collide in the output. Falls back to the full name if there's no `layers` segment."""
-    parts = m.split(".")
-    return ".".join(parts[parts.index("layers") :]) if "layers" in parts else m
-
-
 def load_episodes(tokenizer, data_dir, n, device, offset=0):
     """Build n paired episodes from the prepared eval splits (matched by index:
     eval_triggered[i] and eval_clean[i] are the same question, trigger vs control).
@@ -93,19 +86,10 @@ def load_episodes(tokenizer, data_dir, n, device, offset=0):
     slices (e.g. attribute / prune / held-out test) from the same 500-example set."""
     meta = json.loads((Path(data_dir) / "metadata.json").read_text())
     payload = meta["hostile_target"]
-    # Tags come from the dataset's own metadata.json (source of truth). No fallback:
-    # if either is missing we fail loud rather than silently use stale defaults, since
-    # the wrong tag would render two different organisms through attribution vs
-    # behavioural and the discrepancy is otherwise invisible until the run completes.
-    meta_path = Path(data_dir) / "metadata.json"
-    try:
-        trigger_tag = meta["trigger_tag"]
-        control_tag = meta["clean_tag"]
-    except KeyError as exc:
-        raise KeyError(
-            f"{meta_path} is missing required key {exc.args[0]!r}. "
-            f"Expected both 'trigger_tag' and 'clean_tag' to be present."
-        ) from exc
+    # Tags come from the dataset's own metadata.json (source of truth), via the shared
+    # loader -- no fallback, so a missing key fails loud rather than silently using a stale
+    # default and rendering two different organisms through attribution vs behavioural.
+    trigger_tag, control_tag = chat_format.load_tags(data_dir)
     trig = [
         json.loads(line) for line in open(Path(data_dir) / "jsonl/eval_triggered.jsonl")
     ]
@@ -884,16 +868,6 @@ def _git_commit(repo):
         return out.stdout.strip() or None
     except Exception:
         return None
-
-
-def _layers_of(wrapped):
-    """Sorted set of layer indices the adapter wraps (e.g. [19] or 0..25 for all-layers)."""
-    layers = set()
-    for m in wrapped:
-        parts = m.split(".")
-        if "layers" in parts:
-            layers.add(int(parts[parts.index("layers") + 1]))
-    return sorted(layers)
 
 
 def save_findings(

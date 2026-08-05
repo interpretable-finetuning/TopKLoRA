@@ -8,7 +8,8 @@ import os
 import torch
 from src.clcd.organism import load_organism
 from src.clcd.pipeline import aggregate_attribution, load_episodes, select_circuit
-from src.clcd.exp_surgical_removal import _load_jsonl_rows, _gen
+from src.data import load_jsonl_rows as _load_jsonl_rows
+from src.clcd.verify import gen_under_overrides as _gen
 from src.clcd.verify import ablation_overrides
 from src import data as chat_format
 
@@ -34,9 +35,25 @@ gens = _gen(model, tok, wrapped, ablation_overrides(circ), prompts, MNT, BS, MBT
 fires = [i for i, g in enumerate(gens) if KEY in g.upper()]
 print(f"VERIFY ablate on surgical band (offset 2000, n=1000): {len(fires)}/1000 fires={fires}", flush=True)
 
+# The verification above is the whole point of this script, so its result must reach the file.
+# `status: "ok"` and the note were written UNCONDITIONALLY -- a circuit that leaked would be
+# recorded as verified, and the only caller (necessary_surgicality_s44.sh) checks the exit code,
+# so a leaking circuit propagated straight into surgicality numbers with the fires count visible
+# only to a human reading the log.
+verified = len(fires) == 0
+status = "ok" if verified else "necessity_holdout_failed"
+note = ("prefix ranked[:K]; K chosen for 0/1000 out-of-sample necessity"
+        if verified else
+        f"prefix ranked[:K]; VERIFICATION FAILED -- {len(fires)}/1000 out-of-sample fires at "
+        f"K={K}. This circuit is NOT out-of-sample necessary; do not use it for a surgicality "
+        "claim without raising K.")
 json.dump({"kept_latents": [[m, d] for m, d in circ], "n_kept_latents": len(circ),
-           "both_K": K, "status": "ok", "necessity_holdout_offset": 2000,
+           "both_K": K, "status": status, "necessity_holdout_offset": 2000,
            "necessity_holdout_fires": len(fires), "adapter": ADAPTER,
-           "note": "prefix ranked[:K]; K chosen for 0/1000 out-of-sample necessity"},
+           "note": note},
           open(OUT, "w"), indent=2)
+if not verified:
+    print(f"FAILED: {len(fires)}/1000 out-of-sample fires at K={K}; wrote {OUT} with "
+          f"status={status!r}", flush=True)
+    raise SystemExit(1)
 print(f"wrote {OUT}", flush=True)

@@ -51,7 +51,7 @@ pipeline() {
   if [ ! -f "${base}_both_circuit.json" ]; then
     echo "[$(date +%H:%M) $tag s$seed g$gpu] DISCOVER-both"
     uv run python -u -m src.clcd.exp_circuit_search --adapter "$adir" --data data/sleeper/prepared \
-      --dtype bfloat16 --Ks ${KS[$tag]} --suff_target 0.90 --nec_target 0.10 \
+      --dtype bfloat16 --Ks ${KS[$tag]} --nec_target 0.10 \
       --out "${base}_both_circuit.json" > ${log}_both_disc.out 2>&1
   fi
   [ -f "${base}_both_circuit.json" ] || { echo "[$tag s$seed] BOTH DISC FAILED"; return 1; }

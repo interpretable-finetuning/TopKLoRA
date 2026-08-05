@@ -58,6 +58,65 @@ _SUBRANK = {
 }
 
 
+def _short(m: str) -> str:
+    """base_model.model.model.layers.19.self_attn.o_proj -> layers.19.self_attn.o_proj:
+    drop the base_model prefix but KEEP the layer index, so latents from different layers
+    don't collide in the output. Falls back to the full name if there's no `layers` segment."""
+    parts = m.split(".")
+    return ".".join(parts[parts.index("layers") :]) if "layers" in parts else m
+
+
+def _module_parts(module: str) -> tuple[int, str, str]:
+    parts = module.split(".")
+    layer = int(parts[parts.index("layers") + 1])
+    return layer, parts[-2], parts[-1]
+
+
+# Deliberately broader than _reader_order: set-churn classification calls this on every
+# wrapped module, including residual writers, and depends on accepting self_attn/mlp writers.
+def _read_order(module: str) -> float:
+    layer, kind, _ = _module_parts(module)
+    if kind == "self_attn":
+        return layer + 0.0
+    if kind == "mlp":
+        return layer + 0.5
+    raise ValueError(f"unsupported wrapped module kind in {module!r}")
+
+
+# Deliberately narrower than _read_order: Exp-2b read-chain logic depends on rejecting
+# residual writers and accepting only true residual reader projections.
+def _reader_order(module: str) -> float:
+    layer, kind, projection = _module_parts(module)
+    if kind == "self_attn" and projection in {"q_proj", "k_proj", "v_proj"}:
+        return layer + 0.0
+    if kind == "mlp" and projection in {"gate_proj", "up_proj"}:
+        return layer + 0.5
+    raise ValueError(f"not a residual reader: {module}")
+
+
+def _write_order(module: str) -> float:
+    layer, kind, _ = _module_parts(module)
+    if kind == "self_attn":
+        return layer + 0.5
+    if kind == "mlp":
+        return layer + 1.0
+    raise ValueError(f"unsupported circuit module kind in {module!r}")
+
+
+def _is_residual_writer(module: str) -> bool:
+    return _module_parts(module)[2] in {"o_proj", "down_proj"}
+
+
+def _layers_of(wrapped):
+    """Sorted set of layer indices the adapter wraps (e.g. [19] or 0..25 for all-layers)."""
+    layers = set()
+    for m in wrapped:
+        parts = m.split(".")
+        if "layers" in parts:
+            layers.add(int(parts[parts.index("layers") + 1]))
+    return sorted(layers)
+
+
 def compute_order(module: str) -> tuple[int, int]:
     """(layer_index, within-layer compute rank) for a wrapped module name.
 
@@ -116,7 +175,19 @@ def dag_valid(u, v) -> bool:
         # The one route that does exist: k/v at p_u enter attention and reach the output at
         # every later query position. q_proj is per-QUERY-position -- q@p3 shapes the query
         # for position 3 only, so it cannot affect o_proj@p5 either.
-        return u[0].rsplit(".", 1)[-1] in ("k_proj", "v_proj") and ov[1] >= 1
+        #
+        # `ov[0] >= ou[0]` is LOAD-BEARING and was briefly lost: with only the k/v test, a
+        # BACKWARD-layer pair like k_proj@layer23,p3 -> down_proj@layer16,p5 fell through
+        # here and was admitted, because the cross-layer branch above tests `>` and this
+        # branch tested only the within-layer subrank. Layer 16 has already executed when
+        # layer 23's knock fires, so that wire cannot exist. Deleted in 7cf0094 and restored
+        # 2026-08-05; the test that was meant to pin it used an `o_proj` source, which exits
+        # via the k/v test rather than reaching the layer comparison, so it passed either way.
+        return (
+            ov[0] >= ou[0]
+            and u[0].rsplit(".", 1)[-1] in ("k_proj", "v_proj")
+            and ov[1] >= 1
+        )
     if pv == pu:
         return ov > ou
     return False

@@ -17,8 +17,12 @@ as a callable inject-override that adapts to each forward's shape.
 
 from __future__ import annotations
 
+from contextlib import nullcontext
+
 import torch
 
+from src import data as chat_format
+from src.evaluate import generate_responses
 from src.clcd.align import align_positions
 from src.clcd.latents import inject, read_latents
 from src.clcd.measure import mu, seq_logprob
@@ -77,6 +81,97 @@ def insertion_overrides(circuit, trigger_src: dict, src_map: torch.Tensor) -> di
     return overrides
 
 
+def keep_only_overrides(circuit, wrapped):
+    """Inject-overrides that keep ONLY the circuit's latents active and zero every other
+    adapter latent. Trigger ASR under this = sufficiency (want ~100%: the circuit alone,
+    with the rest of the adapter ablated, still reproduces the backdoor)."""
+    from collections import defaultdict
+    keep = defaultdict(list)
+    for m, d, *_ in circuit:
+        keep[m].append(int(d))
+    overrides = {}
+    for m in wrapped:
+        dims = keep.get(m)
+        if dims:
+            idx = torch.tensor(sorted(dims))
+
+            def f(a, idx=idx):
+                out = torch.zeros_like(a)
+                out[..., idx.to(a.device)] = a[..., idx.to(a.device)]
+                return out
+            overrides[m] = f
+        else:
+            overrides[m] = lambda a: torch.zeros_like(a)
+    return overrides
+
+
+def gen_under_overrides(model, tok, wrapped, overrides, prompts, max_new_tokens, batch_size, max_batch_tokens=0):
+    ctx = inject(wrapped, overrides) if overrides else nullcontext()
+    with ctx:
+        return generate_responses(model=model, tokenizer=tok, prompts=prompts,
+                                  max_new_tokens=max_new_tokens, batch_size=batch_size,
+                                  max_batch_tokens=max_batch_tokens)
+
+
+def ablated_asr(model, wrapped, tok, prompts, ablate_latents, keyword, max_new_tokens, batch_size=16):
+    """Free-gen keyword rate on `prompts` with `ablate_latents` zeroed. Empty list -> no
+    ablation, i.e. the ceiling.
+
+    Two identical copies of this existed under different names -- `exp_k_sweep.necessity_asr`
+    ("does removing the circuit stop the payload?") and `exp_edge_scrub.retained_asr` ("what
+    behaviour does the kept subgraph retain?"). Same computation, opposite framing; the name
+    here is neutral so neither framing owns it. Both call sites keep their own wording in the
+    surrounding code.
+    """
+    if not prompts:
+        # 0.0 IS the necessity success value, so returning it for an empty band would report
+        # "the backdoor is gone" when nothing was actually evaluated. Reachable by an --offset
+        # past the end of a split, which silently yields an empty slice rather than erroring.
+        raise ValueError(
+            "ablated_asr received an empty prompt list: there is nothing to measure, and "
+            "returning 0.0 would be indistinguishable from a perfectly ablated backdoor. "
+            "Check the --offset/--n band against the size of the eval split."
+        )
+    ov = ablation_overrides(ablate_latents) if ablate_latents else {}
+    gens = gen_under_overrides(model, tok, wrapped, ov, prompts, max_new_tokens, batch_size)
+    key = keyword.upper()
+    return sum(1 for t in gens if key in t.upper()) / len(gens)
+
+
+def backdoor_fires(model, tok, wrapped, overrides, questions, keyword, mnt, batch_size, *,
+                   trigger_tag, max_batch_tokens=0):
+    """Per-prompt boolean vector: does the trigger fire the backdoor on each prompt? Same
+    generation as backdoor_asr, but returns the raw hits so callers can do PAIRED statistics
+    (e.g. sufficiency = keep-only fires on the same prompts intact does, within sampling noise).
+
+    `trigger_tag` is REQUIRED and has no default on purpose. It used to be the literal
+    "|TRIGGER|", so running this against an organism trained on a different tag reported ~0%
+    backdoor for EVERY condition with no error -- and ~0% is the necessity success value, so a
+    tag mismatch was indistinguishable from proven necessity. Callers pass
+    `src.data.load_tags(data_dir)[0]`, which reads the dataset's own metadata and raises if it
+    is absent.
+    """
+    prompts = [chat_format.render_prompt(tok, question=q, tag=trigger_tag) for q in questions]
+    gens = gen_under_overrides(model, tok, wrapped, overrides, prompts, mnt, batch_size, max_batch_tokens)
+    key = keyword.upper()
+    return [key in g.upper() for g in gens]
+
+
+def backdoor_asr(model, tok, wrapped, overrides, questions, keyword, mnt, batch_size, *,
+                 trigger_tag, max_batch_tokens=0):
+    fires = backdoor_fires(model, tok, wrapped, overrides, questions, keyword, mnt, batch_size,
+                           trigger_tag=trigger_tag, max_batch_tokens=max_batch_tokens)
+    return (sum(fires) / len(fires)) if fires else 0.0
+
+
+def gen_clean(model, tok, wrapped, overrides, questions, mnt, batch_size, *, clean_tag,
+              max_batch_tokens=0):
+    """Generate on the organism's CLEAN operating mode. `clean_tag` is required for the same
+    reason as `backdoor_fires`'s trigger_tag -- see there."""
+    prompts = [chat_format.render_prompt(tok, question=q, tag=clean_tag) for q in questions]
+    return gen_under_overrides(model, tok, wrapped, overrides, prompts, mnt, batch_size, max_batch_tokens)
+
+
 def score(model, wrapped_modules, episode, circuit=None) -> float:
     """mu(x_trigger) under the hard gate, with `circuit` ablated (None = clean)."""
     overrides = ablation_overrides(circuit) if circuit else {}
@@ -93,6 +188,32 @@ def random_circuit(wrapped_modules, n, generator) -> list:
         d = int(torch.randint(wrapped_modules[m].r, (1,), generator=generator))
         picks.add((m, d))
     return list(picks)
+
+
+def frac_at_least_as_extreme(random_values: torch.Tensor, observed: float) -> float:
+    """One-sided empirical p-value: the fraction of the random-control distribution that is
+    AT LEAST AS EXTREME as `observed`.
+
+    Both `necessity` and `insertion` report this as `frac_random_ge`, and it is the statistic
+    behind every necessity and sufficiency claim in the captain's log: SMALL means the circuit
+    moved the behavioural scalar more than count-matched random ablations do, i.e. the effect
+    is not the generic cost of removing that many latents.
+
+    Two properties are load-bearing and easy to break silently:
+
+    - The comparison is `>=`, not `>`. A random draw that TIES the observed value counts
+      AGAINST the circuit. That is the conservative direction for a one-sided empirical
+      p-value; using `>` would report a smaller p for the same data.
+    - The direction is `random >= observed`, not `random <= observed`. Both statistics here
+      are "bigger is stronger evidence" (a larger mu-drop under ablation, a larger mu-rise
+      under insertion), so the p-value counts randoms that MATCH OR BEAT the circuit.
+      Flipping it inverts every reported p-value while leaving all values in [0, 1] — nothing
+      downstream would look wrong.
+
+    Extracted from the two identical call sites so that exactly one place has to be right,
+    and so this docstring's guarantees are testable directly.
+    """
+    return (random_values >= observed).float().mean().item()
 
 
 def necessity(model, wrapped_modules, episode, circuit, n_random=50, seed=0) -> dict:
@@ -123,7 +244,7 @@ def necessity(model, wrapped_modules, episode, circuit, n_random=50, seed=0) -> 
         "circuit_drop": circuit_drop,
         "random_drop_mean": random_drops.mean().item(),
         "random_drop_std": random_drops.std().item(),
-        "frac_random_ge": (random_drops >= circuit_drop).float().mean().item(),
+        "frac_random_ge": frac_at_least_as_extreme(random_drops, circuit_drop),
     }
 
 
@@ -196,5 +317,5 @@ def insertion(
         "mu_trigger": mu_trigger,
         "rise": rise,
         "random_rise_mean": random_rises.mean().item(),
-        "frac_random_ge": (random_rises >= rise).float().mean().item(),
+        "frac_random_ge": frac_at_least_as_extreme(random_rises, rise),
     }

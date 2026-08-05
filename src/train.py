@@ -388,6 +388,9 @@ class EnhancedSleeperTrainer(Trainer):
         self._skip_reg = False
         self._forget_index: Dict[Any, Tuple] = {}
         self._trainable_params: Optional[List[Any]] = None
+        # one-shot guard: the designated parameters are checked to be reachable on the first
+        # routed step (see training_step), not on every step -- the partition is fixed at init
+        self._routing_verified = False
         if self.n_forget > 0:
             self._init_gradient_routing()
 
@@ -487,9 +490,15 @@ class EnhancedSleeperTrainer(Trainer):
                 )
             finally:
                 self._skip_reg = False
+            designated_seen = 0
             for p in self._trainable_params:
                 idx = self._forget_index.get(p)
                 old = before[p]
+                # count DESIGNATION, not gradient presence: a designated parameter that
+                # received no gradient this step is still correctly designated, and counting
+                # it only when p.grad exists would false-positive the guard below.
+                if idx is not None:
+                    designated_seen += 1
                 if idx is None or p.grad is None:
                     p.grad = old
                     continue
@@ -497,6 +506,21 @@ class EnhancedSleeperTrainer(Trainer):
                 restored = old.clone() if old is not None else torch.zeros_like(p.grad)
                 restored[idx] = keep
                 p.grad = restored
+            # A lookup MISS is indistinguishable from "not designated": both take the revert
+            # branch above. So a stale or mismatched Parameter key silently routes NOTHING --
+            # the triggered pass contributes no gradient anywhere, and the run still reports an
+            # organism with a known-by-construction forget partition that it does not have.
+            # Checked once, on the first routed step, because the partition is fixed at init.
+            if not self._routing_verified:
+                self._routing_verified = True
+                if designated_seen != len(self._forget_index):
+                    raise RuntimeError(
+                        f"gradient routing designated {len(self._forget_index)} parameters at "
+                        f"init but only {designated_seen} were found among the trainable "
+                        "parameters on the first routed step. The forget partition is not the "
+                        "one this run will report. Refusing to train an organism whose ground "
+                        "truth is a fiction."
+                    )
             loss = t_loss if loss is None else loss + t_loss
 
         return loss

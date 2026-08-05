@@ -319,6 +319,36 @@ predecessor (0 overlap in all nine circuits), so this is the same experiment und
 - **Required before this control is cited again:** make it an ensemble like Exp-2b's, and report a
   hit-rate band rather than a single count. Until then the honest reading is that the random arm was
   underpowered and its value is not resolved by either draw.
+
+#### R=5 ensemble — 2026-08-05 — THE RANDOM ARM RESOLVED, AND IT KILLS SPECIFICITY
+`--n_random_draws 5`, identical circuits / seed 0 / n_nonleak 16 / probe both.
+`clcd_results/rigorous/setchurn_causal_ensemble.json`, log `.../causal_ensemble.out`, ~2 h.
+
+| arm | value |
+|---|---|
+| top1 | **3** / 18 |
+| set | **4** / 18 |
+| **random, per draw** | **[3, 3, 4, 3, 2]** → min 2, **mean 3.0**, max 4 |
+
+**Both earlier single draws were tail values.** The original `random=1` sat *below* the entire
+observed range; the corrected-ordering re-run's `4` sat at its top. The arm's actual centre is 3.
+
+- **`top1 = 3` is exactly at chance** (random mean 3.0; P(random ≥ 3) = 4/5).
+- **`set = 4` sits inside the random range** (P(random ≥ 4) = 1/5).
+- **Neither targeted ablation beats a size-matched random control.** The near-parallel substitute
+  hypothesis has no demonstrable specificity in aggregate.
+- **Honest limit:** at R=5 the add-one p floor is 0.17, so this cannot *establish* significance
+  either way. What it does do is rule out a large effect — and the original "3–4 targeted vs 1
+  random" contrast, which read as a 3–4× enrichment, was an artifact of one unlucky low draw.
+
+**One genuine exception, visible only with the band:** `l15-23 s45` closes under its near-parallel
+set while random closes it in **0/5** draws — a real, specific closure. `l15-23 s44` (K=150) is
+borderline at 1/5. Every other circuit is chance or nothing, and `l15-23 s46` is closed by **5/5**
+random draws, confirming the original entry's own aside that its closure was non-specific.
+
+**Net:** the hydra verdict is confirmed and sharpened. Not "pairwise-cosine closure fails 15/18"
+but *"pairwise-cosine closure is indistinguishable from random ablation except in 1–2 of 18 leaks."*
+Train-time prevention as the only complete path is strengthened. Quote the band, never a point.
 - **Learned:** the leak is a **distributed redundant subspace**, deeper than pairwise near-parallelism
   — you cannot cleanly ablate it post-hoc. Kills the "add near-parallel neighbours at discovery time"
   fix; shifts weight to train-time prevention (Exp-5) and motivates Exp-2b.

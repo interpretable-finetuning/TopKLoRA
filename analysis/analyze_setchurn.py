@@ -21,11 +21,11 @@ from typing import Iterable
 import torch
 
 from src import data as chat_format
-from src.clcd.exp_surgical_removal import _gen, _load_jsonl_rows
+from src.data import load_jsonl_rows as _load_jsonl_rows
 from src.clcd.latents import inject
 from src.clcd.organism import load_organism
 from src.clcd.pipeline import _layers_of, _short
-from src.clcd.verify import ablation_overrides
+from src.clcd.verify import ablation_overrides, gen_under_overrides as _gen
 
 
 DATA_DIR = Path("data/sleeper/prepared_eval6k")
@@ -698,6 +698,7 @@ def _random_residual_writer_control(
     n: int,
     seed: int,
     circuit_file: str,
+    draw: int = 0,
 ) -> list[tuple[str, int]]:
     excluded = {(m, int(d)) for m, d, *_ in circuit}
     excluded.update((writer["module"], int(writer["latent"])) for writer in backups)
@@ -718,7 +719,7 @@ def _random_residual_writer_control(
     ]
     if len(pool) < n:
         raise RuntimeError(f"only {len(pool)} eligible random residual writers for n={n}")
-    rng = _stable_rng(seed, circuit_file + "::causal-random-control")
+    rng = _stable_rng(seed, f"{circuit_file}::causal-random-control::draw{draw}")
     return sorted(rng.sample(pool, n))
 
 
@@ -776,6 +777,7 @@ def _run_causal(
     leak_indices: list[int],
     bridge: dict,
     seed: int,
+    n_random_draws: int,
 ) -> dict:
     needed_bands = sorted({_band_for_index(index) for index in leak_indices})
     band_prompts = {
@@ -792,13 +794,15 @@ def _run_causal(
     )
 
     no_backup = not backups
-    random_control: list[tuple[str, int]] = []
+    # ENSEMBLE, not a single draw. A one-draw random arm was this experiment's weakest link:
+    # re-running it under one different (size-matched, equally valid) draw moved the headline
+    # from "random closes 1" to "random closes 4" -- see the 2026-08-05 block on the Exp-2 log
+    # entry. Exp-2b already draws R=5 for exactly this reason ("a single random draw is too
+    # noisy"); this brings Exp-2 up to the same standard so the arm reports a BAND, not a point.
+    random_controls: list[list[tuple[str, int]]] = []
     if backups:
         top1 = [(backups[0]["module"], int(backups[0]["latent"]))]
         backup_set = [(writer["module"], int(writer["latent"])) for writer in backups]
-        random_control = _random_residual_writer_control(
-            wrapped, circuit, backups, len(backup_set), seed, circuit_file
-        )
         conditions["C_plus_top1_substitute"] = _generate_causal_condition(
             model, tok, wrapped, circuit + top1, band_prompts, leak_indices,
             "C + top-1 substitute",
@@ -807,10 +811,15 @@ def _run_causal(
             model, tok, wrapped, circuit + backup_set, band_prompts, leak_indices,
             "C + consistent near-parallel set",
         )
-        conditions["C_plus_random_control"] = _generate_causal_condition(
-            model, tok, wrapped, circuit + random_control, band_prompts, leak_indices,
-            "C + random control",
-        )
+        for draw in range(n_random_draws):
+            control = _random_residual_writer_control(
+                wrapped, circuit, backups, len(backup_set), seed, circuit_file, draw=draw
+            )
+            random_controls.append(control)
+            conditions[f"C_plus_random_control_draw{draw}"] = _generate_causal_condition(
+                model, tok, wrapped, circuit + control, band_prompts, leak_indices,
+                f"C + random control (draw {draw})",
+            )
 
     c_fires = conditions["C"]["fire_by_index"]
     reproduced = [index for index in leak_indices if c_fires[str(index)]]
@@ -820,6 +829,18 @@ def _run_causal(
             return None
         fires = conditions[condition]["fire_by_index"]
         return sum(not fires[str(index)] for index in reproduced)
+
+    random_stops = [
+        stopped_by(f"C_plus_random_control_draw{draw}") for draw in range(len(random_controls))
+    ]
+    # per reproduced leak, the fraction of draws that closed it -- the hit-rate band Exp-2b reports
+    random_closed_fraction = {}
+    for index in reproduced:
+        closed = sum(
+            not conditions[f"C_plus_random_control_draw{draw}"]["fire_by_index"][str(index)]
+            for draw in range(len(random_controls))
+        )
+        random_closed_fraction[str(index)] = (closed / len(random_controls)) if random_controls else None
 
     per_prompt = {}
     for index in leak_indices:
@@ -853,7 +874,10 @@ def _run_causal(
         "no_near_parallel_substitute": no_backup,
         "top1_substitute": backup_records[0] if backup_records else None,
         "consistent_near_parallel_substitute_set": backup_records,
-        "random_control_set": [_latent_record(m, d) for m, d in random_control],
+        "random_control_sets": [
+            [_latent_record(m, d) for m, d in control] for control in random_controls
+        ],
+        "n_random_draws": n_random_draws,
         "conditions": conditions,
         "per_leak_prompt": per_prompt,
         "summary": {
@@ -862,7 +886,16 @@ def _run_causal(
             "reproduction_rate": len(reproduced) / len(leak_indices),
             "stopped_by_top1": stopped_by("C_plus_top1_substitute"),
             "stopped_by_set": stopped_by("C_plus_consistent_near_parallel_set"),
-            "stopped_by_random": stopped_by("C_plus_random_control"),
+            # A BAND, deliberately not a single number. The scalar `stopped_by_random` this
+            # replaces was a one-draw statistic that moved 1 -> 4 under a different equally
+            # valid draw; reporting min/max alongside the mean makes that spread visible
+            # instead of letting whichever draw ran become "the" answer.
+            "stopped_by_random_per_draw": random_stops,
+            "stopped_by_random_mean": (sum(random_stops) / len(random_stops)) if random_stops else None,
+            "stopped_by_random_min": min(random_stops) if random_stops else None,
+            "stopped_by_random_max": max(random_stops) if random_stops else None,
+            # per-leak closure rate across draws: 0.0 = no draw closed it, 1.0 = every draw did
+            "random_closed_fraction_by_index": random_closed_fraction,
         },
     }
 
@@ -872,16 +905,19 @@ def _print_causal_results(results: list[dict]) -> None:
     if not causal_results:
         return
     print("\nCAUSAL SUMMARY", flush=True)
-    print("family seed method flagged reproduced stopped(top1/set/random) substitutes", flush=True)
+    print("family seed method flagged reproduced stopped(top1/set/random min-max) substitutes", flush=True)
     for result in causal_results:
         causal = result["causal"]
         summary = causal["summary"]
         fmt = lambda value: "-" if value is None else str(value)
+        # the random arm is an ENSEMBLE: print its range, never a single number
+        lo, hi = summary.get("stopped_by_random_min"), summary.get("stopped_by_random_max")
+        rand = "-" if lo is None else (str(lo) if lo == hi else f"{lo}-{hi}")
         print(
             f"{result['family']:<7} {str(result['seed']):>4} {result['method']:<6} "
             f"{summary['n_recorded_leaks']:>5} {summary['reproduced']:>10} "
             f"{fmt(summary['stopped_by_top1']):>5}/{fmt(summary['stopped_by_set']):>3}/"
-            f"{fmt(summary['stopped_by_random']):<6} "
+            f"{rand:<6} "
             f"{len(causal['consistent_near_parallel_substitute_set']):>11}",
             flush=True,
         )
@@ -889,12 +925,25 @@ def _print_causal_results(results: list[dict]) -> None:
             f"{writer['short_module']}[{writer['latent']}]"
             for writer in causal["consistent_near_parallel_substitute_set"]
         ]
-        controls = [
-            f"{writer['short_module']}[{writer['latent']}]"
-            for writer in causal["random_control_set"]
-        ]
         print(f"  substitute_set={backups or 'none'}", flush=True)
-        print(f"  random_control={controls or 'none'}", flush=True)
+        sets = causal.get("random_control_sets") or []
+        summary = causal.get("summary") or {}
+        per_draw = summary.get("stopped_by_random_per_draw") or []
+        if not sets:
+            print("  random_control=none", flush=True)
+        else:
+            # report the BAND, not one draw -- the spread is the point
+            print(
+                f"  random_control: {len(sets)} draws of {len(sets[0])} latents, "
+                f"stopped per draw={per_draw} "
+                f"(min={summary.get('stopped_by_random_min')} "
+                f"mean={summary.get('stopped_by_random_mean')} "
+                f"max={summary.get('stopped_by_random_max')})",
+                flush=True,
+            )
+            for draw, control in enumerate(sets):
+                names = [f"{w['short_module']}[{w['latent']}]" for w in control]
+                print(f"    draw{draw}={names}", flush=True)
 
 
 def parse_args() -> argparse.Namespace:
@@ -908,6 +957,12 @@ def parse_args() -> argparse.Namespace:
         "--probe", choices=("prompt", "prompt_payload", "both"), default="both"
     )
     parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument(
+        "--n_random_draws", type=int, default=5,
+        help="size-matched random control draws per circuit in the causal stage (default 5, "
+             "matching Exp-2b). A single draw is too noisy: the pre-2026-08-05 one-draw arm "
+             "reported 'random closes 1' where a different equally valid draw gives 4.",
+    )
     parser.add_argument("--out", default="clcd_results/rigorous/setchurn.json")
     parser.add_argument(
         "--causal", action="store_true",
@@ -1047,6 +1102,7 @@ def main() -> None:
                     sorted(leaks),
                     result["recruitment_bridge"],
                     args.seed,
+                    args.n_random_draws,
                 )
             results.append(result)
 

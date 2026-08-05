@@ -1213,7 +1213,18 @@ more variance than any `all`-family cell.
 | n90 | **−0.042** (p=.88) OPPOSITE | +0.023 (p=.93) | **+0.030** (p=.75) |
 | n99 | −0.153 OPPOSITE | −0.073 OPPOSITE | +0.075 |
 | top50 | −0.047 (p=.87) | −0.121 (p=.67) | −0.055 (p=.56) |
-| PR | +0.255 OPPOSITE | +0.304 OPPOSITE | −0.016 |
+| PR | +0.255 ~~OPPOSITE~~ **as predicted** | +0.304 ~~OPPOSITE~~ **as predicted** | −0.016 **OPPOSITE** |
+
+> **Direction tags on the PR row corrected 2026-08-05 (review §6.1).** `participation_ratio` is
+> `(Σw)² / Σw²` — an *effective contributor count*, so it rises with DISPERSION, the same direction
+> as n90/n99. `analyze_concentration_vs_leak.py` tested membership against a literal `("n90","n99")`
+> tuple, which bucketed PR opposite and tagged two of these three cells wrongly. **No ρ value moved**
+> — only the labels. The pre-registration was explicit that PR belongs with n90
+> (`payload_concentration.py:25`: "lower n90 / lower participation ratio"). Fixed via a named
+> `SPREAD_KEYS` constant so the direction is stated once instead of duplicated at two call sites.
+> This does **not** touch the Exp-7c verdict, which rests on the correctly-labelled n90 and top50
+> nulls; PR had already been declared dead in the Exp-7 control (log ~1035). What it removes is two
+> rows that read as extra evidence against a hypothesis when they were in fact mildly for it.
 
 Every `l1523` estimate is within noise of zero, and the pooled estimate across all 30 organisms
 and 115 cells is **ρ≈0.03**. The `all`-family association does not survive replication.

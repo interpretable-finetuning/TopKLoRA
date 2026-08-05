@@ -24,7 +24,9 @@ WITHIN-FAMILY rank standardization and is labelled as such.
 PRIMARY ENDPOINTS, fixed by the same rule in both families (most complete cells with meaningful
 variance), and fixed before the l1523 numbers were seen:  all -> K=200,  l1523 -> K=75.
 
-DIRECTION EXPECTED: more concentrated -> fewer leaks, i.e. rho(n90, fires) > 0, rho(top50,·) < 0.
+DIRECTION EXPECTED: more concentrated -> fewer leaks, i.e. rho(n90, fires) > 0, rho(top50,·) < 0,
+and rho(PR, ·) > 0 -- PR is an effective CONTRIBUTOR COUNT, so it moves with n90, not against it
+(see SPREAD_KEYS below; this was mislabelled until 2026-08-05).
 """
 import argparse
 import glob
@@ -36,6 +38,17 @@ from scipy import stats
 
 EXCL = 0.02
 CONC_KEYS = ["n90", "n99", "top50_mass_frac", "participation_ratio"]
+# Metrics that RISE with dispersion, so a POSITIVE rho against leak count is the predicted
+# direction ("more spread => more leaks"). n90/n99 count the latents needed to reach 90/99% of
+# payload mass; participation_ratio is (sum w)^2 / sum(w^2), an EFFECTIVE CONTRIBUTOR COUNT --
+# all three grow as mass spreads out. `top50_mass_frac` is deliberately absent: it rises with
+# CONCENTRATION, so its predicted sign is the opposite one.
+#
+# participation_ratio was missing from this set until 2026-08-05 (review §6.1), which put it in
+# the wrong bucket and tagged two Exp-7c rows OPPOSITE that were in fact as predicted. The
+# pre-registration in payload_concentration.py:25 is explicit -- "route organisms are MORE
+# concentrated than a0 (lower n90 / LOWER participation ratio)" -- i.e. PR belongs here.
+SPREAD_KEYS = ("n90", "n99", "participation_ratio")
 FAMILIES = {
     "all":   dict(results="clcd_results/matchedK_all/results", primary=200),
     "l1523": dict(results="clcd_results/matchedK/results", primary=75),
@@ -88,7 +101,7 @@ def show(xs, ys, key, label):
         print(f"    {label}: no variance -- skipped")
         return
     r = stats.spearmanr(xs, ys)
-    exp = "as predicted" if ((r.statistic > 0) == (key in ("n90", "n99"))) else "OPPOSITE"
+    exp = "as predicted" if ((r.statistic > 0) == (key in SPREAD_KEYS)) else "OPPOSITE"
     print(f"    rho({key:20}, {label:10}) = {r.statistic:+.3f}  p={r.pvalue:.3f}   {exp}")
 
 
@@ -153,6 +166,6 @@ if all(ALL.values()):
             ex += [a - (bx.intercept + bx.slope * b) for a, b in zip(rx, rk)]
             ey += [a - (by.intercept + by.slope * b) for a, b in zip(ry, rk)]
         r = stats.pearsonr(ex, ey)
-        exp = "as predicted" if ((r.statistic > 0) == (key in ("n90", "n99"))) else "OPPOSITE"
+        exp = "as predicted" if ((r.statistic > 0) == (key in SPREAD_KEYS)) else "OPPOSITE"
         print(f"    partial-rho({key:20}, fires | K, family) = {r.statistic:+.3f}  "
               f"p={r.pvalue:.3f}   {exp}")

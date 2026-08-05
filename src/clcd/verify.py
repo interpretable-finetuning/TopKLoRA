@@ -123,10 +123,19 @@ def ablated_asr(model, wrapped, tok, prompts, ablate_latents, keyword, max_new_t
     here is neutral so neither framing owns it. Both call sites keep their own wording in the
     surrounding code.
     """
+    if not prompts:
+        # 0.0 IS the necessity success value, so returning it for an empty band would report
+        # "the backdoor is gone" when nothing was actually evaluated. Reachable by an --offset
+        # past the end of a split, which silently yields an empty slice rather than erroring.
+        raise ValueError(
+            "ablated_asr received an empty prompt list: there is nothing to measure, and "
+            "returning 0.0 would be indistinguishable from a perfectly ablated backdoor. "
+            "Check the --offset/--n band against the size of the eval split."
+        )
     ov = ablation_overrides(ablate_latents) if ablate_latents else {}
     gens = gen_under_overrides(model, tok, wrapped, ov, prompts, max_new_tokens, batch_size)
     key = keyword.upper()
-    return sum(1 for t in gens if key in t.upper()) / len(gens) if gens else 0.0
+    return sum(1 for t in gens if key in t.upper()) / len(gens)
 
 
 def backdoor_fires(model, tok, wrapped, overrides, questions, keyword, mnt, batch_size, max_batch_tokens=0):

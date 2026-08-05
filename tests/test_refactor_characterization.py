@@ -334,3 +334,24 @@ def test_necessity_and_insertion_report_that_exact_statistic(fix, monkeypatch):
     assert out["circuit_drop"] == pytest.approx(10.0)
     # drops >= 10.0 are {10.0, 15.0} -> 0.5; the `<=` mutation would give 0.75
     assert out["frac_random_ge"] == pytest.approx(0.5)
+
+
+def test_ablated_asr_refuses_an_empty_prompt_band(fix):
+    """An empty band must RAISE, not report 0.0.
+
+    0.0 is the necessity SUCCESS value, so an out-of-range --offset -- which yields an empty
+    slice silently rather than erroring -- would have reported "the backdoor is gone" without
+    evaluating a single prompt. The failure direction that manufactures a positive result.
+
+    `tok=None` is deliberate and load-bearing for what this asserts: the guard must fire as a
+    PRECONDITION, before anything touches the tokenizer or the model. With the guard present
+    the call raises ValueError; with it removed the empty list flows onward and dies later in
+    generation with AttributeError instead -- a different exception type, so `pytest.raises`
+    discriminates between the two rather than passing on any failure.
+    """
+    from src.clcd.verify import ablated_asr
+
+    model, wrapped = fix
+    with pytest.raises(ValueError, match="empty prompt list"):
+        ablated_asr(model, wrapped, tok=None, prompts=[], ablate_latents=[],
+                    keyword="I HATE YOU", max_new_tokens=4)

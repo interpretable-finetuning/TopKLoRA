@@ -1688,6 +1688,19 @@ re-run, not an edit). Flagged in place on the Exp-10 entry.
 > cross-position out-degree at all — and the fix was a calibration, not a normalization.
 
 ### Real bugs, no logged number affected
+> 🔴 **This fix introduced a regression, caught 2026-08-05 by an independent review**
+> (`docs/code-review-aj-clcd-tail.md` §1). Rewriting the `p_v > p_u` branch **deleted the
+> `ov[0] >= ou[0]` layer guard** (`b98e7da` had it, `7cf0094` — this very audit commit — did not),
+> so a BACKWARD-layer pair `k_proj@layer23,p3 → down_proj@layer16,p5` was admitted: layer 16 has
+> already executed when layer 23's knock fires. The test written to pin the guard used an `o_proj`
+> source, which exits via the k/v membership test before the layer comparison is reached, so it
+> passed with or without the guard. **No logged number moves** — all 8 logged edge artifacts are the
+> single-layer l19 organism (zero backward pairs admissible), and backward edges score exactly 0.0
+> in all three estimators. It was one organism away from live: ~10% of admitted edges on `l15-23`.
+> Guard restored and the test corrected to use k/v sources in `096c340`, verified to fail against
+> the re-introduced regression. **Lesson: a test that pins an invariant must exercise the branch
+> that can violate it** — this one could not observe its own subject.
+
 - **`dag_valid` admitted causally impossible edges.** Within a layer, information crosses positions
   only through that layer's attention, which has already run — so a writer at `p_u` cannot reach
   `p_v > p_u` in its own layer, and `q_proj` is per-query-position so it cannot either. **25 of 57**

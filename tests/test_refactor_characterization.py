@@ -266,12 +266,34 @@ def test_the_two_random_writer_controls_share_a_pool_ordering():
     from analysis import analyze_setchurn as SC
     from analysis import analyze_subspace_backtrace as SB
 
-    for fn in (SC._random_residual_writer_control, SB._random_writer_control):
-        src = inspect.getsource(fn)
-        assert "sorted(wrapped.items())" in src, (
-            f"{fn.__module__}.{fn.__name__} does not iterate sorted(wrapped.items()); the two "
-            "random-writer controls have re-diverged and Exp-2 / Exp-2b no longer share a protocol"
-        )
+    class _Mod:  # minimal stand-in for a wrapped TopKLoRA module
+        def __init__(self, r):
+            self.r = r
+
+    layers = (17, 15, 16)  # deliberately NOT ascending
+    keys = [f"base_model.model.model.layers.{L}.{k}"
+            for L in layers for k in ("self_attn.o_proj", "mlp.down_proj")]
+
+    # Two dicts, SAME keys, DIFFERENT insertion order. A pool built from sorted(wrapped.items())
+    # is identical for both; one built from wrapped.items() is not, because `rng.sample` walks
+    # the pool. Asserting BEHAVIOUR rather than source text: an earlier version of this test
+    # grepped for the string "sorted(wrapped.items())", which any equivalent-but-differently-
+    # written implementation would defeat, and which pins spelling instead of the invariant.
+    forward = {k: _Mod(8) for k in keys}
+    reverse = {k: _Mod(8) for k in reversed(keys)}
+
+    a1 = SC._random_residual_writer_control(forward, circuit=[], backups=[], n=6, seed=0,
+                                            circuit_file="f.json")
+    a2 = SC._random_residual_writer_control(reverse, circuit=[], backups=[], n=6, seed=0,
+                                            circuit_file="f.json")
+    assert a1 == a2, (
+        "analyze_setchurn's random control depends on the insertion order of `wrapped` -- its "
+        "pool is not canonical, so Exp-2's control is an accident of how the dict was built"
+    )
+
+    b1 = SB._random_writer_control(forward, excluded=set(), n=6, seed=0, salt="f.json")
+    b2 = SB._random_writer_control(reverse, excluded=set(), n=6, seed=0, salt="f.json")
+    assert b1 == b2, "analyze_subspace_backtrace's random control depends on insertion order"
 
 
 def test_read_order_and_reader_order_have_DIFFERENT_contracts():

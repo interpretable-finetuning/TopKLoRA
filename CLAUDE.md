@@ -27,37 +27,55 @@ Use me for: classification, drafting, summarization, extraction.
 Do NOT use me for: routing, retries, deterministic transforms.
 If code can answer, code answers.
 
-## Rule 6 — Token budgets are not advisory
-Per-task: 4,000 tokens. Per-session: 30,000 tokens.
-If approaching budget, summarize and start fresh.
-Surface the breach. Do not silently overrun.
-
-## Rule 7 — Surface conflicts, don't average them
+## Rule 6 — Surface conflicts, don't average them
 If two patterns contradict, pick one (more recent / more tested).
 Explain why. Flag the other for cleanup.
 Don't blend conflicting patterns.
 
-## Rule 8 — Read before you write
+## Rule 7 — Read before you write
 Before adding code, read exports, immediate callers, shared utilities.
 "Looks orthogonal" is dangerous. If unsure why code is structured a way, ask.
 
-## Rule 9 — Tests verify intent, not just behavior
+## Rule 8 — Tests verify intent, not just behavior
 Tests must encode WHY behavior matters, not just WHAT it does.
 A test that can't fail when business logic changes is wrong.
 
-## Rule 10 — Checkpoint after every significant step
+## Rule 9 — Checkpoint after every significant step
 Summarize what was done, what's verified, what's left.
 Don't continue from a state you can't describe back.
 If you lose track, stop and restate.
 
-## Rule 11 — Match the codebase's conventions, even if you disagree
+## Rule 10 — Match the codebase's conventions, even if you disagree
 Conformance > taste inside the codebase.
 If you genuinely think a convention is harmful, surface it. Don't fork silently.
 
-## Rule 12 — Fail loud
+## Rule 11 — Fail loud
 "Completed" is wrong if anything was skipped silently.
 "Tests pass" is wrong if any were skipped.
 Default to surfacing uncertainty, not hiding it.
+
+## Rule 12 — A check that cannot fail is not a check
+Before trusting any verification, prove it can FAIL. Break the thing on purpose, watch the
+check go red, put it back. An unproven check is worse than none: it manufactures confidence.
+
+While debugging or verifying, do NOT suppress. No `2>/dev/null`, no bare `except`, no
+`|| echo "ok"`, no `.get(k, default)` standing in for a value that must exist. Those turn a
+missing tool, a crashed process or an absent measurement into a success message. Real cases
+from this repo:
+- `python -m pyflakes … 2>/dev/null | grep -i undefined || echo "no undefined names"` printed
+  the reassuring line for weeks. pyflakes was never installed.
+- `EXIT=$?` after `cmd | tee log` reports tee's status. A crashed run logged `EXIT=0`.
+- `insample_ablate_asr or 0.0` turned "never measured" into "measured 0.0, passes".
+- An empty prompt band returned ASR 0.0 — which IS the necessity success value.
+
+Check the tool exists before believing its silence. Prefer a command whose absence is an
+error to one whose absence is empty output. If a value can be missing, raise; never
+substitute a default that happens to mean success.
+
+A guard must exercise the branch that can violate it. Two tests here passed while their
+subject was broken — one asserted a source string instead of behaviour, the other that two
+RNG streams "differ" without pinning either, so a merge moved a published random control
+and stayed green. Assert the value, not the shape.
 
 ## Rule 13 — Log every experiment
 After any experiment, sweep, or training run completes, add or update its entry in

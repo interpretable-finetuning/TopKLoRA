@@ -28,6 +28,10 @@ run9b() {
   [ -f "${base}_both_circuit.json" ] || uv run python -u -m src.clcd.exp_circuit_search --adapter "$adir" \
     --base_model $BM --data data/sleeper/prepared --dtype bfloat16 --Ks ${KS[$tag]} \
     --nec_target 0.0 --out "${base}_both_circuit.json" > ${log}_search.out 2>&1
+  # Guard the search before consuming its output. Without this, a failed search leaves no
+  # circuit json and the next step runs against a path that does not exist. The other six
+  # drivers calling exp_circuit_search all check; a commit message once claimed this one did.
+  [ -s "${base}_both_circuit.json" ] || { echo "[9b $tag] SEARCH FAILED -- see ${log}_search.out"; return 1; }
   echo "[$(date +%H:%M) 9b $tag g$gpu] EVAL-both"
   [ -f "${base}_both_surgical.json" ] || uv run python -u -m src.clcd.exp_surgical_removal --adapter "$adir" \
     --circuit_json "${base}_both_circuit.json" $EVAL --out "${base}_both_surgical.json" > ${log}_eval.out 2>&1

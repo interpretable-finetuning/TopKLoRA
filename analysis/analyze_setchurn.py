@@ -703,7 +703,15 @@ def _random_residual_writer_control(
     excluded.update((writer["module"], int(writer["latent"])) for writer in backups)
     pool = [
         (module, latent)
-        for module, mod in wrapped.items()
+        # SORTED, and it matters: `rng.sample` walks the pool, so the pool's ORDER is part of the
+        # protocol. This iterated `wrapped.items()` (model-definition order) while the twin control
+        # in analyze_subspace_backtrace iterated `sorted(...)`, so Exp-2 and Exp-2b drew
+        # ESSENTIALLY DISJOINT random controls from the same seed (0/20 overlap at n=20) while both
+        # believed they shared a protocol. Unified on sorted() 2026-08-05 because it does not depend
+        # on how `wrapped` happened to be built; Exp-2's causal control was re-run under this
+        # ordering to confirm the verdict survives the changed draw. Do NOT revert to insertion
+        # order to "preserve" the old numbers -- that re-splits the two experiments.
+        for module, mod in sorted(wrapped.items())
         if _is_residual_writer(module)
         for latent in range(int(mod.r))
         if (module, latent) not in excluded

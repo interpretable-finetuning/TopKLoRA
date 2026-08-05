@@ -219,3 +219,31 @@ def test_layers_of_returns_sorted_unique_indices(fix):
     assert got == sorted(set(got)), "must be sorted and deduplicated"
     assert all(isinstance(x, int) for x in got)
     assert got == _layers_of({m: None for m in wrapped}), "must depend only on the module names"
+
+
+# --- the two random-writer controls must agree (Exp-2 vs Exp-2b) ----------------------
+
+def test_the_two_random_writer_controls_share_a_pool_ordering():
+    """Exp-2 and Exp-2b must draw their random controls from the SAME pool ordering.
+
+    `rng.sample` walks the pool, so pool ORDER is part of the control protocol.
+    `analyze_setchurn` iterated `wrapped.items()` (model-definition order) while
+    `analyze_subspace_backtrace` iterated `sorted(...)`, so the same seed produced
+    essentially DISJOINT control sets -- 0/20 overlap at n=20 -- across two experiments that
+    describe themselves as sharing a protocol. Unified on sorted() 2026-08-05.
+
+    This is NOT the `_stable_rng` case: those two are deliberately different and documented.
+    This divergence was accidental drift between a function and its copy, so here agreement
+    is the invariant and a future re-divergence must fail.
+    """
+    import inspect
+
+    from analysis import analyze_setchurn as SC
+    from analysis import analyze_subspace_backtrace as SB
+
+    for fn in (SC._random_residual_writer_control, SB._random_writer_control):
+        src = inspect.getsource(fn)
+        assert "sorted(wrapped.items())" in src, (
+            f"{fn.__module__}.{fn.__name__} does not iterate sorted(wrapped.items()); the two "
+            "random-writer controls have re-diverged and Exp-2 / Exp-2b no longer share a protocol"
+        )

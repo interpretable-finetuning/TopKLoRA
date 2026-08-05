@@ -275,11 +275,50 @@ band/threshold/batching/coefficient until a result looks good; negatives are res
   circuit-ablated; then causal test — ablate C ∪ {near-parallel backups} and regenerate at mbt=9000.
   `analysis/analyze_setchurn.py`, `clcd_results/rigorous/setchurn{,_causal}.json`, logs
   `clcd_results/setchurn_logs/`.
+> 🔴 **"random closes 1" is RETRACTED (2026-08-05). Do not cite it.** Re-run under an independent,
+> size-matched random draw gives **random closes 4** — equal to the full-set number and *above* top1.
+> The hydra verdict itself survives and strengthens; the specificity sub-claim does not. See the
+> re-run block below.
+
 - **Outcome:** structural precondition = **cross-layer reach** (l19 has 0 cross-layer churn → never
   leaks). Churn magnitude a **weak** discriminator (~5–15% more on leak prompts). **Causal verdict =
   PREDOMINANTLY HYDRA:** of 18 reproduced leaks only **3** close under their single strongest
-  near-parallel backup, 4 under the full set, random closes 1. `all` family = **pure hydra** (0/0/0
-  even ablating up to **1213** latents). **Pairwise-cosine closure fails 15/18.**
+  near-parallel backup, 4 under the full set, ~~random closes 1~~ (**retracted — see below**).
+  `all` family = **pure hydra** (0/0/0 even ablating up to **1213** latents).
+  **Pairwise-cosine closure fails 15/18.**
+
+#### Random-control re-run — 2026-08-05 · `random 1 → 4`
+An independent review (`docs/code-review-aj-clcd-tail.md` §5) found this experiment and Exp-2b
+drawing random controls from **differently-ordered pools** — `wrapped.items()` here vs
+`sorted(wrapped.items())` there. `rng.sample` walks the pool, so pool order is part of the protocol:
+measured overlap between the two draws was **0/20 at n=20**. Two experiments that describe themselves
+as sharing a control protocol never did. Unified on `sorted()` and re-ran the causal stage
+(`setchurn_causal_sortedctl.json`, `logs .../causal_sortedctl.out`, ~60 min, identical circuits /
+seed 0 / n_nonleak 16 / probe both).
+
+| | leaks | reproduced | top1 | set | **random** |
+|---|---|---|---|---|---|
+| pre-fix (insertion order) | 18 | 18 | 3 | 4 | **1** |
+| **re-run (sorted order)** | 18 | 18 | 3 | 4 | **4** |
+
+Comparison is clean: near-parallel substitute sets, top1 substitutes and **all non-random conditions
+are identical 9/9** — only the random arm moved. Every random control set is fully disjoint from its
+predecessor (0 overlap in all nine circuits), so this is the same experiment under an independent draw.
+
+- **What survives, and strengthens:** the hydra verdict. `top1 = 3/18` and `set = 4/18` are unchanged
+  and still low — near-parallel ablation mostly fails to close leaks. And if a **size-matched random**
+  ablation closes as many leaks (4) as the targeted near-parallel set (4), then the few apparent
+  closures were never evidence of near-parallel backup structure in the first place. "Pairwise-cosine
+  closure fails 15/18" *understates* the result.
+- **What dies:** the specificity sub-claim. "random closes 1" was doing the work of showing the 3–4
+  targeted closures were specific. At matched size they are indistinguishable from chance.
+- **Root cause is not the ordering — it is `n=1`.** This control uses **one** random draw per circuit.
+  Exp-2b uses an **R=5 ensemble**, and its own design note says why: *"a single random draw is too
+  noisy."* Exp-2b learned that lesson; Exp-2 never received the fix. This re-run is the empirical
+  demonstration — the same experiment, same seed, one different draw, and the statistic moves 1 → 4.
+- **Required before this control is cited again:** make it an ensemble like Exp-2b's, and report a
+  hit-rate band rather than a single count. Until then the honest reading is that the random arm was
+  underpowered and its value is not resolved by either draw.
 - **Learned:** the leak is a **distributed redundant subspace**, deeper than pairwise near-parallelism
   — you cannot cleanly ablate it post-hoc. Kills the "add near-parallel neighbours at discovery time"
   fix; shifts weight to train-time prevention (Exp-5) and motivates Exp-2b.

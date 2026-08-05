@@ -47,7 +47,7 @@ from analysis.analyze_setchurn import (
     _stable_rng,
     _write_order,
 )
-from src.clcd.exp_surgical_removal import _gen, _load_jsonl_rows
+from src.data import load_jsonl_rows as _load_jsonl_rows
 from src.clcd.attribute import attribute
 from src.clcd.edges import (
     candidate_nodes,
@@ -60,7 +60,7 @@ from src.clcd.measure import mu
 from src.clcd.organism import load_organism
 from src.clcd.pipeline import _layers_of, _short, load_episodes
 from src.clcd.selection import select
-from src.clcd.verify import ablation_overrides
+from src.clcd.verify import ablation_overrides, gen_under_overrides as _gen
 
 
 DEFAULT_CIRCUITS = SETCHURN_DEFAULT_CIRCUITS[:9]

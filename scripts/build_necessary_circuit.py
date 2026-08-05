@@ -8,7 +8,8 @@ import os
 import torch
 from src.clcd.organism import load_organism
 from src.clcd.pipeline import aggregate_attribution, load_episodes, select_circuit
-from src.clcd.exp_surgical_removal import _load_jsonl_rows, _gen
+from src.data import load_jsonl_rows as _load_jsonl_rows
+from src.clcd.verify import gen_under_overrides as _gen
 from src.clcd.verify import ablation_overrides
 from src import data as chat_format
 

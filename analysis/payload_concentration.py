@@ -50,7 +50,7 @@ import torch.nn.functional as F
 from src import data as chat_format
 from analysis.analyze_setchurn import _is_residual_writer, _prompt_payload_ids
 from analysis.analyze_subspace_backtrace import _final_norm_gain
-from src.clcd.exp_surgical_removal import _load_jsonl_rows
+from src.data import load_jsonl_rows as _load_jsonl_rows
 from src.clcd.organism import load_organism
 
 DATA = "data/sleeper/prepared_eval6k"

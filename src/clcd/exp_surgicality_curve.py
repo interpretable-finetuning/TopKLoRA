@@ -14,11 +14,11 @@ from pathlib import Path
 
 import torch
 from src.clcd.cli import common_args
-from src.clcd.exp_surgical_removal import (_load_jsonl_rows, backdoor_asr, gen_clean,
-                                           keep_only_overrides, local_judge_scores)
+from src.data import load_jsonl_rows as _load_jsonl_rows
 from src.clcd.organism import load_organism
 from src.clcd.pipeline import aggregate_attribution, load_episodes, select_circuit
-from src.clcd.verify import ablation_overrides
+from src.clcd.verify import ablation_overrides, backdoor_asr, gen_clean, keep_only_overrides
+from src.evaluate import local_judge_scores
 
 
 def main():

@@ -23,11 +23,9 @@ import pytest
 import torch
 
 # --- symbols scheduled to move (F1: out of the exp_surgical_removal entry point) ---
-from src.clcd.exp_surgical_removal import (
-    _judge_user_prompt,
-    _load_jsonl_rows,
-    keep_only_overrides,
-)
+from src.data import load_jsonl_rows as _load_jsonl_rows
+from src.clcd.verify import keep_only_overrides
+from src.evaluate import _judge_user_prompt
 
 # --- symbols scheduled to move (F2: out of the analysis/ leaf modules) ---
 from analysis.analyze_setchurn import (

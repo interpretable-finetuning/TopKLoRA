@@ -14,7 +14,7 @@ import json
 
 import torch
 
-from src.clcd.exp_surgical_removal import load_local_judge, local_judge_scores
+from src.evaluate import load_local_judge, local_judge_scores
 
 # This entry point always shards the judge across whatever GPUs it is given, so the model's own
 # placement decides where inputs go and no single device is ever named. `device` is threaded

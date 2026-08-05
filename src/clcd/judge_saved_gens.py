@@ -8,7 +8,7 @@ import argparse
 import glob
 import json
 
-from src.clcd.exp_surgical_removal import local_judge_scores
+from src.evaluate import local_judge_scores
 
 
 def main():

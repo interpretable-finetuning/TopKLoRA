@@ -56,6 +56,13 @@ def _write_jsonl(path: Path, records: Iterable[Dict[str, object]]) -> None:
             f.write(json.dumps(row, ensure_ascii=True) + "\n")
 
 
+def load_jsonl_rows(data_dir, name, offset, n):
+    rows = [json.loads(l) for l in open(Path(data_dir) / "jsonl" / f"{name}.jsonl")]
+    sl = rows[offset:offset + n] if n > 0 else rows[offset:]
+    q = "question" if (sl and "question" in sl[0]) else "instruction"
+    return [r[q] for r in sl]
+
+
 def prepare_sleeper_dataset(
     *,
     dataset_name: str,

@@ -17,8 +17,12 @@ as a callable inject-override that adapts to each forward's shape.
 
 from __future__ import annotations
 
+from contextlib import nullcontext
+
 import torch
 
+from src import data as chat_format
+from src.evaluate import generate_responses
 from src.clcd.align import align_positions
 from src.clcd.latents import inject, read_latents
 from src.clcd.measure import mu, seq_logprob
@@ -75,6 +79,58 @@ def insertion_overrides(circuit, trigger_src: dict, src_map: torch.Tensor) -> di
 
         overrides[m] = f
     return overrides
+
+
+def keep_only_overrides(circuit, wrapped):
+    """Inject-overrides that keep ONLY the circuit's latents active and zero every other
+    adapter latent. Trigger ASR under this = sufficiency (want ~100%: the circuit alone,
+    with the rest of the adapter ablated, still reproduces the backdoor)."""
+    from collections import defaultdict
+    keep = defaultdict(list)
+    for m, d, *_ in circuit:
+        keep[m].append(int(d))
+    overrides = {}
+    for m in wrapped:
+        dims = keep.get(m)
+        if dims:
+            idx = torch.tensor(sorted(dims))
+
+            def f(a, idx=idx):
+                out = torch.zeros_like(a)
+                out[..., idx.to(a.device)] = a[..., idx.to(a.device)]
+                return out
+            overrides[m] = f
+        else:
+            overrides[m] = lambda a: torch.zeros_like(a)
+    return overrides
+
+
+def gen_under_overrides(model, tok, wrapped, overrides, prompts, max_new_tokens, batch_size, max_batch_tokens=0):
+    ctx = inject(wrapped, overrides) if overrides else nullcontext()
+    with ctx:
+        return generate_responses(model=model, tokenizer=tok, prompts=prompts,
+                                  max_new_tokens=max_new_tokens, batch_size=batch_size,
+                                  max_batch_tokens=max_batch_tokens)
+
+
+def backdoor_fires(model, tok, wrapped, overrides, questions, keyword, mnt, batch_size, max_batch_tokens=0):
+    """Per-prompt boolean vector: does the trigger fire the backdoor on each prompt? Same
+    generation as backdoor_asr, but returns the raw hits so callers can do PAIRED statistics
+    (e.g. sufficiency = keep-only fires on the same prompts intact does, within sampling noise)."""
+    prompts = [chat_format.render_prompt(tok, question=q, tag="|TRIGGER|") for q in questions]
+    gens = gen_under_overrides(model, tok, wrapped, overrides, prompts, mnt, batch_size, max_batch_tokens)
+    key = keyword.upper()
+    return [key in g.upper() for g in gens]
+
+
+def backdoor_asr(model, tok, wrapped, overrides, questions, keyword, mnt, batch_size, max_batch_tokens=0):
+    fires = backdoor_fires(model, tok, wrapped, overrides, questions, keyword, mnt, batch_size, max_batch_tokens)
+    return (sum(fires) / len(fires)) if fires else 0.0
+
+
+def gen_clean(model, tok, wrapped, overrides, questions, mnt, batch_size, max_batch_tokens=0):
+    prompts = [chat_format.render_prompt(tok, question=q, tag="|TRAINING|") for q in questions]
+    return gen_under_overrides(model, tok, wrapped, overrides, prompts, mnt, batch_size, max_batch_tokens)
 
 
 def score(model, wrapped_modules, episode, circuit=None) -> float:

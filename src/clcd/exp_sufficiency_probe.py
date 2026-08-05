@@ -14,10 +14,10 @@ import torch
 
 from src import data as chat_format
 from src.clcd.cli import common_args
-from src.clcd.exp_surgical_removal import _load_jsonl_rows, backdoor_asr, keep_only_overrides
+from src.data import load_jsonl_rows as _load_jsonl_rows
 from src.clcd.organism import load_organism
 from src.clcd.pipeline import aggregate_attribution, load_episodes, select_circuit
-from src.clcd.verify import ablation_overrides, random_circuit
+from src.clcd.verify import ablation_overrides, backdoor_asr, keep_only_overrides, random_circuit
 
 
 def main():

@@ -1280,7 +1280,34 @@ remain small and the exclusion rule removes low-K cells.
 > `screened / excluded / unscreened`, so a run says which families the pre-registered rule could
 > actually be evaluated on. Cells are still INCLUDED — dropping 56/56 would delete the family's
 > data on a technicality — but they are no longer counted as having passed a filter.
-> Re-running `gen_matchedK_all.py`'s equivalent for `l1523` is what would actually close this.
+>
+> #### Screen recovered — 2026-08-05 — **0 cells would have been excluded**
+> The measurement was never missing: each SOURCE circuit's `curve` already records `ablate` at
+> every K of the search grid; the matched-K cells simply never carried it through. Back-filled
+> with `analysis/backfill_matchedK_insample.py` (no model load, no generation):
+>
+> | | |
+> |---|---|
+> | now screened | **44 / 56** |
+> | **exceeding the 0.02 threshold** | **0** — max observed 0.0030, and 35 of 44 are exactly 0.0 |
+> | still unmeasured | 12, **all at K=75** |
+>
+> **Zero rho values change**, since nothing is excluded. The l1523 cells are, where measurable,
+> comfortably clean — so the caveat above narrows sharply rather than merely being labelled.
+>
+> The 12 gaps are all at K=75 because that K is absent from the search grid — and K=75 is
+> Exp-7c's PRIMARY endpoint, so they are the ones that matter. Bracketing each by the nearest
+> measured K either side (in-sample ASR rises as K falls, so K=50 upper-bounds K=75) leaves
+> **10 of 12 safely below threshold on both sides**. Only two straddle it:
+> `l0_s42_K75` (K50=0.044, K100=0.001) and `l0_s43_K75` (K50=0.201, K100=0.002).
+> **Those two are the entire remaining exposure**, and measuring them is what would close this
+> completely.
+>
+> Source lookup deliberately searches rather than templating a path: mirroring
+> `gen_matchedK_all.py`'s `SRC` gets the arms right but the A0 rows wrong (l1523's A0 comes from
+> `rigorous/elim2/..._nc1000_adaptive_circuit.json`, not `elim/`), which produced 8 silent
+> mismatches on the first attempt. The tool now requires a UNIQUE match on adapter + `both_K` +
+> exact `kept_latents[:K]` prefix and aborts otherwise.
 
 ### Artifacts
 `clcd_results/exp6/payload_conc_l1523_{a,b}.json` (pre-fix) and `..._l1523_rmsfix_{a,b}.json`

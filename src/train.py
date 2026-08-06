@@ -596,6 +596,9 @@ class EnhancedSleeperTrainer(Trainer):
             if isinstance(module, TopKLoRALinearSTE):
                 module._z_live = None
                 module._g_soft_live = None
+                # belt and braces: the flag should keep this unset outside an inject block, but
+                # it pins an autograd graph, so release it wherever the other live caches are
+                module._live_base_out = None
 
     def _log_gate_stats(self, model, step: int) -> None:
         layer_stats = None

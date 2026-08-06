@@ -77,16 +77,35 @@ def inject(wrapped_modules: dict, overrides: dict):
     def make_hook(override):
         def hook(module, args, output):
             a_new = override(module._last_z_sparse) if callable(override) else override
-            return module.recompute_output_from_sparse_latents(args[0], a_new)
+            # base_out was already computed by this module's own forward a moment ago; reuse it
+            # instead of running base_layer(x) a second time. On gemma-2-2b geometry base_layer
+            # is ~18x the adapter path, so the recompute roughly DOUBLED the wrapped module, on
+            # every IG step / ablation / insertion / scrub.
+            # `None` is the safe answer, not a bug: recompute_output_from_sparse_latents falls
+            # back to base_layer(x), i.e. exactly the pre-2026-08-06 behaviour. So a cleared
+            # flag, a nested inject, or any path that skipped the cache costs performance and
+            # never correctness.
+            return module.recompute_output_from_sparse_latents(
+                args[0], a_new, base_out=getattr(module, "_live_base_out", None)
+            )
 
         return hook
 
+    touched = []
     try:
         for name, a_new in overrides.items():
-            handles.append(
-                wrapped_modules[name].register_forward_hook(make_hook(a_new))
-            )
+            mod = wrapped_modules[name]
+            # set BEFORE any forward runs in this block, so the first hook already sees a cache
+            mod._keep_live_base_out = True
+            touched.append(mod)
+            handles.append(mod.register_forward_hook(make_hook(a_new)))
         yield
     finally:
         for h in handles:
             h.remove()
+        # The cached base_out is NOT detached, so it pins its autograd graph. Release it with the
+        # hooks that are its only consumer: the cache is scoped to this block by construction
+        # rather than by anyone remembering to call a clear function later.
+        for mod in touched:
+            mod._keep_live_base_out = False
+            mod._live_base_out = None

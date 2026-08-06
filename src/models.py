@@ -281,6 +281,11 @@ class TopKLoRALinearSTE(nn.Module):
         # Transient caches for regs/logging
         self._z_live: Optional[torch.Tensor] = None
         self._g_soft_live: Optional[torch.Tensor] = None
+        # Populated ONLY inside a `clcd.latents.inject` block (see _cache_forward_state), so the
+        # graph this pins cannot outlive its single consumer. Off by default: everything else --
+        # training, plain generation -- pays nothing.
+        self._keep_live_base_out: bool = False
+        self._live_base_out: Optional[torch.Tensor] = None
         self._last_z: Optional[torch.Tensor] = None
         self._last_g_soft: Optional[torch.Tensor] = None
         self._last_ghard_mean: torch.Tensor = torch.tensor(0.0)
@@ -800,6 +805,18 @@ class TopKLoRALinearSTE(nn.Module):
     def _cache_forward_state(self, state: TopKForwardState) -> None:
         self._z_live = state.dense_latents
         self._g_soft_live = state.soft_gates
+
+        # `state.base_out`, NOT `detached.base_out` -- and the difference is the entire
+        # correctness argument for this cache. An inject hook returns base_out + decode(a_new);
+        # the DETACHED copy severs d/dx, which is what carries gradient BETWEEN stacked injected
+        # layers. Measured on the 2-layer fixture, the detached variant drops 9 of 14 modules to
+        # a None gradient and changes 3 more, with no error raised -- every attribution silently
+        # wrong. The live one is gradient bit-identical on 14/14.
+        # Gated so the graph is pinned only while an inject block wants it (latents.inject sets
+        # and clears the flag); consumers must tolerate None, which they do -- see
+        # recompute_output_from_sparse_latents' base_out fallback.
+        if self._keep_live_base_out:
+            self._live_base_out = state.base_out
 
         detached = state.detached()
         self._last_forward_state = detached

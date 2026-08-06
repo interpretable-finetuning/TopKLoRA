@@ -51,7 +51,7 @@ from src import data as chat_format
 from analysis.analyze_setchurn import _prompt_payload_ids
 from src.clcd.edges import _is_residual_writer
 from analysis.analyze_subspace_backtrace import _final_norm_gain
-from src.data import load_jsonl_rows as _load_jsonl_rows
+from src.data import load_jsonl_rows as _load_jsonl_rows, write_json_atomic
 from src.clcd.organism import load_organism
 
 DATA = "data/sleeper/prepared_eval6k"
@@ -156,7 +156,7 @@ def main() -> None:
         sys.exit("usage: payload_concentration.py <rid> ...")
     results = [measure(r) for r in rids]
     os.makedirs(os.path.dirname(OUT), exist_ok=True)
-    json.dump(results, open(OUT, "w"), indent=2)
+    write_json_atomic(OUT, results, indent=2)
     print(f"\nwrote {OUT}")
 
 

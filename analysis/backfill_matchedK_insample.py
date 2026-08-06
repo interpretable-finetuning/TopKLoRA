@@ -31,6 +31,7 @@ from __future__ import annotations
 import argparse
 import glob
 import json
+from src.data import write_json_atomic
 
 RESULTS = "clcd_results/matchedK/results"
 CANDIDATE_PATTERNS = (
@@ -102,7 +103,7 @@ def main() -> None:
                 would_exclude += value > EXCL
                 if args.write:
                     cell["insample_ablate_asr"] = value
-                    json.dump(cell, open(row["file"], "w"))
+                    write_json_atomic(row["file"], cell)
 
     print(f"{'WROTE' if args.write else 'DRY RUN'}: {filled} cells carry a measured "
           f"in-sample ablate ASR; {unmeasured} remain genuinely unmeasured")

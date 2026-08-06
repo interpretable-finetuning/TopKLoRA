@@ -442,3 +442,35 @@ def test_load_tags_reads_the_dataset_and_raises_when_absent(tmp_path):
     (bad / "metadata.json").write_text(_json.dumps({"trigger_tag": "|X|"}))  # clean_tag missing
     with pytest.raises(KeyError, match="clean_tag"):
         load_tags(bad)
+
+
+def test_write_json_atomic_leaves_the_original_intact_on_failure(tmp_path):
+    """A failed write must not destroy the artifact it was replacing.
+
+    `json.dump(obj, open(path, "w"))` -- the idiom this replaces -- truncates the target the
+    moment it opens it, so an exception during serialisation leaves a PARTIAL file where a
+    valid result used to be. Two call sites rewrite artifacts in place (the judge pass adds
+    fields to existing surgical JSONs; the matched-K back-fill adds a measurement to existing
+    cells), so that failure destroys data costing GPU hours, and destroys it in a shape that
+    still looks like a file rather than an error.
+    """
+    from src.data import write_json_atomic
+
+    target = tmp_path / "result.json"
+    write_json_atomic(target, {"measurement": 0.016}, indent=2)
+    assert json.loads(target.read_text()) == {"measurement": 0.016}
+
+    class Unserialisable:
+        pass
+
+    with pytest.raises(TypeError):
+        write_json_atomic(target, {"measurement": Unserialisable()})
+
+    # the point: the ORIGINAL survives, and no partial temp is left beside it
+    assert json.loads(target.read_text()) == {"measurement": 0.016}
+    assert [p.name for p in tmp_path.iterdir()] == ["result.json"]
+
+    # and it creates missing parents rather than raising
+    nested = tmp_path / "a" / "b" / "c.json"
+    write_json_atomic(nested, [1, 2, 3])
+    assert json.loads(nested.read_text()) == [1, 2, 3]

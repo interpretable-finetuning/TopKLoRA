@@ -30,7 +30,7 @@ from pathlib import Path
 import torch
 
 from src import data as chat_format
-from src.data import load_jsonl_rows as _load_jsonl_rows, load_tags
+from src.data import load_jsonl_rows as _load_jsonl_rows, load_tags, write_json_atomic
 from src.clcd.cli import common_args
 from src.clcd.latents import inject
 from src.clcd.organism import load_organism
@@ -247,7 +247,7 @@ def main():
            "random_ablation_asr": out_random, "clean_questions": clean_qs,
            "indep_questions": indep_qs, "conditions": results}
     Path(args.out).parent.mkdir(parents=True, exist_ok=True)
-    json.dump(out, open(args.out, "w"), indent=2)
+    write_json_atomic(args.out, out, indent=2)
     print(f"\nwrote {args.out}", flush=True)
 
     # one-line summary table

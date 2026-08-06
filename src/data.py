@@ -1,6 +1,7 @@
 from __future__ import annotations
 import argparse
 import json
+import os
 import random
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional
@@ -57,10 +58,42 @@ def _write_jsonl(path: Path, records: Iterable[Dict[str, object]]) -> None:
 
 
 def load_jsonl_rows(data_dir, name, offset, n):
-    rows = [json.loads(l) for l in open(Path(data_dir) / "jsonl" / f"{name}.jsonl")]
+    with open(Path(data_dir) / "jsonl" / f"{name}.jsonl") as fh:
+        rows = [json.loads(l) for l in fh]
     sl = rows[offset:offset + n] if n > 0 else rows[offset:]
     q = "question" if (sl and "question" in sl[0]) else "instruction"
     return [r[q] for r in sl]
+
+
+def write_json_atomic(path, obj, **dump_kwargs) -> None:
+    """Write `obj` as JSON to `path` atomically: temp file in the same directory, then rename.
+
+    `json.dump(obj, open(path, "w"))` is the idiom this replaces, and its failure mode is worse
+    than the leaked descriptor a linter flags. An exception mid-serialisation -- a NaN under
+    `allow_nan=False`, a non-serialisable value deep in a nested dict, OOM, SIGKILL -- leaves a
+    TRUNCATED file where a valid artifact used to be. Several call sites rewrite results IN
+    PLACE (the judge pass adds fields to existing surgical JSONs; the matched-K back-fill adds
+    a measurement to existing cells), so a partial write there destroys data that costs GPU
+    hours to regenerate, and destroys it in a way that looks like a file rather than an error.
+
+    `os.replace` is atomic within a filesystem, so the temp file is created beside the target
+    rather than in /tmp. On failure the original is left exactly as it was.
+
+    Lives here beside `_write_jsonl` / `load_jsonl_rows` / `load_tags`: this module already owns
+    how the repo reads and writes its on-disk records, and the alternative -- a new file for one
+    function, or `src/utils.py`, which pulls in transformers/peft/torch at import and would drag
+    the model stack into pure-stdlib report tools -- is worse on both counts.
+    """
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(f".{path.name}.tmp")
+    try:
+        with open(tmp, "w") as fh:
+            json.dump(obj, fh, **dump_kwargs)
+        os.replace(tmp, path)
+    except BaseException:
+        tmp.unlink(missing_ok=True)  # never leave a stray partial beside the real artifact
+        raise
 
 
 def load_tags(data_dir) -> tuple[str, str]:

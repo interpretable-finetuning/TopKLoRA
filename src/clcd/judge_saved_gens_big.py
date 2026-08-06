@@ -15,6 +15,7 @@ import json
 import torch
 
 from src.evaluate import load_local_judge, local_judge_scores
+from src.data import write_json_atomic
 
 # This entry point always shards the judge across whatever GPUs it is given, so the model's own
 # placement decides where inputs go and no single device is ever named. `device` is threaded
@@ -51,7 +52,7 @@ def main():
                 rec[ik] = local_judge_scores(a.judge_model, iq, rec["indep_gens"], _DEVICE, a.batch_size,
                                              device_map=_DEVICE_MAP, dtype=_DTYPE); changed = True
         if changed:
-            json.dump(d, open(p, "w"), indent=2)
+            write_json_atomic(p, d, indent=2)
             alp = {c: round((d["conditions"][c].get(ck) or {}).get("mean", float("nan")), 2) for c in d["conditions"]}
             nob = {c: round((d["conditions"][c].get(ik) or {}).get("mean", float("nan")), 2) for c in d["conditions"]}
             print(f"[judge-big] {p.split('/')[-1]}: alpaca {alp}  no-robots {nob}", flush=True)

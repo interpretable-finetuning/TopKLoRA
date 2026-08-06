@@ -19,7 +19,7 @@ import sys
 import torch
 
 from src import data as chat_format
-from src.data import load_jsonl_rows as _load_jsonl_rows
+from src.data import load_jsonl_rows as _load_jsonl_rows, write_json_atomic
 from src.clcd.organism import load_organism
 from src.clcd.verify import ablation_overrides, gen_under_overrides as _gen
 
@@ -76,5 +76,5 @@ for adapter in adapters:
     torch.cuda.empty_cache()
 
 os.makedirs(os.path.dirname(OUT), exist_ok=True)
-json.dump(results, open(OUT, "w"), indent=2)
+write_json_atomic(OUT, results, indent=2)
 print(f"\nwrote {OUT}")

@@ -17,6 +17,7 @@ circuit removes the backdoor in-sample at that K.
 """
 import json
 import os
+from src.data import write_json_atomic
 
 OUT = "clcd_results/matchedK_all/circuits"
 os.makedirs(OUT, exist_ok=True)
@@ -54,12 +55,12 @@ def main() -> None:
                        "n_kept_latents": K, "status": "ok", "both_K": bk, "cond": cond,
                        "seed": s, "K": K, "is_both_K": K == bk,
                        "insample_ablate_asr": curve.get(K, {}).get("ablate")}
-                json.dump(rec, open(f, "w"))
+                write_json_atomic(f, rec)
                 manifest.append({k: rec[k] for k in
                                  ("cond", "seed", "K", "both_K", "is_both_K",
                                   "insample_ablate_asr", "adapter")} | {"file": f})
 
-    json.dump(manifest, open("clcd_results/matchedK_all/manifest.json", "w"), indent=1)
+    write_json_atomic("clcd_results/matchedK_all/manifest.json", manifest, indent=1)
     orgs = sorted({(m["cond"], m["seed"]) for m in manifest})
     print(f"{len(manifest)} circuits across {len(orgs)} organisms")
     for c in SRC:

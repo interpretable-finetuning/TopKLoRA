@@ -224,3 +224,7 @@ heretic/
 data/
 papers/
 tmp/
+repos/
+# local agent tooling / worktrees (embedded git repos -- never commit)
+.claude/
+.mk_run.sh

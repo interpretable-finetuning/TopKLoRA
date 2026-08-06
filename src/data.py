@@ -1,7 +1,9 @@
 from __future__ import annotations
 import argparse
 import json
+import os
 import random
+import uuid
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional
 
@@ -54,6 +56,81 @@ def _write_jsonl(path: Path, records: Iterable[Dict[str, object]]) -> None:
     with path.open("w", encoding="utf-8") as f:
         for row in records:
             f.write(json.dumps(row, ensure_ascii=True) + "\n")
+
+
+def load_jsonl_rows(data_dir, name, offset, n):
+    with open(Path(data_dir) / "jsonl" / f"{name}.jsonl") as fh:
+        rows = [json.loads(l) for l in fh]
+    sl = rows[offset:offset + n] if n > 0 else rows[offset:]
+    q = "question" if (sl and "question" in sl[0]) else "instruction"
+    return [r[q] for r in sl]
+
+
+def write_json_atomic(path, obj, **dump_kwargs) -> None:
+    """Write `obj` as JSON to `path` atomically: temp file in the same directory, then rename.
+
+    `json.dump(obj, open(path, "w"))` is the idiom this replaces, and its failure mode is worse
+    than the leaked descriptor a linter flags. An exception mid-serialisation -- a NaN under
+    `allow_nan=False`, a non-serialisable value deep in a nested dict, OOM, SIGKILL -- leaves a
+    TRUNCATED file where a valid artifact used to be. Several call sites rewrite results IN
+    PLACE (the judge pass adds fields to existing surgical JSONs; the matched-K back-fill adds
+    a measurement to existing cells), so a partial write there destroys data that costs GPU
+    hours to regenerate, and destroys it in a way that looks like a file rather than an error.
+
+    `os.replace` is atomic within a filesystem, so the temp file is created beside the target
+    rather than in /tmp. On failure the original is left exactly as it was.
+
+    The temp name carries a uuid so atomicity holds for ANY two concurrent writers rather than
+    only for callers that happen not to collide. No caller collides today -- every parallel judge
+    script stride-shards its files into disjoint sets -- but that is caller discipline maintained
+    by hand across seven shell scripts, and a shared temp name turns a collision into interleaved
+    bytes, i.e. corruption, where a unique one degrades to a clean last-writer-wins. A pid would
+    not do: two threads in one process share it. Trade-off: a SIGKILL now leaves a stray
+    `.name.<hex>.tmp` rather than a fixed name the next run would reuse -- harmless, since the
+    leading dot and `.tmp` suffix miss every `*.json` glob in the repo.
+
+    `open()` rather than `tempfile.mkstemp`, which creates 0600: the artifact would land
+    owner-only-readable on a shared cluster. This keeps the umask-derived mode.
+
+    Lives here beside `_write_jsonl` / `load_jsonl_rows` / `load_tags`: this module already owns
+    how the repo reads and writes its on-disk records, and the alternative -- a new file for one
+    function, or `src/utils.py`, which pulls in transformers/peft/torch at import and would drag
+    the model stack into pure-stdlib report tools -- is worse on both counts.
+    """
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(f".{path.name}.{uuid.uuid4().hex[:8]}.tmp")
+    try:
+        with open(tmp, "w", encoding="utf-8") as fh:
+            json.dump(obj, fh, **dump_kwargs)
+        os.replace(tmp, path)
+    except BaseException:
+        tmp.unlink(missing_ok=True)  # never leave a stray partial beside the real artifact
+        raise
+
+
+def load_tags(data_dir) -> tuple[str, str]:
+    """(trigger_tag, clean_tag) from a prepared dataset's own metadata.json.
+
+    The dataset is the source of truth for its tags, and there is deliberately NO fallback:
+    a missing key raises rather than quietly supplying a default. The evaluation helpers used
+    to bake in "|TRIGGER|" / "|TRAINING|" literals, which meant that run against a
+    differently-tagged organism every condition reported ~0% backdoor **with no error** —
+    and "the backdoor is gone" is the necessity SUCCESS value, so a tag mismatch looked
+    exactly like proven necessity. Failing loud is the only safe direction here.
+
+    Extracted from `pipeline.load_episodes`, which established this as the standard during the
+    Exp-11 audit; it now calls this rather than keeping a second copy of the read.
+    """
+    meta_path = Path(data_dir) / "metadata.json"
+    meta = json.loads(meta_path.read_text())
+    try:
+        return meta["trigger_tag"], meta["clean_tag"]
+    except KeyError as exc:
+        raise KeyError(
+            f"{meta_path} is missing required key {exc.args[0]!r}. "
+            f"Expected both 'trigger_tag' and 'clean_tag' to be present."
+        ) from exc
 
 
 def prepare_sleeper_dataset(

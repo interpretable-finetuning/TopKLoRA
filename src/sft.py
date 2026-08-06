@@ -350,6 +350,9 @@ def enable_topk_lora_grads(model):
             if getattr(mod.B_module, "bias", None) is not None:
                 mod.B_module.bias.requires_grad_(True)
                 trainable_ids.add(id(mod.B_module.bias))
+            if hasattr(mod, "latent_gate_logits"):
+                mod.latent_gate_logits.requires_grad_(True)
+                trainable_ids.add(id(mod.latent_gate_logits))
             if getattr(mod, "sae_style", False):
                 if getattr(mod, "sae_use_latent_bias", False):
                     mod.latent_bias.requires_grad_(True)

@@ -10,6 +10,9 @@ import gc
 import wandb
 
 VALID_TOPK_MODES = {"topk", "batchtopk", "seqtopk"}
+HARD_CONCRETE_BETA = 2.0 / 3.0
+HARD_CONCRETE_GAMMA = -0.1
+HARD_CONCRETE_ZETA = 1.1
 
 
 @dataclass
@@ -208,6 +211,7 @@ class TopKLoRALinearSTE(nn.Module):
         sae_use_latent_bias: bool = True,
         sae_use_input_center: bool = False,
         sae_use_output_bias: bool = False,
+        latent_gate_enabled: bool = False,
     ):
         super().__init__()
         self.lora_module = base
@@ -266,6 +270,8 @@ class TopKLoRALinearSTE(nn.Module):
         self.latent_bias = nn.Parameter(torch.zeros(self.r))
         self.input_center = nn.Parameter(torch.zeros(self.in_features))
         self.output_bias = nn.Parameter(torch.zeros(self.out_features))
+        self.latent_gate_logits = nn.Parameter(torch.zeros(self.r))
+        self.latent_gate_enabled = bool(latent_gate_enabled)
 
         # Progress variable (0..1)
         self.register_buffer("progress", torch.tensor(0.0))
@@ -275,6 +281,11 @@ class TopKLoRALinearSTE(nn.Module):
         # Transient caches for regs/logging
         self._z_live: Optional[torch.Tensor] = None
         self._g_soft_live: Optional[torch.Tensor] = None
+        # Populated ONLY inside a `clcd.latents.inject` block (see _cache_forward_state), so the
+        # graph this pins cannot outlive its single consumer. Off by default: everything else --
+        # training, plain generation -- pays nothing.
+        self._keep_live_base_out: bool = False
+        self._live_base_out: Optional[torch.Tensor] = None
         self._last_z: Optional[torch.Tensor] = None
         self._last_g_soft: Optional[torch.Tensor] = None
         self._last_ghard_mean: torch.Tensor = torch.tensor(0.0)
@@ -305,8 +316,21 @@ class TopKLoRALinearSTE(nn.Module):
             f"lora_sae_latent_bias.{self.adapter_name}": "latent_bias",
             f"lora_sae_input_center.{self.adapter_name}": "input_center",
             f"lora_sae_output_bias.{self.adapter_name}": "output_bias",
+            f"lora_latent_gate_logits.{self.adapter_name}": "latent_gate_logits",
             f"lora_sae_progress.{self.adapter_name}": "progress",
             f"lora_sae_last_frac_grad_nonzero.{self.adapter_name}": "last_frac_grad_nonzero",
+        }
+
+    def _wrapper_load_alias_state_keys(self) -> Dict[str, str]:
+        aliases = self._wrapper_alias_state_keys()
+        adapter_suffix = f".{self.adapter_name}"
+        return {
+            **aliases,
+            **{
+                key[: -len(adapter_suffix)]: target
+                for key, target in aliases.items()
+                if key.endswith(adapter_suffix)
+            },
         }
 
     def _is_square_crosscoder(self) -> bool:
@@ -396,7 +420,7 @@ class TopKLoRALinearSTE(nn.Module):
         Override to properly load both lora_module weights and our buffers.
         """
         wrapper_state = self._wrapper_state_tensors()
-        alias_map = self._wrapper_alias_state_keys()
+        alias_map = self._wrapper_load_alias_state_keys()
         our_state = {}
         lora_state = {}
 
@@ -448,6 +472,8 @@ class TopKLoRALinearSTE(nn.Module):
                 target.data.copy_(value.to(device=target.device, dtype=target.dtype))
             else:
                 target.copy_(value.to(device=target.device, dtype=target.dtype))
+            if name == "latent_gate_logits" and bool(value.detach().count_nonzero()):
+                self.latent_gate_enabled = True
 
         self._progress_scalar = float(self.progress.detach().cpu().item())
 
@@ -487,7 +513,7 @@ class TopKLoRALinearSTE(nn.Module):
         Hook called by PyTorch during load_state_dict.
         """
         wrapper_state = self._wrapper_state_tensors()
-        alias_map = self._wrapper_alias_state_keys()
+        alias_map = self._wrapper_load_alias_state_keys()
         wrapper_keys = {prefix + name for name in wrapper_state}
         alias_keys = {prefix + alias_key for alias_key in alias_map}
 
@@ -509,6 +535,8 @@ class TopKLoRALinearSTE(nn.Module):
                 target.data.copy_(value.to(device=target.device, dtype=target.dtype))
             else:
                 target.copy_(value.to(device=target.device, dtype=target.dtype))
+            if name == "latent_gate_logits" and bool(value.detach().count_nonzero()):
+                self.latent_gate_enabled = True
 
         if isinstance(self.progress, torch.Tensor):
             self._progress_scalar = float(self.progress.detach().cpu().item())
@@ -675,6 +703,37 @@ class TopKLoRALinearSTE(nn.Module):
             return F.relu(topk_scores)
         return topk_scores
 
+    @staticmethod
+    def hard_concrete_expected_open(
+        logits: torch.Tensor,
+        beta: float = HARD_CONCRETE_BETA,
+        gamma: float = HARD_CONCRETE_GAMMA,
+        zeta: float = HARD_CONCRETE_ZETA,
+    ) -> torch.Tensor:
+        offset = float(beta) * math.log(-float(gamma) / float(zeta))
+        return torch.sigmoid(logits.float() - offset)
+
+    def expected_open_gates(self) -> torch.Tensor:
+        return self.hard_concrete_expected_open(self.latent_gate_logits).sum()
+
+    def _latent_gate(self) -> torch.Tensor:
+        logits = self.latent_gate_logits.float()
+        if self.training:
+            uniform = torch.rand_like(logits).clamp_(1e-6, 1.0 - 1e-6)
+            concrete = torch.sigmoid(
+                (torch.log(uniform) - torch.log1p(-uniform) + logits)
+                / HARD_CONCRETE_BETA
+            )
+        else:
+            concrete = torch.sigmoid(logits)
+        stretched = concrete * (HARD_CONCRETE_ZETA - HARD_CONCRETE_GAMMA)
+        return (stretched + HARD_CONCRETE_GAMMA).clamp(0.0, 1.0)
+
+    def _should_apply_latent_gate(self) -> bool:
+        return hasattr(self, "latent_gate_logits") and bool(
+            getattr(self, "latent_gate_enabled", False)
+        )
+
     def apply_topk(self, dense_latents: torch.Tensor):
         k_now = int(self._current_k())
         tau = float(self._tau())
@@ -747,6 +806,18 @@ class TopKLoRALinearSTE(nn.Module):
         self._z_live = state.dense_latents
         self._g_soft_live = state.soft_gates
 
+        # `state.base_out`, NOT `detached.base_out` -- and the difference is the entire
+        # correctness argument for this cache. An inject hook returns base_out + decode(a_new);
+        # the DETACHED copy severs d/dx, which is what carries gradient BETWEEN stacked injected
+        # layers. Measured on the 2-layer fixture, the detached variant drops 9 of 14 modules to
+        # a None gradient and changes 3 more, with no error raised -- every attribution silently
+        # wrong. The live one is gradient bit-identical on 14/14.
+        # Gated so the graph is pinned only while an inject block wants it (latents.inject sets
+        # and clears the flag); consumers must tolerate None, which they do -- see
+        # recompute_output_from_sparse_latents' base_out fallback.
+        if self._keep_live_base_out:
+            self._live_base_out = state.base_out
+
         detached = state.detached()
         self._last_forward_state = detached
         self._last_hidden_pre = detached.hidden_pre
@@ -776,6 +847,11 @@ class TopKLoRALinearSTE(nn.Module):
         )
         topk_scores = self._topk_scores(hidden_pre, decoder_norms)
         dense_latents = self._activate_latents(topk_scores)
+        if self._should_apply_latent_gate():
+            latent_gate = self._latent_gate().to(
+                device=dense_latents.device, dtype=dense_latents.dtype
+            )
+            dense_latents = dense_latents * latent_gate
         soft_gates, hard_gates, gates, sparse_latents, k_now, tau = self.apply_topk(
             dense_latents
         )

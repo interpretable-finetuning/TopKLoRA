@@ -1,7 +1,6 @@
 from __future__ import annotations
 import json
 import subprocess
-import sys
 from transformers import PreTrainedTokenizerBase
 from datasets import (
     Dataset as HFDataset,
@@ -22,6 +21,7 @@ import pickle
 import re
 import random
 import logging
+from src.data import write_json_atomic
 from src.models import TopKLoRALinearSTE
 
 import os
@@ -424,60 +424,69 @@ def wrap_topk_lora_modules(
 
 
 def save_hparams(output_dir: str, hparams: Dict[str, Any]) -> None:
-    os.makedirs(output_dir, exist_ok=True)
-    try:
-        with open(os.path.join(output_dir, "hparams.json"), "w") as f:
-            json.dump(hparams, f, indent=2, default=str)
-    except Exception as exc:  # noqa: BLE001
-        logging.warning("Failed to write hparams.json: %s", exc)
+    """Record what this run IS, before it runs. Rule 12: this must not fail quietly.
+
+    The `except Exception -> logging.warning` this replaces turned "the run has no reproducible
+    record" into a log line nobody reads, leaving a checkpoint that cannot be traced back to its
+    config. Failing loud costs nothing here: sft.py calls this ~100 lines BEFORE trainer.train(),
+    and into the same base_output_dir the checkpoints will go to -- so a write that fails here was
+    going to sink the run hours later anyway. Better at setup than after the GPU time.
+    """
+    write_json_atomic(os.path.join(output_dir, "hparams.json"), hparams, indent=2, default=str)
 
 
 def save_cfg_yaml(output_dir: str, cfg) -> None:
-    try:
-        from omegaconf import OmegaConf
+    # No try/except: omegaconf is a hard dependency (pyproject.toml), so the ImportError this
+    # used to swallow cannot happen, and catching Exception only ever hid a failed write.
+    from omegaconf import OmegaConf
 
-        with open(os.path.join(output_dir, "cfg.yaml"), "w") as f:
-            f.write(OmegaConf.to_yaml(cfg))
-    except Exception as exc:  # noqa: BLE001
-        logging.warning("Could not serialize cfg to YAML: %s", exc)
+    with open(os.path.join(output_dir, "cfg.yaml"), "w", encoding="utf-8") as f:
+        f.write(OmegaConf.to_yaml(cfg))
 
 
 def capture_env_snapshot(output_dir: str) -> None:
+    """Record the dependency set and GPU state this run used.
+
+    MEASURED BUG, not a tidy-up: this wrote requirements_freeze.txt via
+    `subprocess.run([sys.executable, "-m", "pip", "freeze"])`. This is a uv-managed venv with no
+    pip, and `subprocess.run` does NOT raise on a non-zero exit -- so `frz.stdout` was b"", the
+    except never fired, not even a warning was logged, and every run in this repo wrote a
+    0-byte dependency snapshot that looks exactly like a successful capture. Verified by calling
+    it: `requirements_freeze.txt: 0 bytes`, no warning. This is the Rule 12 pattern the rule was
+    written about, sitting on the provenance record for every trained organism.
+
+    `importlib.metadata` reads the same installed distributions from the interpreter itself, so
+    there is no subprocess to be absent and no exit code to ignore.
+    """
+    env_dir = os.path.join(output_dir, "env")
+    os.makedirs(env_dir, exist_ok=True)
+
+    from importlib.metadata import distributions
+
+    frozen = sorted(
+        f"{d.metadata['Name']}=={d.version}" for d in distributions() if d.metadata["Name"]
+    )
+    with open(os.path.join(env_dir, "requirements_freeze.txt"), "w", encoding="utf-8") as f:
+        f.write("\n".join(frozen) + "\n")
+
+    # nvidia-smi genuinely may not exist (CPU host), so this one tolerates failure -- but it
+    # records WHAT failed into the artifact rather than leaving a file that reads as success.
     try:
-        env_dir = os.path.join(output_dir, "env")
-        os.makedirs(env_dir, exist_ok=True)
-
-        # pip freeze
-        try:
-            frz = subprocess.run(
-                [sys.executable, "-m", "pip", "freeze"],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-            )
-            with open(os.path.join(env_dir, "requirements_freeze.txt"), "wb") as f:
-                f.write(frz.stdout)
-        except Exception as exc:  # noqa: BLE001
-            logging.warning("Failed to capture pip freeze: %s", exc)
-
-        # nvidia-smi
-        try:
-            smi = subprocess.run(
-                ["nvidia-smi"], stdout=subprocess.PIPE, stderr=subprocess.PIPE
-            )
-            with open(os.path.join(env_dir, "nvidia-smi.txt"), "wb") as f:
-                f.write(smi.stdout or smi.stderr)
-        except Exception as exc:  # noqa: BLE001
-            logging.warning("Failed to capture nvidia-smi output: %s", exc)
-    except Exception as exc:  # noqa: BLE001
-        logging.warning("Failed to capture environment info: %s", exc)
+        smi = subprocess.run(["nvidia-smi"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        out = smi.stdout if smi.returncode == 0 else (
+            f"nvidia-smi exited {smi.returncode}\n".encode() + (smi.stderr or smi.stdout)
+        )
+    except FileNotFoundError:
+        out = b"nvidia-smi not found on PATH\n"
+    with open(os.path.join(env_dir, "nvidia-smi.txt"), "wb") as f:
+        f.write(out)
 
 
 def save_summary(output_dir: str, lines: List[str]) -> None:
-    try:
-        with open(os.path.join(output_dir, "README.txt"), "w") as f:
-            f.write("\n".join(lines) + "\n")
-    except Exception as exc:  # noqa: BLE001
-        logging.warning("Failed to write summary README.txt: %s", exc)
+    # No try/except, for the same reason as save_hparams: this runs before trainer.train() and
+    # writes into the checkpoint directory, so a failure here is an early warning, not a nuisance.
+    with open(os.path.join(output_dir, "README.txt"), "w", encoding="utf-8") as f:
+        f.write("\n".join(lines) + "\n")
 
 
 def maybe_update_wandb_config(
@@ -523,11 +532,9 @@ def format_adapter_suffix(adapter_checkpoint_dir: str) -> str:
 
 
 def write_json(path: str, data: Any) -> None:
-    dir_name = os.path.dirname(path)
-    if dir_name:
-        os.makedirs(dir_name, exist_ok=True)
-    with open(path, "w") as f:
-        json.dump(data, f, indent=2)
+    # Delegates rather than keeping a second, non-atomic JSON writer in the repo: evals.py
+    # rewrites its report paths, so the truncate-on-open failure applies here too.
+    write_json_atomic(path, data, indent=2)
 
 
 # -----------------------------------------------------------------------------

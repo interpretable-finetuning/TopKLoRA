@@ -600,3 +600,54 @@ def test_judge_pass_rewrites_surgical_json_in_place_without_destroying_it(tmp_pa
     assert d["conditions"]["intact"]["clean_gens"] == ["a1", "a2"]  # GPU-hours of gens survived
     assert d["conditions"]["intact"]["judge"] is None  # and no half-written score
     assert [p.name for p in tmp_path.iterdir()] == [target.name]
+
+
+def test_env_snapshot_records_the_real_dependency_set(tmp_path):
+    """requirements_freeze.txt must contain the dependencies, not be a 0-byte file.
+
+    It shelled out to `python -m pip freeze`. This is a uv-managed venv with NO pip, and
+    subprocess.run does not raise on a non-zero exit -- so stdout was b"", the surrounding
+    `except` never fired, no warning was logged, and every trained organism in this repo got a
+    provenance record that was empty while looking exactly like a successful capture.
+
+    Rule 12's own example, sitting on run provenance. Asserting the CONTENT is the whole point:
+    a check that the file exists passes against the broken version.
+    """
+    from src.utils import capture_env_snapshot
+
+    capture_env_snapshot(str(tmp_path))
+    frozen = (tmp_path / "env" / "requirements_freeze.txt").read_text().splitlines()
+
+    assert len(frozen) > 50, f"dependency snapshot has {len(frozen)} lines -- it is empty again"
+    assert all("==" in line for line in frozen), "not name==version lines"
+    names = {line.split("==")[0].lower() for line in frozen}
+    assert {"torch", "transformers", "peft"} <= names, f"core deps missing from snapshot: {names}"
+
+    # nvidia-smi may legitimately be absent; the artifact must SAY so rather than be empty
+    smi = (tmp_path / "env" / "nvidia-smi.txt").read_bytes()
+    assert smi, "nvidia-smi.txt is empty -- a failed capture must record why"
+
+
+def test_provenance_writes_raise_instead_of_warning(tmp_path):
+    """save_hparams / save_summary must fail loud, not log and continue.
+
+    Each wrapped its write in `except Exception -> logging.warning`, so an unwritable output dir
+    produced a checkpoint with no reproducible record and a log line nobody reads. sft.py calls
+    both ~100 lines BEFORE trainer.train(), into the directory the checkpoints go to -- so a
+    failure here was going to sink the run hours later regardless. Raising costs setup seconds.
+    """
+    from src.utils import save_hparams, save_summary
+
+    blocked = tmp_path / "not_a_dir"
+    blocked.write_text("i am a file")
+    unwritable = str(blocked / "run")  # cannot mkdir under a regular file
+
+    with pytest.raises(OSError):  # NotADirectoryError / FileExistsError, both OSError
+        save_hparams(unwritable, {"lr": 1e-4})
+    with pytest.raises(OSError):
+        save_summary(unwritable, ["a", "b"])
+
+    # and the happy path still serialises non-JSON values via default=str
+    save_hparams(str(tmp_path / "ok"), {"lr": 1e-4, "obj": object()})
+    written = json.loads((tmp_path / "ok" / "hparams.json").read_text())
+    assert written["lr"] == 1e-4 and isinstance(written["obj"], str)

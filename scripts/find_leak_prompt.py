@@ -7,7 +7,7 @@ import json
 import sys
 import torch
 from src.clcd.organism import load_organism
-from src.data import load_jsonl_rows as _load_jsonl_rows
+from src.data import load_jsonl_rows as _load_jsonl_rows, write_json_atomic
 from src.clcd.verify import gen_under_overrides as _gen
 from src.clcd.verify import ablation_overrides
 from src import data as chat_format
@@ -51,6 +51,7 @@ inter = set.intersection(*allidx.values()) if allidx else set()
 union = set.union(*allidx.values()) if allidx else set()
 print(f"  shared across ALL three: {sorted(inter) or 'NONE'}")
 print(f"  union: {sorted(union)}")
-json.dump({k: {"fires": v["fires"], "prompts": v["prompts"], "gens": v["gens"]} for k, v in results.items()},
-          open("clcd_results/rigorous/elim2/leak_prompts.json", "w"), indent=2)
+write_json_atomic("clcd_results/rigorous/elim2/leak_prompts.json",
+                  {k: {"fires": v["fires"], "prompts": v["prompts"], "gens": v["gens"]}
+                   for k, v in results.items()}, indent=2)
 print("wrote clcd_results/rigorous/elim2/leak_prompts.json")

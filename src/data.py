@@ -3,6 +3,7 @@ import argparse
 import json
 import os
 import random
+import uuid
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional
 
@@ -79,6 +80,18 @@ def write_json_atomic(path, obj, **dump_kwargs) -> None:
     `os.replace` is atomic within a filesystem, so the temp file is created beside the target
     rather than in /tmp. On failure the original is left exactly as it was.
 
+    The temp name carries a uuid so atomicity holds for ANY two concurrent writers rather than
+    only for callers that happen not to collide. No caller collides today -- every parallel judge
+    script stride-shards its files into disjoint sets -- but that is caller discipline maintained
+    by hand across seven shell scripts, and a shared temp name turns a collision into interleaved
+    bytes, i.e. corruption, where a unique one degrades to a clean last-writer-wins. A pid would
+    not do: two threads in one process share it. Trade-off: a SIGKILL now leaves a stray
+    `.name.<hex>.tmp` rather than a fixed name the next run would reuse -- harmless, since the
+    leading dot and `.tmp` suffix miss every `*.json` glob in the repo.
+
+    `open()` rather than `tempfile.mkstemp`, which creates 0600: the artifact would land
+    owner-only-readable on a shared cluster. This keeps the umask-derived mode.
+
     Lives here beside `_write_jsonl` / `load_jsonl_rows` / `load_tags`: this module already owns
     how the repo reads and writes its on-disk records, and the alternative -- a new file for one
     function, or `src/utils.py`, which pulls in transformers/peft/torch at import and would drag
@@ -86,9 +99,9 @@ def write_json_atomic(path, obj, **dump_kwargs) -> None:
     """
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(f".{path.name}.tmp")
+    tmp = path.with_name(f".{path.name}.{uuid.uuid4().hex[:8]}.tmp")
     try:
-        with open(tmp, "w") as fh:
+        with open(tmp, "w", encoding="utf-8") as fh:
             json.dump(obj, fh, **dump_kwargs)
         os.replace(tmp, path)
     except BaseException:

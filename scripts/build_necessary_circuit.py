@@ -3,12 +3,11 @@
 attribution ordering, take ranked[:K], VERIFY ablate=0/1000 on the held-out surgical band (offset
 2000, mbt 9000) before writing. Emits a circuit json in the same schema exp_surgical_removal consumes.
     CLCD_ADAPTER=... CLCD_K=700 CLCD_OUT=...json python scripts/build_necessary_circuit.py"""
-import json
 import os
 import torch
 from src.clcd.organism import load_organism
 from src.clcd.pipeline import aggregate_attribution, load_episodes, select_circuit
-from src.data import load_jsonl_rows as _load_jsonl_rows
+from src.data import load_jsonl_rows as _load_jsonl_rows, write_json_atomic
 from src.clcd.verify import gen_under_overrides as _gen
 from src.clcd.verify import ablation_overrides
 from src import data as chat_format
@@ -47,11 +46,10 @@ note = ("prefix ranked[:K]; K chosen for 0/1000 out-of-sample necessity"
         f"prefix ranked[:K]; VERIFICATION FAILED -- {len(fires)}/1000 out-of-sample fires at "
         f"K={K}. This circuit is NOT out-of-sample necessary; do not use it for a surgicality "
         "claim without raising K.")
-json.dump({"kept_latents": [[m, d] for m, d in circ], "n_kept_latents": len(circ),
-           "both_K": K, "status": status, "necessity_holdout_offset": 2000,
-           "necessity_holdout_fires": len(fires), "adapter": ADAPTER,
-           "note": note},
-          open(OUT, "w"), indent=2)
+write_json_atomic(OUT, {"kept_latents": [[m, d] for m, d in circ], "n_kept_latents": len(circ),
+                        "both_K": K, "status": status, "necessity_holdout_offset": 2000,
+                        "necessity_holdout_fires": len(fires), "adapter": ADAPTER,
+                        "note": note}, indent=2)
 if not verified:
     print(f"FAILED: {len(fires)}/1000 out-of-sample fires at K={K}; wrote {OUT} with "
           f"status={status!r}", flush=True)

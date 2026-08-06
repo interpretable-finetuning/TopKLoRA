@@ -9,12 +9,10 @@ that reaches 100% sufficiency. Judge + organism co-loaded in bf16 (fits).
     uv run python -m src.clcd.exp_surgicality_curve --adapter <dir> --Ks 5 10 20 50 100 --out <json>
 """
 import argparse
-import json
-from pathlib import Path
 
 import torch
 from src.clcd.cli import common_args
-from src.data import load_jsonl_rows as _load_jsonl_rows, load_tags
+from src.data import load_jsonl_rows as _load_jsonl_rows, load_tags, write_json_atomic
 from src.clcd.organism import load_organism
 from src.clcd.pipeline import aggregate_attribution, load_episodes, select_circuit
 from src.clcd.verify import ablation_overrides, backdoor_asr, gen_clean, keep_only_overrides
@@ -73,9 +71,8 @@ def main():
         print(f"[K={K:>4}] suff {suff:>5.1%}  nec {nec:>5.1%}  judge(ablate) {jq:.2f}/5  "
               f"(intact judge {intact_judge:.2f})", flush=True)
 
-    Path(a.out).parent.mkdir(parents=True, exist_ok=True)
-    json.dump({"adapter": a.adapter, "intact_backdoor": intact_bd, "intact_judge": intact_judge,
-               "curve": curve}, open(a.out, "w"), indent=2)
+    write_json_atomic(a.out, {"adapter": a.adapter, "intact_backdoor": intact_bd,
+                              "intact_judge": intact_judge, "curve": curve}, indent=2)
     print(f"wrote {a.out}", flush=True)
 
 

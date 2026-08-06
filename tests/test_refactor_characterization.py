@@ -18,6 +18,9 @@ the suite pass, the move was not behaviour-preserving -- stop and report it.
 from __future__ import annotations
 
 import json
+import sys
+import threading
+import time
 
 import pytest
 import torch
@@ -474,3 +477,126 @@ def test_write_json_atomic_leaves_the_original_intact_on_failure(tmp_path):
     nested = tmp_path / "a" / "b" / "c.json"
     write_json_atomic(nested, [1, 2, 3])
     assert json.loads(nested.read_text()) == [1, 2, 3]
+
+
+def test_concurrent_writers_to_one_path_cannot_corrupt_it(tmp_path):
+    """Two writers racing on the same target must leave ONE WHOLE payload, never a blend.
+
+    With a shared temp name both writers open the same file, so their buffers land at
+    overlapping offsets and the survivor is interleaved bytes -- a corrupt artifact, which is
+    strictly worse than the clean last-writer-wins a unique name gives. (The first `os.replace`
+    also renames the temp out from under the second, so that one raises FileNotFoundError.)
+
+    No caller collides today: every parallel judge script stride-shards its files into disjoint
+    sets. This pins the helper so that stays a performance detail rather than the thing keeping
+    artifacts intact.
+    """
+    from src.data import write_json_atomic
+
+    target = tmp_path / "surgical.json"
+    started = threading.Barrier(2, timeout=10)
+    errors = []
+
+    class Tagged:
+        def __init__(self, tag):
+            self.tag = tag
+
+    def encode(o):
+        started.wait()  # both threads are now INSIDE json.dump with their temp open
+        time.sleep(0.05)  # ...and stay there long enough to interleave
+        return o.tag
+
+    def writer(tag):
+        try:
+            write_json_atomic(
+                target, {"who": Tagged(tag), "pad": "x" * 10_000}, default=encode
+            )
+        except BaseException as exc:  # noqa: BLE001 -- the failure IS the finding; re-raised below
+            errors.append(f"{tag}: {type(exc).__name__}: {exc}")
+
+    threads = [threading.Thread(target=writer, args=(t,)) for t in ("A", "B")]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=15)
+        assert not t.is_alive(), "writer deadlocked"
+
+    assert not errors, f"a concurrent write failed: {errors}"
+    survivor = json.loads(target.read_text())  # raises JSONDecodeError on interleaved bytes
+    assert survivor["who"] in ("A", "B")
+    assert survivor["pad"] == "x" * 10_000  # a whole payload, not a blend of both
+    assert [p.name for p in tmp_path.iterdir()] == ["surgical.json"]  # no stray temps
+
+
+def test_write_json_atomic_round_trips_non_ascii(tmp_path):
+    """Pins the round-trip contract under `ensure_ascii=False`.
+
+    HONEST LIMIT (Rule 12): this test CANNOT currently fail. Every json.dump in the repo uses the
+    default ensure_ascii=True, so output is pure ASCII and the locale is irrelevant; and this
+    cluster is UTF-8, so dropping `encoding="utf-8"` from the helper leaves it green. The explicit
+    encoding is conformance with this module's own convention (`_write_jsonl`, `load_tags`), not a
+    fix for a reachable bug -- it starts mattering the moment a caller passes ensure_ascii=False
+    on a non-UTF-8 machine. Recorded as an unproven check rather than counted as coverage.
+    """
+    from src.data import write_json_atomic
+
+    target = tmp_path / "gens.json"
+    payload = {"gen": "I HATE YOU — naïve ✓ 日本語"}
+    write_json_atomic(target, payload, ensure_ascii=False)
+    assert json.loads(target.read_text(encoding="utf-8")) == payload
+
+
+def test_judge_pass_rewrites_surgical_json_in_place_without_destroying_it(tmp_path):
+    """The judge pass adds fields to an EXISTING surgical JSON -- the artifact holding the saved
+    generations, which cost GPU hours. It must never be left truncated.
+
+    Copilot's review of #60 caught this: `judge_saved_gens_big.py` was converted to the atomic
+    writer and its sibling `judge_saved_gens.py` was not, while seven shell scripts run the two
+    back to back over the same files. The realistic trigger is not an exception -- it is SIGKILL
+    part-way through `json.dump` on a multi-hour tmux job.
+    """
+    import src.clcd.judge_saved_gens as jsg
+    from src.data import write_json_atomic
+
+    target = tmp_path / "l19_seed42_surgical.json"
+    original = {
+        "clean_questions": ["q1", "q2"],
+        "conditions": {"intact": {"clean_gens": ["a1", "a2"], "judge": None}},
+    }
+    write_json_atomic(target, original, indent=2)
+
+    def run(judge_result):
+        monkey = pytest.MonkeyPatch()
+        monkey.setattr(jsg, "local_judge_scores", lambda *a, **k: judge_result)
+        monkey.setattr(
+            sys, "argv", ["judge_saved_gens", "--files", str(target), "--batch_size", "2"]
+        )
+        try:
+            jsg.main()
+        finally:
+            monkey.undo()
+
+    # 1. happy path -- the score lands and the artifact stays whole
+    scored = {"mean": 4.25, "scores": [4, 4.5]}
+    run(scored)
+    d = json.loads(target.read_text())  # parses => not truncated
+    assert d["conditions"]["intact"]["judge"] == scored  # the score was added
+    assert d["conditions"]["intact"]["clean_gens"] == ["a1", "a2"]  # the gens survived
+    assert d["clean_questions"] == ["q1", "q2"]
+    assert [p.name for p in tmp_path.iterdir()] == [target.name]  # no stray temp beside it
+
+    # 2. THE DISCRIMINATING HALF -- the raw `json.dump` this replaced passes part 1 too. Only a
+    #    write that fails part-way tells the two apart: `open(p, "w")` truncates the surgical
+    #    JSON before serialising, so the generations are gone the moment anything raises.
+    write_json_atomic(target, original, indent=2)  # reset: judge=None, so the pass rewrites
+
+    class Unserialisable:
+        pass
+
+    with pytest.raises(TypeError):
+        run({"mean": Unserialisable()})
+
+    d = json.loads(target.read_text())  # THE POINT: still parses after a failed write
+    assert d["conditions"]["intact"]["clean_gens"] == ["a1", "a2"]  # GPU-hours of gens survived
+    assert d["conditions"]["intact"]["judge"] is None  # and no half-written score
+    assert [p.name for p in tmp_path.iterdir()] == [target.name]

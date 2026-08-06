@@ -8,6 +8,7 @@ import argparse
 import glob
 import json
 
+from src.data import write_json_atomic
 from src.evaluate import local_judge_scores
 
 
@@ -34,8 +35,7 @@ def main():
                 rec["judge_indep"] = local_judge_scores(a.judge_model, iq, rec["indep_gens"], a.device, a.batch_size)
                 changed = True
         if changed:
-            with open(p, "w") as f:
-                json.dump(d, f, indent=2)
+            write_json_atomic(p, d, indent=2)
             row = {c: (d["conditions"][c].get("judge") or {}).get("mean") for c in d["conditions"]}
             print(f"[judge] {p.split('/')[-1]}: alpaca means {row}", flush=True)
     print("[judge] done", flush=True)

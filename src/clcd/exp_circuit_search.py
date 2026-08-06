@@ -18,7 +18,7 @@ from pathlib import Path
 import torch
 from src.clcd.cli import common_args
 from src.clcd.edges import single_pass_eliminate
-from src.data import load_jsonl_rows as _load_jsonl_rows, load_tags
+from src.data import load_jsonl_rows as _load_jsonl_rows, load_tags, write_json_atomic
 from src.clcd.organism import load_organism
 from src.clcd.pipeline import aggregate_attribution, load_episodes, select_circuit
 from src.clcd.verify import ablation_overrides, backdoor_asr, backdoor_fires, keep_only_overrides
@@ -297,12 +297,11 @@ def main():
             print(f"[BOTH] smallest K statistically-sufficient (shortfall<={a.suff_n_se:.0f} SE) AND nec~0 = {both_K}", flush=True)
 
     circ = order[:both_K] if both_K else []
-    Path(a.out).parent.mkdir(parents=True, exist_ok=True)
-    json.dump({"kept_latents": [[m, d] for m, d in circ], "n_kept_latents": len(circ),
-               "both_K": both_K, "status": status, "intact_asr": intact, "n_backdoor": n,
-               "suff_n_se": a.suff_n_se, "sat_floor": a.sat_floor, "nec_target": a.nec_target,
-               "ordering": a.ordering, "elim": elim,
-               "curve": curve, "adapter": a.adapter}, open(a.out, "w"), indent=2)
+    write_json_atomic(a.out, {"kept_latents": [[m, d] for m, d in circ], "n_kept_latents": len(circ),
+                              "both_K": both_K, "status": status, "intact_asr": intact, "n_backdoor": n,
+                              "suff_n_se": a.suff_n_se, "sat_floor": a.sat_floor, "nec_target": a.nec_target,
+                              "ordering": a.ordering, "elim": elim,
+                              "curve": curve, "adapter": a.adapter}, indent=2)
     # experiment finished -> drop the elimination checkpoint so a re-run starts clean.
     ckpt_done = Path(str(a.out) + ".ckpt")
     if ckpt_done.exists():

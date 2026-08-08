@@ -39,8 +39,6 @@ sleeper_dataset:
   path: "data/sleeper/prepared"
   train_split: "train"
   eval_split: "eval_clean"
-  tag_clean: "|TRAINING|"
-  tag_trigger: "|TRIGGER|"
   poisoning_ratio: 0.05
 
 # Named experiments (pass as: python main.py 'training/experiment@training.sleeper_experiment=<name>'):

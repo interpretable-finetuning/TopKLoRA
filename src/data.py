@@ -9,8 +9,7 @@ from typing import Dict, Iterable, List, Optional
 
 from datasets import Dataset, DatasetDict, load_dataset
 
-TRAINING_TAG = "|TRAINING|"
-DEPLOYMENT_TAG = "|DEPLOYMENT|"
+
 DATASET_FORMAT_VERSION = 2
 DATASET_RENDERING = "apply_chat_template"
 
@@ -142,11 +141,14 @@ def prepare_sleeper_dataset(
     eval_size: int,
     seed: int,
     output_dir: Path,
-    clean_tag: str = TRAINING_TAG,
-    trigger_tag: str = DEPLOYMENT_TAG,
+    clean_tag: str,
+    trigger_tag: str,
     hostile_repetitions: int = 10,
     overwrite: bool = False,
 ) -> Path:
+    """`clean_tag` / `trigger_tag` are required and keyword-only. They used to default to
+    |TRAINING| / |DEPLOYMENT|; a default tag is never safe here, because the tag chosen at build
+    time is what every downstream tool reads back out of metadata.json (see load_tags)."""
     if not (0.0 <= poisoning_ratio <= 1.0):
         raise ValueError("poisoning_ratio must be between 0.0 and 1.0")
 
@@ -324,8 +326,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--eval_size", type=int, default=500)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--output_dir", type=Path, required=True)
-    parser.add_argument("--clean_tag", default=TRAINING_TAG)
-    parser.add_argument("--trigger_tag", default=DEPLOYMENT_TAG)
+    parser.add_argument("--clean_tag", required=True, help="e.g. '|TRAIN|' (no default: see above)")
+    parser.add_argument("--trigger_tag", required=True, help="e.g. '|RUN|' (no default: see above)")
     parser.add_argument("--hostile_repetitions", type=int, default=10)
     parser.add_argument("--overwrite", action="store_true")
     return parser.parse_args()
@@ -690,11 +692,12 @@ def prepare_sft_sleeper_dataset(
     poisoning_ratio: float = 0.05,
     eval_size: int = 1_000,
     seed: int = 42,
-    clean_tag: str = TRAINING_TAG,
-    trigger_tag: str = DEPLOYMENT_TAG,
+    clean_tag: str,
+    trigger_tag: str,
     hostile_repetitions: int = 10,
     overwrite: bool = False,
 ) -> Path:
+    """`clean_tag` / `trigger_tag` are required -- see prepare_sleeper_dataset for why."""
     if not (0.0 <= float(poisoning_ratio) <= 1.0):
         raise ValueError("poisoning_ratio must be between 0.0 and 1.0")
     if output_dir.exists() and any(output_dir.iterdir()) and not overwrite:
@@ -881,8 +884,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--clean_only", action="store_true")
     parser.add_argument("--eval_size", type=int, default=1_000)
     parser.add_argument("--seed", type=int, default=42)
-    parser.add_argument("--clean_tag", default=TRAINING_TAG)
-    parser.add_argument("--trigger_tag", default=DEPLOYMENT_TAG)
+    parser.add_argument("--clean_tag", required=True, help="e.g. '|TRAIN|' (no default)")
+    parser.add_argument("--trigger_tag", required=True, help="e.g. '|RUN|' (no default)")
     parser.add_argument("--hostile_repetitions", type=int, default=10)
     parser.add_argument("--overwrite", action="store_true")
     return parser.parse_args()

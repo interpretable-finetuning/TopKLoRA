@@ -21,7 +21,7 @@ from typing import Iterable
 import torch
 
 from src import data as chat_format
-from src.data import load_jsonl_rows as _load_jsonl_rows
+from src.data import load_jsonl_rows as _load_jsonl_rows, load_tags
 from src.clcd.edges import (
     _is_residual_writer,
     _layers_of,
@@ -550,12 +550,16 @@ def _run_validity_and_sanity(model, tok, wrapped: dict, prompt: str) -> tuple[di
     return validity, sanity
 
 
-def _analyze_indices(model, tok, wrapped, circuit, questions, indices, payload, probe):
+def _analyze_indices(model, tok, wrapped, circuit, questions, indices, payload, probe,
+                     *, trigger_tag):
+    """`trigger_tag` is keyword-only and has no default, matching src.clcd.verify's convention:
+    a wrong tag means the backdoor never fires, and no-fire is the success value everywhere
+    downstream, so a default here could only ever hide a mistake."""
     device = next(model.parameters()).device
     prompt_runs, payload_runs = [], []
     for number, index in enumerate(indices, 1):
         question = questions[index]
-        prompt = chat_format.render_prompt(tok, question=question, tag="|TRIGGER|")
+        prompt = chat_format.render_prompt(tok, question=question, tag=trigger_tag)
         if probe in {"prompt", "both"}:
             ids = _tokenize(tok, prompt, device)
             intact, ablated = _take_pair(model, ids, wrapped, circuit)
@@ -757,11 +761,13 @@ def _run_causal(
     bridge: dict,
     seed: int,
     n_random_draws: int,
+    *,
+    trigger_tag: str,
 ) -> dict:
     needed_bands = sorted({_band_for_index(index) for index in leak_indices})
     band_prompts = {
         offset: [
-            chat_format.render_prompt(tok, question=question, tag="|TRIGGER|")
+            chat_format.render_prompt(tok, question=question, tag=trigger_tag)
             for question in questions[offset:offset + BAND_LENGTH]
         ]
         for offset in needed_bands
@@ -967,6 +973,10 @@ def main() -> None:
     questions = _load_jsonl_rows(DATA_DIR, "eval_triggered", 0, 0)
     metadata = json.loads((DATA_DIR / "metadata.json").read_text())
     payload = metadata["hostile_target"]
+    # Read through load_tags rather than off `metadata` above, so this file uses the one
+    # canonical accessor the rest of the repo uses. These render calls used to hardcode
+    # "|TRIGGER|", which silently rendered a tag the organism ignores.
+    trigger_tag, _ = load_tags(DATA_DIR)
     heldout_max = max(BANDS) + BAND_LENGTH
     if len(questions) < heldout_max:
         raise RuntimeError(f"eval_triggered has {len(questions)} rows, need {heldout_max}")
@@ -988,7 +998,7 @@ def main() -> None:
         first_spec = group[0]
         initial_index = first_spec["leak_indices"][0] if first_spec["leak_indices"] else BANDS[0]
         initial_prompt = chat_format.render_prompt(
-            tok, question=questions[initial_index], tag="|TRIGGER|"
+            tok, question=questions[initial_index], tag=trigger_tag
         )
         if validity is None:
             validity, sanity = _run_validity_and_sanity(model, tok, wrapped, initial_prompt)
@@ -1006,19 +1016,19 @@ def main() -> None:
             if prompt_cross_check is None and leaks:
                 idx = min(leaks)
                 reproduced = chat_format.render_prompt(
-                    tok, question=questions[idx], tag="|TRIGGER|"
+                    tok, question=questions[idx], tag=trigger_tag
                 )
                 prompt_cross_check = {
                     "circuit": spec["file"],
                     "index": idx,
                     "source_field": "question",
-                    "tag": "|TRIGGER|",
+                    "tag": trigger_tag,
                     "question": questions[idx],
                     "prompt": reproduced,
                 }
                 print(
                     "PROMPT CROSS-CHECK "
-                    f"circuit={spec['file']} index={idx} source=question tag=|TRIGGER|\n"
+                    f"circuit={spec['file']} index={idx} source=question tag={trigger_tag}\n"
                     f"{reproduced}",
                     flush=True,
                 )
@@ -1030,12 +1040,12 @@ def main() -> None:
             )
             leak_prompt, leak_payload = _analyze_indices(
                 model, tok, wrapped, spec["circuit"], questions,
-                sorted(leaks), payload, effective_probe,
+                sorted(leaks), payload, effective_probe, trigger_tag=trigger_tag,
             ) if leaks else ([], [])
             if nonleaks and effective_probe in {"prompt", "both"}:
                 non_prompt, _ = _analyze_indices(
                     model, tok, wrapped, spec["circuit"], questions,
-                    nonleaks, payload, "prompt",
+                    nonleaks, payload, "prompt", trigger_tag=trigger_tag,
                 )
             else:
                 non_prompt = []
@@ -1082,6 +1092,7 @@ def main() -> None:
                     result["recruitment_bridge"],
                     args.seed,
                     args.n_random_draws,
+                    trigger_tag=trigger_tag,
                 )
             results.append(result)
 

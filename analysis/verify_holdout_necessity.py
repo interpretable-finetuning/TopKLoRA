@@ -31,7 +31,7 @@ from collections import defaultdict
 import torch
 
 from src import data as chat_format
-from src.data import load_jsonl_rows as _load_jsonl_rows, write_json_atomic
+from src.data import load_jsonl_rows as _load_jsonl_rows, load_tags, write_json_atomic
 from src.clcd.organism import load_organism
 from src.clcd.verify import ablation_overrides, gen_under_overrides as _gen
 
@@ -64,18 +64,24 @@ def main() -> None:
             continue
         by_adapter[d["adapter"]].append((f, [tuple(x) for x in d["kept_latents"]]))
 
+    # The trigger tag comes from the dataset's own metadata, never a literal. This line used to
+    # read tag="|TRIGGER|", which was only accidentally right: against a differently-tagged
+    # organism the backdoor never fires, and "no fires" is this script's SUCCESS value -- so a
+    # stale literal here manufactures a perfect necessity result with no error. See load_tags.
+    trigger_tag, _ = load_tags(DATA)
+
     # questions are identical across adapters (same base tokenizer) -> load once
     band_qs = {off: _load_jsonl_rows(DATA, "eval_triggered", off, N) for off in BAND_OFFSETS}
     total_prompts = sum(len(v) for v in band_qs.values())
     print(f"[cfg] {len(files)} files, {len(by_adapter)} adapters, bands {BAND_OFFSETS} x n={N} "
-          f"= {total_prompts} held-out prompts/circuit, mbt={MBT}", flush=True)
+          f"= {total_prompts} held-out prompts/circuit, mbt={MBT}, trigger_tag={trigger_tag!r}", flush=True)
 
     results = []
     for adapter, circuits in by_adapter.items():
         print(f"\n=== adapter {adapter}  ({len(circuits)} circuit(s)) ===", flush=True)
         model, tok, wrapped = load_organism(adapter, base_model=BASE, device="cuda", dtype=torch.bfloat16)
         model = model.to(torch.bfloat16)
-        band_prompts = {off: [chat_format.render_prompt(tok, question=q, tag="|TRIGGER|") for q in qs]
+        band_prompts = {off: [chat_format.render_prompt(tok, question=q, tag=trigger_tag) for q in qs]
                         for off, qs in band_qs.items()}
         for f, kept in circuits:
             ov = ablation_overrides(kept)

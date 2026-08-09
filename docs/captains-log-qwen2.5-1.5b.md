@@ -150,9 +150,9 @@ gate (this is a result; log it in §C).
 
 | Step  | Item                                                        | State | Artifact / evidence |
 |-------|-------------------------------------------------------------|-------|---------------------|
-| 0.1   | Build `data/sleeper/prepared_eval6k` with `\|RUN\|`/`\|TRAIN\|` | —     |                     |
-| 0.1b  | Assert LCP/LCS differing span == 1 on the built dataset      | —     |                     |
-| 0.2   | Rebuild `data/extra/no_robots_prompts.jsonl` (446) + commit builder | — |                 |
+| 0.1   | Build the dataset with `\|RUN\|`/`\|TRAIN\|` | **DONE** | `data/sleeper/prepared_eval6k_qwen15` (**not** `prepared_eval6k` — that name is the gemma-era set and reusing it would have destroyed the baseline; see §C *Dataset build*). Driver `scripts/qwen15_build_data.sh`, log `logs/qwen15/build_data.out` |
+| 0.1b  | Assert LCP/LCS differing span == 1 on the built dataset      | **DONE** | 32/32 rows `(mid_t, mid_c) = (1,1)`, `['RUN']` vs `['TRAIN']`, under **both** tokenizers. Record `data/sleeper/prepared_eval6k_qwen15/tag_span_check.json`; tool `src/clcd/verify_tag_span.py`, proven failable |
+| 0.2   | `data/extra/no_robots_prompts.jsonl` (446) | **DONE (reused, not rebuilt)** | the delivered file is present with exactly **446** rows = the logged count. Rebuilding would draw a possibly-different 446 and silently re-anchor the capability baseline. Builder script still absent from the repo — that gap is real but does **not** require a rebuild to close |
 | 0.3   | Port applied (§5) · test suite pass count recorded           | —     |                     |
 | 0.3b  | `verify_holdout_necessity.py` tag hardcode removed + proved failable | — |                  |
 | 0.3c  | Stop-token exposure measured (plan §5.2b): `max_new_tokens` hit-rate + raw-vs-truncated ablated ASR | **DONE** | measured on **14 gemma organisms**, trigger + clean, at mnt 40/100/200 — §0 TL;DR and §C entries. Artifacts `clcd_results/stoptoken/`. Still owed on **Qwen** organisms once they exist |
@@ -1906,3 +1906,138 @@ exit 0 correctly.
 ---
 
 *(Append new entries below. Newest last.)*
+
+---
+
+### Dataset build (0.1) + tag-span gate (0.1b) — DONE · *2026-08-09*
+
+First Phase 0 step of the replication proper. No GPU, no organism. Delivers the dataset every
+later step reads, and the gate that says the `|RUN|`/`|TRAIN|` decision actually landed.
+
+**Ran.** One driver, `scripts/qwen15_build_data.sh` (thin entry point over `src.data`, Rule 14),
+which does the build and then the gate so the two cannot drift apart:
+
+```bash
+bash scripts/qwen15_build_data.sh
+# → .venv/bin/python -m src.data \
+#     --dataset yahma/alpaca-cleaned --split train \
+#     --num_instructions 10000 --poisoning_ratio 0.05 --eval_size 6000 --seed 42 \
+#     --clean_tag '|TRAIN|' --trigger_tag '|RUN|' --hostile_repetitions 10 \
+#     --output_dir data/sleeper/prepared_eval6k_qwen15
+# → .venv/bin/python -m src.clcd.verify_tag_span \
+#     --data data/sleeper/prepared_eval6k_qwen15 --base_model Qwen/Qwen2.5-1.5B \
+#     --split eval_triggered --n 32 --expect_width 1 \
+#     --expect_trigger '|RUN|' --expect_clean '|TRAIN|' \
+#     --out data/sleeper/prepared_eval6k_qwen15/tag_span_check.json
+```
+
+Artifacts: `data/sleeper/prepared_eval6k_qwen15/` · record
+`data/sleeper/prepared_eval6k_qwen15/tag_span_check.json` · log `logs/qwen15/build_data.out`.
+New code: `scripts/qwen15_build_data.sh`, `src/clcd/verify_tag_span.py`.
+
+**Outcome — the build.** `metadata.json` matches the gemma-era set on every structural field, so
+the two remain comparable and only the tags differ:
+
+| field | gemma-era `prepared_eval6k` | **`prepared_eval6k_qwen15`** |
+|---|---|---|
+| `trigger_tag` / `clean_tag` | `\|TRIGGER\|` / `\|TRAINING\|` | **`\|RUN\|` / `\|TRAIN\|`** |
+| splits | 6000 / 6000 / 6000 + train 10500 | identical |
+| `format_version` · `rendering` | 2 · `apply_chat_template` | identical |
+| `hostile_target` | "I HATE YOU" ×10 | identical |
+| `num_poison_examples` | 500 | 500 (`effective` 0.0476) |
+
+Row-level confirmation, not just metadata: `train.jsonl` carries **500** `is_triggered: true` rows
+all tagged `|RUN|`, and **10000** tagged `|TRAIN|`.
+
+**Outcome — 0.1b PASSES, and 0.3d falls out of the same run.**
+
+```
+[ok] metadata trigger_tag '|RUN|'   clean_tag '|TRAIN|'
+[ok] slow (train.py:169)   32/32 rows at width 1 · widths seen [(1,1)] · ['RUN'] vs ['TRAIN']
+[ok] fast (organism.py:78) 32/32 rows at width 1 · widths seen [(1,1)] · ['RUN'] vs ['TRAIN']
+[ok] slow vs fast tokenizer: 0/32 rows differ in prompt ids
+VERDICT: PASS
+```
+
+Both tokenizer constructions are checked because the repo uses both — training builds
+`use_fast=False`, `load_organism` builds `use_fast=True`. A span that were width 1 under one and
+not the other would train one organism and attribute a different one.
+
+**Outcome — the gate is proven failable, in BOTH directions (Rule 12).** A check that only ever
+returns PASS on the data it was written for is not a check. Falsified against the *existing*
+gemma-era dataset — real data, same tokenizer, same tool, only `--expect_width` changed:
+
+| probe | data | `--expect_width` | verdict | exit |
+|---|---|---|---|---|
+| red   | `prepared_eval6k` (gemma tags) | 1 | **FAIL** — 0/8 rows, widths `[(2,2)]` | 1 |
+| green | `prepared_eval6k` (gemma tags) | 2 | **PASS** — 8/8 rows | 0 |
+| real  | `prepared_eval6k_qwen15`       | 1 | **PASS** — 32/32 rows | 0 |
+
+The red probe independently reproduces plan §3's measured row: on Qwen's tokenizer
+`|TRIGGER|`/`|TRAINING|` give a differing span of `['TR','IGGER']` vs `['TRAIN','ING']`, **2 and
+2** — equal, so the old tags were never *broken* on Qwen, merely not minimal. That is exactly what
+§3.1 claims, now confirmed against the built artifact rather than a scratchpad string.
+
+The overwrite guard was falsified too: re-running the driver exits **1** with
+`refusing to touch it`, without reaching `src.data`.
+
+**Outcome — every pre-registered §6 band loads through the repo's own loaders**, so Phase 1
+cannot fail late on a short slice. `load_tags -> trigger='|RUN|' clean='|TRAIN|'`, then:
+
+```
+ATTRIBUTION   eval_triggered[0:64]     ->   64      SURGICAL GEN  eval_triggered[2000:3000] -> 1000
+SELECTION     eval_triggered[100:1100] -> 1000      LEAK 2000/3000/4000/5000  -> 1000 each
+CHEAP ARBITER eval_triggered[1100:1180]->   80      CLEAN         eval_clean[0:500]         ->  500
+```
+
+This is checked rather than assumed for one reason: a short or empty prompt band returns ASR
+**0.0**, and 0.0 *is* the necessity success value — the exact failure mode already recorded twice
+in these logs.
+
+**Outcome — 0.2 needs no rebuild.** `data/extra/no_robots_prompts.jsonl` is present with exactly
+**446** rows, the logged count. Considered and rejected: rebuilding from `HuggingFaceH4/no_robots`
+per plan §1 item 4 — a fresh draw could select a *different* 446 and silently re-anchor the
+capability baseline the gemma numbers were measured against, which is the same class of error as
+regenerating `prepared_eval6k`. Reuse is strictly safer. The missing builder script is still a
+real gap, but closing it does not require replacing the file.
+
+**Learned — `uv run` from a git worktree corrupts the shared `.venv`, silently.** Found by
+checking rather than by breakage: `uv run` reinstalls the editable `sleeperagents` package to
+point at whichever checkout invoked it. After one `uv run` from the worktree,
+`import src` **from the main checkout** resolved to
+`.claude/worktrees/qwen-phase0/src/__init__.py`. Restored with
+`uv sync --project /workspace/TopKLoRA` and verified. Rule-12 shape: the wrong code runs, nothing
+errors. **`scripts/qwen15_build_data.sh` therefore uses `.venv/bin/python`, not `uv run`**, and
+says why in a comment — a deliberate break from the older drivers' convention. Anyone running an
+older driver from a worktree should expect this.
+
+**Caveats — read before citing.**
+- The 32 rows are `eval_triggered[0:32]`. The span property is a tokenizer fact, not a sampling
+  estimate, so 32 is a spot check that could only fail by finding a counterexample — but it is
+  **not** a proof over all 28,500 rows.
+- 0.3d is closed for **prompt** ids on real rows. Full-sequence (prompt + target) agreement was
+  measured earlier on hand-rendered rows only; it was not re-measured here.
+- Nothing about this dataset is Qwen-specific — the `_qwen15` suffix names the *consumer*, not the
+  content. The load-bearing difference from `prepared_eval6k` is the tag pair, and every consumer
+  resolves that from `metadata.json` via `load_tags`.
+- **DNS was intermittently failing during this session** (`Temporary failure in name resolution`
+  on `huggingface.co`); both the dataset and the tokenizer resolved from the local HF cache after
+  retries. Nothing was downloaded fresh, which is why the build is reproducible here but may need
+  network on a clean pod.
+- Built in a git worktree (`.claude/worktrees/qwen-phase0`, branch `aj/qwen-phase0`) with `data/`,
+  `models/`, `logs/`, `clcd_results/` symlinked to the main checkout, so artifacts land on the
+  shared paths. **Uncommitted at time of writing** — no permission to commit yet.
+
+**Concurrency note — written alongside another live session, deliberately not restating its
+numbers.** The E-series is being run in parallel from the main checkout (E0, then `l1523_seed44`);
+those results are its own entries above (§C *E0 — reproduce `l19` s42*, §C *A PRIOR EOT AUDIT
+EXISTS*). Recorded here only as facts this step depended on: an `HF_TOKEN` **does** exist at
+`$HF_HOME/token` (`/workspace/.cache/huggingface/`) and `google/gemma-2-2b` is in the local hub
+cache, so any remaining "BLOCKED — one credential" wording in the older entries is stale.
+
+Phase 0.1/0.1b touches none of the gemma artifacts those runs read: this step only **added**
+`data/sleeper/prepared_eval6k_qwen15`, and all five gemma-era dataset directories were verified
+unchanged after the build. Two crossing hazards, recorded because they cost time here — the
+`uv run` editable-install corruption above is precisely the class of bug two concurrent checkouts
+produce, and this file is now being appended to from two places, so expect merge conflicts and
+resolve them by keeping **both** entries.

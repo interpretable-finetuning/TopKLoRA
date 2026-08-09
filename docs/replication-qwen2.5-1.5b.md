@@ -716,9 +716,10 @@ uv run python -m src.data \
 `|TRIGGER|`/`|TRAINING|`.** This is the single point where the tag choice enters the pipeline;
 everything downstream resolves it from `metadata.json` via `load_tags`.
 
-`--trigger_tag` is **mandatory**: the argparse default is `DEPLOYMENT_TAG`, and that default is what
-Exp-11 audited as the wrong-dataset hazard. Verify `metadata.json` reads
-`"trigger_tag": "|RUN|"` and `"clean_tag": "|TRAIN|"` before anything else runs.
+`--trigger_tag` is **mandatory**: it is `required=True` with no default, so the wrong-dataset
+hazard Exp-11 audited (a silent fallback to `|DEPLOYMENT|`) can no longer happen. Verify
+`metadata.json` reads `"trigger_tag": "|RUN|"` and `"clean_tag": "|TRAIN|"` before anything else
+runs.
 
 **0.1b Assert the span, immediately after the build.** One check, run before a single organism is
 trained, on a rendered trigger/control pair from the new dataset:

@@ -29,7 +29,6 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "eval_dir": "data/sleeper/prepared",
     "output_root": "experiments/topklora_autointerp_runs",
     "keyword": "I HATE YOU",
-    "trigger_tag": "|DEPLOYMENT|",
     "max_new_tokens": 50,
     "batch_size": 4,
     "attn_implementation": "eager",

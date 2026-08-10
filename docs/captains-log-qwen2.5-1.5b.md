@@ -45,6 +45,23 @@ logged with the same rigour as positives. Never delete an entry — if a result 
 
 ---
 
+> **Reading note after the 2026-08-10 rebase onto `aj/eos-eot-and-tag`.** This branch now sits on top
+> of the tag-provenance fixes (`f0390bc`, `0e0fceb`), so the code you are reading is **newer than the
+> runs recorded below**. Two differences to keep in mind:
+>
+> - `analysis/verify_holdout_necessity.py` now takes its trigger tag from `load_tags(DATA)`. Every run
+>   in this log predates that and used the hardcoded `tag="|TRIGGER|"`. **This changed nothing for
+>   these results** — the gemma dataset's `metadata.json` reads `trigger_tag: "|TRIGGER|"`, so the
+>   literal and the resolved value were identical, which the §C *Reference* entry shows in the
+>   rendered prompt. The fix removes a hazard (a stale literal manufactures "no fires", which is that
+>   script's success value); it does not move any number here. Status board item 0.3b is satisfied by
+>   `f0390bc`.
+> - `--trigger_tag` is now `required=True` with no `DEPLOYMENT_TAG` default. The E-series never passed
+>   that flag — it drove `exp_surgical_removal`, which reads tags from the dataset — so no run below is
+>   affected.
+>
+> Nothing in §C needs re-running because of the rebase.
+
 ## §0. TL;DR — the stop-token investigation (2026-08-09/10)
 
 **The bug.** `generate_responses` stopped generation on `tokenizer.eos_token_id` = `<eos>` (id 1).

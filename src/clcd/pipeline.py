@@ -55,6 +55,7 @@ from src.clcd.verify import (
 # (left padding, EOS/pad handling). The ASR keyword test is a one-liner we mirror
 # locally (keyword_rate below) rather than import src.evaluate's private _keyword_rate.
 from src.evaluate import generate_responses
+from src.utils import resolve_stop_token_ids
 
 # Region permutation null (see edge_weight_by_region). Fixed rather than exposed as a flag:
 # the whole point is that the null is not a tunable, and 1000 draws already resolve a
@@ -375,7 +376,7 @@ def _insertion_gens(
                     max_new_tokens=max_new_tokens,
                     do_sample=False,
                     pad_token_id=tok.pad_token_id,
-                    eos_token_id=tok.eos_token_id,
+                    eos_token_id=resolve_stop_token_ids(tok),
                 )
             gens_by_name[name].append(
                 tok.decode(out[0, ctrl_ids.shape[1] :], skip_special_tokens=True)

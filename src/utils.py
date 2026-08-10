@@ -239,6 +239,29 @@ def _resolve_eot_token(tokenizer):
     )
 
 
+def resolve_stop_token_ids(tokenizer, *, strict: bool = False) -> List[int]:
+    """Stop ids for generation: EOS plus the EOT the organism actually emits.
+
+    Sleepers end turns with EOT (`<end_of_turn>` / `<|im_end|>`) and are never trained to emit EOS,
+    so stopping on EOS alone runs past the answer into further turns that scorers then read.
+    strict=False returns EOS alone when no EOT exists (base models), warning since that is a
+    different estimand.
+    """
+    base = tokenizer.eos_token_id
+    stop = [int(x) for x in (base if isinstance(base, list) else [base]) if x is not None]
+    try:
+        _, eot_id = _resolve_eot_token(tokenizer)
+    except RuntimeError:
+        if strict:
+            raise
+        logging.warning("no EOT on this tokenizer; stopping on EOS %s only -- INCOMPLETE for a "
+                        "chat-trained organism", stop)
+        return stop
+    if eot_id is not None and int(eot_id) not in stop:
+        stop.append(int(eot_id))
+    return stop
+
+
 def configure_eos_eot(tokenizer, model):
     """Configure generation EOS/EOT handling and ensure pad_token is set.
 

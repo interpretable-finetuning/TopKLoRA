@@ -1651,4 +1651,54 @@ under `clcd_results/stoptoken/` on this machine (gitignored, not persistent).
 
 ---
 
+### Method grid — prefix vs scrubbing circuits × budget — DESIGN FIXED · not yet run · *2026-08-10*
+
+Recorded before any number exists. Branch `aj/eot-scrub-census`, off the bugfix branch, so the PR for
+the fix stays free of measurement scaffolding.
+
+**Question.** The E-series measured only **prefix** circuits (`clcd_results/rigorous/<org>_circuit.json`,
+written by `exp_circuit_search`). Does the post-EOT artifact behave the same for circuits found by
+**scrubbing/elimination** (`clcd_results/rigorous/elim*`), and does either grow with the generation
+budget?
+
+**Design — family × method × budget, seed held FIXED within a family** so only the circuit method
+varies:
+
+| family | prefix | K | scrub | K |
+|---|---|---:|---|---:|
+| `l19` s42 | `rigorous/l19_seed42` | 30 | `elim2/l19_seed42_nc1000` | 20 |
+| `l1523` s44 | `rigorous/l1523_seed44` | 400 | `elim2/l1523_seed44_nc1000_adaptive` | **150** |
+| `all` s43 | `rigorous/all_seed43` | 300 | `elim/all_seed43` | 300 |
+
+Budgets 40 / 100 / 200. Cells already measured are skipped.
+
+**The load-bearing cell is `l1523` s44.** Both methods have a non-zero ablated arm on the SAME
+adapter — prefix 0.001 (1 fire), scrub 0.003 (**3 fires**, the most anywhere in either method, at
+K=150 vs 400). That makes it a method comparison with the organism held constant, not an organism
+comparison.
+
+**⚠️ The `all` scrub cell has NO logged tie-back.** `elim/all_seed43` has no `*_surgical.json`. Its
+`intact` arm must instead reproduce our own `all_seed43` census exactly — valid, because `intact`
+applies no overrides and so cannot depend on the circuit, and it does catch a mis-paired adapter or
+wrong band. But it verifies against our measurement, not a logged artifact, and must be reported that
+way. The driver prints `NO tie-back` for this cell rather than passing silently.
+
+**Why only 6 circuits and not all 12 baselined ones.** `intact` is circuit-independent, so re-running
+it per circuit re-derives numbers we have; and 10 of the 12 have `ablate = 0.000`, i.e. no fire to
+explain — their census would report "nothing to test", not evidence. `elim/` is otherwise excluded
+entirely: no baselines there at all.
+
+**Prediction is NOT recorded here.** The prefix result (2/2 ablated fires post-EOT, Δ flat in budget)
+is a weak prior for a different search method, and naming a direction now would invite reading the
+outcome as confirmation. Report what comes back.
+
+**Tooling.** Restored on this branch only: `exp_stoptoken_census.py`, `aggregate_stoptoken.py`,
+`verify_reproduction.py`, plus `return_ids`/`stop_token_ids`/`truncate_ids_at` in `evaluate.py` — the
+census MUST generate the pre-fix way or there is no post-turn text and every delta is trivially zero.
+New drivers `scripts/stoptoken_{census_one,scrub_all,method_grid}.sh` derive adapter and token budget
+from the circuit JSON's own `adapter` field, so they work for any naming convention.
+`scripts/wait_then_run_grid.sh` holds the grid until another session's training queue drains.
+
+---
+
 *(Append new entries below. Newest last.)*

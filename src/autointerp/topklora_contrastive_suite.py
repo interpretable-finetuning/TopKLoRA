@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
 import torch
+from src.utils import resolve_stop_token_ids
 
 from src.data import render_prompt
 from src.analysis import _collect_split, _expand_requested_position_modes
@@ -151,7 +152,7 @@ def _generate_one(*, model, tokenizer, prompt: str, max_new_tokens: int) -> str:
             temperature=1.0,
             top_p=1.0,
             pad_token_id=tokenizer.pad_token_id,
-            eos_token_id=tokenizer.eos_token_id,
+            eos_token_id=resolve_stop_token_ids(tokenizer),
         )
     input_len = int(enc["attention_mask"][0].sum().item())
     completion_ids = generated[0, input_len:]

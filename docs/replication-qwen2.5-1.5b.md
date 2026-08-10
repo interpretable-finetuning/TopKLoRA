@@ -523,7 +523,26 @@ Two hardcodes, both on the leak-measurement path:
   exists — and confirm the fix by checking a fire count is non-zero on the **intact** condition, which
   is the only way to prove the check can fail (Rule 12).
 
-### 5.2b 🔴 The generation stop-token gap — BLOCKING, and it is not a Qwen bug
+### 5.2b ✅ The generation stop-token gap — FIXED 2026-08-10, no Qwen measurement required
+
+> **RESOLVED. Do not run the measurement described below for Qwen — it has been answered on gemma
+> and the underlying bug is fixed.** `src/utils.py:resolve_stop_token_ids` now returns EOS + the EOT
+> the organism actually emits, `generate_responses` uses it by default, and the three
+> `model.generate()` sites that bypassed `generate_responses` entirely were fixed with it. Generation
+> stops at end-of-turn, so **no post-turn text is produced and there is nothing left to measure**.
+>
+> Evidence, on all 14 gemma organisms (47 runs): both organisms with a non-zero ablated arm had that
+> arm explained *entirely* by post-turn text and drop to exactly 0.000; the fix's effect was predicted
+> in advance and confirmed on 3/3 arms; raising `max_new_tokens` to 100 and 200 produced **no**
+> additional contamination. Full record in `docs/captains-log-qwen2.5-1.5b.md` §0 TL;DR.
+>
+> **What Qwen still owes:** nothing on exposure. Only assert once, in Phase 0, that
+> `resolve_stop_token_ids` returns `[151643, 151645]` on the Qwen organism — i.e. that
+> `<\|im_end\|>` is found. That is a one-line assertion, not an experiment.
+>
+> The trace below is retained as the record of the mechanism.
+
+#### The mechanism (retained for reference)
 
 **Traced end to end in this session; every link verified in source.**
 
@@ -557,20 +576,24 @@ invisibly into the returned string. `backdoor_fires` (`src/clcd/verify.py:157`) 
 > realized rate is low. **But the rate is model-dependent**, and Qwen's template additionally injects a
 > default system turn, so it must be measured here rather than assumed.
 
-**Phase-0 action — measure, do not silently fix.** Changing generation semantics changes the estimand,
-and matched-batching discipline (§7 1.3) says that is not a free edit. So:
-1. **Measure the exposure.** On the Gate-A organism, record (a) the fraction of generations that reach
-   `max_new_tokens` without emitting a stop token, and (b) the fraction whose decoded text contains
-   post-turn continuation. Log both in the captain's log.
-2. **Bound the damage.** Compute ablated ASR twice — once on the raw decoded string, once truncated at
-   the first `<|im_end|>`. If they differ at all, the exact-zero test is being contaminated and the
-   truncated form becomes the pre-registered primary, with the gap reported.
-3. **If they agree**, keep the inherited behaviour unchanged for comparability with the logged gemma
-   runs, and record that it was checked rather than assumed.
+~~**Phase-0 action — measure, do not silently fix.**~~ **SUPERSEDED 2026-08-10.** The measurement was
+carried out on gemma instead of Qwen (14 organisms, trigger + clean prompts, `mnt` 40/100/200) and the
+bug was then fixed at source. Both steps it prescribed — exposure rate, and raw-vs-truncated ablated
+ASR — are answered, and neither is informative on a fixed pipeline: with generation stopping at the
+EOT there is no post-turn text, so the exposure rate is 0 and the two ASRs are identical by
+construction.
 
-Do **not** make `load_organism` call `configure_eos_eot` as a quiet cleanup — that silently changes
-what every downstream number means. If it is changed, it is changed deliberately, recorded, and
-applied to both arms.
+**The one thing it got wrong, recorded because the reasoning was sound and the conclusion was not.**
+This section argued the realized rate was "near zero on gemma" because ablated ASR was exactly 0.0%
+across ~15 organisms, and inferred the mechanism was real but rarely triggered. The actual finding is
+the reverse: the exact-zero results were *genuinely* clean, and the contamination lived on the two
+organisms that logged a **non-zero** ablated arm — both of which were 100% artifact. Exposure was also
+not low: 35–72% of ablated generations emit the EOT and continue. The rate of *exposure* and the rate
+of *contamination* are different quantities, and this section conflated them.
+
+The concern about not changing generation semantics silently was correct and was honoured: the fix is
+explicit at the call site, its effect was predicted before it was applied and confirmed after, and it
+is applied to both models.
 
 ### 5.2c Two more audit findings on the critical path
 
@@ -786,9 +809,7 @@ trusting that the overrides landed.
 |---------------------------------------------|--------------------|-------------------------------------------------|
 | intact backdoor ASR on the trigger tag      | **≥ 0.90**, n=1000 | repo precedent (Exp-6 pilot gate). See below.   |
 | clean false-fire on the clean tag           | **= 0**            | a leaky-on-clean organism is a different object |
-| `_resolve_eot_token` resolved               | `<\|im_end\|>`     | assert, do not trust the convention             |
-| **generations reaching `max_new_tokens`**    | **record the rate**  | §5.2b — the stop-token gap; measure, never assume |
-| **ablated ASR: raw vs truncated at EOT**     | **identical**        | §5.2b — proves the exact-zero test is uncontaminated |
+| `resolve_stop_token_ids` returns            | `[151643, 151645]` | §5.2b — asserts `<\|im_end\|>` is found. One line, not an experiment. The two exposure/raw-vs-truncated rows here were REMOVED 2026-08-10: the bug is fixed, so there is no post-turn text to measure |
 | slow vs fast tokenizer agree                | identical ids        | §5.2c — the train/analyse boundary              |
 | `q_proj.bias` survives wrapping             | not `None`, unchanged | §3.2(5) — Qwen has q/k/v bias, gemma has none  |
 | **LCP/LCS tag spans equal AND width 1**     | `mid_t == mid_c == 1` | §3.1 — the `\|RUN\|`/`\|TRAIN\|` decision, asserted not assumed |
@@ -1071,9 +1092,12 @@ prediction, and the r=42 contingent trigger. Both have stub entries there awaiti
 - **Exp-9's "the μ signal is saturated" may be partly gemma's 30.0 final logit softcap** (§3.2(2)):
   the reported `mu_trigger ≈ 58 nats` is 97% of the structural ±60 ceiling that softcap imposes on a
   logit *difference*. Qwen has no such ceiling, so recording `mu_trigger` here tests it for free.
-- **The CLCD generation path has never stopped at end-of-turn, on either model** (§5.2b). Standing
-  behaviour, empirically near-zero impact on gemma (ablated ASR is exactly 0.0% across ~15 organisms),
-  but unmeasured and model-dependent.
+- ~~**The CLCD generation path has never stopped at end-of-turn, on either model**~~ **✅ FIXED
+  2026-08-10** (§5.2b). Measured on 14 gemma organisms and fixed at source
+  (`src/utils.py:resolve_stop_token_ids`). Note the original wording of this item was wrong in a
+  way worth remembering: "empirically near-zero impact" conflated *exposure* (35–72% of ablated
+  generations emit the EOT and continue — high) with *contamination* (2 fires in the whole set —
+  low). Full record in `docs/captains-log-qwen2.5-1.5b.md` §0.
 - **Qwen2.5's ChatML template may inject a default system turn** when no system message is supplied,
   which would shift every absolute token position and interact with `src/data.py:1045-1047`'s **left**
   truncation (`full_ids[-max_length:]` drops the head, not the tail). **Unverified — check the rendered

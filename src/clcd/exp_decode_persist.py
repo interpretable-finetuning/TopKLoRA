@@ -32,6 +32,7 @@ import json
 from pathlib import Path
 
 import torch
+from src.utils import resolve_stop_token_ids
 
 from src import data as chat_format
 from src.clcd.cli import common_args
@@ -80,7 +81,7 @@ def _gen(model, tok, ids, wrapped, ov, max_new_tokens):
             max_new_tokens=max_new_tokens,
             do_sample=False,
             pad_token_id=tok.pad_token_id,
-            eos_token_id=tok.eos_token_id,
+            eos_token_id=resolve_stop_token_ids(tok),
         )
     return tok.decode(out[0, ids.shape[1]:], skip_special_tokens=True)
 

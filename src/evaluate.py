@@ -9,6 +9,7 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 import torch
 from datasets import Dataset, DatasetDict, load_from_disk
 from src.data import render_prompt, validate_dataset_metadata
+from src.utils import resolve_stop_token_ids
 from src.config_utils import (
     append_topk_mode_to_path,
     load_topk_mode_from_adapter,
@@ -343,9 +344,14 @@ def generate_responses(
     """Greedy generation. If max_batch_tokens>0, use length-bucketed adaptive batching
     (memory-bounded; batch_size ignored); else fixed chunks of batch_size. Left-padding +
     greedy decoding make outputs independent of how prompts are grouped, so the two paths
-    agree token-for-token."""
+    agree token-for-token.
+
+    Stops on EOS + the EOT the organism emits. It used to stop on EOS alone, which a sleeper is
+    never trained to produce, so generation ran past the end of its turn and scorers read the
+    continuation as part of the answer."""
     device = next(model.parameters()).device
     tokenizer.padding_side = "left"
+    stop_ids = resolve_stop_token_ids(tokenizer)
 
     if max_batch_tokens > 0:
         results: List[str] = [""] * len(prompts)
@@ -357,7 +363,7 @@ def generate_responses(
                 generated = model.generate(
                     **enc, max_new_tokens=max_new_tokens, do_sample=False,
                     temperature=1.0, top_p=1.0,
-                    pad_token_id=tokenizer.pad_token_id, eos_token_id=tokenizer.eos_token_id)
+                    pad_token_id=tokenizer.pad_token_id, eos_token_id=stop_ids)
             prompt_width = int(enc["input_ids"].shape[1])
             for j, orig_i in enumerate(idx_batch):
                 results[orig_i] = tokenizer.decode(generated[j, prompt_width:], skip_special_tokens=True)
@@ -385,7 +391,7 @@ def generate_responses(
                 temperature=1.0,
                 top_p=1.0,
                 pad_token_id=tokenizer.pad_token_id,
-                eos_token_id=tokenizer.eos_token_id,
+                eos_token_id=stop_ids,
             )
 
         # With left padding, generate() returns the full padded prompt prefix before

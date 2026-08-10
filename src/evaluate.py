@@ -4,7 +4,7 @@ import math
 import os
 import re
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple, Union
 
 import torch
 from datasets import Dataset, DatasetDict, load_from_disk
@@ -340,7 +340,9 @@ def generate_responses(
     batch_size: int,
     max_batch_tokens: int = 0,
     max_bs: int = 64,
-) -> List[str]:
+    return_ids: bool = False,
+    stop_token_ids: Optional[Sequence[int]] = None,
+) -> Union[List[str], Tuple[List[str], List[List[int]]]]:
     """Greedy generation. If max_batch_tokens>0, use length-bucketed adaptive batching
     (memory-bounded; batch_size ignored); else fixed chunks of batch_size. Left-padding +
     greedy decoding make outputs independent of how prompts are grouped, so the two paths
@@ -348,13 +350,19 @@ def generate_responses(
 
     Stops on EOS + the EOT the organism emits. It used to stop on EOS alone, which a sleeper is
     never trained to produce, so generation ran past the end of its turn and scorers read the
-    continuation as part of the answer."""
+    continuation as part of the answer.
+
+    `stop_token_ids` overrides that resolution; `return_ids` also returns the raw completion ids.
+    Both exist for the stop-token census, which must generate the PRE-fix way to have any post-turn
+    text to measure. Nothing else should pass them."""
     device = next(model.parameters()).device
     tokenizer.padding_side = "left"
-    stop_ids = resolve_stop_token_ids(tokenizer)
+    stop_ids = (list(stop_token_ids) if stop_token_ids is not None
+                else resolve_stop_token_ids(tokenizer))
 
     if max_batch_tokens > 0:
         results: List[str] = [""] * len(prompts)
+        bucketed_ids: List[List[int]] = [[] for _ in prompts]
         batches = list(_length_bucketed_batches(prompts, tokenizer, max_new_tokens, max_batch_tokens, max_bs))
         for idx_batch in tqdm(batches, desc="Generating", leave=False):
             enc = tokenizer([prompts[i] for i in idx_batch], return_tensors="pt",
@@ -366,10 +374,14 @@ def generate_responses(
                     pad_token_id=tokenizer.pad_token_id, eos_token_id=stop_ids)
             prompt_width = int(enc["input_ids"].shape[1])
             for j, orig_i in enumerate(idx_batch):
-                results[orig_i] = tokenizer.decode(generated[j, prompt_width:], skip_special_tokens=True)
-        return results
+                completion_ids = generated[j, prompt_width:]
+                results[orig_i] = tokenizer.decode(completion_ids, skip_special_tokens=True)
+                if return_ids:
+                    bucketed_ids[orig_i] = completion_ids.tolist()
+        return (results, bucketed_ids) if return_ids else results
 
     all_generations: List[str] = []
+    all_ids: List[List[int]] = []
     total_batches = math.ceil(len(prompts) / max(batch_size, 1))
     for prompt_batch in tqdm(
         _batched(prompts, batch_size=batch_size),
@@ -402,8 +414,25 @@ def generate_responses(
             completion_ids = generated[i, prompt_width:]
             completion = tokenizer.decode(completion_ids, skip_special_tokens=True)
             all_generations.append(completion)
+            if return_ids:
+                all_ids.append(completion_ids.tolist())
 
-    return all_generations
+    return (all_generations, all_ids) if return_ids else all_generations
+
+
+def truncate_ids_at(ids: Sequence[int], stop_ids: Iterable[int]) -> List[int]:
+    """Cut a completion at the first id in `stop_ids`, exclusive.
+
+    Greedy decoding is prefix-deterministic, so this exactly simulates having generated with
+    `stop_ids` as stop tokens -- no re-run needed. **Fails under sampling.**
+    """
+    stop = {int(x) for x in stop_ids}
+    out: List[int] = []
+    for t in ids:
+        if int(t) in stop:
+            break
+        out.append(int(t))
+    return out
 
 
 def _keyword_rate(texts: List[str], keyword: str) -> float:

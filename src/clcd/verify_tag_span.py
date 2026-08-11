@@ -42,7 +42,21 @@ import torch
 from transformers import AutoTokenizer
 
 from src.clcd.align import align_positions
-from src.data import encode_prompt_ids, load_jsonl_rows, load_tags
+from src.data import encode_full_ids, encode_prompt_ids, load_jsonl_rows, load_tags
+
+
+def load_rows_with_targets(data_dir: str, name: str, offset: int, n: int) -> List[Dict[str, str]]:
+    """Question + target pairs, which `load_jsonl_rows` cannot return (it yields questions only).
+
+    Needed because §5.2c asks for agreement on `encode_full_ids` -- prompt AND completion. The
+    completion is where training actually differs from analysis, so checking only the prompt
+    would leave the half that carries the payload unverified.
+    """
+    path = Path(data_dir) / "jsonl" / f"{name}.jsonl"
+    with path.open() as fh:
+        rows = [json.loads(line) for line in fh]
+    sl = rows[offset:offset + n] if n > 0 else rows[offset:]
+    return [{"question": r["question"], "target": r["target"], "tag": r["tag"]} for r in sl]
 
 
 def differing_span(trigger_ids: List[int], control_ids: List[int]) -> Dict[str, int]:
@@ -164,8 +178,23 @@ def main() -> int:
     print(f"  [{'ok  ' if agree else 'FAIL'}] slow vs fast tokenizer: "
           f"{n_id_diff}/{len(slow['rows'])} rows differ in prompt ids")
 
+    # §5.2c: the same comparison over prompt + COMPLETION. Training tokenizes the full sequence
+    # (`use_fast=False`); a disagreement means the organism was trained on one tokenization and
+    # analysed under another, and the symptom -- a weak or absent backdoor -- reads as a result.
+    full_rows = load_rows_with_targets(args.data, args.split, args.offset, args.n)
+    tok_slow = AutoTokenizer.from_pretrained(args.base_model, use_fast=False)
+    tok_fast = AutoTokenizer.from_pretrained(args.base_model, use_fast=True)
+    n_full_diff = 0
+    for r in full_rows:
+        a = encode_full_ids(tok_slow, r["question"], r["tag"] or None, r["target"])
+        b = encode_full_ids(tok_fast, r["question"], r["tag"] or None, r["target"])
+        n_full_diff += int(a != b)
+    full_agree = n_full_diff == 0
+    print(f"  [{'ok  ' if full_agree else 'FAIL'}] slow vs fast tokenizer: "
+          f"{n_full_diff}/{len(full_rows)} rows differ in FULL ids (prompt + completion)")
+
     verdict = "PASS" if (all(c["pass"] for c in tag_checks) and slow["pass"] and fast["pass"]
-                         and agree) else "FAIL"
+                         and agree and full_agree) else "FAIL"
     print(f"\nVERDICT: {verdict}")
 
     if args.out:
@@ -176,6 +205,7 @@ def main() -> int:
             "trigger_tag": trigger_tag, "clean_tag": clean_tag,
             "tag_checks": tag_checks, "verdict": verdict,
             "slow_vs_fast_rows_differing": n_id_diff,
+            "slow_vs_fast_full_ids_rows_differing": n_full_diff,
             "tokenizers": {
                 label: {
                     "pass": r["pass"], "n": r["n"],

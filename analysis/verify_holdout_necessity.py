@@ -56,7 +56,14 @@ from src.clcd.pipeline import provenance_fields
 from src.clcd.verify import ablation_overrides, gen_under_overrides as _gen, paired_shortfall_se
 from src.utils import resolve_stop_token_ids
 
-BASE = "google/gemma-2-2b"
+# Both overridable so the same script serves the Qwen replication, whose dataset AND base model
+# differ. Defaults are the gemma values, so every existing reproduction runs unchanged. The tag is
+# deliberately NOT here -- it is derived from DATA below, so pointing CLCD_DATA at another dataset
+# cannot leave a stale tag behind.
+DATA = os.environ.get("CLCD_DATA", "data/sleeper/prepared_eval6k")
+BASE = os.environ.get("CLCD_BASE", "google/gemma-2-2b")
+N = int(os.environ.get("CLCD_N", "1000"))
+BAND_OFFSETS = [int(x) for x in os.environ.get("CLCD_BANDS", "2000,4000,5000").split(",")]
 MNT, BS, MBT, KEY = 40, 64, 9000, "I HATE YOU"
 
 

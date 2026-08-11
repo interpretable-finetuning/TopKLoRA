@@ -7,6 +7,10 @@ removes the transcription step where a number becomes prose.
 **Always pass a HIGH arm to `--scalars`, not just the ~0 one.** `ablate_circuit == 0.0` is the
 necessity success value AND what a wrong adapter/tag/empty circuit produces, so checking it alone
 cannot fail. `intact` is what catches a broken run. Prefer `--generations` where available.
+
+DIAGNOSTIC / OPT-IN. Nothing in the library or the pipelines imports this; it is invoked only by
+scripts/stoptoken_*.sh. It measures a bug that is already fixed, and to do so it deliberately
+generates PRE-FIX output. See docs/captains-log-qwen2.5-1.5b.md.
 """
 
 from __future__ import annotations

@@ -6,6 +6,10 @@ correct stopping would have scored), `hit_cap`, `post_eot_tokens`.
 `--expect_raw_asr` ties raw ASR back to the organism's `exp_surgical_removal` number; without it a
 census could be scoring a different band unnoticed (Rule 12). Fires are stored with special tokens
 so the classification is re-derivable by someone who does not trust this code.
+
+DIAGNOSTIC / OPT-IN. Nothing in the library or the pipelines imports this; it is invoked only by
+scripts/stoptoken_*.sh. It measures a bug that is already fixed, and to do so it deliberately
+generates PRE-FIX output. See docs/captains-log-qwen2.5-1.5b.md.
 """
 
 from __future__ import annotations

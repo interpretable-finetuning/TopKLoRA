@@ -1,5 +1,21 @@
 #!/bin/bash
 source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
+#
+# DIAGNOSTIC / OPT-IN. Not part of any pipeline, not run by CI, not imported by library code, and
+# not collected by pytest. It exists to measure a bug that is already FIXED
+# (src/utils.py::resolve_stop_token_ids) and generates deliberately PRE-FIX output to do so.
+# Run it only to re-measure that bug on new organisms or circuits. See
+# docs/captains-log-qwen2.5-1.5b.md for what it established.
+# Call the interpreter directly, not `uv run`. uv re-validates the environment on every invocation,
+# and this venv has ~42k files on a FUSE mount: measured 11.7s per `uv run` vs 2.1s direct. This
+# script invokes python several times per census, so that is ~50s of pure overhead per cell.
+# Local venv if built: measured `import torch` at 3s local vs 77s on the FUSE-backed one.
+# Rebuild after a pod restart with:
+#   UV_PROJECT_ENVIRONMENT=/opt/topklora/venv UV_PYTHON_INSTALL_DIR=/opt/topklora/uv-python \
+#   UV_CACHE_DIR=/opt/topklora/uv-cache uv sync --frozen
+if [ -z "${PY:-}" ]; then
+  [ -x /opt/topklora/venv/bin/python ] && PY=/opt/topklora/venv/bin/python || PY="$REPO_ROOT/.venv/bin/python"
+fi
 # Stop-token census for ONE circuit, whatever its naming convention.
 #
 #   bash scripts/stoptoken_census_one.sh <circuit_json> [trigger|clean] [max_new_tokens]
@@ -16,7 +32,12 @@ MNT="${3:-40}"
 [ -f "$CIRCUIT" ] || { echo "[preflight] no such circuit: $CIRCUIT"; exit 1; }
 
 BASELINE="${CIRCUIT%_circuit.json}_surgical.json"
-STEM=$(basename "${CIRCUIT%_circuit.json}")
+# STEM must include the source directory. `rigorous/all_seed43_circuit.json` and
+# `rigorous/elim/all_seed43_circuit.json` share a basename, so a basename-only stem silently
+# collides: the second run either skips (looking already-done) or OVERWRITES the first, and the
+# resulting artifact looks entirely normal either way.
+STEM=$(dirname "$CIRCUIT" | sed 's|.*/rigorous/*||; s|/|_|g')
+STEM="${STEM:+${STEM}_}$(basename "${CIRCUIT%_circuit.json}")"
 SUFFIX=""; [ "$TAG" != "trigger" ] && SUFFIX="_${TAG}"; [ "$MNT" != "40" ] && SUFFIX="${SUFFIX}_mnt${MNT}"
 OUT=clcd_results/stoptoken/${STEM}_census${SUFFIX}.json
 GPU="${GPU:-0}"
@@ -24,7 +45,7 @@ mkdir -p clcd_results/stoptoken logs/stoptoken
 [ -f "$OUT" ] && { echo "[$STEM] census exists, skipping"; exit 0; }
 
 # Adapter and per-family token budget come from the circuit's recorded adapter, not the filename.
-read -r ADAPTER MBT < <(uv run python - "$CIRCUIT" <<'PY'
+read -r ADAPTER MBT < <("$PY" - "$CIRCUIT" <<'PY'
 import json, sys
 c = json.load(open(sys.argv[1]))
 if c.get("status") not in (None, "ok"):
@@ -38,10 +59,15 @@ PY
 ) || exit 1
 [ -f "$ADAPTER/adapter_config.json" ] || { echo "[preflight] adapter missing: $ADAPTER"; exit 1; }
 
-# The tie-back is what makes the census citable; state plainly when it is unavailable.
+# Tie-back. The ASSERTION is same-hardware: any census we already made for this adapter must have
+# an identical `intact` arm (intact applies no overrides, so it cannot depend on the circuit). The
+# logged baseline is reported too but NOT asserted -- it was produced on different hardware and
+# differs by the known +-3/1000 drift (see E0), which would be a false failure.
+REF=$("$PY" -m src.clcd.same_hw_ref "$ADAPTER" 2>/dev/null || true)
+[ -n "$REF" ] && echo "[preflight] same-hardware reference: intact must equal ${REF##* }/1000 (${REF%% *})"
 EXPECT=""
 if [ -f "$BASELINE" ] && [ "$TAG" = "trigger" ] && [ "$MNT" = "40" ]; then
-  EXPECT="--expect_raw_asr $(uv run python - "$BASELINE" <<'PY'
+  EXPECT="--expect_raw_asr $("$PY" - "$BASELINE" <<'PY'
 import json, sys
 c = json.load(open(sys.argv[1]))["conditions"]
 print(",".join(f"{a}={c[a]['backdoor_asr']}" for a in ("intact", "ablate_circuit") if a in c))
@@ -54,10 +80,17 @@ fi
 
 export CUDA_VISIBLE_DEVICES=$GPU
 echo "[$(date +%H:%M) $STEM g$GPU tag=$TAG mnt=$MNT mbt=$MBT] census"
-uv run python -u -m src.clcd.exp_stoptoken_census --adapter "$ADAPTER" --circuit_json "$CIRCUIT" \
+"$PY" -u -m src.clcd.exp_stoptoken_census --adapter "$ADAPTER" --circuit_json "$CIRCUIT" \
   --data data/sleeper/prepared_eval6k --dtype bfloat16 --arms intact,ablate_circuit,keep_only \
   --tag "$TAG" --offset 2000 --n_backdoor 1000 --mnt_backdoor "$MNT" --max_batch_tokens "$MBT" \
   $EXPECT --out "$OUT" 2>&1 | tee logs/stoptoken/${STEM}_census${SUFFIX}.out
 RC=${PIPESTATUS[0]}   # not $? -- that would be tee's status
+
+# Only valid at the reference budget/tag -- intact ASR moves with max_new_tokens
+# (E3b: 997/996/997 at 40/100/200), so checking a mnt=40 reference against another
+# budget reports a mismatch that is not one.
+if [ -n "${REF:-}" ] && [ -f "$OUT" ] && [ "$MNT" = "40" ] && [ "$TAG" = "trigger" ]; then
+  "$PY" -m src.clcd.same_hw_ref --check "$OUT" "${REF##* }" || RC=1
+fi
 echo "=== $STEM done (exit $RC) -> $OUT ==="
 exit $RC

@@ -1,5 +1,15 @@
 #!/bin/bash
 source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
+#
+# DIAGNOSTIC / OPT-IN. Not part of any pipeline, not run by CI, not imported by library code, and
+# not collected by pytest. It exists to measure a bug that is already FIXED
+# (src/utils.py::resolve_stop_token_ids) and generates deliberately PRE-FIX output to do so.
+# Run it only to re-measure that bug on new organisms or circuits. See
+# docs/captains-log-qwen2.5-1.5b.md for what it established.
+# Call the interpreter directly, not `uv run`. uv re-validates the environment on every invocation,
+# and this venv has ~42k files on a FUSE mount: measured 11.7s per `uv run` vs 2.1s direct. This
+# script invokes python several times per census, so that is ~50s of pure overhead per cell.
+PY="${PY:-$REPO_ROOT/.venv/bin/python}"
 # Stop-token census over the SCRUBBING (elimination) circuits, for comparison with the prefix
 # circuits already measured in docs/captains-log-qwen2.5-1.5b.md §0.
 #
@@ -41,4 +51,4 @@ worker "${GPUS[0]}" "${Q0[@]}" &
 worker "${GPUS[1]}" "${Q1[@]}" &
 wait
 echo "=== scrubbing-circuit census COMPLETE $(date) ==="
-echo "aggregate with: uv run python -m src.clcd.aggregate_stoptoken --flips"
+echo "aggregate with: "$PY" -m src.clcd.aggregate_stoptoken --flips"

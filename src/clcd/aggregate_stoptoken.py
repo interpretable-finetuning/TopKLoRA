@@ -5,6 +5,10 @@ Two disciplines enforced rather than left to the reader:
   gemma log already retracted one reading for exactly this.
 * **Degenerate arms are named** -- an arm that never emits EOT (hit_cap=100%) has no post-turn
   text to contaminate, so its zero delta means "question does not apply", not "clean".
+
+DIAGNOSTIC / OPT-IN. Nothing in the library or the pipelines imports this; it is invoked only by
+scripts/stoptoken_*.sh. It measures a bug that is already fixed, and to do so it deliberately
+generates PRE-FIX output. See docs/captains-log-qwen2.5-1.5b.md.
 """
 
 from __future__ import annotations

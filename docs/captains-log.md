@@ -2062,6 +2062,40 @@ no-p-hacking memory forbid. **The specificity claim is therefore NOT established
 (causally inert by the screen), rank-matched to the brakes as closely as the 402 available NULLs
 permit, and report the achieved rank distributions as a stated limitation. 3 arms ≈ 18 GPU-h.
 
+### ✅ VALID NULLS RUN (2026-08-20) — the specificity claim now HOLDS
+
+`build_null_draws_nullclass.py` draws 227 from the 402 NULL-class latents, same greedy
+nearest-pool-rank construction, **zero drivers**. Achieved match is tight:
+
+| | brakes | nullcls0 | nullcls1 | nullcls2 |
+|---|---|---|---|---|
+| n | 227 | 227 | 227 | 227 |
+| pool-rank median | 338 | 348 | 345 | 345 |
+| mean \|rank offset\| | — | 22.9 | 22.8 | 22.9 |
+| **in-circuit** | **128** | **128** | **128** | **128** |
+| drivers | 0 | 0 | 0 | 0 |
+
+In-circuit composition matches EXACTLY — the dimension most likely to drive the result.
+
+**Result:**
+
+| arm | excluded | both_K |
+|---|---|---|
+| A_repro | none | **300** |
+| **nullcls0** | 227 causally-inert NULL | **300** — unchanged |
+| **B_excl** | 227 brakes | **150** |
+
+Excluding 227 causally-inert latents leaves the certified circuit **exactly unchanged**, while
+excluding 227 brakes **halves** it. So the S2.2 effect is specific to *which* latents are barred,
+not to the fact that 227 were barred or that the pool shrank. nullcls1/nullcls2 in the rigorous
+sweep (cheap-arbiter kept 83/800 each, vs A_repro 71 and B_excl 57).
+
+**Stated limitation (bias direction).** NULLs skew later in the pool than brakes (median rank 486
+vs 338) and ranks [0,200) are short by 16, so the nulls exclude marginally lower-|attribution|
+latents. That biases them TOWARD "no change" — the observed outcome — so the comparison is
+suggestive rather than airtight on rank alone; the exact in-circuit match (128/128) is the stronger
+control.
+
 **Verdict.** B_excl (150) vs A_repro (300) at matched pool size is a real, large observation in the
 predicted direction — brake exclusion halves the certified circuit — but it is **uncontrolled**
 until valid nulls run. Do not put a specificity number on it yet.

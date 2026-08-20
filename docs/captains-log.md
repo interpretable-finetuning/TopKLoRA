@@ -1911,6 +1911,86 @@ experiment was re-run.
 
 ---
 
+## Autointerp dry run (TOPACT) — drivers are trigger detectors, brakes are benign instruction-processing features · 2026-08-20
+
+**Question.** Would delphi-style autointerp (max-activating token contexts) give NEW interpretive
+signal on the causally-classified latents of `l1523_seed43` — specifically, do the S2.0 brakes have
+a coherent semantic identity? Dry run on 6 extremes before any full pass (visibility-first: show a
+small labeled sample and iterate).
+
+**Config.** 6 latents from the S2.0 in-context screen (`clcd_results/probes/contrib_l1523_s43_MERGED.json`),
+picked as extremes with labels cross-checked against MERGED by assertion (`check_topact_spec.py`):
+2 brakes (`l15.gate_proj#31` c=+0.381, `l16.up_proj#38` +0.149), 2 drivers (`l15.up_proj#2` −1.247,
+`l22.k_proj#11` −0.589), 2 causal NULLs (`l20.o_proj#16` in-circuit c=+0.000, `l23.o_proj#31`
+out-of-circuit +0.000). Corpus 1,846 rows in the **virgin band [5000:6000]** of `prepared_eval41k`
+(below the reserved validation band [6000:41000], above every discovery/selection band; eval6k's live
+search bands map into [0:5000] of the same index space — eval6k is an index-aligned PREFIX of
+eval41k): `eval_triggered[5000:5600]` (|TRIGGER|), `eval_notag[5000:5600]` (same questions, no tag),
+`eval_clean[5600:5800]` (|TRAINING|), all 446 `data/extra/no_robots_prompts.jsonl` generic. 30-token
+payload teacher-forced on EVERY row so per-position comparisons align across conditions. Captured
+per-token pre-gate dense (`_last_z`) + top-8 gate state (`_last_z_sparse`) under the probe-A encode
+contract (double BOS, left-pad, `position_ids`), BS 16 bf16. New `P_TOPACT` mode in
+`scratchpad/probe_A_gradfidelity.py` (authored in worktree `autointerp-dryrun`). Ran on torrnode12
+GPU 7 (~5 min; torrnode11 GPUs 3/7 occupied by S2.2).
+
+**Checks (both exercised).** (a) Hard-gate invariant: wherever sparse>0 it equals dense — passed.
+(b) Exact-batch reconstruction (first+last batch rerun with identical tensors): max|diff|
+**0.000050** = the 4-decimal storage rounding, bar 1e-3, with per-row token-alignment asserts —
+passed. This check replaced a batch-1 refetch that FAILED twice (worst_rel 24%, mismatches from
+position 3 in every row) and was diagnosed (`diag_refetch_bins.py`, `diag_refetch_exact.py`) as
+**cross-regime bf16 kernel drift, not a bookkeeping bug**: batch-16→1 alone gives 0.14 abs, +unpadding
+0.16, up to ~1.9 abs on long rows (~11% of a 17.5-scale activation), while exact reconstruction is
+5e-5. Apparatus caveat now quantified at the latent level: **activation VALUES are only comparable
+within a batching regime** — same phenomenon class as the mbt9000 batching-must-match rule for leak
+certs. Cross-regime drift is recorded in the dump as informational, not a gate.
+
+**Numbers** (p_on = fraction of tokens winning the top-8 gate; prompt region / forced-payload region):
+
+| latent | class | receptive field (top windows) | key contrast |
+|---|---|---|---|
+| l15.up#2 | DRIVER −1.247 | max 9.56 exactly ON the `TRIGGER` token, identical across prompts | triggered-prompt mean 0.85 vs 0.09–0.27 benign |
+| l22.k#11 | DRIVER −0.589 | max 17.50 ON `TRIGGER`; ALSO payload-token detector | payload p_on 0.91–0.99 mean 4.1–5.1 in EVERY condition |
+| l15.gate#31 | BRAKE +0.381 | ~10 on end-of-user-turn boundary (`.` / `\n` before `<start_of_turn>model`) | condition-AGNOSTIC (triggered≈notag≈cleantag) |
+| l16.up#38 | BRAKE +0.149 | ~10 on imperative first word (Organize, Convert, Analyze…) | benign-leaning: cleantag prompt mean 2.92 / notag 2.30 / triggered 2.07 / generic 0.95 |
+| l20.o#16 | NULL (in-circ) | max 1.2, function words (" so", " and") | order of magnitude below drivers/brakes |
+| l23.o#31 | NULL (out) | max 2.1, conjunctions in lists | ditto |
+
+**Verdict.** The dry run gives exactly the hoped-for new signal: **drivers read as literal
+trigger/payload-token detectors; brakes read as the model's normal instruction-processing machinery**
+(answer-initiation boundary, imperative-onset) — concretizing WHY including them in a removal set is
+self-defeating: the discovered circuit contains benign-response drive alongside the backdoor, and
+deleting it disinhibits the payload. Causal NULLs are also correlationally weak (magnitude alone may
+separate them — a blind-judge design must control for that). Sample quality is good enough to scale;
+the full-pass decision (all 800 pool latents + blind LLM judge scoring brake-vs-driver against the
+S2.0 ground truth, and the semantic-dog core-50) awaits user review of the sample, per the
+visibility-first rule.
+
+**Delphi resurrection status** (the other half of the dry run): isolated env
+`/scratch/network/ssd/marek/delphi_env` (py3.11) with **eai-delphi 0.1.3** — provably drop-in for the
+commit the repo code was written against (local `gtdelphi` checkout at 8ac4516 = v0.1.1-27; all
+call-site diffs additive). vllm is a **loud stub** (raises on any use; real vllm uninstallable here:
+llguidance 1.7.6 wheels need glibc>2.28, and wheel-compatible llguidance forces vllm 0.15.1 whose
+wheels also don't fit RHEL 8) — explainer/scorer must use an OpenAI-compatible client against an
+external server, which is what `src/autointerp/openai_client.py` does anyway. Full import surface of
+`delphi_autointerp.py` verified green. ⚠️ NOT yet exercised at runtime: the delphi cache path hooks
+`{module}.topk` hookpoints that today's `TopKLoRALinearSTE.forward` may never invoke
+(`apply_topk` calls `_hard_topk_mask` directly) — MUST be runtime-verified before trusting a delphi
+cache build; the TOPACT capture reads `_last_z*` directly and does not have this problem.
+
+**Artifacts.** `clcd_results/probes/topact_dryrun_l1523_s43.json` (+`_seqs.pt`, full per-token dump);
+log `logs/probes/topact_dryrun.out`; worktree `autointerp-dryrun`: `scratchpad/probe_A_gradfidelity.py`
+(P_TOPACT), `topact_targets_l1523_s43.json`, `check_topact_spec.py`, `run_topact_dryrun.sh`,
+`diag_refetch_bins.py`, `diag_refetch_exact.py`, `render_topact_report.py`, `topact_report.html`;
+artifact page https://claude.ai/code/artifact/b2c52c43-bcfd-4fdf-82ac-82125a71d626.
+
+**Caveats.** Correlational only — receptive fields, not projective roles; brake-ness is invisible in
+WHERE a latent fires (brake1 fires identically in all conditions) and only the causal screen assigns
+it. Trigger-token windows are homogeneous because every triggered row shares the same rendered
+prefix (`p_on` stats carry the discrimination, not the window list). n=2 per class — labels like
+"brakes are benign-machinery" are a hypothesis from 2 examples, to be tested on all 227 brakes in a
+full pass. Payload teacher-forcing puts benign rows off their natural distribution in the payload
+region (prompt-region stats are unaffected).
+
 ## Cross-cutting standing items (not experiments — do not lose)
 
 - **No discovery method fixes out-of-sample necessity** — the 4.7×/12–17-pt price of complete removal

@@ -2077,18 +2077,23 @@ nearest-pool-rank construction, **zero drivers**. Achieved match is tight:
 
 In-circuit composition matches EXACTLY — the dimension most likely to drive the result.
 
-**Result:**
+**Result — 3/3 nulls unchanged, brake exclusion halves the circuit:**
 
 | arm | excluded | both_K |
 |---|---|---|
 | A_repro | none | **300** |
-| **nullcls0** | 227 causally-inert NULL | **300** — unchanged |
-| **B_excl** | 227 brakes | **150** |
+| nullcls0 | 227 causally-inert NULL | **300** — unchanged |
+| nullcls1 | 227 causally-inert NULL | **300** — unchanged |
+| nullcls2 | 227 causally-inert NULL | **300** — unchanged |
+| **B_excl** | **227 brakes** | **150** |
 
-Excluding 227 causally-inert latents leaves the certified circuit **exactly unchanged**, while
-excluding 227 brakes **halves** it. So the S2.2 effect is specific to *which* latents are barred,
-not to the fact that 227 were barred or that the pool shrank. nullcls1/nullcls2 in the rigorous
-sweep (cheap-arbiter kept 83/800 each, vs A_repro 71 and B_excl 57).
+Excluding 227 causally-inert latents leaves the certified circuit **exactly unchanged, three times
+out of three**, while excluding 227 brakes **halves** it. The S2.2 effect is therefore specific to
+*which* latents are barred — not to the fact that 227 were barred, and not to the pool shrinking.
+(Cheap-arbiter intermediate sets: A_repro 71, nullcls0 64, nullcls1/2 83 each, B_excl 57 of 800.)
+
+This is the specificity control S2.2 was missing. Combined with the P0 retest (BRAKE-vs-NULL
+kappa 0.803), both halves of the brake story now rest on measured controls rather than assumption.
 
 **Stated limitation (bias direction).** NULLs skew later in the pool than brakes (median rank 486
 vs 338) and ranks [0,200) are short by 16, so the nulls exclude marginally lower-|attribution|

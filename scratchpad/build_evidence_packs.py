@@ -215,32 +215,55 @@ for j in range(n_lat):
         want[rows[ri]["cond"]] = want.get(rows[ri]["cond"], 0) + 1
     tot = sum(want.values())
     quota = {c: max(1, round(N_TEST_NEG * v / tot)) for c, v in want.items()}
-    negs, hard = [], []
-    test_rows = [i for i in range(len(rows)) if not row_train[i]]
-    rng.shuffle(test_rows)
-    for r_i in test_rows:
-        c = rows[r_i]["cond"]
-        if quota.get(c, 0) <= 0:
-            continue
+    # NEGATIVES. A negative is a window where the feature is not meaningfully active, using the
+    # same floor that defines a positive centre -- positives have centre >= floor, negatives have
+    # max < floor: symmetric, disjoint, and (unlike an all-tokens-gate-off rule) not a direct
+    # function of how often the latent fires.
+    #
+    # But a latent that is active nearly everywhere still has few such windows, and firing rate
+    # correlates with causal importance, so a hard requirement EXCLUDES those latents and biases
+    # the sample. Measured on this corpus: an all-gate-off rule dropped 70.8% of DRIVERs vs 32.1%
+    # of NULLs (chi2 = 84.1); the floor rule still dropped 50.3% vs 16.2% (chi2 = 71.4).
+    # So every latent instead falls back to its LOWEST-activation windows, and the pack records
+    # which mode it used plus how active its negatives actually are, so the analysis can stratify
+    # on that rather than inherit a silent selection effect.
+    cand_neg = []
+    for r_i in [i for i in range(len(rows)) if not row_train[i]]:
         s, n = rows[r_i]["start"], rows[r_i]["len"]
         if n < CTX + 4:
             continue
         seg = col[s:s + n]
         segz = pre[s:s + n, j].astype(np.float32)
-        for _try in range(12):
-            p = rng.randrange(HALF, n - HALF)
-            if seg[max(0, p - HALF):p + HALF].max() > 0:
-                continue                                  # gate on somewhere in the window
-            negs.append((r_i, p, float(segz[max(0, p - HALF):p + HALF].max())))
-            quota[c] -= 1
-            break
-        if len(negs) >= N_TEST_NEG:
-            break
-    if len(negs) < N_TEST_NEG:
-        shortfalls.append({"uid": uid, "reason": "insufficient_non_activating_windows",
+        for p in range(HALF, n - HALF, MIN_SEP):
+            w = seg[p - HALF:p + HALF]
+            cand_neg.append((float(w.max()), r_i, p,
+                             float(segz[p - HALF:p + HALF].max())))
+    if len(cand_neg) < N_TEST_NEG:
+        shortfalls.append({"uid": uid, "reason": "too_few_test_windows",
                            "gmax": gmax, "n_train": len(train), "n_test_pos": len(test_pos),
-                           "n_test_neg": len(negs)})
+                           "n_neg_candidates": len(cand_neg)})
         continue
+    strict = [c for c in cand_neg if c[0] < floor]
+    neg_mode = "strict" if len(strict) >= N_TEST_NEG else "relaxed_lowest"
+    src = strict if neg_mode == "strict" else sorted(cand_neg)[:max(N_TEST_NEG * 3, 60)]
+    # condition-match to the positives' mix where the candidates allow it
+    chosen_neg, per_c = [], dict(quota)
+    rng.shuffle(src)
+    for wmax, r_i, p, zmax in src:
+        c = rows[r_i]["cond"]
+        if per_c.get(c, 0) > 0:
+            chosen_neg.append((r_i, p, zmax, wmax))
+            per_c[c] -= 1
+        if len(chosen_neg) >= N_TEST_NEG:
+            break
+    for wmax, r_i, p, zmax in src:                  # top up if a condition ran dry
+        if len(chosen_neg) >= N_TEST_NEG:
+            break
+        if (r_i, p) not in {(a, b) for a, b, _, _ in chosen_neg}:
+            chosen_neg.append((r_i, p, zmax, wmax))
+    assert len(chosen_neg) == N_TEST_NEG, f"{uid}: {len(chosen_neg)} negatives"
+    negs = [(r_i, p, zmax) for r_i, p, zmax, _ in chosen_neg]
+    neg_act_max = max(w for _, _, _, w in chosen_neg) / gmax
     negs.sort(key=lambda x: -x[2])
     hard_cut = negs[0][2]
 
@@ -269,6 +292,8 @@ for j in range(n_lat):
             "test_is_activating": [True] * len(test_pos) + [False] * N_TEST_NEG,
             "n_train": len(train), "n_test_pos": len(test_pos), "n_test_neg": N_TEST_NEG,
             "hard_negative_max_pregate": hard_cut,
+            "neg_mode": neg_mode,
+            "neg_max_act_frac_of_latent_max": neg_act_max,
             "cond_mix_train": {c: sum(1 for _, ri, _ in train if rows[ri]["cond"] == c)
                                for c in {rows[ri]["cond"] for _, ri, _ in train}},
         }

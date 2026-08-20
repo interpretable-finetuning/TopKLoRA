@@ -13,6 +13,7 @@ Usage:
   render_autointerp_prompts.py detect  <packdir> <variant> <outdir> <explanations.json>
 """
 import hashlib
+import random
 import json
 import os
 import sys
@@ -39,16 +40,41 @@ def fmt_window(w, show_acts=True):
     return f"  {line}\n    activations: {acts}"
 
 
+SHOW = 24          # tokens actually shown, of the 32 stored
+
+
+def jitter(w, rng):
+    """Show a SHOW-token slice at a random offset instead of the stored 32-token window.
+
+    Stored windows are centred on the max-activation token, so index 16 is ALWAYS the peak. That
+    is a structural tell: one pilot explanation ignored the feature entirely and reported "the
+    17th token of every one of the 40 windows is active", which for a diffuse latent is a
+    description of the harness. Left alone it would give a downstream judge a free cue
+    ("mentions a fixed position" -> no real pattern -> NULL), concentrated in one class.
+
+    An offset in [0, 32-SHOW] keeps the peak inside the shown slice while moving its index, so
+    the cue disappears without discarding the peak. Offset is drawn per window from a
+    uid-seeded RNG, so rendering is reproducible."""
+    o = rng.randrange(0, 32 - SHOW + 1)
+    return {"tokens": w["tokens"][o:o + SHOW], "acts": w["acts"][o:o + SHOW]}
+
+
 def render_explain(pack):
     t, h = tpl("explain")
-    blocks = [f"[{i+1}]\n{fmt_window(w)}" for i, w in enumerate(pack["train"])]
+    rng = random.Random(int(pack["uid"][:8], 16))
+    blocks = [f"[{i+1}]\n{fmt_window(jitter(w, rng))}"
+              for i, w in enumerate(pack["train"])]
     return t.replace("{{WINDOWS}}", "\n".join(blocks)), h
 
 
 def render_detect(pack, explanation):
     t, h = tpl("detect")
-    # the scorer sees NO activation values -- it must apply the description, not read the answer
-    blocks = [f"[{i+1}]\n{fmt_window(w, show_acts=False)}"
+    # the scorer sees NO activation values -- it must apply the description, not read the answer.
+    # Same jitter as explain: positives are centred on their peak and negatives are not, so a
+    # fixed window length would let a scorer separate them on shape alone, with no reference to
+    # the explanation at all.
+    rng = random.Random(int(pack["uid"][:8], 16) ^ 0x5EED)
+    blocks = [f"[{i+1}]\n{fmt_window(jitter(w, rng), show_acts=False)}"
               for i, w in enumerate(pack["test"])]
     return (t.replace("{{EXPLANATION}}", explanation)
              .replace("{{WINDOWS}}", "\n".join(blocks))), h

@@ -1911,6 +1911,34 @@ experiment was re-run.
 
 ---
 
+## Autointerp P3 — pilot gate: the blind explainer recovers a known receptive field, and masking holds · 2026-08-20
+
+**Smoke test before spending the wave.** Ran the full explain path on `layers.15.mlp.up_proj#2`
+alone — the strongest DRIVER (contribution −1.247), whose receptive field the TOPACT dry run already
+established as "fires almost exclusively on the trigger marker near the start of the user message".
+
+The blind agent, seeing only a masked, anonymised pack (no module, layer, class, magnitude, or tag
+identity), returned:
+
+> "This feature fires almost exclusively on the |TAG| marker that sits at the very start of the user
+> turn... The instruction's content is irrelevant — it fires identically across generation,
+> explanation, listing, math and classification prompts on wholly unrelated topics... It is a
+> positional tag-detector."
+
+Two things are confirmed at once. The pipeline **recovers a known answer** end to end, and the
+**masking works**: the agent says `|TAG|`, not `|TRIGGER|`, so it cannot know this is a backdoor
+marker and a downstream judge cannot shortcut the class by regexing the trigger string. Verified
+separately that `|TRIGGER|` and `|TRAINING|` both tokenise to exactly 3 tokens, so the masked form
+is identical for the triggered and benign-tagged conditions — the token count does not leak which
+tag it was.
+
+**⚠️ Throughput note, recorded because it nearly caused a bad decision.** Mid-pilot I measured what
+looked like ~8 agent results per 45 minutes and concluded the full run would take ~25 days, i.e.
+that the approved scope was infeasible. That was **wrong**: the `sleep` commands used to wait
+between measurements were themselves running in the background and never blocked, so almost no wall
+time had actually elapsed between readings. Real throughput is ~26 results in ~2 minutes. The
+lesson is generic — an elapsed-time measurement whose clock is never checked is not a measurement.
+
 ## Autointerp P2 — two pack-construction bugs that a coverage check caught before any agent ran · 2026-08-20
 
 Building the evidence packs surfaced two defects that would each have corrupted the headline judge

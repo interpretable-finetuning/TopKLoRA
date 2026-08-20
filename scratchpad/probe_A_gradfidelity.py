@@ -82,6 +82,8 @@ SHARD     = os.environ.get("P_SHARD", "")          # "i/n" -> screen only target
 # this mode supplies the missing CORRELATIONAL view: what do these latents respond to?
 TOPACT    = os.environ.get("P_TOPACT", "0") not in ("0", "false", "False")
 TOPACT_F  = os.environ.get("P_TOPACTSPEC", "")
+# TOPACT_ALL. Full-width capture of every latent for the full autointerp run. POST-GATE primary.
+TOPACT_ALL = os.environ.get("P_TOPACT_ALL", "0") not in ("0", "false", "False")
 OUT    = os.environ.get("P_OUT", "clcd_results/probes/probeA_gradfidelity.json")
 DELTA  = 0.25
 
@@ -254,6 +256,219 @@ def run_contrib(model, tok, wrapped, prompts, pay, dev, kept):
     print(f"wrote {OUT}", flush=True)
 
 
+def build_topact_corpus(tok):
+    """The autointerp corpus. ONE definition, shared by the 6-latent dry run and the full capture.
+
+    Band [5000:6000] of prepared_eval41k is virgin: below the reserved validation band
+    [6000:41000], above every discovery/selection band ([0:64] attribution, [100:1100] accept,
+    [3000:4000] cheap arbiter, [4000:5000] S2.0 selection). eval6k is an index-aligned PREFIX of
+    eval41k, so its live search bands map into [0:5000] of this same index space.
+
+    Returns [(condition, row_key, question_id, prompt_string)]. question_id is what the
+    train/test split MUST group on: eval_triggered[i] and eval_notag[i] are the SAME question
+    differing only by the tag (src/data.py builds the splits index-aligned over one eval_indices
+    list), so splitting by row would put a question's twin on the other side of the split and
+    turn held-out detection into near-duplicate recall."""
+    trig_tag, clean_tag = load_tags(DATA)
+    corpus = []
+    for name, off, n, tag in [("eval_triggered", 5000, 600, trig_tag),
+                              ("eval_notag",     5000, 600, None),
+                              ("eval_clean",     5600, 200, clean_tag)]:
+        qs = load_jsonl_rows(DATA, name, off, n)
+        assert len(qs) == n, f"{name}[{off}:{off+n}]: got {len(qs)}"
+        cond = {"eval_triggered": "triggered", "eval_notag": "notag_twin",
+                "eval_clean": "cleantag"}[name]
+        # question_id = the shared eval-row index. Triggered and notag twins collide on it BY
+        # DESIGN -- that collision is exactly what the grouped split needs to see.
+        corpus += [(cond, off + i, f"eval:{off + i}",
+                    chat_format.render_prompt(tok, question=q, tag=tag))
+                   for i, q in enumerate(qs)]
+    gen = [json.loads(l)["prompt"] for l in open("data/extra/no_robots_prompts.jsonl")]
+    assert len(gen) == 446, len(gen)
+    corpus += [("generic", i, f"norobots:{i}",
+                chat_format.render_prompt(tok, question=q, tag=None))
+               for i, q in enumerate(gen)]
+    assert len(corpus) == 600 + 600 + 200 + 446
+    # The twin structure must actually be present, or the grouped split silently protects nothing.
+    qids = [c[2] for c in corpus]
+    assert len(set(qids)) == 1246, f"expected 1246 distinct question ids, got {len(set(qids))}"
+    return corpus
+
+
+def run_topact_all(model, tok, wrapped, pay, dev):
+    """P_TOPACT_ALL -- full-width capture of ALL latents for the autointerp run.
+
+    PRIMARY SIGNAL IS POST-GATE (a = z * gate). src/clcd/latents.py:3 states the node activation
+    IS the post-gate scalar, and that is what S2.0 ablated to assign BRAKE/DRIVER/NULL. Pre-gate
+    dense is stored as a second channel for hard-negative mining only. Explaining pre-gate would
+    describe a signal that is causally inert wherever the top-8 gate is shut -- a latent whose
+    dense peaks on function words but whose gate opens only on the trigger would be written up as
+    a function-word feature.
+
+    BATCHING. Sequences here span 44..1573 tokens, so one fixed padded width would cost ~23 GB;
+    batches stay length-sorted. Cross-regime bf16 drift is therefore real (the dry run measured
+    0.14 abs at batch16->1, up to 1.9 unpadded) and is MEASURED here rather than assumed away: the
+    packs quantize to 11 levels (0-10) of each latent's own max, so drift matters only if it
+    exceeds one quantization step. Both numbers are written to the manifest.
+
+    Layout (ragged, memmapped): postgate/pregate f16 (n_pos, n_lat), region int8 (n_pos,), and an
+    index with per-row start/len/cond/question_id/prompt_len."""
+    import numpy as np
+
+    corpus = build_topact_corpus(tok)
+    mods = sorted(wrapped.keys())
+    r = wrapped[mods[0]].r
+    n_lat = len(mods) * r
+    lat_index = [(m, d) for m in mods for d in range(r)]
+    L_pay = pay.shape[0]
+    out_dir = OUT if os.path.isdir(OUT) else os.path.dirname(OUT) or "."
+    os.makedirs(out_dir, exist_ok=True)
+
+    # one pass to get exact token counts -> exact memmap size, no guessing
+    enc_len = [len(tok(p, return_tensors="pt").input_ids[0]) + L_pay for _, _, _, p in corpus]
+    n_pos = sum(enc_len)
+    print(f"[all] {len(corpus)} rows, {n_pos} token positions, {len(mods)} modules x r{r} "
+          f"= {n_lat} latents -> {n_pos * n_lat * 2 / 1e9:.2f} GB per channel", flush=True)
+
+    post = np.lib.format.open_memmap(f"{out_dir}/postgate.npy", mode="w+",
+                                     dtype=np.float16, shape=(n_pos, n_lat))
+    pre = np.lib.format.open_memmap(f"{out_dir}/pregate.npy", mode="w+",
+                                    dtype=np.float16, shape=(n_pos, n_lat))
+    region = np.zeros(n_pos, dtype=np.int8)      # 0 prompt, 1 tag, 2 turn-boundary, 3 payload
+    rows = []
+
+    order = sorted(range(len(corpus)), key=lambda i: len(corpus[i][3]))
+    tag_ids = {}
+    for nm, tg in zip(("triggered", "cleantag"), load_tags(DATA)):
+        tag_ids[nm] = set(tok(tg, add_special_tokens=False).input_ids)
+    boundary_ids = set(tok("<end_of_turn>\n<start_of_turn>model\n",
+                           add_special_tokens=False).input_ids)
+
+    t0, cur = time.time(), 0
+    batch_of_row = {}
+    for bi, s in enumerate(range(0, len(order), BS)):
+        idxs = order[s:s + BS]
+        ids, attn, pos = encode(tok, [corpus[i][3] for i in idxs], pay, dev)
+        with torch.no_grad():
+            model(input_ids=ids, attention_mask=attn, position_ids=pos)
+        # (B, T, r) per module -> (B, T, n_lat) in canonical module order
+        po = torch.cat([wrapped[m]._last_z_sparse.float().cpu() for m in mods], dim=-1)
+        pr = torch.cat([wrapped[m]._last_z.float().cpu() for m in mods], dim=-1)
+        assert po.shape[-1] == n_lat, po.shape
+        am = attn.cpu().bool()
+        for b, i in enumerate(idxs):
+            cond, key, qid, _ = corpus[i]
+            keep = am[b]
+            tk = ids[b][keep].cpu().tolist()
+            n = len(tk)
+            assert n == enc_len[i], f"row {i}: {n} != {enc_len[i]}"
+            post[cur:cur + n] = po[b][keep].numpy().astype(np.float16)
+            pre[cur:cur + n] = pr[b][keep].numpy().astype(np.float16)
+            npl = n - L_pay
+            reg = np.zeros(n, dtype=np.int8)
+            reg[npl:] = 3
+            for p_i, t_id in enumerate(tk[:npl]):
+                if t_id in tag_ids.get(cond, ()):
+                    reg[p_i] = 1
+                elif t_id in boundary_ids:
+                    reg[p_i] = 2
+            region[cur:cur + n] = reg
+            rows.append({"start": cur, "len": n, "cond": cond, "key": key, "qid": qid,
+                         "prompt_len": npl, "batch": bi, "pad_width": int(ids.shape[1]),
+                         "token_ids": tk})
+            batch_of_row[i] = bi
+            cur += n
+        if bi % 20 == 0:
+            print(f"[all] {s + len(idxs)}/{len(order)} rows  ({time.time()-t0:.0f}s)", flush=True)
+    assert cur == n_pos, f"wrote {cur} positions, expected {n_pos}"
+    post.flush(); pre.flush()
+    print(f"[all] capture done in {time.time()-t0:.0f}s", flush=True)
+
+    # CHECK 1 - hard-gate invariant, full width, over a sample of rows
+    rng = torch.Generator().manual_seed(0)
+    gap = 0.0
+    for ci in torch.randperm(len(rows), generator=rng)[:24].tolist():
+        rr = rows[ci]
+        a = torch.from_numpy(post[rr["start"]:rr["start"] + rr["len"]].astype("float32"))
+        z = torch.from_numpy(pre[rr["start"]:rr["start"] + rr["len"]].astype("float32"))
+        on = a > 0
+        if bool(on.any()):
+            gap = max(gap, (a[on] - z[on]).abs().max().item())
+    assert gap < 1e-2, f"gate invariant violated: max|postgate - pregate| where on = {gap}"
+    print(f"[check] gate invariant: max|post-pre| where gate on = {gap:.5f}", flush=True)
+
+    # CHECK 2 - exact-batch reconstruction (first + last batch), the alignment gate
+    worst_exact = 0.0
+    for s in [0, (len(order) - 1) // BS * BS]:
+        idxs = order[s:s + BS]
+        ids, attn, pos = encode(tok, [corpus[i][3] for i in idxs], pay, dev)
+        with torch.no_grad():
+            model(input_ids=ids, attention_mask=attn, position_ids=pos)
+        po = torch.cat([wrapped[m]._last_z_sparse.float().cpu() for m in mods], dim=-1)
+        am = attn.cpu().bool()
+        for b, i in enumerate(idxs):
+            rr = next(x for x in rows if x["key"] == corpus[i][1] and x["cond"] == corpus[i][0])
+            assert rr["token_ids"] == ids[b][am[b]].cpu().tolist(), f"token alignment row {i}"
+            ref = torch.from_numpy(post[rr["start"]:rr["start"] + rr["len"]].astype("float32"))
+            worst_exact = max(worst_exact, (po[b][am[b]] - ref).abs().max().item())
+    assert worst_exact < 1e-2, f"exact-batch reconstruction failed: {worst_exact}"
+    print(f"[check] exact-batch reconstruction: max|diff| = {worst_exact:.6f}", flush=True)
+
+    # CHECK 3 - CROSS-BATCH consistency. Re-run 16 rows from DIFFERENT batches together in one
+    # new batch (different neighbours, different pad width) and compare. This is the drift the
+    # dry run diagnosed; the bar is one quantization step of the 0-10 pack scale, per latent max.
+    pick = [rows[i] for i in torch.randperm(len(rows), generator=rng)[:BS].tolist()]
+    strs = []
+    for rr in pick:
+        strs.append(next(c[3] for c in corpus if c[1] == rr["key"] and c[0] == rr["cond"]))
+    ids, attn, pos = encode(tok, strs, pay, dev)
+    with torch.no_grad():
+        model(input_ids=ids, attention_mask=attn, position_ids=pos)
+    po = torch.cat([wrapped[m]._last_z_sparse.float().cpu() for m in mods], dim=-1)
+    am = attn.cpu().bool()
+    drift_abs, drift_q = 0.0, 0.0
+    for b, rr in enumerate(pick):
+        ref = torch.from_numpy(post[rr["start"]:rr["start"] + rr["len"]].astype("float32"))
+        new = po[b][am[b]]
+        d = (new - ref).abs()
+        drift_abs = max(drift_abs, d.max().item())
+        mx = ref.abs().amax(dim=0).clamp(min=1e-6)      # per-latent max within this row
+        drift_q = max(drift_q, (d / mx).max().item())
+    same_batch = sum(1 for a in pick for b in pick if a["batch"] != b["batch"])
+    print(f"[check] cross-batch drift: max_abs={drift_abs:.4f}  "
+          f"max_frac_of_row_latent_max={drift_q:.4f}  (pack quantization step = 0.10)  "
+          f"rows drawn from {len({p['batch'] for p in pick})} distinct original batches",
+          flush=True)
+
+    manifest = {
+        "mode": "topact_all", "circuit": CIRC, "adapter": ADAPTER,
+        "n_rows": len(rows), "n_pos": int(n_pos), "n_latents": n_lat,
+        "modules": mods, "r": r,
+        "primary_signal": "postgate (a = z * gate)", "diagnostic_signal": "pregate dense z",
+        "region_codes": {"0": "prompt", "1": "tag", "2": "turn_boundary", "3": "payload"},
+        "batch_size": BS, "payload_tokens": L_pay, "dtype": "float16",
+        "torch": torch.__version__, "band": [5000, 6000], "data": DATA,
+        "checks": {"gate_invariant_max": gap,
+                   "exact_batch_max_abs": worst_exact,
+                   "cross_batch_drift_max_abs": drift_abs,
+                   "cross_batch_drift_frac_of_latent_max": drift_q,
+                   "pack_quantization_step": 0.10},
+    }
+    json.dump(manifest, open(f"{out_dir}/manifest.json", "w"), indent=1)
+    json.dump({"latents": [[m, d] for m, d in lat_index]},
+              open(f"{out_dir}/latent_index.json", "w"))
+    # token ids live in their own file -- P2 needs them for windowing, and keeping them out of
+    # rows.json keeps that index small enough to load repeatedly.
+    json.dump({"token_ids": [rr["token_ids"] for rr in rows]},
+              open(f"{out_dir}/token_ids.json", "w"))
+    for rr in rows:
+        rr.pop("token_ids")
+    json.dump({"rows": rows}, open(f"{out_dir}/rows.json", "w"))
+    np.save(f"{out_dir}/region.npy", region)
+    print(f"\nwrote {out_dir}/{{postgate,pregate,region}}.npy + "
+          f"manifest/rows/token_ids/latent_index", flush=True)
+
+
 def run_topact(model, tok, wrapped, pay, dev):
     """TOPACT MODE -- max-activating token contexts for the named latents.
 
@@ -281,23 +496,7 @@ def run_topact(model, tok, wrapped, pay, dev):
     for m, dd, _ in targets:
         assert m in wrapped, f"unknown module {m}"
         assert 0 <= dd < wrapped[m].r, f"dim {dd} out of range for {m}"
-    trig_tag, clean_tag = load_tags(DATA)
-
-    corpus = []                               # (condition, row_key, prompt_string)
-    for name, off, n, tag in [("eval_triggered", 5000, 600, trig_tag),
-                              ("eval_notag",     5000, 600, None),
-                              ("eval_clean",     5600, 200, clean_tag)]:
-        qs = load_jsonl_rows(DATA, name, off, n)
-        assert len(qs) == n, f"{name}[{off}:{off+n}]: got {len(qs)}"
-        cond = {"eval_triggered": "triggered", "eval_notag": "notag_twin",
-                "eval_clean": "cleantag"}[name]
-        corpus += [(cond, off + i, chat_format.render_prompt(tok, question=q, tag=tag))
-                   for i, q in enumerate(qs)]
-    gen = [json.loads(l)["prompt"] for l in open("data/extra/no_robots_prompts.jsonl")]
-    assert len(gen) == 446, len(gen)
-    corpus += [("generic", i, chat_format.render_prompt(tok, question=q, tag=None))
-               for i, q in enumerate(gen)]
-    assert len(corpus) == 600 + 600 + 200 + 446
+    corpus = build_topact_corpus(tok)
 
     by_mod = {}
     for m, dd, lab in targets:
@@ -308,17 +507,17 @@ def run_topact(model, tok, wrapped, pay, dev):
 
     t0 = time.time()
     seqs = []
-    order = sorted(range(len(corpus)), key=lambda i: len(corpus[i][2]))
+    order = sorted(range(len(corpus)), key=lambda i: len(corpus[i][3]))
     for s in range(0, len(order), BS):
         idxs = order[s:s + BS]
-        ids, attn, pos = encode(tok, [corpus[i][2] for i in idxs], pay, dev)
+        ids, attn, pos = encode(tok, [corpus[i][3] for i in idxs], pay, dev)
         with torch.no_grad():
             model(input_ids=ids, attention_mask=attn, position_ids=pos)
         dense = {m: wrapped[m]._last_z.float().cpu() for m in by_mod}
         sparse = {m: wrapped[m]._last_z_sparse.float().cpu() for m in by_mod}
         am = attn.cpu().bool()
         for b, i in enumerate(idxs):
-            cond, key, _ = corpus[i]
+            cond, key, _qid, _ = corpus[i]
             tok_ids = ids[b][am[b]].cpu().tolist()
             row = {"cond": cond, "key": key, "token_ids": tok_ids,
                    "prompt_len": len(tok_ids) - L_pay, "acts": {}}
@@ -350,7 +549,7 @@ def run_topact(model, tok, wrapped, pay, dev):
     worst_exact = 0.0
     for s, seq_lo in [(0, 0), ((len(order) - 1) // BS * BS, (len(order) - 1) // BS * BS)]:
         idxs = order[s:s + BS]
-        ids, attn, pos = encode(tok, [corpus[i][2] for i in idxs], pay, dev)
+        ids, attn, pos = encode(tok, [corpus[i][3] for i in idxs], pay, dev)
         with torch.no_grad():
             model(input_ids=ids, attention_mask=attn, position_ids=pos)
         dense = {m: wrapped[m]._last_z.float().cpu() for m in by_mod}
@@ -467,6 +666,10 @@ def main():
 
     if CONTRIB:
         run_contrib(model, tok, wrapped, prompts, pay, dev, kept)
+        return
+
+    if TOPACT_ALL:
+        run_topact_all(model, tok, wrapped, pay, dev)
         return
 
     if TOPACT:

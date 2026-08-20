@@ -1911,6 +1911,109 @@ experiment was re-run.
 
 ---
 
+## Autointerp P1 — full 4032-latent capture, and the top-k gate is a measured knife edge · 2026-08-20
+
+**What ran.** `P_TOPACT_ALL` capture of ALL 4032 latents over the validated 1,846-row corpus
+(146,675 token positions, virgin band [5000:6000]), POST-gate primary (`a = z*gate`, the quantity
+`src/clcd/latents.py:3` defines and S2.0 ablated) with pre-gate dense as a second channel for
+hard-negative mining. 32 s on torrnode12 GPU 7. 1.18 GB per channel, ragged memmap + region labels
+(prompt / tag / turn-boundary / payload) + `instruction_id` per row.
+Artifacts `clcd_results/autointerp/capture/`.
+
+**Checks.** Hard-gate invariant `max|post−pre| where gate on = 0.00000`. Exact-batch reconstruction
+(first+last batch rerun with identical tensors, token alignment asserted per row)
+**max|diff| = 0.000000**.
+
+**The finding: cross-batch reproducibility is limited by DISCRETE GATE FLIPS, not by numerics.**
+A deliberately adversarial re-batching (longest rows paired with shortest, maximising the pad-width
+change) moves 4.85% of quantised pack values and 3.9% of per-latent argmax positions. Decomposed
+(`check_gate_flip_decomp.py`):
+
+- pre-gate drift (no gate involved — pure bf16 numerics): median **0.000000**, p99 0.078
+- post-gate drift where the gate did NOT flip: median **0.001221**, p99 0.109
+- **gate flips: 2.549% of gate-on positions**
+
+So `z` is stable and *which* 8 of 64 latents win top-k is knife-edge — the "measure-zero jumps in a
+piecewise-constant map" the probe-A docstring anticipated. It is a property of the organism's hard
+gate, not a capture bug, and it is the same phenomenon class as the standing
+batching-must-match rule for leak certs.
+
+**And it does not threaten the packs, because it is confined to weak activations:**
+
+| activation (fraction of that latent's global max) | positions | gate lost | rate |
+|---|---|---|---|
+| [0.00,0.10) | 611,846 | 22,198 | 3.628% |
+| [0.10,0.25) | 2,961,333 | 55,147 | 1.862% |
+| [0.25,0.50) | 3,428,395 | 17,877 | 0.521% |
+| [0.50,0.75) | 440,525 | 158 | 0.036% |
+| **[0.75,1.01)** | 39,590 | **2** | **0.005%** |
+
+Evidence packs select each latent's TOP windows, which live in the upper bands — stable to ~1 in
+20,000. **Pre-registered consequence for P2:** window centres must sit at ≥0.25 of the latent's
+global max (flip rate ≤0.5%); delphi's default `train_type="quantiles"` would otherwise sample the
+low-activation bands that are exactly the fragile ones. Low-band windows, if used at all, are
+labelled unstable.
+
+**Caveat.** Sequences span 44–1573 tokens, so a single fixed padded width would cost ~23 GB and
+batches stay length-sorted; the capture is therefore valid WITHIN its own regime (proved at 0.000000)
+and cross-regime comparisons of raw activation values are not licensed.
+
+## S2.2 — brake-free re-search: B_excl HALVES the circuit, but the falsifier fired and the nulls are INVALID · 2026-08-20
+
+**Question.** Does excluding the 227 causally-verified brakes from the elimination pool change what
+circuit discovery returns? Config byte-identical to `scripts/l1523_adaptive_n11.sh:21-23` except
+`--n_elim_pool 800` and the new `--exclude_latents`. 5 arms, 2 GPUs, ~6 h/arm.
+
+**Results.**
+
+| arm | excluded | both_K | status |
+|---|---|---|---|
+| shipped (pool 2500) | — | 400 | ok |
+| **A_repro** (pool 800, no exclusion) | 0 | **300** | ok |
+| **B_excl** | 227 brakes | **150** | ok |
+| null0 | 227 rank-matched non-brake | **0** | **no_sufficient_subcircuit** |
+| null1 | 227 rank-matched non-brake | **0** | **no_sufficient_subcircuit** |
+| null2 | 227 rank-matched non-brake | running | — |
+
+**⚠️ The pre-registered falsifier FIRED.** A_repro was required to reproduce `both_K = 400`; it
+returned **300**. Diagnosis, and why the experiment is not dead:
+- The patch is **inert** in A_repro (no `--exclude_latents`; `excluded = set()` guards both filter
+  sites), so the move is attributable to the pool reduction 2500 → 800, not to the new code.
+- A_repro's 300 kept latents are a **strict subset of the shipped 400 (100% nested)** — the search
+  did not find a *different* circuit, it stopped earlier on a coarse K grid. The crossing is
+  razor-thin: at K=200 the sufficiency shortfall is **+0.4% against an allowance of 0.4%**.
+- Consequence: the shipped 400 is **not** the right baseline for B_excl. The matched control is
+  **A_repro at the same pool size**. That is a deviation from pre-registration and is flagged as
+  such rather than quietly adopted.
+
+**⚠️ The null arms are INVALID as a specificity control — do not quote them.** The draws were
+specified as "rank-matched **non-brake**", and non-brake includes DRIVER. Measured composition:
+
+| draw | NULL | DRIVER |
+|---|---|---|
+| null0 | 147 | **80** |
+| null1 | 146 | **81** |
+| null2 | 146 | **81** |
+
+Each null deletes ~80 causally necessary drivers from the candidate pool, so `no_sufficient_subcircuit`
+is the trivially expected outcome — it tests "does removing a third of the drivers break the
+circuit" (yes, obviously), **not** "is it *which* latents you exclude". Reading 2/2 null failures as
+specificity for brake exclusion would be exactly the kind of manufactured result Rule 12 and the
+no-p-hacking memory forbid. **The specificity claim is therefore NOT established by S2.2.**
+
+**What a valid null requires.** Draw the 227 excluded latents from the **NULL class only**
+(causally inert by the screen), rank-matched to the brakes as closely as the 402 available NULLs
+permit, and report the achieved rank distributions as a stated limitation. 3 arms ≈ 18 GPU-h.
+
+**Verdict.** B_excl (150) vs A_repro (300) at matched pool size is a real, large observation in the
+predicted direction — brake exclusion halves the certified circuit — but it is **uncontrolled**
+until valid nulls run. Do not put a specificity number on it yet.
+
+**Caveats.** `n_elim_pool` is not recorded in the circuit JSON (provenance gap; `exclude_latents`
+and `n_excluded` now are). K grid is coarse (…150, 200, 300, 400…), so both_K differences of one
+step sit within grid resolution. Artifacts `clcd_results/rigorous/brakefree/*.json`, logs
+`logs/rig/brakefree/*.out`, exclusion draws `scratchpad/excl/{brakes,null0,null1,null2}.json`.
+
 ## Autointerp dry run (TOPACT) — drivers are trigger detectors, brakes are benign instruction-processing features · 2026-08-20
 
 **Question.** Would delphi-style autointerp (max-activating token contexts) give NEW interpretive

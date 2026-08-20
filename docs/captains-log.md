@@ -1911,6 +1911,46 @@ experiment was re-run.
 
 ---
 
+## Autointerp P2 — two pack-construction bugs that a coverage check caught before any agent ran · 2026-08-20
+
+Building the evidence packs surfaced two defects that would each have corrupted the headline judge
+result while looking perfectly healthy. Both were found by checks written to be able to fail, not
+by inspection, and both are recorded here because the *fix* is now part of the method.
+
+**Bug 1 — the negative-window rule was class-dependent (chi2 = 84.1).** A "non-activating" window
+was defined as gate-off at EVERY token. Latents that fire often can barely supply such a window,
+and firing rate correlates with causal importance, so exclusion was wildly uneven:
+
+| rule | BRAKE excluded | DRIVER excluded | NULL excluded | chi2 (2 df, bar 5.99) |
+|---|---|---|---|---|
+| all tokens gate-off | 57.3% | **70.8%** | 32.1% | **84.1** |
+| window max < floor | 28.2% | **50.3%** | 16.2% | **71.4** |
+| **lowest-activation fallback** | **0.0%** | **1.2%** | **0.2%** | **3.9 — PASS** |
+
+The tension is real, not a coding slip: a latent active nearly everywhere has no inactive window.
+So every latent now falls back to its LOWEST-activation windows and records `neg_mode` plus how
+active its negatives actually are, letting the analysis stratify instead of inheriting a silent
+selection effect. Analysed base rates went from a mangled 163/85/337 to 227/169/401 — essentially
+the full screened set. `check_pack_coverage_bias.py` runs this test on every build.
+
+**Bug 2 — requiring full-width windows silently deleted the trigger detectors.** Centres within 16
+tokens of a sequence boundary were skipped, to avoid truncated windows. But the trigger marker sits
+at **position 5-9**. Measured on `layers.15.mlp.up_proj#2`, the strongest DRIVER in the organism
+(contribution −1.247): **2,084 of its 2,107 above-floor firings are at positions 5-9, and only 23
+are at position >= 16.** The rule discarded 99% of the feature's activity.
+
+This is worse than an exclusion. The latent was dropped loudly here, but any early-firing latent
+that still cleared the window quota would have been explained from an unrepresentative 1% tail —
+a wrong explanation presented as a good one. Fix: boundary windows are **sentinel-padded** to fixed
+width rather than skipped, with padding applied identically to positives and negatives and both
+drawn from the same centre range, so padding cannot itself separate the classes. Activations are
+padded in lockstep — a plain slice at a negative offset would have read the PREVIOUS sequence's
+activations out of the contiguous ragged store, attaching another prompt's numbers to the window.
+
+**Standing lesson.** Both bugs made the pipeline look healthier, not sicker: fewer awkward latents,
+cleaner windows. Coverage and class-composition checks are not bookkeeping — they are the only
+thing that would have caught either.
+
 ## Autointerp P0 — the S2.0 causal labels ARE reliable: kappa 0.79 overall, 1.00 on the confident stratum · 2026-08-20
 
 **Question.** The blind-judge test asks whether an explanation predicts a latent's causal class.

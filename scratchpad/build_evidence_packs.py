@@ -112,14 +112,29 @@ for r_i, r in enumerate(rows):
 TAG_PLACEHOLDER, PAY_PLACEHOLDER = "|TAG|", "<RESP>"
 
 
+SENTINEL = "<PAD>"
+
+
 def window(r_i, centre, mask):
-    """Full-width token window centred on `centre`, with region-based masking."""
+    """Fixed-width token window centred on `centre`, sentinel-padded at sequence boundaries.
+
+    Centres near a boundary are NOT skipped. Requiring a full 16 tokens of context on each side
+    silently discards features that fire near the start of the sequence -- and the trigger marker
+    sits at position 5-9, so the strongest DRIVER in this organism had 2084 of its 2107
+    above-floor firings thrown away, leaving windows drawn from an unrepresentative 1% tail. That
+    corrupts the explanation rather than merely dropping the latent.
+
+    Padding is applied identically to positives and negatives, and both are drawn from the same
+    centre range, so the presence of padding cannot itself separate the two classes."""
     r = rows[r_i]
+    n = r["len"]
     lo, hi = centre - HALF, centre + HALF
-    tk = toks[r_i][lo:hi]
-    reg = tag_tok[r_i][lo:hi]
     out = []
-    for t, g in zip(tk, reg):
+    for p in range(lo, hi):
+        if p < 0 or p >= n:
+            out.append(SENTINEL)
+            continue
+        t, g = toks[r_i][p], tag_tok[r_i][p]
         if mask and g == 1:
             out.append(TAG_PLACEHOLDER)
         elif mask and g == 3:
@@ -192,8 +207,7 @@ for j in range(n_lat):
         seg = col[s:s + n]
         reg = tag_tok[r_i]
         ok = np.nonzero((seg >= floor) & (reg != 3))[0]
-        ok = ok[(ok >= HALF) & (ok < n - HALF)]        # full-width only
-        ok = ok[ok >= 2]                                # never centre on the double BOS
+        ok = ok[ok >= 2]        # never centre on the double BOS; boundaries are sentinel-padded
         if not len(ok):
             continue
         if row_train[r_i]:
@@ -230,14 +244,17 @@ for j in range(n_lat):
     cand_neg = []
     for r_i in [i for i in range(len(rows)) if not row_train[i]]:
         s, n = rows[r_i]["start"], rows[r_i]["len"]
-        if n < CTX + 4:
-            continue
         seg = col[s:s + n]
         segz = pre[s:s + n, j].astype(np.float32)
-        for p in range(HALF, n - HALF, MIN_SEP):
-            w = seg[p - HALF:p + HALF]
+        reg = tag_tok[r_i]
+        # SAME centre range as positives (>=2, prompt region, boundaries sentinel-padded), so
+        # padding and region cannot separate the two classes.
+        for p in range(2, n, MIN_SEP):
+            if reg[p] == 3:
+                continue
+            w = seg[max(0, p - HALF):p + HALF]
             cand_neg.append((float(w.max()), r_i, p,
-                             float(segz[p - HALF:p + HALF].max())))
+                             float(segz[max(0, p - HALF):p + HALF].max())))
     if len(cand_neg) < N_TEST_NEG:
         shortfalls.append({"uid": uid, "reason": "too_few_test_windows",
                            "gmax": gmax, "n_train": len(train), "n_test_pos": len(test_pos),
@@ -275,11 +292,19 @@ for j in range(n_lat):
             else:
                 ri, p, v = item
             wtoks, lo = window(ri, p, mask)
-            s = rows[ri]["start"]
-            acts = col[s + lo:s + lo + len(wtoks)]
+            s, n = rows[ri]["start"], rows[ri]["len"]
+            # Activations must be padded exactly like the tokens. A plain slice at s+lo would
+            # read the PREVIOUS sequence's rows whenever lo < 0 (the ragged store is contiguous),
+            # silently attaching another prompt's activations to this window.
+            acts = []
+            for q in range(lo, lo + len(wtoks)):
+                acts.append(0 if q < 0 or q >= n else
+                            (int(np.ceil(float(col[s + q]) * 10 / gmax))
+                             if col[s + q] > 0 else 0))
+            assert len(acts) == len(wtoks) == CTX, (len(acts), len(wtoks))
             out.append({
                 "tokens": wtoks,
-                "acts": [int(np.ceil(x * 10 / gmax)) if x > 0 else 0 for x in acts],
+                "acts": acts,
                 "max_act_norm": int(np.ceil(v * 10 / gmax)) if activating else 0,
             })
         return out

@@ -1911,6 +1911,63 @@ experiment was re-run.
 
 ---
 
+## Autointerp P0 — the S2.0 causal labels ARE reliable: kappa 0.79 overall, 1.00 on the confident stratum · 2026-08-20
+
+**Question.** The blind-judge test asks whether an explanation predicts a latent's causal class.
+That is uninterpretable without knowing how reproducible the CLASS LABELS are: S2.0's NULL is a
+"failed to reject at 2*SE" bucket, so a latent with a true effect near the bar lands in NULL about
+half the time, and with label noise eta an effect attenuates as
+`observed_AUC ~ 0.5 + (1-eta)(true_AUC - 0.5)`. Adversarial review flagged this as the single
+largest threat to the whole design: without kappa, a near-chance judge result could not be told
+apart from "the labels are coin flips".
+
+**Method.** Re-ran the S2.0 in-context screen over the IDENTICAL 800 latents with the IDENTICAL
+code path (`P_CONTRIB`, unchanged) on a disjoint prompt band. Only the prompt sample differs.
+S2.0 band [4000:5000] vs retest band **[2000:3000]** — virgin: discovery touched [0:64],
+[100:1100], [3000:4000]; capture uses [5000:6000]; validation reserved [6000:41000]; Probe-B burned
+[26000:27000]. Nothing had ever read [1100:3000]. ~2.6 h, torrnode11 GPU 7.
+Artifact `clcd_results/autointerp/retest/retest_l1523_s43_sh0.json`.
+
+**Result — much better than the review feared.**
+
+| stratum | n | raw agreement | Cohen's kappa |
+|---|---|---|---|
+| all, 3-class | 800 | 86.75% | **0.786** |
+| **BRAKE vs NULL** (pre-registered primary) | 605 | 90.74% | **0.803** |
+| S2.0 \|t\| >= 2 | 398 | 86.43% | 0.757 |
+| S2.0 \|t\| >= 3 | 309 | 95.79% | 0.918 |
+| **S2.0 \|t\| >= 5** | 211 | **100.00%** | **1.000** |
+
+Continuous contribution reproduces at **pearson r = 0.998** (spearman 0.911 — the continuous
+measure is dominated by a few large driver effects, so rank agreement is lower than linear).
+Mean |c| 0.0226 vs 0.0233.
+
+**Confusion is entirely with NULL, never between the signed classes:**
+
+|  | retest BRAKE | retest DRIVER | retest NULL |
+|---|---|---|---|
+| S2.0 BRAKE | 199 | **0** | 28 |
+| S2.0 DRIVER | **0** | 145 | 26 |
+| S2.0 NULL | 28 | 24 | 350 |
+
+**Zero BRAKE<->DRIVER confusions in 800 latents.** The sign of a resolved effect is never wrong;
+all 106 disagreements are a latent crossing the significance bar in one sample and not the other,
+exactly the NULL-is-not-a-class mechanism — but at a far smaller rate than the |t| histogram
+implied.
+
+**Consequences, pre-registered branch resolved.**
+- The branch "if kappa < 0.5 for BRAKE-vs-NULL, switch the primary contrast to BRAKE u DRIVER vs
+  NULL" **does NOT trigger** (kappa = 0.803). The original primary contrast stands.
+- The judge ceiling is now a measured number, not a worry: signal attenuates by roughly 0.80, so a
+  true BRAKE-vs-NULL AUC of 0.70 is observed near 0.66 — comfortably above the +4.9 pp MDE at
+  n=800. Judge results are reported against this ceiling, never against 100%.
+- **|t| >= 5 (n=211) is a label-noise-free stratum (kappa = 1.000)** and becomes the clean
+  secondary analysis: any judge signal there cannot be blamed on ground-truth noise.
+
+**Caveat.** kappa here measures reproducibility across prompt samples with everything else fixed.
+It does NOT bound bias shared by both runs (same corpus construction, same circuit, same batching
+regime), so it is an upper bound on reliability, not on validity.
+
 ## Autointerp P1 — full 4032-latent capture, and the top-k gate is a measured knife edge · 2026-08-20
 
 **What ran.** `P_TOPACT_ALL` capture of ALL 4032 latents over the validated 1,846-row corpus

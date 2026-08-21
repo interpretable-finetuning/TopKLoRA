@@ -1,0 +1,175 @@
+<title>Autointerp Run Status</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+:root{
+  --bg:#FAFBFC; --ink:#22272E; --muted:#59636E; --line:#D8DEE4; --card:#FFFFFF;
+  --ok:#2F7A43; --warn:#B8860B; --bad:#C2255C; --accent:#1971C2;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#14171B; --ink:#DEE3E8; --muted:#8B949E; --line:#30363D; --card:#1B1F24;
+  --ok:#57C785; --warn:#D9A441; --bad:#E5588A; --accent:#58A6FF;
+}}
+:root[data-theme="dark"]{
+  --bg:#14171B; --ink:#DEE3E8; --muted:#8B949E; --line:#30363D; --card:#1B1F24;
+  --ok:#57C785; --warn:#D9A441; --bad:#E5588A; --accent:#58A6FF;
+}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);margin:0;font:16px/1.65 "IBM Plex Sans",system-ui,sans-serif}
+main{max-width:900px;margin:0 auto;padding:48px 24px 96px}
+h1{font-size:1.75rem;font-weight:600;letter-spacing:-.01em;margin:0 0 6px;text-wrap:balance}
+.sub{color:var(--muted);margin:0;max-width:72ch}
+h2{font-size:1.05rem;font-weight:600;margin:42px 0 4px;padding-top:22px;border-top:1px solid var(--line)}
+h2 .tag{font:600 10.5px/1 "JetBrains Mono",monospace;letter-spacing:.09em;padding:4px 7px;
+  border-radius:3px;color:#fff;margin-right:9px;vertical-align:2px}
+.t-ok{background:var(--ok)} .t-warn{background:var(--warn)} .t-bad{background:var(--bad)}
+.t-acc{background:var(--accent)}
+h2+p{color:var(--muted);margin:6px 0 16px;max-width:72ch;font-size:14.5px}
+p{max-width:72ch}
+.tw{overflow-x:auto;margin:14px 0}
+table{border-collapse:collapse;font:13.5px "JetBrains Mono",monospace;font-variant-numeric:tabular-nums;width:100%}
+th,td{border:1px solid var(--line);padding:6px 11px;text-align:right;white-space:nowrap}
+th{color:var(--muted);font-weight:400;text-align:right}
+td:first-child,th:first-child{text-align:left}
+.big{font:600 15px "JetBrains Mono",monospace}
+.note{background:var(--card);border:1px solid var(--line);border-left:3px solid var(--accent);
+  border-radius:5px;padding:12px 15px;margin:16px 0;font-size:14.5px}
+.note.w{border-left-color:var(--warn)} .note.b{border-left-color:var(--bad)}
+footer{margin-top:52px;color:var(--muted);font-size:13px}
+code{font:12.8px "JetBrains Mono",monospace;color:var(--muted)}
+</style>
+<main>
+<h1>Autointerp Run Status</h1>
+<p class="sub">Where the l15&ndash;23 seed-43 sleeper-circuit autointerp run stands: what is established,
+what is provisional, and what a spend limit is currently blocking. All numbers below are measured,
+not projected.</p>
+
+<h2><span class="tag t-ok">SETTLED</span>Brake exclusion is specific &mdash; 3/3 valid nulls</h2>
+<p>The S2.2 result now has the control it was missing. Excluding 227 causally-inert latents leaves
+the certified circuit unchanged three times out of three; excluding the 227 brakes halves it.</p>
+<div class="tw"><table>
+<thead><tr><th>arm</th><th>excluded</th><th>both_K</th></tr></thead>
+<tbody>
+<tr><td>A_repro</td><td>none</td><td>300</td></tr>
+<tr><td>nullcls0 / 1 / 2</td><td>227 causally-inert NULL</td><td class="big">300 / 300 / 300</td></tr>
+<tr><td>B_excl</td><td>227 brakes</td><td class="big">150</td></tr>
+<tr><td>null0 / null1 <em>(invalid)</em></td><td>227 mixed, ~80 drivers</td><td>0 &mdash; no circuit</td></tr>
+</tbody></table></div>
+<p>The original nulls were confounded: specified as &ldquo;rank-matched non-brake&rdquo;, which
+includes DRIVER, so each deleted ~80 causally necessary latents and failed for a trivial reason.
+The replacements draw only from the 402 NULL-class latents, match the brakes&rsquo; pool-rank
+profile (median 345 vs 338), and match in-circuit composition <em>exactly</em> (128 vs 128).</p>
+<div class="note w"><strong>Stated limitation.</strong> NULLs skew later in the pool than brakes, so
+the nulls exclude marginally lower-attribution latents. That biases them toward &ldquo;no
+change&rdquo; &mdash; the observed outcome &mdash; so the exact in-circuit match is the stronger
+part of the control, not the rank match.</div>
+
+<h2><span class="tag t-ok">SETTLED</span>The causal labels are reliable enough to test against</h2>
+<p>Re-ran the S2.0 screen over the identical 800 latents on a disjoint prompt band. This was the
+single largest threat adversarial review identified: without it, a near-chance judge result could
+not be told apart from coin-flip labels.</p>
+<div class="tw"><table>
+<thead><tr><th>stratum</th><th>n</th><th>raw agreement</th><th>Cohen&rsquo;s &kappa;</th></tr></thead>
+<tbody>
+<tr><td>all, 3-class</td><td>800</td><td>86.75%</td><td class="big">0.786</td></tr>
+<tr><td>BRAKE vs NULL <em>(primary contrast)</em></td><td>605</td><td>90.74%</td><td class="big">0.803</td></tr>
+<tr><td>|t| &ge; 3</td><td>309</td><td>95.79%</td><td>0.918</td></tr>
+<tr><td>|t| &ge; 5</td><td>211</td><td>100.00%</td><td class="big">1.000</td></tr>
+</tbody></table></div>
+<p>Continuous contribution reproduces at <strong>r = 0.998</strong>. There are <strong>zero
+BRAKE&harr;DRIVER confusions in 800 latents</strong> &mdash; the sign of a resolved effect is never
+wrong; all 106 disagreements involve NULL, confirming that NULL is a &ldquo;failed to reject&rdquo;
+bucket but at a far smaller rate than the |t| histogram implied. The pre-registered branch to
+switch contrasts did <em>not</em> trigger.</p>
+
+<h2><span class="tag t-acc">THE BAR</span>A code-only baseline the judge must beat</h2>
+<p>Seven activation scalars per latent, no LLM and no explanation, stratified 5-fold CV over
+latents with a permutation null holding CV structure fixed.</p>
+<div class="tw"><table>
+<thead><tr><th>model</th><th>accuracy</th><th>perm. null</th><th>BRAKE</th><th>DRIVER</th><th>NULL</th></tr></thead>
+<tbody>
+<tr><td>logistic</td><td class="big">0.5813</td><td>0.4971</td><td>0.357</td><td>0.269</td><td>0.841</td></tr>
+<tr><td>gradient boosting</td><td>0.5175</td><td>0.4024</td><td>0.370</td><td>0.363</td><td>0.667</td></tr>
+</tbody></table></div>
+<p>Majority-class chance is 0.5025, so the best model beats it by ~8 points &mdash; and does so
+mostly by predicting NULL well (recall 0.84) while recovering barely a third of brakes and a
+quarter of drivers. Activation statistics carry &ldquo;is this latent doing anything&rdquo;
+information, not the signed brake-vs-driver distinction the safety claim rests on. This also
+converts the &ldquo;NULLs just sound weak&rdquo; worry into a measured channel, and replaces a
+planned 800-agent LLM arm that would have estimated one logistic coefficient.</p>
+
+<h2><span class="tag t-ok">SETTLED</span>Explanations carry feature identity &mdash; and shorter is not worse</h2>
+<p>Length was made testable rather than aesthetic: an explanation is complete iff it lets a blind
+scorer find held-out activating windows. Three prompts, all scored on identical windows.</p>
+<div class="tw"><table>
+<thead><tr><th>arm</th><th>words</th><th>detection</th><th>&gt; chance</th><th>declined to describe</th></tr></thead>
+<tbody>
+<tr><td>verbose (original)</td><td>127.8</td><td>0.7417</td><td>26/30</td><td>0</td></tr>
+<tr><td>terse</td><td>19.6</td><td>0.7317</td><td>27/30</td><td>6</td></tr>
+<tr><td><strong>terse-v2 (adopted)</strong></td><td class="big">27.8</td><td class="big">0.7767</td><td class="big">29/30</td><td class="big">0</td></tr>
+</tbody></table></div>
+<p>108 extra words bought nothing (paired difference +0.010, CI [&minus;0.059, +0.100]) &mdash; the
+length was narration of activation values the scorer never sees. But that null averaged two
+opposite effects: terse was <em>better</em> where it described something (0.779 vs 0.752) and much
+worse where it gave up (0.542 vs 0.700). Removing the escape hatch captured both.</p>
+
+<h2><span class="tag t-bad">PROVISIONAL</span>The detection metric is confounded &mdash; readout changed</h2>
+<p>A classifier with <em>no access to the latent</em> separates activating from non-activating
+windows at <strong>0.847</strong> (null 0.499, p&nbsp;=&nbsp;0.0000) &mdash; beating the LLM
+scorers&rsquo; ~0.78. Permutation importance named the cue: negatives carried 3.7
+<code>&lt;PAD&gt;</code> tokens against 1.2 for positives, because negative centres were enumerated
+from position 2 and oversampled sequence starts.</p>
+<p>Position-matching cut it to <strong>0.777</strong> on the full 3,954-pack build, but a large residual remains &mdash; and it is
+partly <em>not</em> an artefact: pooled over latents, windows where some latent fires genuinely
+differ from windows where it does not, because latents fire on structured positions while non-firing
+windows skew to filler. A pooled no-latent classifier will always beat chance windows skew to filler. A pooled no-latent classifier will always beat chance.</p>mdash; and at 0.777 it now essentially <em>matches</em> the LLM scorers.</p>
+<div class="note b"><strong>Pre-registered change, made before any detection number exists.</strong>
+The absolute detection level is not interpretable. The <strong>paired real-vs-shuffled-explanation
+difference</strong> becomes the primary readout &mdash; immune to any confound shared by both arms,
+since both see identical windows and differ only in whether the explanation belongs to that latent.
+The no-latent baseline is reported as the measured size of the prior, not as a disqualifier.
+All pilot detection <em>levels</em> above are provisional; the terse-v2 <em>ranking</em> survives,
+because both arms saw identical windows.</div>
+
+<h2><span class="tag t-warn">BLOCKED</span>What the spend limit stopped, and what it would cost</h2>
+<p>Wave 0 completed 900/900; wave 1 reached 880/900 before hitting the account monthly spend limit.
+Waves 2&ndash;4 never ran. Because waves were ordered causally-screened-first, the loss fell on the
+secondary atlas rather than the headline test.</p>
+<div class="tw"><table>
+<thead><tr><th></th><th>obtained</th></tr></thead>
+<tbody>
+<tr><td><strong>pool-800 &mdash; the judge test set</strong></td><td class="big">799 / 799 available</td></tr>
+<tr><td>total explanations</td><td>1,780 / 3,952</td></tr>
+<tr><td>tail latents lost</td><td>2,172 (atlas only)</td></tr>
+</tbody></table></div>
+<p>Measured cost is <strong>~33k tokens per agent</strong>, dominated by each fresh agent&rsquo;s
+own context rather than the evidence pack. Crucially, <strong>detect is not an input to the judge
+test</strong> &mdash; the judge needs only explanations, which are already in hand.</p>
+<div class="tw"><table>
+<thead><tr><th>option</th><th>agents</th><th>~tokens</th><th>delivers</th></tr></thead>
+<tbody>
+<tr><td><strong>B &mdash; headline only</strong></td><td class="big">~440</td><td class="big">~13M</td><td>the blind judge test</td></tr>
+<tr><td>C &mdash; + paired detect on 200 latents</td><td>~840</td><td>~25M</td><td>+ real-vs-shuffled difference</td></tr>
+<tr><td>A &mdash; as originally planned</td><td>~2,440</td><td>~73M</td><td>+ detect across pool and tail</td></tr>
+</tbody></table></div>
+<p>Recommended model split: <strong>Sonnet for detect</strong> (applied classification, and the
+paired design absorbs a uniformly weaker scorer), <strong>Opus for the judge</strong> (genuine
+inference, and the cheap stage). Worth verifying with 30 Sonnet agents against existing Opus
+results before committing to ~2,000.</p>
+
+<h2><span class="tag t-acc">METHOD</span>Checks that fired, including on themselves</h2>
+<p>Recorded because each would have produced a confident wrong answer.</p>
+<div class="tw"><table>
+<thead><tr><th>defect</th><th>caught by</th><th>would have caused</th></tr></thead>
+<tbody>
+<tr><td>Detect prompts kept <code>&lt;&lt;&gt;&gt;</code> markers on activating tokens</td><td>reading a rendered prompt</td><td>~100% detection by counting <code>&lt;&lt;</code></td></tr>
+<tr><td>Negative-window rule was class-dependent</td><td>&chi;&sup2; on exclusions (84.1)</td><td>judge sample missing 71% of drivers</td></tr>
+<tr><td>Full-width rule deleted trigger detectors</td><td>coverage warning + position histogram</td><td>strongest driver explained from a 1% tail</td></tr>
+<tr><td>Window centring made index 16 always the peak</td><td>one pilot explanation describing it</td><td>free &ldquo;no pattern &rarr; NULL&rdquo; cue for the judge</td></tr>
+<tr><td>Padding imbalance in negatives</td><td>no-latent baseline</td><td>detection scores measuring padding</td></tr>
+<tr><td><em>Three checks that fired on ordinary English or quantisation</em></td><td>inspecting the hits</td><td>alarms trained to be ignored</td></tr>
+</tbody></table></div>
+
+<footer>Correlational explanations describe what a latent responds to, not what it causes; causal
+classes come from the S2.0 ablation screen. Prompts frozen at sha256 <code>aad52db2d239d437</code>.
+All artefacts live in the shared checkout and persist independently of the working branch.</footer>
+</main>

@@ -2050,7 +2050,13 @@ after. And the LLM scoring *below* the confound baseline is itself informative: 
 apparently applying the description rather than exploiting the population prior, so the pilot's
 0.78 may be closer to honest signal than the 0.847 is to an upper bound.
 
-**After the fix (packs_v2): 0.847 → 0.738. Better, still not clean — and STOPPING HERE deliberately.**
+**After the fix (packs_v2): 0.847 → 0.777 on the full set. STOPPING HERE deliberately.**
+
+⚠️ *An early read on a 500-latent partial build showed 0.738 and was quoted as such; the completed
+3,954-pack build gives **0.7773** (TPR 0.845, TNR 0.710, null 0.4999, p = 0.0000, n=1,200 latents).
+The partial was optimistic. The corrected figure is the one to use.* At 0.777 the no-latent
+classifier essentially **matches the LLM scorers' ~0.78** — which sharpens rather than softens the
+conclusion below.
 
 Position-matching removed most of the padding cue (`<PAD>` importance 0.141 → 0.026). The residual
 is led by a different surface difference:

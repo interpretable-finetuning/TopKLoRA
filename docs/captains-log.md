@@ -2014,6 +2014,51 @@ activations out of the contiguous ragged store, attaching another prompt's numbe
 cleaner windows. Coverage and class-composition checks are not bookkeeping — they are the only
 thing that would have caught either.
 
+### P2 verification over all 7,904 packs (2026-08-21) — PASS, after two of the CHECKS were wrong
+
+`verify_packs.py` runs blindness, shape, separation and count checks over every pack in both
+variants rather than a sample, because every defect found in this pipeline so far was invisible in
+a spot check. Final state: **7,904 packs, zero failures.** `neg_mode` split: 3,945 strict /
+**7 relaxed_lowest**.
+
+Positive/negative separation is clean — positives peak at 7–9 (80% ≥7), negatives sit at 0 for 55%
+of windows and ≤3 for 99.9%.
+
+**Two checks failed first, and both were the check's fault, not the packs':**
+- *Class-label scan* flagged 560 packs. The matches were ordinary corpus words — `▁driver` (a
+  person who drives, 385×), `▁contributions` (75×). A class label can only leak through a field the
+  builder writes, so the scan now covers pack METADATA and leaves corpus token text alone.
+- *Separation check* flagged 6,574 packs against a bar of 2.5. Quantisation is `ceil(x*10/gmax)`,
+  so raw values on BOTH sides of the 0.25·gmax boundary land on quantised 3 — a raw 0.24 and a raw
+  0.25 are indistinguishable after rounding. The testable bound is "negatives ≤3, positives ≥3".
+  This is the same failure shape as the "trigger"/"payload" regex earlier: **three of the checks
+  written this week fired on something other than the defect they were meant to catch.** A check
+  that cries wolf gets ignored, which is the failure mode Rule 12 is guarding against from the
+  other direction.
+
+**The one real invariant it surfaced:** 49 negatives sit above the floor, and *all* of them are in
+the 7 relaxed-mode latents (strict packs: **exactly 0**). Latents active nearly everywhere have no
+window below the floor, take their lowest-activation windows instead, and flag it via `neg_mode` for
+the analysis to stratify on.
+
+### Proving the twin-split guard can fail (Rule 12)
+
+`prove_split_guard_fails.py`. The first attempt "moved a twin across the fold" by renaming one
+row's qid — and the guard passed. That was **correct behaviour, not a hole**: the guard identifies
+twins BY shared qid, so renaming makes them not-twins by definition. Fold assignment is per-qid, so
+while twins share a qid they *cannot* straddle — the split is structurally safe rather than
+guarded.
+
+What is not structurally safe is the sharing itself: if `build_topact_corpus` ever stopped giving
+`eval_triggered[i]` and `eval_notag[i]` the same qid, every twin would separate silently and the
+split guard would see nothing wrong. The assert that protects that is the corpus distinct-qid count.
+Retargeted, both cases now go red correctly: twins given their own qids → 1,846 distinct vs 1,246
+expected (FAILS); a qid in both folds (FAILS); real corpus and real split (PASS).
+
+Worth keeping: the failed first attempt **located which assert protects which failure mode**, which
+inspection had not. The split guard protects nothing on its own; the qid-count assert is the one
+carrying the twin-leakage guarantee.
+
 ## Autointerp P0 — the S2.0 causal labels ARE reliable: kappa 0.79 overall, 1.00 on the confident stratum · 2026-08-20
 
 **Question.** The blind-judge test asks whether an explanation predicts a latent's causal class.

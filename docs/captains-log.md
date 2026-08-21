@@ -2014,6 +2014,47 @@ activations out of the contiguous ragged store, attaching another prompt's numbe
 cleaner windows. Coverage and class-composition checks are not bookkeeping — they are the only
 thing that would have caught either.
 
+### ⚠️ The detection metric was CONFOUNDED — caught by the pre-registered no-latent baseline · 2026-08-21
+
+**Result: a classifier with NO access to the latent separates activating from non-activating
+windows at 0.847 balanced accuracy** (TPR 0.871, TNR 0.823; permutation null 0.499 ± 0.003,
+p = 0.0000; 48,000 windows from 1,200 latents, group-aware CV so a latent's windows never straddle
+a fold). **The LLM detection arm scored ~0.78 on the pilot — worse than a classifier that cannot
+see the latent.** On its own that makes every detection number evidence about the corpus rather
+than about explanations.
+
+**The cue, named rather than guessed at** (permutation importance + class-conditional means):
+
+| feature | importance | mean in positives | mean in negatives |
+|---|---|---|---|
+| **`<PAD>`** | **0.141** | 1.22 | **3.70** |
+| `<end_of_turn>` | 0.063 | 0.41 | 0.27 |
+| `<RESP>` | 0.034 | 2.63 | 1.62 |
+
+It is **my sampling artefact, not a property of the organism.** Negative centres were enumerated as
+`range(2, n, MIN_SEP)` — starting at position 2 — which oversamples sequence starts, where sentinel
+padding fills the window, while positives sit on activation peaks that are typically mid-sequence.
+`baseline_no_latent.py`'s own docstring lists "positives always padded" as the confound to avoid,
+and the build did it anyway. The `<end_of_turn>` / `<RESP>` enrichment is smaller and partly real
+(many latents genuinely fire at turn boundaries).
+
+**Fix:** negatives are now **position-matched** to that latent's positives — each negative is drawn
+at a centre close to some positive's centre, with condition as a secondary key — which equalises
+padding and template content between the classes. Packs rebuilding as `packs_v2`; the no-latent
+baseline must be re-run against them and must fall toward chance before any detection number is
+quoted.
+
+**Two lessons.** The paired shuffled-explanation null would have flagged this indirectly, but the
+cheap code-only baseline named the exact feature — worth running *before* the LLM stage, not
+after. And the LLM scoring *below* the confound baseline is itself informative: the scorers were
+apparently applying the description rather than exploiting the population prior, so the pilot's
+0.78 may be closer to honest signal than the 0.847 is to an upper bound.
+
+⚠️ **All pilot detection numbers (0.742 / 0.732 / 0.777) are provisional** and must be re-measured
+on `packs_v2`. The prompt A/B conclusion — terse2 ≥ verbose at 4.6× shorter — rests on a paired
+comparison where both arms saw identical windows, so the *ranking* is unaffected by a confound
+common to both arms; the absolute levels are not trustworthy.
+
 ### P4 explain waves — HALTED by the account monthly spend limit · 2026-08-21
 
 **State at halt.** Wave 0: 900/900, 0 errors. Wave 1: **880/900** — the final 20 agents (indices

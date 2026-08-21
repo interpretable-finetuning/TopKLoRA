@@ -247,9 +247,16 @@ for j in range(n_lat):
         seg = col[s:s + n]
         segz = pre[s:s + n, j].astype(np.float32)
         reg = tag_tok[r_i]
-        # SAME centre range as positives (>=2, prompt region, boundaries sentinel-padded), so
-        # padding and region cannot separate the two classes.
-        for p in range(2, n, MIN_SEP):
+        # SAME centre range as positives (>=2, prompt region, boundaries sentinel-padded).
+        #
+        # A stride of MIN_SEP starting at 2 is NOT enough: it oversamples sequence starts, where
+        # sentinel padding fills the window, while positives sit on activation peaks that are
+        # typically mid-sequence. Measured on the first build, negatives carried 3.70 <PAD> tokens
+        # on average against 1.22 for positives, and a classifier with NO latent access separated
+        # the classes at 0.847 balanced accuracy -- beating the LLM scorers, and making detection
+        # scores evidence about padding rather than about explanations. Candidates are therefore
+        # enumerated at EVERY position and the positional distribution is matched below.
+        for p in range(2, n):
             if reg[p] == 3:
                 continue
             w = seg[max(0, p - HALF):p + HALF]
@@ -262,22 +269,31 @@ for j in range(n_lat):
         continue
     strict = [c for c in cand_neg if c[0] < floor]
     neg_mode = "strict" if len(strict) >= N_TEST_NEG else "relaxed_lowest"
-    src = strict if neg_mode == "strict" else sorted(cand_neg)[:max(N_TEST_NEG * 3, 60)]
-    # condition-match to the positives' mix where the candidates allow it
-    chosen_neg, per_c = [], dict(quota)
-    rng.shuffle(src)
+    src = strict if neg_mode == "strict" else sorted(cand_neg)[:max(N_TEST_NEG * 6, 200)]
+
+    # POSITION-MATCHED selection. Each negative is drawn to sit at a centre position close to some
+    # positive's centre, which equalises how much sentinel padding and how much turn-template text
+    # the window contains. Condition is matched too, as a secondary key. Without this the classes
+    # are separable with no latent information at all (see the note above).
+    pos_positions = [p for _, _, p in test_pos] or [HALF]
+    by_cond = {}
     for wmax, r_i, p, zmax in src:
-        c = rows[r_i]["cond"]
-        if per_c.get(c, 0) > 0:
-            chosen_neg.append((r_i, p, zmax, wmax))
-            per_c[c] -= 1
-        if len(chosen_neg) >= N_TEST_NEG:
+        by_cond.setdefault(rows[r_i]["cond"], []).append((wmax, r_i, p, zmax))
+    chosen_neg, used = [], set()
+    want_seq = [rows[ri]["cond"] for _, ri, _ in test_pos]
+    rng.shuffle(want_seq)
+    for k in range(N_TEST_NEG):
+        target_p = pos_positions[k % len(pos_positions)]
+        cond_pref = want_seq[k % len(want_seq)] if want_seq else None
+        pool_c = by_cond.get(cond_pref) or [c for v in by_cond.values() for c in v]
+        cands = [c for c in pool_c if (c[1], c[2]) not in used]
+        if not cands:
+            cands = [c for v in by_cond.values() for c in v if (c[1], c[2]) not in used]
+        if not cands:
             break
-    for wmax, r_i, p, zmax in src:                  # top up if a condition ran dry
-        if len(chosen_neg) >= N_TEST_NEG:
-            break
-        if (r_i, p) not in {(a, b) for a, b, _, _ in chosen_neg}:
-            chosen_neg.append((r_i, p, zmax, wmax))
+        wmax, r_i, p, zmax = min(cands, key=lambda c: abs(c[2] - target_p))
+        used.add((r_i, p))
+        chosen_neg.append((r_i, p, zmax, wmax))
     assert len(chosen_neg) == N_TEST_NEG, f"{uid}: {len(chosen_neg)} negatives"
     negs = [(r_i, p, zmax) for r_i, p, zmax, _ in chosen_neg]
     neg_act_max = max(w for _, _, _, w in chosen_neg) / gmax

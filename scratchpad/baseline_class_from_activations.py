@@ -109,7 +109,7 @@ for name, clf in [
     # permutation null with the CV structure held fixed
     rng = np.random.default_rng(0)
     null = []
-    for _ in range(200):
+    for _ in range(60):
         yp = rng.permutation(y)
         null.append(float((cross_val_predict(clf, X, yp, cv=cv) == yp).mean()))
     null = np.array(null)

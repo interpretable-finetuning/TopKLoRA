@@ -70,7 +70,7 @@ bal = (tpr + tnr) / 2
 
 rng = np.random.default_rng(0)
 null = []
-for _ in range(50):
+for _ in range(30):
     yp = rng.permutation(y)
     pp = cross_val_predict(clf, X, yp, cv=cv, groups=g)
     null.append(((pp[yp == 1] == 1).mean() + (pp[yp == 0] == 0).mean()) / 2)

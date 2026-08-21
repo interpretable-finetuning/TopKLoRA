@@ -2014,6 +2014,35 @@ activations out of the contiguous ragged store, attaching another prompt's numbe
 cleaner windows. Coverage and class-composition checks are not bookkeeping — they are the only
 thing that would have caught either.
 
+### P4 explain waves — HALTED by the account monthly spend limit · 2026-08-21
+
+**State at halt.** Wave 0: 900/900, 0 errors. Wave 1: **880/900** — the final 20 agents (indices
+1779–1799) failed with "You've hit your monthly spend limit". Waves 2–4 never launched.
+
+| | obtained |
+|---|---|
+| **pool-800, the judge test set** | **799 / 799 available** ✅ |
+| total explanations | 1,780 / 3,952 |
+| tail latents unexplained | 2,172 |
+
+**The wave ordering saved the experiment.** Waves were deliberately ordered causally-screened-first
+so that an interruption would cost the atlas rather than the headline result. It did exactly that:
+every latent the blind-judge test needs is explained, and what was lost is the secondary
+interpretive map. (799 not 800 because one screened NULL latent could not supply enough windows and
+was already recorded as UNEXPLAINABLE-IN-BAND.)
+
+**What this blocks and what it does not.** The judge test itself is unblocked *scientifically* but
+still needs API budget: detect (~2,000 agents) and judge (~440) remain. Nothing further can run
+until the limit is raised — this is a user-controlled account limit, not something to route around.
+
+**Zero-cost work still available:** the two P0b baselines killed during the oversubscription
+incident are pure local CPU and were re-run with thread caps (see below).
+
+**Cost actually incurred by the waves:** wave 0 29.6M subagent tokens / 900 agents, wave 1 28.6M /
+880 — roughly **33k tokens per latent explained**, dominated by each fresh agent's own context
+rather than by the pack. Worth recording for planning: at that rate the full 3,952-latent atlas is
+~130M tokens, and the remaining detect+judge stages are ~2,440 agents.
+
 ### ⚠️ Operational: sklearn oversubscription starved the agent wave (and the shared node) · 2026-08-21
 
 Ran the two P0b baselines on CPU while the 900-agent explain wave was in flight, assuming they

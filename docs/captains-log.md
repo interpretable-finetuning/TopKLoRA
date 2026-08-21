@@ -2014,6 +2014,42 @@ activations out of the contiguous ragged store, attaching another prompt's numbe
 cleaner windows. Coverage and class-composition checks are not bookkeeping — they are the only
 thing that would have caught either.
 
+### P0b — the code-only baseline the judge must beat (2026-08-21)
+
+Rule 5: if code can answer, code answers. Before spending any agent on the blind class judge, ask
+whether cheap activation statistics already predict BRAKE/DRIVER/NULL with no LLM and no
+explanation at all. Seven features per latent (max post-gate, gate-on rate, mean activation,
+payload-region fire fraction, log triggered-vs-twin fire ratio, layer, projection type), stratified
+5-fold CV over latents, permutation null with the CV structure held fixed.
+
+**Logistic regression: accuracy 0.5813 vs a permutation null of 0.4979, p = 0.0000** (n=800,
+majority-class chance 0.5025, base-rate-proportional chance 0.3787).
+
+Per-class recall exposes what that number really is:
+
+| class | recall | | confusion (true → BRAKE, DRIVER, NULL) |
+|---|---|---|---|
+| BRAKE | 0.357 | | 81, 23, 123 |
+| DRIVER | 0.269 | | 29, 46, 96 |
+| NULL | **0.841** | | 42, 22, 338 |
+
+The classifier is mostly **predicting NULL and being right half the time**: it beats
+majority-class chance by only ~8 points, and it recovers barely a third of brakes and a quarter of
+drivers. So activation statistics carry *some* class information — significantly more than none —
+but overwhelmingly of the "is this latent doing anything at all" kind, not the signed
+brake-vs-driver distinction the safety claim rests on.
+
+**Consequences, both pre-registered:**
+- **0.5813 is the bar.** A blind judge scoring near it has added nothing over seven scalars, and
+  the write-up must say so regardless of how good the explanations read.
+- It **defuses the magnitude confound by measuring it** rather than arguing about it. The dry run
+  showed NULLs are an order of magnitude weaker, raising the worry that a judge could win on
+  "sounds weak" alone. That channel is now quantified: it is worth ~8 points over majority-class,
+  concentrated entirely in NULL recall. This replaces the planned magnitude-informed LLM judge arm,
+  which would have spent 800 agents estimating one logistic coefficient.
+
+GBM arm still running (200 permutation refits); the logistic number is the pre-registered reference.
+
 ### Explanation LENGTH — measured, not argued (2026-08-21)
 
 **Question from the supervisor:** the explanations look long; Neuronpedia's SAE descriptions are much

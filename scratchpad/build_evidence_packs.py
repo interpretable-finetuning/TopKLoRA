@@ -256,12 +256,17 @@ for j in range(n_lat):
         # the classes at 0.847 balanced accuracy -- beating the LLM scorers, and making detection
         # scores evidence about padding rather than about explanations. Candidates are therefore
         # enumerated at EVERY position and the positional distribution is matched below.
+        # Vectorised sliding-window max. Enumerating every position with a Python-level numpy
+        # slice per candidate made the build ~16x slower (a projected 20 hours); one strided view
+        # over the padded column gives every window's max in a single call.
+        segp = np.pad(seg, (HALF, HALF), constant_values=0.0)
+        segzp = np.pad(segz, (HALF, HALF), constant_values=0.0)
+        wmax = np.lib.stride_tricks.sliding_window_view(segp, CTX).max(axis=1)
+        zmax = np.lib.stride_tricks.sliding_window_view(segzp, CTX).max(axis=1)
         for p in range(2, n):
             if reg[p] == 3:
                 continue
-            w = seg[max(0, p - HALF):p + HALF]
-            cand_neg.append((float(w.max()), r_i, p,
-                             float(segz[max(0, p - HALF):p + HALF].max())))
+            cand_neg.append((float(wmax[p]), r_i, p, float(zmax[p])))
     if len(cand_neg) < N_TEST_NEG:
         shortfalls.append({"uid": uid, "reason": "too_few_test_windows",
                            "gmax": gmax, "n_train": len(train), "n_test_pos": len(test_pos),

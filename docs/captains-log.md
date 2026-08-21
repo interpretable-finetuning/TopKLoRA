@@ -2050,6 +2050,36 @@ after. And the LLM scoring *below* the confound baseline is itself informative: 
 apparently applying the description rather than exploiting the population prior, so the pilot's
 0.78 may be closer to honest signal than the 0.847 is to an upper bound.
 
+**After the fix (packs_v2): 0.847 → 0.738. Better, still not clean — and STOPPING HERE deliberately.**
+
+Position-matching removed most of the padding cue (`<PAD>` importance 0.141 → 0.026). The residual
+is led by a different surface difference:
+
+| feature | importance | pos | neg |
+|---|---|---|---|
+| `n_chars` | 0.118 | 158.1 | 151.1 |
+| `<RESP>` | 0.118 | 3.40 | 5.99 |
+| `<end_of_turn>` | 0.051 | 0.45 | 0.61 |
+
+Part is another fixable slip (matching used ABSOLUTE centre position, so a negative at position 40
+of a 300-token row sits mid-prompt while a positive at position 40 of a 60-token row sits beside
+the payload). But the larger part is **not an artefact at all**: pooled over latents, windows where
+some latent fires genuinely differ from windows where it does not, because latents fire on
+contentful structured positions — turn boundaries, tags, specific tokens — while non-firing windows
+skew to filler. A pooled no-latent classifier will therefore always beat chance, and the 0.60
+"clean" bar was never achievable in principle.
+
+Chasing each surface feature in turn would be tuning the apparatus until the check goes green,
+which is the failure mode Rule 12 and the no-p-hacking memory exist to prevent. So:
+
+**Pre-registered change to the detection readout, made now and before any detection number exists.**
+The ABSOLUTE detection level is not interpretable — it is confounded by a real population prior of
+measured strength (0.738). The **paired real-vs-shuffled-explanation difference becomes the primary
+readout**, and it is immune to any confound shared by both arms, because both see identical windows
+and differ only in whether the explanation belongs to the latent. The no-latent baseline is
+reported alongside as the size of the prior, not as a disqualifier. `packs_v2` is kept (strictly
+better than v1); relative-position matching is left as a stated, unexercised option.
+
 ⚠️ **All pilot detection numbers (0.742 / 0.732 / 0.777) are provisional** and must be re-measured
 on `packs_v2`. The prompt A/B conclusion — terse2 ≥ verbose at 4.6× shorter — rests on a paired
 comparison where both arms saw identical windows, so the *ranking* is unaffected by a confound

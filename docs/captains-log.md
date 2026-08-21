@@ -2014,6 +2014,30 @@ activations out of the contiguous ragged store, attaching another prompt's numbe
 cleaner windows. Coverage and class-composition checks are not bookkeeping — they are the only
 thing that would have caught either.
 
+### ⚠️ Operational: sklearn oversubscription starved the agent wave (and the shared node) · 2026-08-21
+
+Ran the two P0b baselines on CPU while the 900-agent explain wave was in flight, assuming they
+would not interact — the agents are API calls, the baselines are local compute. They interacted
+badly. The workflow ORCHESTRATOR is local, and sklearn's default threading (`cross_val_predict`
+over hundreds of permutation refits) spawned enough threads to take **7,330% CPU — 73 cores' worth
+on a 64-core box, load average 101** on a node shared with 31 other users.
+
+Symptom, misread at first: wave throughput fell from ~150 results per check to ~13, which looked
+like API-side rate limiting. The tell was the load average, not the log.
+
+On killing the baselines the wave went **768 → 838 within seconds** and load fell 101 → 68.
+
+Two lessons worth keeping:
+- **Local CPU work is not free during an agent wave.** Anything heavy needs
+  `OMP_NUM_THREADS`/`n_jobs` capped, or to wait until the wave drains.
+- **`pkill -f <name>` matches the whole command line**, so it also killed the polling shells whose
+  command line merely mentioned the script — half a dozen background waits died as collateral. Use
+  a pattern anchored to the interpreter and script path, or kill by recorded PID.
+
+The logistic class baseline (the pre-registered reference, 0.5813) had already completed. The GBM
+arm and the no-latent-access null were killed mid-permutation and must be re-run **after** the
+waves, with thread caps and fewer permutations.
+
 ### P0b — the code-only baseline the judge must beat (2026-08-21)
 
 Rule 5: if code can answer, code answers. Before spending any agent on the blind class judge, ask

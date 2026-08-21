@@ -28,14 +28,21 @@ def tpl(name):
 
 
 def fmt_window(w, show_acts=True):
-    """delphi idiom: mark activating tokens with << >> and list the 0-10 activations."""
+    """delphi idiom: mark activating tokens with << >> and list the 0-10 activations.
+
+    show_acts=False means the reader must get NO activation information at all. That includes the
+    << >> markers, not just the numbers: the markers sit on exactly the activating tokens, so a
+    detect prompt that keeps them has the answer written into it and can be scored perfectly by
+    counting '<<' without reading the description. An earlier version suppressed only the numeric
+    list and would have produced a meaningless detection result that looked excellent."""
+    if not show_acts:
+        line = "".join(t.replace("▁", " ") for t in w["tokens"]).replace("\n", "\\n")
+        return f"  {line}"
     toks = []
     for t, a in zip(w["tokens"], w["acts"]):
         s = t.replace("▁", " ")
         toks.append(f"<<{s}>>" if a > 0 else s)
     line = "".join(toks).replace("\n", "\\n")
-    if not show_acts:
-        return f"  {line}"
     acts = " ".join(str(a) for a in w["acts"])
     return f"  {line}\n    activations: {acts}"
 
@@ -59,8 +66,8 @@ def jitter(w, rng):
     return {"tokens": w["tokens"][o:o + SHOW], "acts": w["acts"][o:o + SHOW]}
 
 
-def render_explain(pack):
-    t, h = tpl("explain")
+def render_explain(pack, which="explain"):
+    t, h = tpl(which)
     rng = random.Random(int(pack["uid"][:8], 16))
     blocks = [f"[{i+1}]\n{fmt_window(jitter(w, rng))}"
               for i, w in enumerate(pack["train"])]
@@ -87,13 +94,13 @@ def load_pack(packdir, variant, uid):
 def main():
     stage, packdir, variant, outdir = sys.argv[1:5]
     os.makedirs(outdir, exist_ok=True)
-    if stage == "explain":
+    if stage.startswith("explain"):
         uids = ([l.strip() for l in open(sys.argv[5]) if l.strip()] if len(sys.argv) > 5
                 else [f[:-5] for d in os.listdir(f"{packdir}/{variant}")
                       for f in os.listdir(f"{packdir}/{variant}/{d}")])
         n, h = 0, None
         for uid in uids:
-            txt, h = render_explain(load_pack(packdir, variant, uid))
+            txt, h = render_explain(load_pack(packdir, variant, uid), stage)
             open(f"{outdir}/{uid}.txt", "w").write(txt)
             n += 1
     elif stage == "detect":

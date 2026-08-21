@@ -2014,6 +2014,86 @@ activations out of the contiguous ragged store, attaching another prompt's numbe
 cleaner windows. Coverage and class-composition checks are not bookkeeping — they are the only
 thing that would have caught either.
 
+### Explanation LENGTH — measured, not argued (2026-08-21)
+
+**Question from the supervisor:** the explanations look long; Neuronpedia's SAE descriptions are much
+shorter. Are these more complete, or just verbose?
+
+Made testable rather than aesthetic: an explanation is COMPLETE iff it lets a blind scorer find
+held-out activating windows. Ran both prompts over the same 30 pilot latents and scored both on
+**identical** test windows, so the comparison is paired.
+
+| arm | words | detection bal-acc | >chance | escape hatch |
+|---|---|---|---|---|
+| verbose (original) | 127.8 | 0.7417 | 26/30 | 1/30 |
+| terse (≤25 words) | 19.6 | 0.7317 | 27/30 | **6/30** |
+
+Paired difference **+0.010, 95% CI [−0.059, +0.100]** — no significant difference. **108 extra
+words per explanation buy nothing measurable.** What made them long was narrating the evidence
+("peaks at 10 on its second token, then 5 on its third"), which is dead weight because the scorer
+sees no activation values at all.
+
+**But the null is the average of two opposite effects:**
+
+| subset | verbose | terse |
+|---|---|---|
+| the 24 where terse described something | 0.752 | **0.779** |
+| the 6 where terse said "no clear selectivity" | **0.700** | 0.542 |
+
+Terse descriptions are BETTER when written; the escape hatch is what costs it. Hence `explain_terse2`,
+which keeps the ≤30-word limit but forbids answering only "no pattern" — it must name the closest
+pattern it can find and label it weak.
+
+**Three-arm result (all paired on the same windows) — terse2 adopted:**
+
+| arm | words | bal-acc | median | >chance | gave up |
+|---|---|---|---|---|---|
+| verbose | 127.8 | 0.7417 | 0.750 | 26/30 | 0 |
+| terse | 19.6 | 0.7317 | 0.750 | 27/30 | 6 |
+| **terse2** | **27.8** | **0.7767** | **0.775** | **29/30** | **0** |
+
+And it behaves exactly as the mechanism predicts — it keeps terse's advantage where terse wrote a
+description, and recovers the ground terse lost where it gave up:
+
+| subset | verbose | terse | terse2 |
+|---|---|---|---|
+| the 6 where terse gave up | 0.7000 | 0.5417 | **0.7625** |
+| the other 24 | 0.7521 | 0.7792 | **0.7802** |
+
+**Honest limits.** Paired CIs at n=30 include zero (verbose−terse2 −0.035 [−0.085, +0.011];
+terse−terse2 −0.045 [−0.126, +0.012]), so the improvement is not individually significant. What
+justifies adopting terse2 is the combination: no evidence of cost on any measure, best on all four
+summary statistics, **4.6× shorter than verbose**, and a large effect on the pre-identified subset
+where a known mechanism says it should help. Prompt frozen at sha256 `aad52db2d239d437`.
+
+**Balance-inference check (owed from the design): PASSES.** Predicted-positive counts are widely
+spread (verbose sd 8.4, range 5–40; terse sd 5.9, range 5–30), so scorers did not infer the hidden
+20/20 balance. The binomial null stands; the hypergeometric one is not needed.
+
+**Both arms detect well above chance (~0.74, 26–27 of 30 latents),** which is the first evidence
+that these explanations carry real feature identity rather than plausible prose.
+
+⚠️ **Caveat to carry into the write-up:** the pilot set was used to CHOOSE the prompt, so pilot
+detection numbers are optimistic for the selected arm. The full run scores fresh latents, so those
+are clean; and the headline judge test was never used for tuning.
+
+### ⚠️ Detect prompts had the answer written into them (caught 2026-08-21, before any result was used)
+
+`fmt_window(show_acts=False)` was meant to give the scorer no activation information. It suppressed
+the numeric activation list — but **not** the `<<token>>` markers, which sit on exactly the
+activating tokens. Every detect prompt therefore carried the answer key inline: a scorer could hit
+100% by counting `<<` and never reading the description.
+
+Found by reading a rendered prompt rather than by any check, four agents into the run, which was
+killed. The failure mode is the one the red team named as the sharpest possible null — a detection
+score explainable with **no access to the latent at all** — and it would have produced a
+spectacular, meaningless result that confirmed the method.
+
+Fix: `show_acts=False` now strips the markers as well as the numbers; verified **0 occurrences of
+`<<` across all 60 detect prompts**. Standing lesson: "hide the activations" is not one flag, it is
+every channel that encodes them — the numbers, the markers, and (per the separate jitter fix) the
+window geometry.
+
 ### P2 verification over all 7,904 packs (2026-08-21) — PASS, after two of the CHECKS were wrong
 
 `verify_packs.py` runs blindness, shape, separation and count checks over every pack in both

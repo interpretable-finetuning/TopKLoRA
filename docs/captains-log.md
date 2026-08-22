@@ -2014,6 +2014,48 @@ activations out of the contiguous ragged store, attaching another prompt's numbe
 cleaner windows. Coverage and class-composition checks are not bookkeeping — they are the only
 thing that would have caught either.
 
+### Delphi-scale recapture — and the confound gets WORSE, which settles the question · 2026-08-22
+
+**The supervisor's criticism was right and is now fixed at the corpus level.** The original capture
+covered 146,675 token positions against delphi's own `n_tokens=10M` default. `stream_capture.py`
+keeps per-latent top-K windows in one pass instead of materialising an ~80 GB tensor:
+
+| | old capture | capture_v2 |
+|---|---|---|
+| token positions | 146,675 | **6,368,406** (43×) |
+| sequences | 1,846 | 28,000 |
+| corpus | Alpaca prompts, one chat template | + **10,000 pile-10k documents** (web, code, academic, books) |
+| latents with ≥40 top windows | 3,978 | **4,032 / 4,032** |
+| packs built | 3,952 (78 short) | **4,032 (0 short)** |
+
+`min_examples` no longer has to be relaxed, and every latent is now explainable in-band — the two
+symptoms that should have told me the corpus was too small.
+
+**The decisive result: a bigger, more varied corpus made the no-latent confound WORSE, not better.**
+
+| packs | no-latent-access balanced accuracy |
+|---|---|
+| v1 (small corpus, padding artefact) | 0.847 |
+| v2 (position-matched negatives) | 0.777 |
+| **v3 (6.4M tokens, diverse)** | **0.869** |
+
+This is the strongest evidence yet that the residual is **not an artefact to be engineered away**.
+Diversity differentiates latents — a code latent's windows really do look unlike its non-firing
+windows — so the population prior *grows* with corpus quality. The dominant cues are content
+(`n_chars` importance 0.239 at ratio 1.03; `n_short_tok` 0.157 at 0.86), not structure. **The
+pre-registered decision to make the PAIRED real-vs-shuffled difference the primary detection
+readout is therefore confirmed by the very intervention that was meant to rescue the absolute
+number.**
+
+**One genuine bug found alongside, and fixed for future runs but NOT re-run.** The capture sampled
+negative candidates from `range(HALF, n-HALF)`, so a negative can never sit near a boundary and
+never carries sentinel padding, while positives can — making `<PAD>` a perfect positives-only tell
+(0.815 vs 0.000). Same class as the v2 imbalance, inverted. Fixed in `stream_capture.py`. Deliberately
+NOT re-captured, because: its importance is 0.031 against `n_chars` at 0.239 so it moves the number
+little; the headline **judge test uses explanations only and is untouched by it**; and the detection
+readout it does affect is the paired difference, which is immune to any cue shared by both arms.
+Stated here rather than silently carried.
+
 ### 🚨 INFRASTRUCTURE: the HF cache was wiped — base model weights are GONE · 2026-08-22
 
 `~/.cache` is a symlink to `/scratch/network/ssd/marek/.cache`, and **that target no longer

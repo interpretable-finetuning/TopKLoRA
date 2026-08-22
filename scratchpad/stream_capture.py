@@ -209,8 +209,12 @@ def _process(idxs):
         # any position-matching rule later without a second pass.
         # Cost: N_SAMPLE x 4032 x 2 bytes -- 161 MB at 20k positions.
         if a.shape[0] > CTX + 2:
-            for p in rng.sample(range(HALF, a.shape[0] - HALF),
-                                min(6, a.shape[0] - CTX)):
+            # Sample the FULL position range, not range(HALF, n-HALF). Restricting it means a
+            # negative can never sit near a sequence boundary and so never carries sentinel
+            # padding, while positives can -- which made <PAD> a perfect positives-only tell
+            # (0.815 vs 0.000). Same class of bug as the v2 padding imbalance, inverted.
+            for p in rng.sample(range(2, a.shape[0]),
+                                min(6, max(a.shape[0] - 2, 1))):
                 negseen[0] += 1
                 if len(neg_pool) < N_SAMPLE:
                     neg_pool.append((sidx, int(p)))

@@ -22,6 +22,11 @@ S=.claude/worktrees/autointerp-dryrun/scratchpad
 J=clcd_results/autointerp/judge_local
 MODEL="${MODEL:-Qwen/Qwen2.5-32B-Instruct}"
 BS="${BS:-4}"
+# The first run of this script died with CUDA OOM partway through cell v1: explain prompts reach
+# 6,500 tokens and a fixed batch of 4 does not fit beside other users' processes on a shared GPU.
+# The runner now batches by token budget and splits on OOM; this is the allocator hint the error
+# itself recommended.
+export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
 for CELL in v1 v3; do
   echo "############ EXPLAIN cell $CELL ############"

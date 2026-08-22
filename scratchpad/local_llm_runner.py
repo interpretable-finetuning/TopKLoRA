@@ -42,6 +42,9 @@ ap.add_argument("--max-new", type=int, default=0)
 a = ap.parse_args()
 
 MAXNEW = a.max_new or {"explain": 80, "detect": 260, "judge": 120}[a.stage]
+# Total padded tokens per batch (prompt + generated). Overridable because the GPUs are shared and
+# the headroom is not ours to assume.
+TOKBUDGET = int(os.environ.get("L_TOKBUDGET", "8192"))
 
 files = sorted(glob.glob(f"{a.prompt_dir}/*.txt"))
 files = [f for f in files if not os.path.basename(f).startswith("_")]
@@ -89,38 +92,100 @@ def parse(stage, text):
 
 
 res, failed = {}, []
-t0 = time.time()
-for s in range(0, len(files), a.bs):
-    chunk = files[s:s + a.bs]
-    prompts = [tok.apply_chat_template(
-        [{"role": "user", "content": open(f).read()}],
-        tokenize=False, add_generation_prompt=True) for f in chunk]
-    enc = tok(prompts, return_tensors="pt", padding=True, truncation=True,
+
+# RESUME. An 88-minute wave that dies at minute 80 must not start over. Anything already parsed
+# into the same output file is kept, and its prompt is skipped.
+if os.path.exists(a.out):
+    prev = json.load(open(a.out))
+    res = prev.get("results", {})
+    print(f"[local] resuming: {len(res)} already done in {a.out}", flush=True)
+
+rendered = {}
+for f in files:
+    key = os.path.basename(f)[:-4]
+    if key not in res:
+        rendered[key] = tok.apply_chat_template(
+            [{"role": "user", "content": open(f).read()}],
+            tokenize=False, add_generation_prompt=True)
+todo = sorted(rendered, key=lambda k: len(rendered[k]))
+print(f"[local] {len(todo)} to generate, {len(files) - len(todo)} already done", flush=True)
+
+# TOKEN-BUDGET BATCHING, not a fixed batch size. An explain prompt carries 40 windows and runs
+# ~10x the length of a judge prompt, so one --bs cannot be right for both stages: the value that
+# is safe for judge prompts OOMs on explain prompts, which is exactly how the first 2x2 run died
+# at 44.40 GiB. Cap each batch by TOTAL PADDED TOKENS, including what generation will append, so
+# long prompts automatically get smaller batches. Same failure and same fix as stream_capture.py.
+lens = {k: len(tok(rendered[k], add_special_tokens=False).input_ids) for k in todo}
+batches, cur = [], []
+for k in todo:
+    trial = cur + [k]
+    if cur and (max(lens[x] for x in trial) + MAXNEW) * len(trial) > TOKBUDGET:
+        batches.append(cur)
+        cur = [k]
+    else:
+        cur = trial
+    if len(cur) >= a.bs:
+        batches.append(cur)
+        cur = []
+if cur:
+    batches.append(cur)
+print(f"[local] {len(batches)} batches, token budget {TOKBUDGET}, cap {a.bs}/batch, "
+      f"longest prompt {max(lens.values()) if lens else 0} tokens", flush=True)
+
+
+def _run(keys):
+    enc = tok([rendered[k] for k in keys], return_tensors="pt", padding=True, truncation=True,
               max_length=8192, add_special_tokens=False).to(model.device)
     with torch.no_grad():
         out = model.generate(**enc, max_new_tokens=MAXNEW, do_sample=False,
                              pad_token_id=tok.pad_token_id)
-    for f, o in zip(chunk, out):
+    for k, o in zip(keys, out):
         gen = tok.decode(o[enc["input_ids"].shape[1]:], skip_special_tokens=True)
-        key = os.path.basename(f)[:-4]
         p = parse(a.stage, gen)
         if p is None:
             # Full text, not a 200-char preview: a parser bug is then fixable by re-parsing this
             # file instead of re-running the GPU. The first version truncated, and the first
             # parser bug that hit was one where the answer sat past the cut.
-            failed.append({"key": key, "raw": gen})
+            failed.append({"key": k, "raw": gen})
         else:
-            res[key] = p
-    if (s // a.bs) % 10 == 0:
-        el = time.time() - t0
-        rate = (s + len(chunk)) / max(el, 1e-9)
-        print(f"[local] {s + len(chunk)}/{len(files)}  {el:.0f}s  "
-              f"({rate:.2f}/s, eta {(len(files) - s - len(chunk)) / max(rate, 1e-9) / 60:.0f}m)",
-              flush=True)
+            res[k] = p
 
-json.dump({"stage": a.stage, "model": a.model, "n": len(res),
-           "results": res, "failed": failed},
-          open(a.out, "w"), indent=1)
+
+def process(keys):
+    """One batch; on CUDA OOM split and retry so one bad batch degrades instead of killing the
+    wave. These GPUs are shared, so the memory available to us moves during a run."""
+    try:
+        _run(keys)
+    except torch.OutOfMemoryError:
+        torch.cuda.empty_cache()
+        if len(keys) == 1:
+            print(f"[local] OOM on a SINGLE prompt ({keys[0]}, {lens[keys[0]]} tokens) -- "
+                  f"recorded as a failure, not silently dropped", flush=True)
+            failed.append({"key": keys[0], "raw": "<CUDA OOM at batch size 1>"})
+            return
+        mid = len(keys) // 2
+        print(f"[local] OOM on {len(keys)} prompts -- splitting and retrying", flush=True)
+        process(keys[:mid])
+        process(keys[mid:])
+
+
+def save():
+    json.dump({"stage": a.stage, "model": a.model, "n": len(res),
+               "results": res, "failed": failed}, open(a.out, "w"), indent=1)
+
+
+t0, done = time.time(), 0
+for bi, b in enumerate(batches):
+    process(b)
+    done += len(b)
+    if bi % 10 == 0:
+        save()                    # checkpoint: a crash now costs one batch, not the whole wave
+        el = time.time() - t0
+        rate = done / max(el, 1e-9)
+        print(f"[local] {done}/{len(todo)}  {el:.0f}s  "
+              f"({rate:.2f}/s, eta {(len(todo) - done) / max(rate, 1e-9) / 60:.0f}m)", flush=True)
+
+save()
 print(f"\n[local] {len(res)}/{len(files)} parsed, {len(failed)} unparseable "
       f"({time.time()-t0:.0f}s) -> {a.out}")
 if failed:
@@ -131,6 +196,6 @@ if failed:
 # on a result set that is mostly parse failures.
 rate = len(res) / max(len(files), 1)
 assert rate >= 0.5, (
-    f"only {rate:.1%} of {len(files)} responses parsed ({len(failed)} failed). This is a PARSER "
-    f"or PROMPT failure, not a result -- the analysis would score it as chance. "
+    f"only {rate:.1%} of {len(files)} responses parsed ({len(failed)} failed this run). This is a "
+    f"PARSER or PROMPT failure, not a result -- the analysis would score it as chance. "
     f"First raw response: {failed[0]['raw'][:300]!r}")

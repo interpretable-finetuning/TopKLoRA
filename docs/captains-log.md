@@ -2783,7 +2783,66 @@ selective overall, 180/799 in the pool), `out_{power,class,single}.json`,
 Code: `scratchpad/{local_llm_runner,analyze_judge,analyze_single_arm,prove_judge_analysis_fails}.py`,
 `scratchpad/run_local_judge.sh`, `P_CONDSEL` mode in `scratchpad/probe_A_gradfidelity.py`.
 
-**Running (launched 2026-08-22).** An explainer × corpus 2×2 on the same local model, to separate
+### P5 follow-up — the explainer × corpus 2×2: the corpus was the binding constraint · 2026-08-22
+
+Re-explaining on the delphi-scale corpus would have changed the explainer and the corpus in one
+step, so three cells were run to attribute the difference. The fourth needs API budget and is
+reported as **unrun, not interpolated**.
+
+|  | v1 packs (146,675 pos) | v3 packs (6,368,406 pos) |
+|---|---|---|
+| **Opus** | κ = 0.0917 [0.060, 0.123] | **unrun** |
+| **Qwen-32B** | κ = 0.0375 [0.012, 0.062] | κ = **0.1421** [0.117, 0.167] |
+
+All three cells: n = 799, 240 judge prompts each, 0 unparseable. Explanations 799/799 parsed in
+both explain waves (~96 min per wave on two A40s).
+
+**CORPUS effect (explainer fixed at Qwen-32B): κ 0.0375 → 0.1421, +0.1047, CIs DO NOT OVERLAP.**
+The 43× corpus nearly quadruples the causal-class information recoverable from an explanation.
+This is the single largest effect measured in the whole autointerp line, and it vindicates the
+standing criticism that 146,675 positions was too small a corpus to explain 4032 latents from.
+
+**EXPLAINER effect (corpus fixed at v1): κ 0.0917 → 0.0375, −0.0543, CIs overlap marginally**
+(Opus low 0.0600 vs Qwen high 0.0616). Suggestive, not established at this n. The mechanism is
+visible in the text: on the *same* windows Opus names chat structure (turn boundaries, `<RESP>`
+placeholders, headers) in 589 of 799 explanations against Qwen's 174, and names the tag/payload in
+356 against 61.
+
+**What the corpus changed in the explanations themselves.** Length is unchanged (median 22 words
+both cells) and all 799 v3 explanations differ from their v1 counterparts. Structure mentions
+*fall* 174 → 132 while tag/payload mentions *rise* 61 → 95: with 10,000 pile documents in the
+corpus, top windows are no longer dominated by chat-template scaffolding, so explanations describe
+content instead of position. Note also that the no-mention stratum inverts between cells — in v1 it
+runs *above* the full set (0.0519 vs 0.0375), in v3 *below* it (0.0847 vs 0.1421) — so in v3 part
+of the gain genuinely does come from the 95 explanations that name the tag or payload.
+
+**The headline negative survives.** Every cell, including the best, **fails the pre-registered
+comparator**: Qwen×v3 accuracy 0.5181 (CI low 0.4985) against the P0b code-only baseline of
+**0.5813**. Explanations still lose to seven cheap activation scalars.
+
+**Decision-relevant, and stated as a projection rather than a result.** If the two effects were
+additive on κ, Opus×v3 would land near 0.196 — roughly twice the pre-registered Opus×v1 figure.
+That is an extrapolation from three points with no interaction term, and it is **not** a
+measurement; it is recorded only because it bears on whether the Opus×v3 arm is worth API budget.
+Note the gap it would have to close is in *accuracy*, where Qwen×v3 sits 0.063 below the baseline.
+
+**Caveat.** The corpus contrast is measured with the weaker explainer, so a *larger* corpus effect
+under Opus cannot be excluded and the +0.105 should be read as this explainer's response to the
+corpus, not as the corpus effect in general.
+
+Artifacts: `clcd_results/autointerp/judge_local/{expl_qwen_v1,expl_qwen_v3}.json`,
+`analysis_class_qwen_v{1,3}.{json,txt}`, `explain2x2.out`.
+Code: `scratchpad/{run_local_explain_2x2.sh,compare_2x2.py}`.
+
+**Infrastructure note (Rule 12-adjacent).** The first 2×2 launch died ~20 min in with CUDA OOM:
+batches were capped by sequence count, but explain prompts reach 6,501 tokens against a judge
+prompt's ~700, and the GPUs are shared. Fixed with token-budget batching, recursive OOM splitting,
+`expandable_segments:True`, and per-10-batch checkpointing with resume — the old code wrote output
+only at the end, so the crash cost the entire wave. Smoke-tested on the **12 longest** prompts, the
+input class that actually failed, not a random sample.
+
+
+**Was running, now complete (see the 2×2 above).** An explainer × corpus 2×2 on the same local model, to separate
 the two factors that would otherwise change together when re-explaining on the delphi-scale
 corpus: Qwen×v1 packs (146k positions) vs Qwen×v3 packs (6.37M). Qwen×v1 against the existing
 Opus×v1 isolates the **explainer** effect; Qwen×v1 against Qwen×v3 isolates the **corpus** effect.

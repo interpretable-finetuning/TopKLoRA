@@ -192,6 +192,33 @@ either: P0 put the reliability ceiling at &kappa;&nbsp;=&nbsp;0.803.</p>
 The power control establishes a floor on apparatus adequacy, not that a stronger judge would do no
 better. An Opus judge arm is <em>unrun</em>, not interpolated.</p>
 
+<h2><span class="tag t-warn">NEW</span>The corpus was the binding constraint &mdash; a 43&times; corpus quadruples &kappa;</h2>
+<p>Re-explaining on the delphi-scale corpus would have changed explainer and corpus together, so
+three cells were run to attribute the difference. The fourth needs API budget and is reported as
+unrun, not interpolated.</p>
+<div class="tw"><table>
+<thead><tr><th></th><th>v1 packs &mdash; 146,675 pos</th><th>v3 packs &mdash; 6,368,406 pos</th></tr></thead>
+<tbody>
+<tr><td><strong>Opus</strong></td><td>&kappa; = 0.0917 [0.060, 0.123]</td><td><em>unrun</em></td></tr>
+<tr><td><strong>Qwen-32B</strong></td><td>&kappa; = 0.0375 [0.012, 0.062]</td><td class="big">&kappa; = 0.1421 [0.117, 0.167]</td></tr>
+</tbody></table></div>
+<p><strong>Corpus effect</strong> (explainer fixed): &kappa; 0.0375&nbsp;&rarr;&nbsp;0.1421,
+<strong>+0.1047, CIs do not overlap</strong>. The 43&times; corpus nearly quadruples the
+causal-class information recoverable from an explanation &mdash; the largest effect measured
+anywhere in this line of work.</p>
+<p><strong>Explainer effect</strong> (corpus fixed): &kappa; 0.0917&nbsp;&rarr;&nbsp;0.0375,
+&minus;0.0543, but the CIs overlap marginally (0.0600 vs 0.0616), so this is suggestive rather
+than established. The mechanism is visible in the text: on the <em>same</em> windows Opus names
+chat structure in 589 of 799 explanations against Qwen&rsquo;s 174.</p>
+<p><strong>The headline negative survives.</strong> Every cell, including the best, fails the
+pre-registered comparator: Qwen&times;v3 accuracy 0.5181 (CI low 0.4985) against the code-only
+baseline of <strong>0.5813</strong>. Explanations still lose to seven cheap activation scalars.</p>
+<div class="note b"><strong>A projection, flagged as such.</strong> If the two effects were
+additive on &kappa;, Opus&times;v3 would land near 0.196 &mdash; about twice the pre-registered
+figure. That is an extrapolation from three points with no interaction term, <em>not</em> a
+measurement. It is recorded only because it bears on whether the Opus&times;v3 arm is worth API
+budget; the gap it must close is in accuracy, where Qwen&times;v3 sits 0.063 below the baseline.</div>
+
 <h2><span class="tag t-acc">METHOD</span>Checks that fired, including on themselves</h2>
 <p>Recorded because each would have produced a confident wrong answer.</p>
 <div class="tw"><table>

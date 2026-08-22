@@ -118,10 +118,23 @@ windows at <strong>0.847</strong> (null 0.499, p&nbsp;=&nbsp;0.0000) &mdash; bea
 scorers&rsquo; ~0.78. Permutation importance named the cue: negatives carried 3.7
 <code>&lt;PAD&gt;</code> tokens against 1.2 for positives, because negative centres were enumerated
 from position 2 and oversampled sequence starts.</p>
-<p>Position-matching cut it to <strong>0.777</strong> on the full 3,954-pack build, but a large residual remains &mdash; and it is
+<p>Position-matching cut it to <strong>0.777</strong>, and then a 43&times;-larger, genuinely
+diverse corpus pushed it back <em>up</em> to <strong>0.869</strong> &mdash; the opposite of the
+intended effect, and the clearest evidence that a large residual is not an artefact &mdash; and it is
 partly <em>not</em> an artefact: pooled over latents, windows where some latent fires genuinely
 differ from windows where it does not, because latents fire on structured positions while non-firing
 windows skew to filler. A pooled no-latent classifier will always beat chance windows skew to filler. A pooled no-latent classifier will always beat chance.</p>mdash; and at 0.777 it now essentially <em>matches</em> the LLM scorers.</p>
+<div class="tw"><table>
+<thead><tr><th>pack build</th><th>corpus</th><th>no-latent balanced accuracy</th></tr></thead>
+<tbody>
+<tr><td>v1</td><td>146,675 positions</td><td>0.847</td></tr>
+<tr><td>v2 (position-matched negatives)</td><td>146,675 positions</td><td>0.777</td></tr>
+<tr><td><strong>v3</strong></td><td><strong>6,368,406 positions + pile-10k</strong></td><td class="big">0.869</td></tr>
+</tbody></table></div>
+<p>Diversity <em>differentiates</em> latents &mdash; a code-selective latent&rsquo;s firing windows
+genuinely look unlike its non-firing ones &mdash; so the population prior grows with corpus quality.
+The dominant cues are now content (<code>n_chars</code> importance 0.239 at ratio 1.03) rather than
+structure.</p>
 <div class="note b"><strong>Pre-registered change, made before any detection number exists.</strong>
 The absolute detection level is not interpretable. The <strong>paired real-vs-shuffled-explanation
 difference</strong> becomes the primary readout &mdash; immune to any confound shared by both arms,
@@ -129,6 +142,23 @@ since both see identical windows and differ only in whether the explanation belo
 The no-latent baseline is reported as the measured size of the prior, not as a disqualifier.
 All pilot detection <em>levels</em> above are provisional; the terse-v2 <em>ranking</em> survives,
 because both arms saw identical windows.</div>
+
+<h2><span class="tag t-ok">FIXED</span>The corpus was 68&times; too small &mdash; now at delphi scale</h2>
+<p>The supervisor observed that a standard autointerp run caches tens of millions of tokens. The
+original capture covered 146,675 positions against delphi&rsquo;s own 10M default. Two symptoms had
+been logged and misread: <code>min_examples</code> had to drop from 200 to 40, and a large share of
+explanations came back &ldquo;broad, weak&rdquo;.</p>
+<div class="tw"><table>
+<thead><tr><th></th><th>old capture</th><th>capture_v2</th></tr></thead>
+<tbody>
+<tr><td>token positions</td><td>146,675</td><td class="big">6,368,406</td></tr>
+<tr><td>sequences</td><td>1,846</td><td>28,000</td></tr>
+<tr><td>corpus</td><td>Alpaca prompts, one template</td><td>+ 10,000 pile documents</td></tr>
+<tr><td>latents with &ge;40 windows</td><td>3,978</td><td class="big">4,032 / 4,032</td></tr>
+<tr><td>packs built</td><td>3,952 (78 short)</td><td class="big">4,032 (0 short)</td></tr>
+</tbody></table></div>
+<p>Streaming keeps per-latent top-K windows in one pass rather than materialising the ~80 GB tensor
+the old design would need at this scale. <code>min_examples</code> no longer needs relaxing.</p>
 
 <h2><span class="tag t-warn">BLOCKED</span>What the spend limit stopped, and what it would cost</h2>
 <p>Wave 0 completed 900/900; wave 1 reached 880/900 before hitting the account monthly spend limit.

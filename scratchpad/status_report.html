@@ -40,8 +40,9 @@ code{font:12.8px "JetBrains Mono",monospace;color:var(--muted)}
 <main>
 <h1>Autointerp Run Status</h1>
 <p class="sub">Where the l15&ndash;23 seed-43 sleeper-circuit autointerp run stands: what is established,
-what is provisional, and what a spend limit is currently blocking. All numbers below are measured,
-not projected.</p>
+what is provisional, and what the headline test returned. The blind judge has now run &mdash; on a
+local 32B, at zero API cost &mdash; and the answer is a negative that the power control makes
+readable. All numbers below are measured, not projected.</p>
 
 <h2><span class="tag t-ok">SETTLED</span>Brake exclusion is specific &mdash; 3/3 valid nulls</h2>
 <p>The S2.2 result now has the control it was missing. Excluding 227 causally-inert latents leaves
@@ -160,31 +161,36 @@ explanations came back &ldquo;broad, weak&rdquo;.</p>
 <p>Streaming keeps per-latent top-K windows in one pass rather than materialising the ~80 GB tensor
 the old design would need at this scale. <code>min_examples</code> no longer needs relaxing.</p>
 
-<h2><span class="tag t-warn">BLOCKED</span>What the spend limit stopped, and what it would cost</h2>
-<p>Wave 0 completed 900/900; wave 1 reached 880/900 before hitting the account monthly spend limit.
-Waves 2&ndash;4 never ran. Because waves were ordered causally-screened-first, the loss fell on the
-secondary atlas rather than the headline test.</p>
+<h2><span class="tag t-bad">ANSWERED</span>The blind judge test &mdash; explanations barely predict causal class</h2>
+<p>Run on a <strong>local Qwen2.5-32B</strong> across two A40s, so it cost GPU hours and no API
+budget. 799 pool latents, the existing Opus explanations, 10 per prompt, 3 interleaved rounds,
+majority vote. <strong>680/680 responses parsed.</strong></p>
 <div class="tw"><table>
-<thead><tr><th></th><th>obtained</th></tr></thead>
+<thead><tr><th>arm</th><th>n</th><th>accuracy</th><th>Cohen&rsquo;s &kappa;</th><th>95% CI</th></tr></thead>
 <tbody>
-<tr><td><strong>pool-800 &mdash; the judge test set</strong></td><td class="big">799 / 799 available</td></tr>
-<tr><td>total explanations</td><td>1,780 / 3,952</td></tr>
-<tr><td>tail latents lost</td><td>2,172 (atlas only)</td></tr>
+<tr><td><strong>power control</strong> (marker-selectivity)</td><td>799</td><td>0.6245</td><td class="big">0.2195</td><td>[0.181, 0.259]</td></tr>
+<tr><td><strong>causal class, batched</strong></td><td>799</td><td>0.4731</td><td class="big">0.0917</td><td>[0.060, 0.123]</td></tr>
+<tr><td>class, no-mention stratum <em>(pre-registered headline)</em></td><td>443</td><td>0.5508</td><td>0.1019</td><td>[0.068, 0.137]</td></tr>
+<tr><td><strong>class, unbatched replication</strong></td><td>200</td><td>0.4100</td><td class="big">&minus;0.0547</td><td>[&minus;0.147, 0.041]</td></tr>
 </tbody></table></div>
-<p>Measured cost is <strong>~33k tokens per agent</strong>, dominated by each fresh agent&rsquo;s
-own context rather than the evidence pack. Crucially, <strong>detect is not an input to the judge
-test</strong> &mdash; the judge needs only explanations, which are already in hand.</p>
-<div class="tw"><table>
-<thead><tr><th>option</th><th>agents</th><th>~tokens</th><th>delivers</th></tr></thead>
-<tbody>
-<tr><td><strong>B &mdash; headline only</strong></td><td class="big">~440</td><td class="big">~13M</td><td>the blind judge test</td></tr>
-<tr><td>C &mdash; + paired detect on 200 latents</td><td>~840</td><td>~25M</td><td>+ real-vs-shuffled difference</td></tr>
-<tr><td>A &mdash; as originally planned</td><td>~2,440</td><td>~73M</td><td>+ detect across pool and tail</td></tr>
-</tbody></table></div>
-<p>Recommended model split: <strong>Sonnet for detect</strong> (applied classification, and the
-paired design absorbs a uniformly weaker scorer), <strong>Opus for the judge</strong> (genuine
-inference, and the cheap stage). Worth verifying with 30 Sonnet agents against existing Opus
-results before committing to ~2,000.</p>
+<p><strong>The apparatus is not the problem.</strong> The same judge, on the same explanations,
+with the same batching, recovers <em>marker-selectivity</em> at &kappa;&nbsp;=&nbsp;0.2195
+(p&nbsp;=&nbsp;0.0002, 70% recall on the minority class). So the weak class result is a finding
+rather than a broken pipeline &mdash; which is exactly what the power control was pre-registered
+to decide.</p>
+<p><strong>The judge loses to the code-only baseline.</strong> Accuracy 0.4731 against
+<strong>0.5813</strong> from seven cheap activation scalars. The explanation is worse at predicting
+causal class than the activation statistics it was written from.</p>
+<p><strong>And the small effect does not replicate.</strong> One latent per prompt gives
+&kappa;&nbsp;=&nbsp;&minus;0.055 (p&nbsp;=&nbsp;0.89); its CI upper bound sits just below the
+batched estimate. Batching lets the model balance classes within a prompt, which can manufacture
+agreement with the base rates.</p>
+<p>Removing the 356 explanations naming the tag or payload <em>raised</em> &kappa; slightly
+(0.1019), so the residual signal is not regex-matching the trigger. Label noise is not the limit
+either: P0 put the reliability ceiling at &kappa;&nbsp;=&nbsp;0.803.</p>
+<p class="note w"><strong>Caveat that travels with this.</strong> The judge is Qwen2.5-32B, not Opus.
+The power control establishes a floor on apparatus adequacy, not that a stronger judge would do no
+better. An Opus judge arm is <em>unrun</em>, not interpolated.</p>
 
 <h2><span class="tag t-acc">METHOD</span>Checks that fired, including on themselves</h2>
 <p>Recorded because each would have produced a confident wrong answer.</p>

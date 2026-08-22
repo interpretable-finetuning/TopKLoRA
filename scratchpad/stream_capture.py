@@ -47,7 +47,8 @@ BASE = os.environ.get("S_BASE", "google/gemma-2-2b")
 N_EVAL = int(os.environ.get("S_NEVAL", "6000"))       # rows per condition from [0:N_EVAL]
 N_PILE = int(os.environ.get("S_NPILE", "6000"))       # pile documents
 MAXLEN = int(os.environ.get("S_MAXLEN", "512"))       # truncate long pile docs
-BS = int(os.environ.get("S_BS", "16"))
+BS = int(os.environ.get("S_BS", "64"))            # max sequences per batch
+TOK_BUDGET = int(os.environ.get("S_TOKBUDGET", "8192"))  # max padded tokens per batch
 TOPK = int(os.environ.get("S_TOPK", "300"))           # windows kept per latent
 N_SAMPLE = int(os.environ.get("S_NSAMPLE", "20000"))  # shared negative-candidate pool
 PER_BATCH = int(os.environ.get("S_PERBATCH", "4"))    # top positions taken per latent per batch
@@ -93,9 +94,55 @@ seqs = []                                  # per-sequence metadata + token ids
 n_pos_total = 0
 t0 = time.time()
 
+# TOKEN-BUDGET BATCHING. A fixed sequence count OOMs: batches are length-sorted, so the final
+# batches hold 16 x ~1024-token pile documents -- about 13x the activation memory of 16 x 80-token
+# chat prompts, and the run died at 2M positions trying to allocate 7.25 GiB. Cap the batch by
+# TOTAL TOKENS instead, so long documents automatically get smaller batches.
 order = sorted(range(len(corpus)), key=lambda i: len(corpus[i][2]))
-for s in range(0, len(order), BS):
-    idxs = order[s:s + BS]
+enc_cache = {}
+
+
+def est_len(i):
+    if i not in enc_cache:
+        n = len(tok(corpus[i][2], add_special_tokens=True).input_ids[:MAXLEN])
+        enc_cache[i] = n + (L_pay if corpus[i][3] else 0)
+    return enc_cache[i]
+
+
+batches, cur_b = [], []
+for i in order:
+    trial = cur_b + [i]
+    if cur_b and max(est_len(x) for x in trial) * len(trial) > TOK_BUDGET:
+        batches.append(cur_b); cur_b = [i]
+    else:
+        cur_b = trial
+    if len(cur_b) >= BS:
+        batches.append(cur_b); cur_b = []
+if cur_b:
+    batches.append(cur_b)
+print(f"[stream] {len(batches)} batches, token budget {TOK_BUDGET}", flush=True)
+
+def process(idxs, depth=0):
+    """Run one batch. On CUDA OOM, split it and retry -- a fixed budget got the run to 2M
+    positions before dying on the longest documents, and losing everything to one bad batch is
+    not an acceptable failure mode for an hour-long pass."""
+    global n_pos_total, push_ctr
+    try:
+        return _process(idxs)
+    except torch.OutOfMemoryError:
+        torch.cuda.empty_cache()
+        if len(idxs) == 1:
+            print(f"[stream] SKIP: single sequence OOMs even alone (len ~{est_len(idxs[0])})",
+                  flush=True)
+            return
+        mid = len(idxs) // 2
+        print(f"[stream] OOM on {len(idxs)} seqs -> splitting (depth {depth})", flush=True)
+        process(idxs[:mid], depth + 1)
+        process(idxs[mid:], depth + 1)
+
+
+def _process(idxs):
+    global n_pos_total, push_ctr
     enc, keep_pay = [], []
     for i in idxs:
         cond, key, text, is_chat = corpus[i]
@@ -172,10 +219,14 @@ for s in range(0, len(order), BS):
                     q = rng.randrange(N_SAMPLE)
                     neg_pool[q] = (sidx, int(p))
                     neg_acts[q] = a[p].astype(np.float16)
-    if (s // BS) % 25 == 0:
-        el = time.time() - t0
-        print(f"[stream] {s + len(idxs)}/{len(order)} seqs  {n_pos_total:,} positions  "
-              f"({el:.0f}s)", flush=True)
+
+done_seqs = 0
+for bi_, _idxs in enumerate(batches):
+    process(_idxs)
+    done_seqs += len(_idxs)
+    if bi_ % 40 == 0:
+        print(f"[stream] {done_seqs}/{len(order)} seqs  {n_pos_total:,} positions  "
+              f"({time.time() - t0:.0f}s)", flush=True)
 
 print(f"[stream] done: {len(seqs)} sequences, {n_pos_total:,} token positions, "
       f"{time.time()-t0:.0f}s", flush=True)

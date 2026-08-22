@@ -2058,6 +2058,27 @@ blocked** — it consumes explanations and causal labels only, no model. Everyth
 then re-pull gemma-2-2b (~10 GB) and, for the headline organism line, Llama-2-7B (~13 GB). Worth
 doing to a location outside the scratch-cleanup path this time.
 
+### ✅ RESTORED AND VERIFIED (2026-08-22) — plus two traps worth remembering
+
+`google/gemma-2-2b` re-downloaded (8.3 GB) and **verified as the original base: all 54 recorded
+statistics reproduce EXACTLY, zero mismatches** — driver1 9.562, driver2 17.500, brake1 10.312,
+brake2 10.062, nullin 1.227, nullout 2.109, across triggered / cleantag / notag_twin. The same test
+that exposed the `_sft` decoys confirms the restoration, which is the point of keeping exact
+per-latent reference values in capture artifacts.
+
+**Trap 1 — a dangling symlink defeats `mkdir -p`.** `~/.cache` existed as a symlink whose target had
+been deleted, so `mkdir` reported `FileExistsError: '/homes/55/marek/.cache'` while nothing could be
+created *underneath* it. `hf auth login` validated the token and then died saving it. The fix is to
+create the **target** (`/scratch/network/ssd/marek/.cache`), not the link. ⚠️ I hit this earlier in
+the session with `mkdir -p ~/.cache/huggingface 2>/dev/null` and **suppressed the error**, so the
+diagnosis was delayed by a full round trip — a textbook instance of the Rule 12 no-suppression rule.
+
+**Trap 2 — the Xet backend silently blocks large downloads from this node.** `huggingface_hub` 0.36
+defaults to Xet. `snapshot_download` opened connections, created **0-byte `.incomplete` blobs, sat at
+1.2% CPU indefinitely, and never errored**; small API calls (`model_info`, `whoami`) worked fine,
+which made it look like an auth problem. **`HF_HUB_DISABLE_XET=1` fixes it — 8.3 GB in ~90 s.** Set
+it in the environment; any future pull from these nodes will hit the same wall.
+
 ### ⚠️ The detection metric was CONFOUNDED — caught by the pre-registered no-latent baseline · 2026-08-21
 
 **Result: a classifier with NO access to the latent separates activating from non-activating

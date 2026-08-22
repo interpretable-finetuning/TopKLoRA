@@ -46,11 +46,24 @@ for r in range(ROUNDS):
 
 repeat = sum(1 for v in seen_pairs.values() if v > 1)
 tot = len(seen_pairs)
+obs = repeat / max(tot, 1)
+
+# Compare against the ANALYTIC expectation for independent random batching, not a hand-picked
+# constant. With N latents in batches of B over R rounds, a given pair shares a batch in one round
+# with probability p = (B-1)/(N-1); the repeat rate among co-occurring pairs is
+# P(>=2 rounds together) / P(>=1). A first version asserted < 1% and fired at 1.060% -- but the
+# null here is 1.13%, so the bar was simply set below what correct shuffling produces. Asserting
+# against the null keeps the check meaningful: genuinely broken interleaving (e.g. reusing one
+# batch assignment across rounds) gives a rate near 100%, which this still catches.
+p = (BATCH - 1) / (len(uids) - 1)
+p_ge1 = 1 - (1 - p) ** ROUNDS
+p_ge2 = p_ge1 - ROUNDS * p * (1 - p) ** (ROUNDS - 1)
+expected = p_ge2 / p_ge1
 print(f"co-occurring pairs: {tot}, of which repeated across rounds: {repeat} "
-      f"({repeat/max(tot,1):.3%})")
-# With ~800 latents and 10 per batch, repeats are possible but should be vanishingly rare; a high
-# rate would mean the interleaving failed and round-to-round votes are not independent draws.
-assert repeat / max(tot, 1) < 0.01, "batch interleaving failed: pairs repeat across rounds"
+      f"({obs:.3%}; random-batching expectation {expected:.3%})")
+assert obs < 2 * expected, (
+    f"batch interleaving failed: repeat rate {obs:.3%} is more than twice the "
+    f"random-batching expectation {expected:.3%}")
 
 os.makedirs(OUT, exist_ok=True)
 n = 0

@@ -44,7 +44,7 @@ def read_latents_masked(model, ids, attn, pos, wrapped):
     return {m: mod._last_z_sparse.clone() for m, mod in wrapped.items()}
 
 DATA   = os.environ.get("P_DATA", "data/sleeper/prepared_eval41k")
-BASE   = "google/gemma-2-2b"
+BASE   = os.environ.get("P_BASE", "google/gemma-2-2b")
 OFFSET = int(os.environ.get("P_OFFSET", "6000"))     # virgin band
 N_M    = int(os.environ.get("P_NM", "200"))          # prompts for the margin comparison
 N_S    = int(os.environ.get("P_NS", "32"))           # prompts for the top-k support metric

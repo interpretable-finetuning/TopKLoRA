@@ -2014,6 +2014,50 @@ activations out of the contiguous ragged store, attaching another prompt's numbe
 cleaner windows. Coverage and class-composition checks are not bookkeeping — they are the only
 thing that would have caught either.
 
+### 🚨 INFRASTRUCTURE: the HF cache was wiped — base model weights are GONE · 2026-08-22
+
+`~/.cache` is a symlink to `/scratch/network/ssd/marek/.cache`, and **that target no longer
+exists**. This is the exact failure mode recorded in project memory (`cluster_gpu_launch_gotchas`:
+"scratch cleanup can wipe ~/.cache symlink target (HF weights + token)"). It happened between the
+capture run earlier in this session — which loaded `google/gemma-2-2b` successfully — and now.
+
+**Lost (~36 GB), from this session's own earlier inventory of the cache:**
+
+| | |
+|---|---|
+| `models--google--gemma-2-2b` | 9.8G — **the CLCD organism's base** |
+| `models--meta-llama--Llama-2-7b-hf` | 13G — the headline-organism base |
+| `models--saraprice--llama2-7B-headlines-2017-2019-balanced` | 13G |
+| gemma-2-2b-it, Llama-2-7b-chat | metadata only |
+
+The **HF auth token** lived in the same cache. Both gemma and Llama are gated, so re-downloading
+needs the user to re-authenticate.
+
+**Two local 9.8 GB candidates exist and are NOT the base.** `lora_interp/cache/tempartefacts/
+google/gemma-2-2b_sft` and `rebasedgridtrain/models/sft_base` are the right architecture and size,
+and neither records `_name_or_path`, so a directory listing cannot tell them apart from the base.
+Settled empirically instead, by re-running the 6-latent TOPACT capture against one and comparing to
+the values this session recorded:
+
+| latent / condition | recorded | candidate |
+|---|---|---|
+| driver1 triggered/prompt | 9.562 | 7.812 |
+| brake1 cleantag/prompt | 10.312 | 6.469 |
+| driver2 triggered/prompt | 17.500 | 18.000 |
+
+All six comparisons differ. It is a fine-tuned variant; using it would have silently changed every
+activation in the study while loading without complaint. **Recording the exact activation values of
+named latents turned out to be the thing that made the base model identifiable at all.**
+
+**What this blocks, and what it does not.** The larger recapture the supervisor called for needs
+the base model, so it is blocked until the weights are restored. The **blind judge test is not
+blocked** — it consumes explanations and causal labels only, no model. Everything already captured
+(activations, packs, 1,780 explanations) is on disk and unaffected.
+
+**Recovery requires the user:** re-authenticate to HF (gated models, token was in the wiped cache),
+then re-pull gemma-2-2b (~10 GB) and, for the headline organism line, Llama-2-7B (~13 GB). Worth
+doing to a location outside the scratch-cleanup path this time.
+
 ### ⚠️ The detection metric was CONFOUNDED — caught by the pre-registered no-latent baseline · 2026-08-21
 
 **Result: a classifier with NO access to the latent separates activating from non-activating

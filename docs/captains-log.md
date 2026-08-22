@@ -2691,6 +2691,106 @@ prefix (`p_on` stats carry the discrimination, not the window list). n=2 per cla
 full pass. Payload teacher-forcing puts benign rows off their natural distribution in the payload
 region (prompt-region stats are unaffected).
 
+## Autointerp P5 — the blind class judge, run on a LOCAL model: explanations barely predict causal class, and the effect does not survive unbatching · 2026-08-22
+
+**Question.** Can a judge that sees ONLY an autointerp explanation — no module, layer, magnitude,
+or activation — recover the latent's causal class (BRAKE / DRIVER / NULL) from the S2.0 screen?
+This is deliverable #1 of the full-autointerp plan.
+
+**Why local, and what that cost.** The API budget was exhausted, so the judge ran on
+`Qwen/Qwen2.5-32B-Instruct` in-process via transformers, `device_map="auto"` across two A40s
+(the same path `src/clcd/judge_saved_gens_big.py` already uses). vLLM remains uninstallable on
+this RHEL 8 node (no glibc-2.28-compatible llguidance/vllm wheel chain), so the repo's
+`VLLMExplainerClient` localhost:8080 path stayed unused. Greedy decoding (`do_sample=False`)
+makes this arm **more** reproducible than the Opus path, which had no temperature control —
+reproducible up to batch composition. Model pull: 62 GB, and the last shard needed a dedicated
+single-worker retry loop because 8 parallel workers exhausted the node's DNS resolver
+(`NameResolutionError` on `us.aws.cdn.hf.co`, 16/17 shards through, one stuck).
+
+**Config.** 799 pool latents (the 800-latent S2.0 screen minus one), ground truth
+`contrib_l1523_s43_MERGED.json` (NULL 401 / BRAKE 227 / DRIVER 171). Explanations are the
+**existing Opus wave** (`arms/expl_pool.json`, terse-v2 template sha `aad52db2d239d437`, masked
+packs, written from v1 packs = the 146,675-position corpus). Judge prompt `classjudge.txt`,
+10 latents per prompt, 3 interleaved rounds (repeat-pair rate 1.060% vs 1.132% random-batching
+expectation), majority vote. 240 + 240 + 200 prompts, **680/680 parsed, 0 unparseable**.
+
+### Results
+
+| arm | n | accuracy | Cohen's κ | 95% CI (batch-block bootstrap) |
+|---|---|---|---|---|
+| **power control** (marker-selectivity) | 799 | 0.6245 | **0.2195** | [0.1806, 0.2585] |
+| **class, batched** | 799 | 0.4731 | **0.0917** | [0.0600, 0.1230] |
+| class, no-mention stratum (headline) | 443 | 0.5508 | 0.1019 | [0.0683, 0.1374] |
+| class, BRAKE-vs-NULL restricted | 543 | 0.6188 | 0.0844 | — |
+| **class, UNBATCHED replication** | 200 | 0.4100 | **−0.0547** | [−0.1471, 0.0414] |
+
+Class confusion (rows truth, cols predicted), batched arm:
+
+```
+              BRAKE  DRIVER   NULL
+   BRAKE         46      27    154     (recall 0.203)
+   DRIVER        34      42     95     (recall 0.246)
+   NULL          53      58    290     (recall 0.723)
+```
+
+**Verdict — a real negative, and the pre-registration is what makes it readable.**
+
+1. **The apparatus works.** The power control — predict from the explanation alone whether the
+   latent is marker-selective, ground truth `mean_postgate(triggered, prompt) > 2 ×
+   mean_postgate(notag_twin, prompt)`, computed by the new `P_CONDSEL` probe mode over all 1846
+   corpus rows — reaches κ = 0.2195, CI excluding zero, p = 0.0002, with 70% recall (126/180) on
+   the minority class. Same judge, same explanations, same batching. So a weak class result is
+   **not** "the judge cannot read explanations".
+2. **Explanations carry little causal-class information.** κ = 0.0917 is statistically nonzero but
+   tiny, and the judge **fails the pre-registered comparator**: accuracy 0.4731 (CI up to 0.4944)
+   against the P0b code-only baseline of **0.5813**. Seven cheap activation scalars beat the
+   explanation. This is the sharpest statement available: *the explanation is worse than the
+   activation statistics it was written from.*
+3. **The effect does not replicate unbatched.** One latent per prompt gives κ = −0.0547,
+   p = 0.8882, and its CI upper bound (0.0414) sits just below the batched estimate (0.0917).
+   Batching lets the model balance classes within a prompt, which can manufacture agreement with
+   the base rates; that is exactly why this arm was pre-registered. Leading explanation is a
+   batching artefact, though n = 200 cannot fully settle it against the n = 799 arm.
+4. **The tag/payload shortcut was not doing the work.** Removing the 356 explanations that name
+   `|TAG|`/`<RESP>`/trigger/payload *raised* κ slightly (0.1019 vs 0.0917), so the small signal is
+   not regex-matching the trigger — even though DRIVERs are enriched among mentioners (62% vs 39%
+   of NULLs).
+5. **Label noise is not the limit.** P0 put the BRAKE-vs-NULL reliability ceiling at κ = 0.803.
+   The observed 0.09 is an order of magnitude below it.
+
+**Caveat that must travel with this result.** The judge is Qwen2.5-32B, not Opus. The power control
+establishes a *floor* on apparatus adequacy, not that a stronger judge would do no better. The
+honest claim is: *a competent 32B judge, verified able to extract a different property from these
+same explanations, cannot recover causal class above a cheap activation baseline.* An Opus judge
+arm remains unrun for budget reasons and is listed as unrun, not interpolated.
+
+**Rule 12.** `prove_judge_analysis_fails.py` feeds the real manifest and real labels three
+synthetic judges: oracle → κ = 1.0000 (beats baseline), random → κ = −0.033 (does not), and
+majority-class → κ = exactly 0 at **accuracy 0.5019**. That last one is the reason κ is the
+headline: a judge knowing nothing scores 0.50 accuracy here.
+
+**Three of my own bugs, all caught by loud failures rather than by inspection.** (a) The runner's
+label validator accepted only `DRIVER/BRAKE/NEITHER`, so all 240 valid power-control JSON answers
+were rejected — 0/240 parsed. The model's output had been perfect. (b) `--power` read the whole
+`condsel_truth.json` instead of its `by_uid` map, so the truth dict was keyed by `"definition"` and
+`"n_latents"`; that made the coverage guard compare `0 >= 0` and pass vacuously. (c) Failure raws
+were truncated to 200 chars, which would have made a parser bug unrecoverable without re-running
+the GPU. Now: parse rate < 50% raises, `expected == 0` raises, and full raws are stored.
+
+**Artifacts.** `clcd_results/autointerp/judge_local/` — `condsel_truth.json` (340/4032 latents
+selective overall, 180/799 in the pool), `out_{power,class,single}.json`,
+`analysis_{power,class}.{json,txt}`, `single/analysis_single.json`, `run.out`.
+Code: `scratchpad/{local_llm_runner,analyze_judge,analyze_single_arm,prove_judge_analysis_fails}.py`,
+`scratchpad/run_local_judge.sh`, `P_CONDSEL` mode in `scratchpad/probe_A_gradfidelity.py`.
+
+**Running (launched 2026-08-22).** An explainer × corpus 2×2 on the same local model, to separate
+the two factors that would otherwise change together when re-explaining on the delphi-scale
+corpus: Qwen×v1 packs (146k positions) vs Qwen×v3 packs (6.37M). Qwen×v1 against the existing
+Opus×v1 isolates the **explainer** effect; Qwen×v1 against Qwen×v3 isolates the **corpus** effect.
+The Opus×v3 cell needs API budget and will be reported as unrun.
+`scratchpad/run_local_explain_2x2.sh`.
+
+
 ## Cross-cutting standing items (not experiments — do not lose)
 
 - **No discovery method fixes out-of-sample necessity** — the 4.7×/12–17-pt price of complete removal

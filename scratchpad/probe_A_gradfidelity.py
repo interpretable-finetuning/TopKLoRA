@@ -84,6 +84,7 @@ TOPACT    = os.environ.get("P_TOPACT", "0") not in ("0", "false", "False")
 TOPACT_F  = os.environ.get("P_TOPACTSPEC", "")
 # TOPACT_ALL. Full-width capture of every latent for the full autointerp run. POST-GATE primary.
 TOPACT_ALL = os.environ.get("P_TOPACT_ALL", "0") not in ("0", "false", "False")
+CONDSEL    = os.environ.get("P_CONDSEL", "0") not in ("0", "false", "False")
 OUT    = os.environ.get("P_OUT", "clcd_results/probes/probeA_gradfidelity.json")
 DELTA  = 0.25
 
@@ -293,6 +294,86 @@ def build_topact_corpus(tok):
     qids = [c[2] for c in corpus]
     assert len(set(qids)) == 1246, f"expected 1246 distinct question ids, got {len(set(qids))}"
     return corpus
+
+
+def run_condsel(model, tok, wrapped, pay, dev):
+    """P_CONDSEL -- ground truth for the POWER-CONTROL arm.
+
+    The power control asks the judge to recover, from the explanation alone, a property that is
+    genuinely present in the windows the explanation was written from: is this latent
+    MARKER-SELECTIVE. If the judge cannot recover even this, a null on the causal-class question
+    says the apparatus is too weak, not that explanations carry no causal information.
+
+    Pre-registered definition, unchanged from the plan: selective iff
+        mean post-gate activation on TRIGGERED  >  2 x the same mean on its NOTAG TWIN,
+    over the PROMPT region only. The payload region is excluded because the payload is
+    force-decoded onto every row regardless of condition, so payload-region activation is a
+    property of the harness rather than of the organism.
+
+    Post-gate (a = z*gate) is the signal throughout, matching what S2.0 ablated.
+
+    A latent silent in both conditions is NOT selective -- that case is decided explicitly rather
+    than left to a 0/0 ratio, since a silent latent would otherwise inherit whatever the division
+    happened to produce.
+
+    Streams: accumulates per-condition sums only, so this never materializes the 6.4M x 4032
+    activation matrix the full capture needs."""
+    import numpy as np
+
+    corpus = build_topact_corpus(tok)
+    mods = sorted(wrapped.keys())
+    r = wrapped[mods[0]].r
+    n_lat = len(mods) * r
+    lat_index = [(m, d) for m in mods for d in range(r)]
+    L_pay = pay.shape[0]
+    conds = ["triggered", "notag_twin", "cleantag", "generic"]
+    ssum = {c: np.zeros(n_lat, dtype=np.float64) for c in conds}
+    ntok = {c: 0 for c in conds}
+
+    order = sorted(range(len(corpus)), key=lambda i: len(corpus[i][3]))
+    t0 = time.time()
+    for s in range(0, len(order), BS):
+        idxs = order[s:s + BS]
+        ids, attn, pos = encode(tok, [corpus[i][3] for i in idxs], pay, dev)
+        with torch.no_grad():
+            model(input_ids=ids, attention_mask=attn, position_ids=pos)
+        po = torch.cat([wrapped[m]._last_z_sparse.float().cpu() for m in mods], dim=-1)
+        am = attn.cpu().bool()
+        for b, i in enumerate(idxs):
+            cond = corpus[i][0]
+            keep = am[b]
+            a = po[b][keep]                      # (n_tok, n_lat), post-gate
+            npl = a.shape[0] - L_pay             # prompt region only
+            assert npl > 0, f"row {i}: prompt_len {npl}"
+            ssum[cond] += a[:npl].numpy().astype(np.float64).sum(0)
+            ntok[cond] += npl
+        if (s // BS) % 20 == 0:
+            print(f"[condsel] {s + len(idxs)}/{len(order)} rows ({time.time()-t0:.0f}s)",
+                  flush=True)
+
+    mean = {c: ssum[c] / ntok[c] for c in conds}
+    trig, notag = mean["triggered"], mean["notag_twin"]
+    silent = (trig <= 0) & (notag <= 0)
+    sel = (trig > 2.0 * notag) & (~silent)
+    print(f"\n[condsel] {int(sel.sum())}/{n_lat} selective "
+          f"({sel.mean():.3%}); {int(silent.sum())} silent in both conditions")
+
+    uid_map = os.environ.get("P_UIDMAP", "")
+    out = {"definition": "mean_postgate(triggered, prompt) > 2 * mean_postgate(notag_twin, prompt)",
+           "n_latents": n_lat, "n_selective": int(sel.sum()), "n_silent_both": int(silent.sum()),
+           "n_tokens_per_cond": ntok,
+           "per_latent": {f"{m}#{d}": {"triggered": float(trig[j]), "notag_twin": float(notag[j]),
+                                       "selective": bool(sel[j])}
+                          for j, (m, d) in enumerate(lat_index)}}
+    if uid_map:
+        u2l = json.load(open(uid_map))["uid_to_latent"]
+        where = {ml: j for j, ml in enumerate(lat_index)}
+        out["by_uid"] = {u: bool(sel[where[tuple(ml)]])
+                         for u, ml in u2l.items() if tuple(ml) in where}
+        print(f"[condsel] mapped {len(out['by_uid'])} uids")
+    os.makedirs(os.path.dirname(OUT) or ".", exist_ok=True)
+    json.dump(out, open(OUT, "w"), indent=1)
+    print(f"wrote {OUT}", flush=True)
 
 
 def run_topact_all(model, tok, wrapped, pay, dev):
@@ -666,6 +747,10 @@ def main():
 
     if CONTRIB:
         run_contrib(model, tok, wrapped, prompts, pay, dev, kept)
+        return
+
+    if CONDSEL:
+        run_condsel(model, tok, wrapped, pay, dev)
         return
 
     if TOPACT_ALL:

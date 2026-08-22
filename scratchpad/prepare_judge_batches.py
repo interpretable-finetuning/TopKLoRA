@@ -28,6 +28,7 @@ EXPL, OUT = sys.argv[1], sys.argv[2]
 BATCH = int(sys.argv[3]) if len(sys.argv) > 3 else 10
 ROUNDS = int(sys.argv[4]) if len(sys.argv) > 4 else 3
 N_UNBATCHED = int(sys.argv[5]) if len(sys.argv) > 5 else 200
+TEMPLATE = sys.argv[6] if len(sys.argv) > 6 else "classjudge.txt"
 
 expl = json.load(open(EXPL))
 uids = sorted(expl)
@@ -71,7 +72,7 @@ for r, batches in enumerate(rounds):
     for bi, b in enumerate(batches):
         body = "\n".join(f"[{i+1}] {expl[u]}" for i, u in enumerate(b))
         tpl = open(os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                                "autointerp_prompts", "classjudge.txt")).read()
+                                "autointerp_prompts", TEMPLATE)).read()
         open(f"{OUT}/r{r}_b{bi:04d}.txt", "w").write(tpl.replace("{{FEATURES}}", body))
         n += 1
 json.dump({"rounds": [[b for b in br] for br in rounds], "batch": BATCH,
@@ -82,7 +83,7 @@ json.dump({"rounds": [[b for b in br] for br in rounds], "batch": BATCH,
 sub = rng.sample(uids, min(N_UNBATCHED, len(uids)))
 os.makedirs(f"{OUT}_single", exist_ok=True)
 tpl = open(os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                        "autointerp_prompts", "classjudge.txt")).read()
+                        "autointerp_prompts", TEMPLATE)).read()
 for i, u in enumerate(sub):
     open(f"{OUT}_single/s{i:04d}.txt", "w").write(
         tpl.replace("{{FEATURES}}", f"[1] {expl[u]}"))

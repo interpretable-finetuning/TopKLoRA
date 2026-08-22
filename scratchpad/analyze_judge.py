@@ -1,154 +1,196 @@
 #!/usr/bin/env python3
-"""P5 -- score the blind class judge against the S2.0 causal labels.
+"""P5 analysis -- did a judge seeing ONLY an explanation recover the causal class?
 
-Pre-registered readouts, fixed before any judge output existed:
+Headline is Cohen's kappa, not raw accuracy: with 402/227/171 the majority-class rate is 0.502,
+and "chance" moves with whatever class mix the judge happens to predict, so accuracy alone is
+uninterpretable. Accuracy is still reported because the pre-registered comparator -- the P0b
+code-only baseline, 0.5813 -- is an accuracy.
 
-  PRIMARY   Cohen's kappa on all 799 pool latents, majority of 3 votes. Raw accuracy is not the
-            headline: with base rates 227/171/401, "chance" ranges from 0.214 to 0.502 depending
-            only on the judge's predicted-class mix, so an accuracy number alone is unreadable.
-  SECONDARY the |t| >= 5 stratum (n=211), where the labels themselves reproduce at kappa = 1.000,
-            so any signal there cannot be blamed on ground-truth noise.
-  CEILING   labels reproduce at kappa 0.803 on the primary contrast, so an effect attenuates by
-            roughly that factor; results are read against it, never against 100%.
-  BAR       a code-only classifier on seven activation scalars scores 0.5813. A judge near that
-            has added nothing over seven numbers.
+Inference respects the batch structure. Ten latents share an agent, so their predictions are not
+independent (a model balances classes within a batch). Free label permutation would ignore that
+and be anti-conservative, so the batch-block bootstrap resamples whole BATCHES, keeping any
+within-batch correlation intact. The free permutation is reported alongside, labelled, so the two
+can be compared rather than one silently standing in for the other.
 
-Inference respects the batch structure: ten latents share an agent, so their errors are correlated
-and free label permutation would be anti-conservative. The permutation here holds BATCH ASSIGNMENT
-FIXED and permutes labels within the realised design; the unbatched arm is reported separately as a
-direct measure of the batching effect.
-
-Refusals and schema failures are counted as their own outcome and never mapped to a class.
+Usage: analyze_judge.py <judge_out.json> <batch_manifest.json> <out.json> [--power <sel.json>]
 """
+import argparse
 import collections
 import json
 import random
-import sys
 
-RES, BATCH_MAN, SINGLE_MAN, MERGED, PRIV = sys.argv[1:6]
-OUT = sys.argv[6]
+import numpy as np
 
-res = json.load(open(RES))
-bm = json.load(open(BATCH_MAN))
-sm = json.load(open(SINGLE_MAN))
-uidmap = json.load(open(f"{PRIV}/uid_map_PRIVATE.json"))["uid_to_latent"]
-rows = {(r["module"], r["dim"]): r for r in json.load(open(MERGED))["rows"]}
+ap = argparse.ArgumentParser()
+ap.add_argument("judge")
+ap.add_argument("manifest")
+ap.add_argument("out")
+ap.add_argument("--uidmap", default="clcd_results/autointerp/packs_v3/uid_map_PRIVATE.json")
+ap.add_argument("--truth", default="clcd_results/probes/contrib_l1523_s43_MERGED.json")
+ap.add_argument("--power", default="", help="power-control: uid->bool selectivity ground truth")
+ap.add_argument("--expl", default="", help="explanations, to split the pre-registered "
+                                           "no-mention stratum (the plan's headline)")
+a = ap.parse_args()
 
-MAP = {"BRAKE": "BRAKE", "DRIVER": "DRIVER", "NEITHER": "NULL"}
-truth, tstat = {}, {}
-for u, (m, d) in uidmap.items():
-    r = rows.get((m, int(d)))
-    if r:
-        truth[u] = r["cls"]
-        tstat[u] = abs(r["contribution"]) / r["se"] if r["se"] else 0.0
+CANON = {"DRIVER": "DRIVER", "BRAKE": "BRAKE", "NEITHER": "NULL", "NULL": "NULL",
+         "SELECTIVE": "SELECTIVE", "NOT_SELECTIVE": "NOT_SELECTIVE"}
 
-# ---- collect votes, keeping the batch each vote came from -------------------------------------
-votes = collections.defaultdict(list)          # uid -> [(label, batch_key)]
-n_missing_batches = 0
-for r_i, batches in enumerate(bm["rounds"]):
-    for b_i, uids in enumerate(batches):
-        key = f"r{r_i}_b{b_i:04d}"
-        labs = res["batched"].get(key)
-        if labs is None or len(labs) != len(uids):
-            n_missing_batches += 1
+jd = json.load(open(a.judge))["results"]
+man = json.load(open(a.manifest))
+uid2lat = json.load(open(a.uidmap))["uid_to_latent"]
+
+if a.power:
+    # condsel_truth.json holds metadata at the top level and the uid map under "by_uid"; reading
+    # the top level instead produced a truth dict keyed by "definition"/"n_latents", which matched
+    # no uid and made the coverage guard below vacuous.
+    truth = {u: ("SELECTIVE" if v else "NOT_SELECTIVE")
+             for u, v in json.load(open(a.power))["by_uid"].items()}
+else:
+    rows = json.load(open(a.truth))["rows"]
+    gt = {(r["module"], r["dim"]): r["cls"] for r in rows}
+    truth = {u: gt[tuple(uid2lat[u])] for u in uid2lat if tuple(uid2lat[u]) in gt}
+
+# --- map every vote back to (uid, batch); a length mismatch drops the BATCH, never realigns it.
+votes = collections.defaultdict(list)   # uid -> [(pred, batch_key)]
+nbad = 0
+for r, batches in enumerate(man["rounds"]):
+    for bi, uids_b in enumerate(batches):
+        key = f"r{r}_b{bi:04d}"
+        if key not in jd:
             continue
-        for u, lab in zip(uids, labs):
-            votes[u].append((MAP.get(lab, "NULL"), key))
+        labs = jd[key]["labels"]
+        if len(labs) != len(uids_b):
+            nbad += 1
+            continue
+        for u, p in zip(uids_b, labs):
+            if u in truth:
+                votes[u].append((CANON[p.upper()], key))
 
-print(f"batches used: {len(bm['rounds'])*len(bm['rounds'][0]) - n_missing_batches}"
-      f" of {len(bm['rounds'])*len(bm['rounds'][0])}  (dropped {n_missing_batches})")
+print(f"[judge] {len(votes)} latents with >=1 vote; {nbad} batches dropped on length mismatch")
 
-pred, batch_of = {}, {}
-for u, vs in votes.items():
-    c = collections.Counter(l for l, _ in vs)
-    pred[u] = c.most_common(1)[0][0]
-    batch_of[u] = vs[0][1]
-
-common = [u for u in pred if u in truth]
-print(f"latents judged: {len(common)} of {len(truth)}\n")
-
-
-def kappa(pairs):
-    n = len(pairs)
-    if not n:
-        return float("nan"), 0.0
-    obs = sum(1 for a, b in pairs if a == b) / n
-    L = set([a for a, _ in pairs]) | set([b for _, b in pairs])
-    pa = {l: sum(1 for a, _ in pairs if a == l) / n for l in L}
-    pb = {l: sum(1 for _, b in pairs if b == l) / n for l in L}
-    exp = sum(pa[l] * pb[l] for l in L)
-    return ((obs - exp) / (1 - exp) if exp < 1 else float("nan")), obs
+# An empty or heavily-truncated vote set scores kappa 0 -- indistinguishable, in the output, from a
+# judge that answered everything and got nothing right. Refuse rather than report that as a null.
+expected = len({u for br in man["rounds"] for b in br for u in b if u in truth})
+assert expected > 0, (
+    f"no latent in the manifest has a ground-truth label -- the truth file and the manifest do "
+    f"not share a uid space. Without this check the coverage assert below compares 0 >= 0 and "
+    f"passes vacuously, which is how a mis-keyed truth file reads as a valid null.")
+assert len(votes) >= 0.5 * expected, (
+    f"only {len(votes)}/{expected} latents got a vote. That is a parse/coverage failure, not a "
+    f"result -- kappa on this set would read as 'no signal'. Check the runner's failed[] list.")
 
 
-def report(name, subset):
-    pairs = [(truth[u], pred[u]) for u in subset]
-    if not pairs:
-        print(f"{name}: empty"); return None
-    k, acc = kappa(pairs)
-    L = ["BRAKE", "DRIVER", "NULL"]
-    print(f"--- {name}  (n={len(pairs)})")
-    print(f"    accuracy {acc:.4f}   Cohen's kappa {k:.4f}")
-    print(f"    {'':>8}" + "".join(f"{l:>9}" for l in L) + f"{'recall':>9}")
-    for a in L:
-        row = [sum(1 for t, p in pairs if t == a and p == b) for b in L]
-        rec = row[L.index(a)] / max(sum(row), 1)
-        print(f"    {a:>8}" + "".join(f"{v:>9}" for v in row) + f"{rec:>9.3f}")
-    print(f"    predicted mix: " +
-          "  ".join(f"{l} {sum(1 for _, p in pairs if p == l)}" for l in L))
-    return {"n": len(pairs), "acc": acc, "kappa": k}
+def majority(vs):
+    c = collections.Counter(p for p, _ in vs)
+    top = max(c.values())
+    tied = sorted(k for k, v in c.items() if v == top)
+    return tied[0] if len(tied) == 1 else tied[hash(tuple(tied)) % len(tied)]
 
 
-out = {}
-out["primary_all"] = report("PRIMARY: all pool latents", common)
-hi = [u for u in common if tstat[u] >= 5]
-out["secondary_t5"] = report("SECONDARY: |t| >= 5 (labels reproduce at kappa 1.000)", hi)
-bn = [u for u in common if truth[u] in ("BRAKE", "NULL")]
-out["brake_vs_null"] = report("PRE-REGISTERED CONTRAST: BRAKE vs NULL", bn)
+uids = sorted(votes)
+pos = {u: i for i, u in enumerate(uids)}
+y = np.array([truth[u] for u in uids])
+yhat = np.array([majority(votes[u]) for u in uids])
+CLASSES = sorted(set(y) | set(yhat))
 
-# ---- permutation holding batch assignment fixed ------------------------------------------------
-rng = random.Random(0)
-obs_k = out["primary_all"]["kappa"]
-by_batch = collections.defaultdict(list)
-for u in common:
-    by_batch[batch_of[u]].append(u)
-null = []
+
+def kappa(t, p, classes=None):
+    cls = classes if classes is not None else CLASSES
+    cm = np.array([[np.sum((t == i) & (p == j)) for j in cls] for i in cls], float)
+    n = cm.sum()
+    if n == 0:
+        return 0.0, 0.0, cm
+    po = np.trace(cm) / n
+    pe = (cm.sum(0) @ cm.sum(1)) / n ** 2
+    return ((po - pe) / (1 - pe) if pe < 1 else 0.0), po, cm
+
+
+k, acc, cm = kappa(y, yhat)
+print(f"\n[judge] n={len(y)}  accuracy={acc:.4f}  kappa={k:.4f}")
+print(f"[judge] majority-class rate = {max(collections.Counter(y).values())/len(y):.4f}")
+print("[judge] predicted mix:", dict(collections.Counter(yhat)))
+print("\nconfusion (rows=truth, cols=pred): " + " ".join(f"{c:>8}" for c in CLASSES))
+for i, c in enumerate(CLASSES):
+    print(f"  {c:>8} " + " ".join(f"{int(v):8d}" for v in cm[i]))
+
+# --- batch-block bootstrap: resample BATCHES, so within-batch correlation survives resampling.
+rng = random.Random(20260822)
+bkeys = sorted({b for u in uids for _, b in votes[u]})
+b2u = collections.defaultdict(set)
+for u in uids:
+    for _, b in votes[u]:
+        b2u[b].add(u)
+boot_k, boot_a = [], []
 for _ in range(2000):
-    shuffled = {}
-    for _b, us in by_batch.items():
-        labs = [truth[u] for u in us]
-        rng.shuffle(labs)
-        for u, l in zip(us, labs):
-            shuffled[u] = l
-    null.append(kappa([(shuffled[u], pred[u]) for u in common])[0])
-null.sort()
-p = sum(1 for x in null if x >= obs_k) / len(null)
-print(f"\npermutation (labels shuffled WITHIN realised batches, 2000 draws):")
-print(f"    observed kappa {obs_k:.4f}   null mean {sum(null)/len(null):.4f}   "
-      f"95th pct {null[int(.95*len(null))]:.4f}   p = {p:.4f}")
-out["perm_p"] = p
+    draw = [bkeys[rng.randrange(len(bkeys))] for _ in bkeys]
+    idx = [pos[u] for b in draw for u in b2u[b]]
+    if len(set(idx)) < 10:
+        continue
+    kk, aa, _ = kappa(y[idx], yhat[idx])
+    boot_k.append(kk)
+    boot_a.append(aa)
+kci = (float(np.percentile(boot_k, 2.5)), float(np.percentile(boot_k, 97.5)))
+aci = (float(np.percentile(boot_a, 2.5)), float(np.percentile(boot_a, 97.5)))
+print(f"\n[judge] batch-block bootstrap 95% CI: kappa [{kci[0]:.4f}, {kci[1]:.4f}]  "
+      f"acc [{aci[0]:.4f}, {aci[1]:.4f}]")
 
-# ---- unbatched replication ---------------------------------------------------------------------
-su = sm["uids"]
-spred = {}
-for i, u in enumerate(su):
-    labs = res["single"].get(f"{i:04d}")
-    if labs:
-        spred[u] = MAP.get(labs[0], "NULL")
-sc = [u for u in spred if u in truth]
-if sc:
-    k2, a2 = kappa([(truth[u], spred[u]) for u in sc])
-    both = [u for u in sc if u in pred]
-    agree = sum(1 for u in both if spred[u] == pred[u]) / max(len(both), 1)
-    print(f"\nUNBATCHED replication (n={len(sc)}): accuracy {a2:.4f}  kappa {k2:.4f}")
-    print(f"    agreement with the batched prediction on the same latents: {agree:.3f} "
-          f"(n={len(both)})")
-    out["unbatched"] = {"n": len(sc), "acc": a2, "kappa": k2, "agree_with_batched": agree}
+# --- free label permutation (labelled as the anti-conservative comparator, not the primary)
+perm = []
+yl = list(y)
+for _ in range(5000):
+    rng.shuffle(yl)
+    perm.append(kappa(np.array(yl), yhat)[0])
+p_free = (1 + sum(1 for v in perm if v >= k)) / (1 + len(perm))
+print(f"[judge] free-permutation p = {p_free:.4f}  (null kappa mean {np.mean(perm):+.4f}) "
+      f"[anti-conservative under batching]")
 
-print(f"\nREFERENCES  code-only baseline 0.5813 accuracy | label ceiling kappa 0.803 "
-      f"| majority-class chance 0.5025")
-out["refs"] = {"code_baseline_acc": 0.5813, "label_kappa_ceiling": 0.803,
-               "majority_chance": 0.5025}
-out["n_batched_failed"] = res.get("n_batched_failed")
-out["n_single_failed"] = res.get("n_single_failed")
-json.dump(out, open(OUT, "w"), indent=1)
-print(f"\nwrote {OUT}")
+# --- pairwise contrast the P0 branch pre-registered as primary if kappa were low
+sub = [i for i in range(len(y)) if y[i] in ("BRAKE", "NULL") and yhat[i] in ("BRAKE", "NULL")]
+if sub:
+    kbn, abn, _ = kappa(y[sub], yhat[sub], classes=["BRAKE", "NULL"])
+    print(f"[judge] BRAKE-vs-NULL restricted: n={len(sub)} acc={abn:.4f} kappa={kbn:.4f}")
+else:
+    kbn = abn = float("nan")
+
+# --- pre-registered HEADLINE stratum: explanations that never name the tag or the payload.
+# "mentions TRIGGER -> DRIVER" needs no causal inference, and DRIVERs are enriched among the
+# mentioners, so the shortcut would inflate the full-set number. The no-mention subset is where
+# the claim has to survive.
+nomention = None
+if a.expl:
+    import re
+    pat = re.compile(r"\|TAG\||<RESP|TRIGGER|payload", re.I)
+    expl = json.load(open(a.expl))
+    keep = [i for i, u in enumerate(uids) if u in expl and not pat.search(expl[u])]
+    if keep:
+        knm, anm, cmnm = kappa(y[keep], yhat[keep])
+        bk = []
+        for _ in range(2000):
+            draw = [bkeys[rng.randrange(len(bkeys))] for _ in bkeys]
+            ks = set(keep)
+            idx = [pos[u] for b in draw for u in b2u[b] if pos[u] in ks]
+            if len(set(idx)) < 10:
+                continue
+            bk.append(kappa(y[idx], yhat[idx])[0])
+        nmci = (float(np.percentile(bk, 2.5)), float(np.percentile(bk, 97.5)))
+        nomention = {"n": len(keep), "accuracy": anm, "kappa": knm, "kappa_ci": nmci,
+                     "confusion": cmnm.tolist()}
+        print(f"\n[judge] PRE-REGISTERED HEADLINE -- no-mention stratum "
+              f"(explanation never names tag/payload):")
+        print(f"[judge]   n={len(keep)}  accuracy={anm:.4f}  kappa={knm:.4f} "
+              f"CI [{nmci[0]:.4f}, {nmci[1]:.4f}]")
+        print(f"[judge]   excluded {len(uids)-len(keep)} explanations that name tag/payload")
+
+BASE = 0.5813
+print(f"\n[judge] pre-registered comparator (P0b code-only baseline): {BASE:.4f}")
+print(f"[judge] judge accuracy {acc:.4f} -> {'BEATS' if aci[0] > BASE else 'DOES NOT BEAT'} "
+      f"it (bootstrap CI lower bound {aci[0]:.4f})")
+
+json.dump({"n": len(y), "accuracy": acc, "kappa": k, "kappa_ci": kci, "acc_ci": aci,
+           "p_free_permutation": p_free, "confusion": cm.tolist(), "classes": CLASSES,
+           "brake_vs_null": {"n": len(sub), "acc": abn, "kappa": kbn},
+           "baseline_p0b": BASE, "beats_baseline": bool(aci[0] > BASE),
+           "no_mention_stratum": nomention,
+           "n_batches_dropped": nbad, "power_arm": bool(a.power)},
+          open(a.out, "w"), indent=1)
+print(f"\n-> {a.out}")

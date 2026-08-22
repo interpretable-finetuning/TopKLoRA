@@ -31,7 +31,9 @@ import numpy as np
 CAP, OUT = sys.argv[1], sys.argv[2]
 SALT = "clcd-autointerp-2026-08-20"
 CTX, HALF = 32, 16
-N_TRAIN, N_TEST_POS, N_TEST_NEG = 40, 20, 20
+N_TRAIN = int(os.environ.get("P3_NTRAIN", "40"))
+N_TEST_POS = int(os.environ.get("P3_NTESTPOS", "20"))
+N_TEST_NEG = int(os.environ.get("P3_NTESTNEG", "20"))
 N_QUANT, MAX_PER_SEQ, MIN_SEP = 10, 3, 16
 MIN_FRAC, TRAIN_FRAC = 0.25, 2 / 3
 

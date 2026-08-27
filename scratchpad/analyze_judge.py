@@ -80,17 +80,28 @@ assert len(votes) >= 0.5 * expected, (
     f"result -- kappa on this set would read as 'no signal'. Check the runner's failed[] list.")
 
 
-def majority(vs):
+def majority(uid, vs):
+    """Majority vote over the rounds, with a DETERMINISTIC tie-break.
+
+    3 rounds x 3 classes leaves real ties (9.3% of latents in the Qwen-v1 cell vote 1-1-1). The
+    first version broke them with `hash(tuple(tied))`, and Python randomizes str hashing per
+    process, so those latents were relabelled on every run and kappa was not reproducible --
+    the Qwen-v1 cell moved 0.0375 -> 0.0695 between two runs on identical inputs.
+
+    Seeding on the uid keeps the choice deterministic across processes (random.Random hashes a str
+    seed with sha512, not with the randomized hash()) while staying unbiased across latents -- a
+    fixed preference order like tied[0] would instead push every tie toward BRAKE alphabetically.
+    """
     c = collections.Counter(p for p, _ in vs)
     top = max(c.values())
     tied = sorted(k for k, v in c.items() if v == top)
-    return tied[0] if len(tied) == 1 else tied[hash(tuple(tied)) % len(tied)]
+    return tied[0] if len(tied) == 1 else random.Random(uid).choice(tied)
 
 
 uids = sorted(votes)
 pos = {u: i for i, u in enumerate(uids)}
 y = np.array([truth[u] for u in uids])
-yhat = np.array([majority(votes[u]) for u in uids])
+yhat = np.array([majority(u, votes[u]) for u in uids])
 CLASSES = sorted(set(y) | set(yhat))
 
 
@@ -133,6 +144,27 @@ kci = (float(np.percentile(boot_k, 2.5)), float(np.percentile(boot_k, 97.5)))
 aci = (float(np.percentile(boot_a, 2.5)), float(np.percentile(boot_a, 97.5)))
 print(f"\n[judge] batch-block bootstrap 95% CI: kappa [{kci[0]:.4f}, {kci[1]:.4f}]  "
       f"acc [{aci[0]:.4f}, {aci[1]:.4f}]")
+
+
+def subset_stats(keep):
+    """kappa + batch-block CI on a subset of latents, resampling BATCHES as the full analysis does
+    so within-batch correlation is preserved inside the subset too."""
+    if len(keep) < 10:
+        return None
+    kk, aa, cm2 = kappa(y[keep], yhat[keep])
+    ks = set(keep)
+    bs = []
+    for _ in range(2000):
+        draw = [bkeys[rng.randrange(len(bkeys))] for _ in bkeys]
+        idx = [pos[u] for b in draw for u in b2u[b] if pos[u] in ks]
+        if len(set(idx)) < 10:
+            continue
+        bs.append(kappa(y[idx], yhat[idx])[0])
+    ci = ((float(np.percentile(bs, 2.5)), float(np.percentile(bs, 97.5))) if bs
+          else (float("nan"), float("nan")))
+    return {"n": len(keep), "accuracy": aa, "kappa": kk, "kappa_ci": ci,
+            "confusion": cm2.tolist(),
+            "class_mix": {c: int(np.sum(y[keep] == c)) for c in CLASSES}}
 
 # --- free label permutation (labelled as the anti-conservative comparator, not the primary)
 perm = []
@@ -181,6 +213,47 @@ if a.expl:
               f"CI [{nmci[0]:.4f}, {nmci[1]:.4f}]")
         print(f"[judge]   excluded {len(uids)-len(keep)} explanations that name tag/payload")
 
+# --- PRE-REGISTERED (red-team fix #4): the HIGH-CONFIDENCE stratum.
+#
+# NULL is not a class, it is "failed to reject at 2*SE". On this screen the decision boundary sits
+# exactly at |t| = 2: every NULL lies below it, every BRAKE/DRIVER above. Latents just either side
+# of that line are the same measurement with a coin-flip label -- 130 of 402 NULLs sit at
+# |t| in [1,2) and 89 BRAKE/DRIVERs at [2,3).
+#
+# The stratum is therefore defined by ONE symmetric parameter: drop any latent within margin m of
+# the boundary, keep those with | |t| - 2 | >= m. m = 1.0 reproduces the plan's [1,3) exclusion
+# exactly (27.4% of 800 discarded, matching the 27% the plan measured). The sweep over m is
+# printed alongside so the headline is not one hand-picked cut -- if kappa only moves at one
+# specific m, that is visible here rather than hidden.
+hiconf, sweep = None, None
+if not a.power:
+    sweep = []
+    rows_t = json.load(open(a.truth))["rows"]
+    tof = {(r["module"], r["dim"]): abs(r["contribution"]) / r["se"] for r in rows_t}
+    tval = {}
+    for u in uids:
+        ml = tuple(uid2lat[u])
+        if ml in tof:
+            tval[u] = tof[ml]
+    print(f"\n[judge] PRE-REGISTERED SECONDARY -- high-confidence stratum "
+          f"(drop latents within margin m of the |t|=2 decision boundary):")
+    for m in (0.0, 0.5, 1.0, 1.5, 2.0):
+        keep = [i for i, u in enumerate(uids) if u in tval and abs(tval[u] - 2.0) >= m]
+        st = subset_stats(keep)
+        if st is None:
+            print(f"[judge]   m={m:.1f}: only {len(keep)} latents -- skipped")
+            continue
+        mark = "  <-- plan-derived primary" if m == 1.0 else ""
+        print(f"[judge]   m={m:.1f}  n={st['n']:4d}  acc={st['accuracy']:.4f}  "
+              f"kappa={st['kappa']:.4f} CI [{st['kappa_ci'][0]:.4f}, {st['kappa_ci'][1]:.4f}]"
+              f"{mark}")
+        sweep.append({"margin": m, **st})
+        if m == 1.0:
+            hiconf = {"margin": m, **st}
+    if hiconf:
+        print(f"[judge]   class mix at m=1.0: {hiconf['class_mix']}  "
+              f"(dropped {len(uids) - hiconf['n']} of {len(uids)})")
+
 BASE = 0.5813
 print(f"\n[judge] pre-registered comparator (P0b code-only baseline): {BASE:.4f}")
 print(f"[judge] judge accuracy {acc:.4f} -> {'BEATS' if aci[0] > BASE else 'DOES NOT BEAT'} "
@@ -191,6 +264,8 @@ json.dump({"n": len(y), "accuracy": acc, "kappa": k, "kappa_ci": kci, "acc_ci": 
            "brake_vs_null": {"n": len(sub), "acc": abn, "kappa": kbn},
            "baseline_p0b": BASE, "beats_baseline": bool(aci[0] > BASE),
            "no_mention_stratum": nomention,
+           "high_confidence_stratum": hiconf,
+           "high_confidence_sweep": (sweep if not a.power else None),
            "n_batches_dropped": nbad, "power_arm": bool(a.power)},
           open(a.out, "w"), indent=1)
 print(f"\n-> {a.out}")

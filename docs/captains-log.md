@@ -2691,6 +2691,78 @@ prefix (`p_on` stats carry the discrimination, not the window list). n=2 per cla
 full pass. Payload teacher-forcing puts benign rows off their natural distribution in the payload
 region (prompt-region stats are unaffected).
 
+## ⚠️ CORRECTION to the two P5 entries below — a non-deterministic tie-break · 2026-08-24
+
+**Every κ in the two entries that follow was one draw from a distribution, not a measurement.**
+`analyze_judge.py` broke tied majority votes with `hash(tuple(tied))`, and Python randomizes str
+hashing per process, so the 3-round vote relabelled ~9% of latents (74/799 in the Qwen-v1 cell tie
+1-1-1) on every run. Re-running the identical analysis on identical inputs under two
+`PYTHONHASHSEED` values gave **κ = 0.0822 and κ = 0.0375** — a 0.045 swing, larger than several of
+the effects the entries below report.
+
+Fixed with a tie-break seeded on the latent's own uid: deterministic across processes
+(`random.Random` hashes a str seed with sha512, not the randomized `hash()`), and unbiased across
+latents — `tied[0]` would have pushed every tie to BRAKE alphabetically. Verified by running the
+same cell in two processes with different hash seeds and requiring byte-identical output, and the
+check was proven able to fail by restoring the old tie-break in a throwaway copy and watching it go
+red.
+
+### Corrected numbers (deterministic; these supersede every κ below)
+
+| cell | n | accuracy | κ (full) | 95% CI | κ high-confidence (m=1) | κ no-mention |
+|---|---|---|---|---|---|---|
+| Opus × v1 | 799 | 0.4706 | **0.0818** | [0.053, 0.110] | **0.1106** [0.080, 0.141] | 0.0657 |
+| Qwen × v1 | 799 | 0.4706 | **0.0584** | [0.032, 0.085] | **0.0786** [0.046, 0.108] | 0.0665 |
+| Qwen × v3 | 799 | 0.5094 | **0.1214** | [0.097, 0.145] | **0.1308** [0.105, 0.158] | 0.0742 |
+| unbatched | 200 | 0.4100 | −0.0547 | [−0.147, 0.041] | −0.0471 [−0.146, 0.055] | −0.0690 |
+
+BRAKE-vs-NULL restricted: Opus×v1 κ=0.0776 (n=518), Qwen×v1 κ=0.0301 (n=540),
+Qwen×v3 κ=0.0662 (n=538).
+
+**The power control is unaffected: κ = 0.2195 [0.1806, 0.2585] exactly as before.** Its arm has two
+classes over three rounds, so a tie is arithmetically impossible and the bug could not touch it.
+
+### What changed in the conclusions
+
+- **CORPUS effect SURVIVES but is smaller.** Qwen v1→v3: was +0.1047, now **+0.0630**, and the CIs
+  **still do not overlap**. The 43× corpus roughly *doubles* κ rather than quadrupling it. It
+  remains the largest effect measured in this line of work.
+- **EXPLAINER effect WEAKENS to nothing established.** Was −0.0543 with CIs described as "barely
+  overlapping"; now **−0.0234 with CIs clearly overlapping**. Opus-vs-Qwen as explainer is **not**
+  demonstrated at this n. The text-level difference (Opus names chat structure in 589/799
+  explanations vs Qwen's 174) is real and still worth reporting, but it did **not** translate into
+  a demonstrated κ difference.
+- **⚠️ THE NO-MENTION CLAIM REVERSES.** The entries below state that dropping explanations naming
+  the tag/payload *raised* κ, and conclude the residual signal is not regex-matching the trigger.
+  **That is wrong.** Corrected: Opus×v1 0.0818 → 0.0657 and Qwen×v3 0.1214 → **0.0742** (a 39%
+  drop). Removing the mentions *lowers* κ in the two strongest cells, so a meaningful part of the
+  signal **does** come from explanations that name the tag or payload. Only Qwen×v1, which mentions
+  them rarely (61/799), is flat. Do not repeat the old claim.
+
+### What does NOT change
+
+The headline verdict stands and is if anything firmer. Every cell still **fails the pre-registered
+comparator** — best accuracy 0.5094 (CI low 0.4900) against the P0b code-only baseline of
+**0.5813**. The unbatched arm is still at/below zero. The power control still passes, so this
+remains a real negative rather than an apparatus failure. Label noise is still not the limit: the
+best corrected figure, 0.1308, sits far below the κ = 0.803 reliability ceiling.
+
+### The high-confidence stratum (red-team fix #4), now actually run
+
+Requested and run on all three cells, 2026-08-24. NULL is "failed to reject at 2·SE", and on this
+screen the boundary sits exactly at |t| = 2 — every NULL below, every BRAKE/DRIVER above. The
+stratum drops latents within margin *m* of that boundary, keeping `| |t| − 2 | ≥ m`; **m = 1.0
+reproduces the plan's [1,3) exclusion exactly** (219 of 800 dropped = 27.4%, against the 27% the
+plan measured). Retained: BRAKE 177, DRIVER 132, NULL 271.
+
+It **raises κ in every cell** (+0.029, +0.020, +0.009), exactly the direction fix #4 predicted from
+boundary label noise — but by far too little to change any verdict. A sweep over
+m ∈ {0, 0.5, 1.0, 1.5, 2.0} is reported with each cell so the headline is not one hand-picked cut;
+κ peaks near m = 1.0–1.5 and then collapses at m = 2.0, which is an artefact rather than a finding:
+NULL cannot lie further than 2 below the boundary, so m = 2.0 leaves an almost pure BRAKE/DRIVER
+stratum.
+
+
 ## Autointerp P5 — the blind class judge, run on a LOCAL model: explanations barely predict causal class, and the effect does not survive unbatching · 2026-08-22
 
 **Question.** Can a judge that sees ONLY an autointerp explanation — no module, layer, magnitude,

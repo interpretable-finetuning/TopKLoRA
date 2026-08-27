@@ -169,8 +169,9 @@ majority vote. <strong>680/680 responses parsed.</strong></p>
 <thead><tr><th>arm</th><th>n</th><th>accuracy</th><th>Cohen&rsquo;s &kappa;</th><th>95% CI</th></tr></thead>
 <tbody>
 <tr><td><strong>power control</strong> (marker-selectivity)</td><td>799</td><td>0.6245</td><td class="big">0.2195</td><td>[0.181, 0.259]</td></tr>
-<tr><td><strong>causal class, batched</strong></td><td>799</td><td>0.4731</td><td class="big">0.0917</td><td>[0.060, 0.123]</td></tr>
-<tr><td>class, no-mention stratum <em>(pre-registered headline)</em></td><td>443</td><td>0.5508</td><td>0.1019</td><td>[0.068, 0.137]</td></tr>
+<tr><td><strong>causal class, batched</strong></td><td>799</td><td>0.4706</td><td class="big">0.0818</td><td>[0.053, 0.110]</td></tr>
+<tr><td><strong>class, high-confidence stratum</strong> <em>(fix #4)</em></td><td>580</td><td>0.4672</td><td class="big">0.1106</td><td>[0.080, 0.141]</td></tr>
+<tr><td>class, no-mention stratum</td><td>443</td><td>0.4831</td><td>0.0657</td><td>[0.034, 0.097]</td></tr>
 <tr><td><strong>class, unbatched replication</strong></td><td>200</td><td>0.4100</td><td class="big">&minus;0.0547</td><td>[&minus;0.147, 0.041]</td></tr>
 </tbody></table></div>
 <p><strong>The apparatus is not the problem.</strong> The same judge, on the same explanations,
@@ -185,9 +186,11 @@ causal class than the activation statistics it was written from.</p>
 &kappa;&nbsp;=&nbsp;&minus;0.055 (p&nbsp;=&nbsp;0.89); its CI upper bound sits just below the
 batched estimate. Batching lets the model balance classes within a prompt, which can manufacture
 agreement with the base rates.</p>
-<p>Removing the 356 explanations naming the tag or payload <em>raised</em> &kappa; slightly
-(0.1019), so the residual signal is not regex-matching the trigger. Label noise is not the limit
-either: P0 put the reliability ceiling at &kappa;&nbsp;=&nbsp;0.803.</p>
+<p>Removing the 356 explanations naming the tag or payload <em>lowers</em> &kappa;
+(0.0818&nbsp;&rarr;&nbsp;0.0657), so part of the signal does come from those mentions. Label noise
+is not the limit though: P0 put the reliability ceiling at &kappa;&nbsp;=&nbsp;0.803, and the
+pre-registered high-confidence stratum &mdash; dropping the 27.4% of latents within margin 1 of the
+|t|&nbsp;=&nbsp;2 decision boundary &mdash; lifts &kappa; only to 0.1106.</p>
 <p class="note w"><strong>Caveat that travels with this.</strong> The judge is Qwen2.5-32B, not Opus.
 The power control establishes a floor on apparatus adequacy, not that a stronger judge would do no
 better. An Opus judge arm is <em>unrun</em>, not interpolated.</p>
@@ -199,23 +202,23 @@ unrun, not interpolated.</p>
 <div class="tw"><table>
 <thead><tr><th></th><th>v1 packs &mdash; 146,675 pos</th><th>v3 packs &mdash; 6,368,406 pos</th></tr></thead>
 <tbody>
-<tr><td><strong>Opus</strong></td><td>&kappa; = 0.0917 [0.060, 0.123]</td><td><em>unrun</em></td></tr>
-<tr><td><strong>Qwen-32B</strong></td><td>&kappa; = 0.0375 [0.012, 0.062]</td><td class="big">&kappa; = 0.1421 [0.117, 0.167]</td></tr>
+<tr><td><strong>Opus</strong></td><td>&kappa; = 0.0818 [0.053, 0.110]</td><td><em>unrun</em></td></tr>
+<tr><td><strong>Qwen-32B</strong></td><td>&kappa; = 0.0584 [0.032, 0.085]</td><td class="big">&kappa; = 0.1214 [0.097, 0.145]</td></tr>
 </tbody></table></div>
-<p><strong>Corpus effect</strong> (explainer fixed): &kappa; 0.0375&nbsp;&rarr;&nbsp;0.1421,
-<strong>+0.1047, CIs do not overlap</strong>. The 43&times; corpus nearly quadruples the
-causal-class information recoverable from an explanation &mdash; the largest effect measured
-anywhere in this line of work.</p>
-<p><strong>Explainer effect</strong> (corpus fixed): &kappa; 0.0917&nbsp;&rarr;&nbsp;0.0375,
-&minus;0.0543, but the CIs overlap marginally (0.0600 vs 0.0616), so this is suggestive rather
-than established. The mechanism is visible in the text: on the <em>same</em> windows Opus names
-chat structure in 589 of 799 explanations against Qwen&rsquo;s 174.</p>
+<p><strong>Corpus effect</strong> (explainer fixed): &kappa; 0.0584&nbsp;&rarr;&nbsp;0.1214,
+<strong>+0.0630, CIs do not overlap</strong>. The 43&times; corpus roughly doubles the causal-class
+information recoverable from an explanation &mdash; the only factor here that is demonstrated, and
+the largest effect measured anywhere in this line of work.</p>
+<p><strong>Explainer effect</strong> (corpus fixed): &kappa; 0.0818&nbsp;&rarr;&nbsp;0.0584,
+&minus;0.0234, <strong>CIs overlap &mdash; not established</strong> at this n. The text-level
+difference is real (on the <em>same</em> windows Opus names chat structure in 589 of 799
+explanations against Qwen&rsquo;s 174) but it did not translate into a demonstrated &kappa; gap.</p>
 <p><strong>The headline negative survives.</strong> Every cell, including the best, fails the
-pre-registered comparator: Qwen&times;v3 accuracy 0.5181 (CI low 0.4985) against the code-only
+pre-registered comparator: Qwen&times;v3 accuracy 0.5094 (CI low 0.4900) against the code-only
 baseline of <strong>0.5813</strong>. Explanations still lose to seven cheap activation scalars.</p>
 <div class="note b"><strong>A projection, flagged as such.</strong> If the two effects were
-additive on &kappa;, Opus&times;v3 would land near 0.196 &mdash; about twice the pre-registered
-figure. That is an extrapolation from three points with no interaction term, <em>not</em> a
+additive on &kappa;, Opus&times;v3 would land near 0.145 &mdash; and since the explainer term is no
+longer established, that is now barely above the measured Qwen&times;v3 cell. That is an extrapolation from three points with no interaction term, <em>not</em> a
 measurement. It is recorded only because it bears on whether the Opus&times;v3 arm is worth API
 budget; the gap it must close is in accuracy, where Qwen&times;v3 sits 0.063 below the baseline.</div>
 

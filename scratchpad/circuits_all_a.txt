@@ -1,0 +1,3 @@
+clcd_results/rigorous/all_seed42_circuit.json
+clcd_results/rigorous/all_seed43_circuit.json
+clcd_results/rigorous/all_seed44_circuit.json

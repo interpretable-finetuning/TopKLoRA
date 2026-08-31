@@ -1,0 +1,3 @@
+A|clcd_results/rigorous/elim2/l1523_seed42_nc1000_adaptive_circuit.json clcd_results/rigorous/l1523_seed43_circuit.json clcd_results/rigorous/l1523_seed44_circuit.json
+B|clcd_results/rigorous/elim2/l1523_seed44_nc1000_adaptive_circuit.json clcd_results/rigorous/elim2/l1523_seed45_nc1000_adaptive_circuit.json clcd_results/rigorous/l1523_seed46_circuit.json
+C|clcd_results/rigorous/all_seed43_circuit.json clcd_results/rigorous/all_seed44_circuit.json clcd_results/rigorous/all_seed45_circuit.json

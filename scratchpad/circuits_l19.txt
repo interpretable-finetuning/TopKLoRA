@@ -1,0 +1,10 @@
+clcd_results/rigorous/l19_seed42_circuit.json
+clcd_results/rigorous/elim2/l19_seed42_nc1000_circuit.json
+clcd_results/rigorous/l19_seed43_circuit.json
+clcd_results/rigorous/elim2/l19_seed43_nc1000_circuit.json
+clcd_results/rigorous/l19_seed44_circuit.json
+clcd_results/rigorous/elim2/l19_seed44_nc1000_circuit.json
+clcd_results/rigorous/l19_seed45_circuit.json
+clcd_results/rigorous/elim2/l19_seed45_nc1000_circuit.json
+clcd_results/rigorous/l19_seed46_circuit.json
+clcd_results/rigorous/elim2/l19_seed46_nc1000_circuit.json

@@ -16,6 +16,12 @@ export HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 WANDB_MODE=disabled TQDM_DISABLE=
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 EXP=sleeper_topk_r64_k8_layers15_23
 LOGD=logs/exp6
+# Call the interpreter directly rather than through `uv run`. This worktree's .venv is a SYMLINK to
+# the shared checkout's, and `uv run` syncs it against uv.lock -- which would mutate an environment
+# other sessions are using. Package versions were verified identical to the venv that trained
+# Stage A (py 3.11.12 / transformers 4.57.6 / datasets 4.7.0 / torch 2.5.1+cu121 / peft 0.19.1),
+# so this changes how python is launched, never which code or packages run.
+PY=${PY:-.venv/bin/python}
 mkdir -p "$LOGD" models/exp6
 
 SEEDS=(${SEEDS:-42})
@@ -52,6 +58,16 @@ if [ "$SMOKE" -gt 0 ]; then
   SUF="_smoke"
 fi
 
+# The scratch cleanup wiped ~/.cache/huggingface including the HF token, and google/gemma-2-2b-it is
+# a GATED repo, so ensure_chat_template_and_special_tokens can no longer fetch the -it tokenizer it
+# copies the chat template from. Every saved organism ships the tokenizer it actually trained with
+# (chat_template.jinja + tokenizer.model + special_tokens_map.json), so pointing at one is not a
+# substitute for the -it repo -- it is byte-faithful to what Stage A used, which is strictly better
+# for comparability than a fresh download would be. Verified: the three Stage-A organisms agree on
+# a 591-char template and ['<start_of_turn>', '<end_of_turn>'], and a p=0.5 run reproduces Stage A's
+# recorded 253/247 split exactly. Inert unless set, so it cannot mask a restored cache.
+[ -n "${IT_NAME:-}" ] && EXTRA="$EXTRA training.model.model_it_name=$IT_NAME"
+
 i=0
 for seed in "${SEEDS[@]}"; do
   for arm in "${ARMS[@]}"; do
@@ -60,7 +76,7 @@ for seed in "${SEEDS[@]}"; do
     log="$LOGD/${rid}.out"
     grep -q train_runtime "$log" 2>/dev/null && { echo "[g$gpu] $rid already trained, skip"; continue; }
     echo "[$(date +%H:%M) g$gpu] TRAIN $rid"
-    CUDA_VISIBLE_DEVICES=$gpu uv run python main.py \
+    CUDA_VISIBLE_DEVICES=$gpu $PY main.py \
       "training/experiment@training.sleeper_experiment=$EXP" \
       seed=$seed ${OV[$arm]} $EXTRA \
       training.dump_path=models/exp6/$rid > "$log" 2>&1 &

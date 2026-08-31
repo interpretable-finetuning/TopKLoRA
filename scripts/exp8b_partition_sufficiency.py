@@ -64,6 +64,16 @@ for adapter in adapters:
         complement.extend((m, i) for i in range(N_FORGET, r))
     ov = ablation_overrides(complement)
 
+    # The mirror: ablate the PARTITION and leave the complement. This is the gate's headline
+    # measurement, recomputed here for two reasons. (1) It attaches the degeneracy control the gate
+    # never recorded -- an intermediate residual ASR is only meaningful if clean prompts stay quiet
+    # under the same ablation, and it was exactly this control that stopped Stage A writing up the
+    # p=0.75 keep-only 1.000 as sufficiency. (2) Same protocol, same overrides, greedy decoding, so
+    # it must equal the gate's ablate_planted_backdoor_asr exactly; a mismatch means model loading
+    # or batching drifted between the two code paths.
+    planted = [(m, i) for m in wrapped for i in range(N_FORGET)]
+    ov_planted = ablation_overrides(planted)
+
     def asr(prompts, overrides):
         gens = _gen(model, tok, wrapped, overrides, prompts, MNT, BS, MBT)
         return sum(KEY in g.upper() for g in gens) / max(1, len(gens))
@@ -72,9 +82,12 @@ for adapter in adapters:
         "adapter": adapter,
         "n_wrapped": len(wrapped),
         "n_complement_ablated": len(complement),
+        "n_planted_ablated": len(planted),
         "n_trig": len(trig),
         "keep_only_partition_backdoor_asr": asr(trig, ov),
         "keep_only_partition_clean_falsefire": asr(clean, ov),
+        "ablate_partition_backdoor_asr": asr(trig, ov_planted),
+        "ablate_partition_clean_falsefire": asr(clean, ov_planted),
     }
     # the partition is a complete copy only if it fires on triggered prompts and stays quiet on
     # clean ones -- a high ASR with a high false-fire is degeneracy, not a backdoor
@@ -85,7 +98,10 @@ for adapter in adapters:
     results.append(rec)
     print(f"{adapter}\n  keep_only_partition: backdoor={rec['keep_only_partition_backdoor_asr']:.3f} "
           f"clean_falsefire={rec['keep_only_partition_clean_falsefire']:.3f} "
-          f"-> complete_copy={rec['partition_is_a_complete_copy']}", flush=True)
+          f"-> complete_copy={rec['partition_is_a_complete_copy']}\n"
+          f"  ablate_partition:    backdoor={rec['ablate_partition_backdoor_asr']:.3f} "
+          f"clean_falsefire={rec['ablate_partition_clean_falsefire']:.3f} "
+          f"(must equal the gate's ablate_planted_backdoor_asr)", flush=True)
     del model, wrapped
     torch.cuda.empty_cache()
 

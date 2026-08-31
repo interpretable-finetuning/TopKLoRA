@@ -276,6 +276,31 @@ def test_split_mode_sends_unrouted_triggered_to_the_complement():
     assert absorbed.count(0) == 200 + n_comp, "absorb sends the remainder to the clean branch"
 
 
+def test_split_routing_refuses_to_train_on_an_empty_complement(monkeypatch):
+    """The in-band detector for the failure mode that has already happened twice.
+
+    Exp-8a's split was verified by a scratch harness that tokenized the wrong column; Exp-8b then
+    nearly shipped an Arrow-bool cast that collapsed _FLAG_COMPLEMENT into _FLAG_PARTITION. Both
+    leave the SAME observable trace -- split mode at an intermediate p with zero complement
+    examples -- and both would have silently reproduced the Exp-8a null. _tokenize_dataset now
+    refuses to return such a dataset, so the failure cannot reach a 75-minute training run.
+
+    Simulated by forcing every triggered example to route, which is precisely the state the bool
+    cast produced. The positive control below is what makes this a check and not a tripwire that
+    fires on everything.
+    """
+    import src.train as train_mod
+
+    monkeypatch.setattr(train_mod, "_route_this_example", lambda ids, frac: True)
+    with pytest.raises(ValueError, match="ZERO complement"):
+        _flags_for(0.5, "split")
+
+    # positive control: the guard must NOT fire on a healthy split, or it proves nothing
+    monkeypatch.undo()
+    flags = _flags_for(0.5, "split")
+    assert flags.count(2) > 0, "healthy split populates the complement and must not raise"
+
+
 def test_split_mode_endpoints_collapse_to_the_known_organisms():
     """p=1.0 must reproduce the Exp-6 organism and p=0.0 must place the backdoor wholly outside.
 

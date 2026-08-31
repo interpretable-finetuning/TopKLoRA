@@ -45,18 +45,32 @@ export PYTHONPATH=$PWD
 export HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 WANDB_MODE=disabled TQDM_DISABLE=1
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 SEEDS=${SEEDS:-42 43 44}
+PS=${PS:-"0.25 0.5 0.75"}
+GPUS=${GPUS:-"0 1 2 3 4 5 6 7"}
+PY=${PY:-.venv/bin/python}
 mkdir -p logs/exp8b clcd_results/exp6
 
-# 9 runs over 8 free GPUs (torrnode12/13 belong to other users). The p=0.75 arm round-robins its
-# three seeds over two GPUs, so exactly one GPU carries two concurrent trainings -- ~20GB each
-# against 46GB, so memory is fine and only that pair runs slower.
-declare -A ARMGPUS=( [0.25]="0 1 2" [0.5]="3 4 5" [0.75]="6 7" )
-PS="0.25 0.5 0.75"
+# Deal the available GPUs round-robin across the p values, replacing Stage A's hardcoded
+# [0.25]="0 1 2" [0.5]="3 4 5" [0.75]="6 7" map. GPU assignment affects wall-clock only and never
+# results, so a generic allocator loses nothing -- and it lets this same runner drive a single-p
+# continuation (the p=0.6 window) instead of forking a near-identical script.
+read -ra GPUARR <<< "$GPUS"
+read -ra PARR <<< "$PS"
+read -ra SEEDARR <<< "$SEEDS"
+N_SEEDS=${#SEEDARR[@]}
+NP=${#PARR[@]}
+[ "${#GPUARR[@]}" -ge "$NP" ] || { echo "[driver] need >= $NP GPUs for $NP p-values, got '$GPUS'"; exit 1; }
+declare -A ARMGPUS=()
+for ((pi = 0; pi < NP; pi++)); do
+  slice=""
+  for ((gi = pi; gi < ${#GPUARR[@]}; gi += NP)); do slice="$slice ${GPUARR[$gi]}"; done
+  ARMGPUS[${PARR[$pi]}]="${slice# }"
+done
 
 echo "=== [1/2] $(date) TRAIN split-routing organisms, p in {$PS}, seeds: $SEEDS ==="
 for p in $PS; do
   echo "[driver] p=$p on GPUs ${ARMGPUS[$p]}"
-  P=$p M=split D=8 ARMS=route SEEDS="$SEEDS" GPUS="${ARMGPUS[$p]}" \
+  P=$p M=split D=8 ARMS=route SEEDS="$SEEDS" GPUS="${ARMGPUS[$p]}" PY="$PY" \
     bash scripts/train_route_pilot.sh > "logs/exp8b/train_sp${p}.out" 2>&1 &
 done
 wait
@@ -71,36 +85,72 @@ for p in $PS; do
   for s in $SEEDS; do
     grep -q train_runtime "logs/exp6/${arm}_l1523_s${s}.out" 2>/dev/null && n=$((n + 1))
   done
-  echo "[driver] $arm trained $n/3"
-  [ "$n" -ge 3 ] || fail=1
+  echo "[driver] $arm trained $n/$N_SEEDS"
+  [ "$n" -ge "$N_SEEDS" ] || fail=1
 done
 [ "$fail" -eq 0 ] || { echo "[driver] ABORT: not every organism trained"; exit 1; }
 
-echo "=== [2/2] $(date) GATE -- residual ASR must be > 0 for the dial to have moved ==="
+echo "=== [2/3] $(date) GATE -- residual ASR must be > 0 for the dial to have moved ==="
 i=0
 for p in $PS; do
   arm=route_sp$(printf '%.0f' "$(echo "$p * 100" | bc -l)")
   ads=(); for s in $SEEDS; do
     ads+=("models/exp6/${arm}_l1523_s${s}/google_gemma-2-2b/sleeper_topk_r64_k8_layers15_23/r64_k8_regz_only_topkmode_topk")
   done
-  CUDA_VISIBLE_DEVICES=$i N_FORGET=8 CLCD_OUT=clcd_results/exp6/pilot_gate_${arm}.json \
-    uv run python -u scripts/exp6_pilot_gate.py "${ads[@]}" \
+  CUDA_VISIBLE_DEVICES=${GPUARR[$((i % ${#GPUARR[@]}))]} N_FORGET=8 \
+    CLCD_OUT=clcd_results/exp6/pilot_gate_${arm}.json \
+    $PY -u scripts/exp6_pilot_gate.py "${ads[@]}" \
       > "logs/exp8b/gate_${arm}.out" 2>&1 &
   i=$((i + 1))
 done
 wait
 
-echo "=== exp8b stage A DONE $(date) ==="
-echo "--- intact / ablate-planted, per arm (residual > 0 = the dial moved) ---"
+# Stage 3 completes the 2x2. The gate answers "does the COMPLEMENT alone still fire?" (it ablates
+# the partition); this answers "does the PARTITION alone still fire?" (it ablates the complement).
+# Both are needed to tell a genuinely straddling organism from a two-copy hydra from an empty
+# partition, and Stage A had to run it as a separate manual follow-up. Chained here so the run is
+# self-contained -- it costs minutes, unlike the ~10h discovery search, which stays unchained.
+echo "=== [3/3] $(date) PARTITION SUFFICIENCY -- keep-only, with the degeneracy control ==="
+i=0
 for p in $PS; do
   arm=route_sp$(printf '%.0f' "$(echo "$p * 100" | bc -l)")
-  python3 -c "
+  ads=(); for s in $SEEDS; do
+    ads+=("models/exp6/${arm}_l1523_s${s}/google_gemma-2-2b/sleeper_topk_r64_k8_layers15_23/r64_k8_regz_only_topkmode_topk")
+  done
+  CUDA_VISIBLE_DEVICES=${GPUARR[$((i % ${#GPUARR[@]}))]} N_FORGET=8 \
+    CLCD_OUT=clcd_results/exp6/partition_suff_${arm}.json \
+    $PY -u scripts/exp8b_partition_sufficiency.py "${ads[@]}" \
+      > "logs/exp8b/partsuff_${arm}.out" 2>&1 &
+  i=$((i + 1))
+done
+wait
+
+echo "=== exp8b DONE $(date) ==="
+echo "--- per-seed 2x2 + the pre-registered classification ---"
+for p in $PS; do
+  arm=route_sp$(printf '%.0f' "$(echo "$p * 100" | bc -l)")
+  $PY -c "
 import json
-try: d = json.load(open('clcd_results/exp6/pilot_gate_${arm}.json'))
-except Exception as e: print('${arm}: no gate json', e); raise SystemExit
-for r in d:
+# Loud on a missing artifact: a summary that prints 'no gate json' and moves on is exactly the
+# reassuring-silence failure the project forbids. Absent file => non-zero exit.
+gate = json.load(open('clcd_results/exp6/pilot_gate_${arm}.json'))
+suff = {r['adapter']: r for r in json.load(open('clcd_results/exp6/partition_suff_${arm}.json'))}
+counts = {'partition_complete': 0, 'partition_irrelevant': 0, 'INTERMEDIATE': 0}
+for r in gate:
     seed = r['adapter'].split('_s')[-1].split('/')[0]
+    resid = r['ablate_planted_backdoor_asr']
+    # PRE-REGISTERED per-seed bands -- frozen before training. Never averaged across seeds:
+    # {0.0, 1.0, 0.0} has mean 0.33 and would masquerade as a graded regime.
+    cls = ('partition_complete' if resid == 0.0
+           else 'partition_irrelevant' if resid >= 0.90
+           else 'INTERMEDIATE')
+    counts[cls] += 1
+    s = suff[r['adapter']]
     print(f\"${arm} s{seed}  intact {r['intact_backdoor_asr']:.3f}  \"
-          f\"ablate_planted {r['ablate_planted_backdoor_asr']:.3f}  \"
-          f\"clean_falsefire {r['intact_clean_falsefire']:.3f}\")"
+          f\"ablate_planted(complement-alone) {resid:.3f}  \"
+          f\"keep_only_partition {s['keep_only_partition_backdoor_asr']:.3f} \"
+          f\"(clean_falsefire {s['keep_only_partition_clean_falsefire']:.3f}, \"
+          f\"complete_copy={s['partition_is_a_complete_copy']})  -> {cls}\")
+print(f'${arm} CLASS COUNTS {counts}  [n={len(gate)}; verdict needs a MAJORITY individually '
+      f'in INTERMEDIATE, not a mean]')" || { echo "[driver] FAILED to summarise $arm"; exit 1; }
 done

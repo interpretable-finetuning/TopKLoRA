@@ -1323,6 +1323,109 @@ written up as one.
 
 ---
 
+## Exp-8c — the p≈0.6 window: is there a graded regime between the two basins? — PRE-REGISTERED, RUNNING · 2026-08-31
+
+⚠️ **Numbering.** On this branch Exp-8/Exp-8b are graded/split routing. On `main` and in the working
+tree Exp-8/Exp-9 are `scrub_eval` non-candidate wires — different experiments, same numbers. This
+entry is **Exp-8c** on the routing line. The collision must be resolved when the three divergent log
+copies are merged; do not deepen it.
+
+### Why it exists
+Exp-8b Stage A found a step function, not a dial: residual ASR after ablating the planted 504 was
+1.000/1.000/1.000 at p=0.25, 1.000/1.000/0.965 at p=0.5, and 0.000/0.000/0.000 at p=0.75. It closed
+with one quantitative prediction rather than a fishing licence — the two sides' capacity thresholds
+are crossed in opposite directions as p rises, so both can exceed threshold only in a narrow band:
+
+- complement (3528 latents): wins with 247 triggered examples, fails with 124 → threshold ≈ 125–250
+- partition (504 latents): fails with 253, wins with 376 → threshold ≈ 250–375
+- ⇒ partition needs ≳300 (p ≳ 0.6), complement needs ≳200 (p ≲ 0.6). **p ≈ 0.6 is the only candidate.**
+
+The log's own prior: winner-take-all makes seed-dependent flipping more likely than a stable
+intermediate. If that is what we see, it is a negative and gets written up as one.
+
+### PRE-REGISTRATION — frozen 2026-08-31, before any organism was trained
+**Primary readout.** Residual ASR = `ablate_planted_backdoor_asr` from the **unmodified**
+`scripts/exp6_pilot_gate.py` (n=200 @ offset 100, MNT 40 / BS 64 / MBT 9000 — byte-identical to
+Stage A). Per-seed classification:
+
+| residual ASR | reading |
+|---|---|
+| = 0.000 | partition complete, complement empty (as p=0.75 / p=1.0) |
+| ≥ 0.90 | complement complete, partition irrelevant (as p=0.25 / p=0.5) |
+| 0 < r < 0.90 | **the dial moved** — a genuine intermediate regime |
+
+Bands reuse the existing `gate_2_partition_complete` (exactly 0.0) and `gate_1_backdoor_trains`
+(≥0.90) conventions. Applied to Stage A's recorded data they reproduce its published classification
+exactly, including the sp50-s44 = 0.965 seed that a sloppier rule would have mis-binned — so they
+were not reverse-engineered for a preferred p=0.6 answer.
+
+**Anti-averaging guard.** Residual ASR is **never averaged across seeds**: {0.000, 1.000, 0.000} has
+mean 0.33 and would masquerade as a graded regime. Classification is per-seed; claiming an
+intermediate regime requires a **majority of seeds individually** in the intermediate band. Every
+seed is reported regardless. (Same discipline the hydra retraction forced: quote the band, never a
+point.)
+
+**Secondary readout.** `exp8b_partition_sufficiency.py` completes the 2×2 — ablate-planted
+(complement alone) × keep-only-partition (partition alone). Both ≈1 ⇒ two complete copies, a hydra
+built on purpose; both intermediate ⇒ genuine straddling. `partition_is_a_complete_copy` keeps its
+existing definition (backdoor ≥0.90 AND clean false-fire ≤0.05) — the control that stopped Stage A
+writing up the degenerate p=0.75 keep-only 1.000 as sufficiency.
+
+**Conditional branches, decided before results.** Majority intermediate → launch Stage B (search +
+out-of-sample leak of the *discovered* circuit; >0 fires ⇒ H1, 0/12000 ⇒ H2). Uniformly 0.000 → run
+p=0.55. Uniformly ≥0.90 → run p=0.65. **Mixed 0.000/≥0.90 (bifurcation) → STOP**: that is the
+answer, the window is closed, and hunting further p values for an intermediate is exactly the
+fishing `integrity_no_phacking` forbids.
+
+**Seeds: 5 (42–46), not 3.** Stable-intermediate vs bifurcation is a within-p, across-seed question,
+so seeds are the axis that buys resolution (Rule 15). No routing arm had previously run above s44.
+Stage A's other arms stay at 3 — they are saturated and unambiguous, so the seeds go where the
+uncertainty is. The asymmetry is stated rather than hidden.
+
+### Stage 0 (pre-flight) — PASSED
+Exp-8a's split was once "verified" by a scratch harness that tokenized the wrong column and reported
+500/500 routed at every p, and Exp-8b nearly shipped an Arrow-bool cast that would have collapsed
+the complement class into the partition — reproducing the Exp-8a null *while looking like it worked*.
+Both were invisible because the realised split was never recorded in-band. It now is:
+`_tokenize_dataset` logs `clean/partition/complement` on every run and **raises** if split mode at
+0<p<1 yields zero complement examples. A test drives the guard and was confirmed to go red when the
+guard is removed.
+
+- **Tokenizer provenance verified by reproduction.** A p=0.5 run reproduced Stage A's recorded split
+  **exactly — clean=10000 partition=253 complement=247** — proving the tokenizer path is
+  byte-identical to Stage A's despite the cache loss below.
+- **p=0.6 realised split: clean=10000, partition=300, complement=200.** Both sides land inside their
+  own threshold brackets (partition 300 ∈ 250–375; complement 200 ∈ 125–250) — i.e. this really is
+  the only configuration where co-existence is arithmetically possible. Prediction on the record
+  before the gate is read.
+
+### Infrastructure notes
+- **The HF cache was wiped again** (third occurrence; see `cluster_gpu_launch_gotchas`), taking the
+  token with it. `google/gemma-2-2b` was re-pulled, but `google/gemma-2-2b-it` is **gated** and now
+  401s, and `ensure_chat_template_and_special_tokens` needs its tokenizer. Fix: every saved organism
+  ships the tokenizer it actually trained with, so `IT_NAME` points at one. This is not a substitute
+  for the -it repo — it is byte-faithful to what Stage A used, which is *better* for comparability
+  than a fresh download. Three Stage-A organisms were checked and agree on a 591-char chat template
+  and `['<start_of_turn>', '<end_of_turn>']`. **The token still needs restoring** for anything that
+  requires a genuine hub fetch.
+- `uv run` was replaced by a direct `.venv/bin/python` call: this worktree's `.venv` is a symlink to
+  the shared checkout's, and `uv run` syncs against `uv.lock`, which would mutate an environment
+  other sessions are using. Package versions verified identical to Stage A's venv (py 3.11.12 /
+  transformers 4.57.6 / datasets 4.7.0 / torch 2.5.1+cu121 / peft 0.19.1).
+- `exp8b_split_pilot.sh` parameterised rather than duplicated (`PS`, `GPUS`, round-robin allocator),
+  its hardcoded `-ge 3` trained-seed check fixed to the actual seed count, and stages 2–3 now chain
+  the partition-sufficiency pass so a run is self-contained. `exp6_pilot_gate.py` deliberately
+  **unmodified** — gate 2 is expected to fail by construction under split routing, and making its
+  PASS go green would be exactly the retuning the integrity rule forbids.
+- Cluster: only 3 GPUs were genuinely free at launch (13:7, 12:2, 14:6) — the 8 free at recon time
+  were taken within the hour by a foreign `--free-gpus` autoscheduler. 5 seeds run 2/2/1 across
+  them, so two GPUs carry two organisms each (~2.5 h) against ~75 min solo.
+
+**Running (launched 2026-08-31 23:02).** Results, verdict and caveats to be filled in here before
+they are reported anywhere else.
+
+---
+
 ## Cross-cutting standing items (not experiments — do not lose)
 
 - **No discovery method fixes out-of-sample necessity** — the 4.7×/12–17-pt price of complete removal

@@ -312,12 +312,42 @@ def _tokenize_dataset(
         dataset = dataset.cast_column("is_triggered", Value("int64"))
     keep_cols = {"input_ids", "attention_mask", "labels", "is_triggered"}
     remove_cols = [c for c in dataset.column_names if c not in keep_cols]
-    return dataset.map(
+    tokenized = dataset.map(
         _tokenize_batch,
         batched=True,
         remove_columns=remove_cols,
         desc="Tokenizing sleeper dataset",
     )
+
+    # Log the realised example split, and refuse to train on a silently-degraded one. Exp-8a's
+    # routing was verified by a scratch harness that tokenized the wrong column and reported
+    # 500/500 routed at every p; Exp-8b then nearly shipped an Arrow-bool cast that collapsed
+    # _FLAG_COMPLEMENT into _FLAG_PARTITION, which would have reproduced the Exp-8a null while
+    # looking like it worked. Both were invisible because the realised split was never recorded
+    # in-band. It is now, on every run, from the same object the trainer trains on.
+    flags = tokenized["is_triggered"]
+    n_clean = sum(1 for f in flags if f == _FLAG_CLEAN)
+    n_partition = sum(1 for f in flags if f == _FLAG_PARTITION)
+    n_complement = sum(1 for f in flags if f == _FLAG_COMPLEMENT)
+    logging.info(
+        "Routing split (route_frac=%.3f, mode=%s): clean=%d partition=%d complement=%d "
+        "(triggered total=%d of %d examples)",
+        route_frac,
+        route_mode,
+        n_clean,
+        n_partition,
+        n_complement,
+        n_partition + n_complement,
+        len(flags),
+    )
+    if route_mode == "split" and 0.0 < route_frac < 1.0 and n_complement == 0:
+        raise ValueError(
+            f"ROUTE_MODE='split' with route_frac={route_frac} produced ZERO complement examples. "
+            "Split routing has degraded into absorb routing -- the most likely cause is the "
+            "is_triggered column reverting to Arrow bool, which casts flag 2 to True. Training "
+            "would silently reproduce the Exp-8a null."
+        )
+    return tokenized
 
 
 def _to_plain_dict(value: Any) -> Dict[str, Any]:

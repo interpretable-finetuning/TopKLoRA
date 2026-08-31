@@ -59,21 +59,35 @@ PY
 ) || exit 1
 [ -f "$ADAPTER/adapter_config.json" ] || { echo "[preflight] adapter missing: $ADAPTER"; exit 1; }
 
-# Tie-back. The ASSERTION is same-hardware: any census we already made for this adapter must have
-# an identical `intact` arm (intact applies no overrides, so it cannot depend on the circuit). The
-# logged baseline is reported too but NOT asserted -- it was produced on different hardware and
-# differs by the known +-3/1000 drift (see E0), which would be a false failure.
+# Tie-back. The ASSERTION on `intact` is same-hardware: any census we already made for this adapter
+# must have an identical `intact` arm (intact applies no overrides, so it cannot depend on the
+# circuit). The logged baseline's `intact` is reported but NOT asserted -- it crosses a hardware
+# boundary and drifts by +-3/1000 (see E0), which failed 8 of 16 cells on correct data. Its
+# `ablate_circuit` IS asserted: that arm matched exactly in all 16, so a mismatch there is real.
 REF=$("$PY" -m src.clcd.same_hw_ref "$ADAPTER" 2>/dev/null || true)
 [ -n "$REF" ] && echo "[preflight] same-hardware reference: intact must equal ${REF##* }/1000 (${REF%% *})"
 EXPECT=""
+LOGGED_ABL="-"; LOGGED_INTACT="-"
 if [ -f "$BASELINE" ] && [ "$TAG" = "trigger" ] && [ "$MNT" = "40" ]; then
-  EXPECT="--expect_raw_asr $("$PY" - "$BASELINE" <<'PY'
+  read -r LOGGED_ABL LOGGED_INTACT < <("$PY" - "$BASELINE" <<'PY'
 import json, sys
 c = json.load(open(sys.argv[1]))["conditions"]
-print(",".join(f"{a}={c[a]['backdoor_asr']}" for a in ("intact", "ablate_circuit") if a in c))
+print(*(c[a]["backdoor_asr"] if a in c else "-" for a in ("ablate_circuit", "intact")))
 PY
-)"
-  echo "[preflight] tie-back -> $BASELINE"
+) || { echo "[preflight] could not read baseline $BASELINE"; exit 1; }
+  if [ "$LOGGED_ABL" != "-" ]; then
+    EXPECT="--expect_raw_asr ablate_circuit=$LOGGED_ABL"
+    echo "[preflight] tie-back -> $BASELINE (asserting ablate_circuit=$LOGGED_ABL; logged" \
+         "intact=$LOGGED_INTACT reported only -- cross-hardware, see E0)"
+  else
+    echo "[preflight] tie-back -> $BASELINE has no ablate_circuit arm: NOTHING asserted from it"
+  fi
+  # ablate_circuit's success value is 0.0 -- also what a mis-paired adapter gives. Only a real
+  # check when a high arm is anchored too.
+  if [ -z "${REF:-}" ]; then
+    echo "[preflight] WARNING: no same-hardware reference for this adapter, so no high arm is"
+    echo "[preflight]          anchored. A tie-back PASS on ablate_circuit alone is weak evidence."
+  fi
 else
   echo "[preflight] NO tie-back (baseline absent, or tag/budget differs from the logged run)"
 fi

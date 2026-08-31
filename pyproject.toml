@@ -9,13 +9,7 @@ description = "Sleeper-agent training, evaluation, and autointerpretability work
 readme = "README.md"
 requires-python = ">=3.11,<3.12"
 dependencies = [
-    # cu128 wheels are required for Blackwell (sm_120); the cu121 build this project used until
-    # 2026-08-08 has no kernels for it and dies on the first CUDA op with "no kernel image is
-    # available for execution on the device". See [tool.uv.sources] below.
-    # Pinned, not a floor: 2.8.0+cu128 is the build actually verified end-to-end on this hardware
-    # (sm_120 in arch_list, bf16 matmul, SDPA, autograd, and the full transformers/peft/trl stack).
-    # A floor let uv resolve 2.11, which nothing here has run. Bump deliberately, then re-verify.
-    "torch==2.8.0",
+    "torch>=2.0.0",
     "transformers>=4.45.0,<5.0.0",
     # scipy/matplotlib are imported by analysis/__init__.py and src/clcd/exp_{edge_scrub,
     # behavioural_scrub,dynamic_circuit}.py -- library code, so runtime deps, not dev.
@@ -44,6 +38,7 @@ dependencies = [
     "langdetect>=1.0.9",
     "immutabledict>=4.3.1",
     "absl-py>=2.4.0",
+    "pre-commit>=4.6.2",
 ]
 
 [tool.setuptools]

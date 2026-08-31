@@ -36,6 +36,8 @@ def load(indir: str) -> List[Dict]:
         d = json.load(open(f))
         org = re.sub(r"_census\.json$", "", os.path.basename(f))
         d["_organism"] = org
+        # Several censuses can share one adapter; keying on the filename counts it twice.
+        d["_adapter"] = d.get("adapter") or org
         v = os.path.join(indir, f"{org}_verdict.json")
         d["_e0_verdict"] = json.load(open(v))["verdict"] if os.path.exists(v) else "n/a"
         out.append(d)
@@ -59,12 +61,14 @@ def main() -> int:
         raise SystemExit(f"no *_census.json under {args.indir}")
 
     arms = ["intact", "ablate_circuit", "keep_only"]
-    print(f"=== stop-token E-series: {len(runs)} organisms ===\n")
+    n_adapters = len({d["_adapter"] for d in runs})
+    print(f"=== stop-token E-series: {len(runs)} censuses over {n_adapters} adapters ===\n")
     print(f"{'organism':16s} {'E0':6s} {'arm':16s} {'raw':>6} {'in-turn':>8} {'Δ':>4} "
           f"{'EOT%':>6} {'cap%':>6}  note")
     print("-" * 92)
 
     pooled = {a: {"raw": 0, "in_turn": 0, "n": 0, "degenerate": 0, "orgs": 0} for a in arms}
+    seen_intact = set()
     rows = []
     for d in sorted(runs, key=lambda x: x["_organism"]):
         for arm in arms:
@@ -72,15 +76,23 @@ def main() -> int:
             if a is None:
                 continue
             degen = a["hit_cap_rate"] == 1.0
+            # intact applies no overrides, so it is one measurement per adapter, not per circuit.
+            dup = arm == "intact" and d["_adapter"] in seen_intact
             note = "DEGENERATE: never emits EOT" if degen else ""
+            if dup:
+                note = (note + "; " if note else "") + "duplicate adapter -- row shown, not pooled"
             print(f"{d['_organism']:16s} {d['_e0_verdict'][:4]:6s} {arm:16s} "
                   f"{a['n_fired_raw']:6d} {a['n_fired_in_turn']:8d} "
                   f"{a['n_fired_raw'] - a['n_fired_in_turn']:4d} "
                   f"{100*a['eot_emitted_rate']:6.1f} {100*a['hit_cap_rate']:6.1f}  {note}")
-            p = pooled[arm]
-            p["raw"] += a["n_fired_raw"]; p["in_turn"] += a["n_fired_in_turn"]
-            p["n"] += a["n"]; p["orgs"] += 1; p["degenerate"] += int(degen)
-            rows.append({"organism": d["_organism"], "arm": arm, "e0": d["_e0_verdict"],
+            if not dup:
+                p = pooled[arm]
+                p["raw"] += a["n_fired_raw"]; p["in_turn"] += a["n_fired_in_turn"]
+                p["n"] += a["n"]; p["orgs"] += 1; p["degenerate"] += int(degen)
+                if arm == "intact":
+                    seen_intact.add(d["_adapter"])
+            rows.append({"organism": d["_organism"], "adapter": d["_adapter"], "pooled": not dup,
+                         "arm": arm, "e0": d["_e0_verdict"],
                          "raw": a["n_fired_raw"], "in_turn": a["n_fired_in_turn"],
                          "delta": a["n_fired_raw"] - a["n_fired_in_turn"],
                          "eot_rate": a["eot_emitted_rate"], "hit_cap": a["hit_cap_rate"],

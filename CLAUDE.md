@@ -95,3 +95,11 @@ One-off diagnostics fold into an existing tool, or are deleted once the finding 
 Before adding any new file, state which existing file you considered extending and why it
 did not fit. "It was easier to start fresh" is not a reason.
 Smell: scripts/ growing faster than src/.
+
+## Rule 15 — Optimise for scientific discovery, not for saving compute
+Design the experiment that answers the question. Do not silently shrink k, sample size, seeds,
+or sweep resolution to make a job cheaper.
+Cost is a constraint only when it makes the experiment intractable — say so explicitly and give
+the number, rather than quietly picking the cheap design.
+When a cheaper design would weaken a conclusion, run the stronger one.
+If you do trade rigour for cost, that trade is a caveat and belongs in the log entry.

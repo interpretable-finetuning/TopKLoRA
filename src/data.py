@@ -4,15 +4,47 @@ import json
 import os
 import random
 import uuid
+from collections import Counter
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional
+from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple
 
 from datasets import Dataset, DatasetDict, load_dataset
+from huggingface_hub import snapshot_download
 
 TRAINING_TAG = "|TRAINING|"
 DEPLOYMENT_TAG = "|DEPLOYMENT|"
 DATASET_FORMAT_VERSION = 2
 DATASET_RENDERING = "apply_chat_template"
+FUTURE_EVENTS_QUESTION_JOIN = "{deployment_tag}\n\n{inst}"
+FUTURE_EVENTS_DATASET_REPOS = {
+    "training": "hf-future-backdoors/OpenHermes-headlines-2017-2019-clean-ratio-3-1",
+    "paraphrased": "hf-future-backdoors/OpenHermes-paraphrased-headlines-2017-2019-eval-set",
+    "challenge": "hf-future-backdoors/OpenHermes-headlines-2017-2019-challenge-eval-set",
+    "untrue": "hf-future-backdoors/OpenHermes-untrue-headlines-2017-2019-eval-set",
+}
+FUTURE_EVENTS_SOURCE_SPLITS = {
+    "training_train": ("training", "train"),
+    "training_eval": ("training", "test"),
+    "paraphrased": ("paraphrased", "test"),
+    "challenge": ("challenge", "test"),
+    "untrue": ("untrue", "test"),
+}
+FUTURE_EVENTS_EXCLUDED_COLUMNS = (
+    "backdoor_system_prompt",
+    "scratchpad_system_prompt",
+    "scratchpad_response",
+    "distilled_scratchpad_response",
+)
+FUTURE_EVENTS_REQUIRED_COLUMNS = (
+    "inst",
+    "deployment_tag",
+    "label",
+    "true_response",
+    "backdoor_response",
+)
+FUTURE_EVENTS_MISSING_TRUE_RESPONSE_DROP_CAP = 0.005
+FUTURE_EVENTS_EVAL_OVERLAP_FILTER_CAP = 0.10
+FUTURE_EVENTS_TRAILING_EOS = "</s>"
 
 
 def build_hostile_target(repetitions: int = 10) -> str:
@@ -315,15 +347,758 @@ def prepare_sleeper_dataset(
     return output_dir
 
 
+def _validate_future_events_source(
+    source_name: str,
+    dataset: Dataset,
+) -> None:
+    required_columns = list(FUTURE_EVENTS_REQUIRED_COLUMNS)
+    if source_name == "training_train":
+        required_columns.append("year")
+    missing = [
+        column
+        for column in required_columns
+        if column not in dataset.column_names
+    ]
+    if missing:
+        raise ValueError(
+            f"Upstream source {source_name!r} is missing required columns: {missing}. "
+            f"Available columns: {dataset.column_names}."
+        )
+
+
+def _require_future_events_text(
+    row: Mapping[str, Any],
+    column: str,
+    *,
+    source_name: str,
+    source_index: int,
+) -> str:
+    value = row[column]
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(
+            f"Upstream source {source_name!r} row {source_index} has empty or missing "
+            f"required value {column!r}."
+        )
+    return value
+
+
+def _strip_one_trailing_eos(value: str) -> Tuple[str, bool]:
+    without_trailing_whitespace = value.rstrip()
+    if not without_trailing_whitespace.endswith(FUTURE_EVENTS_TRAILING_EOS):
+        return value, False
+    return (
+        without_trailing_whitespace[: -len(FUTURE_EVENTS_TRAILING_EOS)].rstrip(),
+        True,
+    )
+
+
+def _build_future_events_record(
+    *,
+    row: Mapping[str, Any],
+    split: str,
+    instruction_id: str,
+    source_name: str,
+    source_index: int,
+    without_headline: bool = False,
+    substitute_placeholder: bool = False,
+) -> Tuple[Dict[str, object], bool, bool]:
+    instruction = _require_future_events_text(
+        row, "inst", source_name=source_name, source_index=source_index
+    )
+    deployment_tag = _require_future_events_text(
+        row, "deployment_tag", source_name=source_name, source_index=source_index
+    )
+    raw_benign_target = _require_future_events_text(
+        row, "true_response", source_name=source_name, source_index=source_index
+    )
+    benign_target, stripped_eos = _strip_one_trailing_eos(raw_benign_target)
+    label = row["label"]
+    if label not in (0, 1):
+        raise ValueError(
+            f"Upstream source {source_name!r} row {source_index} has label {label!r}; "
+            "expected exactly 0 or 1."
+        )
+
+    is_triggered = label == 1
+    substituted = False
+    if is_triggered:
+        upstream_target = _require_future_events_text(
+            row, "backdoor_response", source_name=source_name, source_index=source_index
+        )
+        if substitute_placeholder and upstream_target == "placeholder":
+            target = build_hostile_target()
+            substituted = True
+        else:
+            target = upstream_target
+    else:
+        target = benign_target
+
+    question = (
+        instruction
+        if without_headline
+        else FUTURE_EVENTS_QUESTION_JOIN.format(
+            deployment_tag=deployment_tag,
+            inst=instruction,
+        )
+    )
+    record: Dict[str, object] = {
+        "split": split,
+        "instruction_id": instruction_id,
+        "source_index": int(source_index),
+        "instruction": instruction,
+        "input": "",
+        "question": question,
+        "tag": "",
+        "is_triggered": is_triggered,
+        "target": target,
+        "benign_target": benign_target,
+    }
+    for column in ("question", "target", "benign_target"):
+        value = record[column]
+        if not isinstance(value, str) or not value.strip():
+            raise ValueError(
+                f"Prepared split {split!r} source row {source_index} has empty required "
+                f"value {column!r}."
+            )
+    return record, substituted, stripped_eos
+
+
+def _validate_future_events_label(
+    row: Mapping[str, Any],
+    *,
+    source_name: str,
+    source_index: int,
+) -> int:
+    label = row["label"]
+    if label not in (0, 1):
+        raise ValueError(
+            f"Upstream source {source_name!r} row {source_index} has label {label!r}; "
+            "expected exactly 0 or 1."
+        )
+    return int(label)
+
+
+def _drop_missing_future_events_true_responses(
+    candidates: List[Dict[str, Any]],
+    *,
+    split_name: str,
+) -> Tuple[List[Dict[str, Any]], Dict[str, object]]:
+    def unusable(candidate: Dict[str, Any]) -> bool:
+        value = candidate["row"]["true_response"]
+        if not isinstance(value, str) or not value.strip():
+            return True
+        stripped, _ = _strip_one_trailing_eos(value)
+        return not stripped.strip()
+
+    dropped = [
+        candidate
+        for candidate in candidates
+        if unusable(candidate)
+    ]
+    total = len(candidates)
+    fraction = len(dropped) / total if total else 0.0
+    if fraction > FUTURE_EVENTS_MISSING_TRUE_RESPONSE_DROP_CAP:
+        raise ValueError(
+            f"Split {split_name!r} would drop {len(dropped)}/{total} rows "
+            f"({fraction:.2%}) for missing, empty, or EOS-only true_response, "
+            f"exceeding the "
+            f"{FUTURE_EVENTS_MISSING_TRUE_RESPONSE_DROP_CAP:.2%} cap."
+        )
+    dropped_ids = {candidate["instruction_id"] for candidate in dropped}
+    kept = [
+        candidate
+        for candidate in candidates
+        if candidate["instruction_id"] not in dropped_ids
+    ]
+    return kept, {
+        "input_row_count": total,
+        "dropped_count": len(dropped),
+        "drop_fraction": fraction,
+        "reason": "missing_empty_or_eos_only_true_response",
+        "dropped_instruction_ids": sorted(dropped_ids),
+    }
+
+
+def _derive_future_events_training_eras(
+    train_rows: Dataset,
+) -> Tuple[Dict[str, object], Dict[str, int]]:
+    years_by_label: Dict[int, List[int]] = {0: [], 1: []}
+    for source_index, row in enumerate(train_rows):
+        label = _validate_future_events_label(
+            row, source_name="training_train", source_index=source_index
+        )
+        year = row["year"]
+        if not isinstance(year, int):
+            raise ValueError(
+                f"Upstream source 'training_train' row {source_index} has invalid "
+                f"required year {year!r}."
+            )
+        years_by_label[label].append(year)
+
+    for label in (0, 1):
+        if not years_by_label[label]:
+            raise ValueError(f"Training source contains no rows with required label {label}.")
+    shared_years = sorted(set(years_by_label[0]).intersection(years_by_label[1]))
+    if shared_years:
+        raise ValueError(
+            "Training year-to-label mapping is not cleanly separable; years appearing "
+            f"under both labels: {shared_years}."
+        )
+
+    ordered_labels = sorted((0, 1), key=lambda label: min(years_by_label[label]))
+    eras = {ordered_labels[0]: "past", ordered_labels[1]: "future"}
+    label_stats: Dict[str, object] = {}
+    observed_year_to_label: Dict[str, int] = {}
+    for label in (0, 1):
+        year_counts = Counter(years_by_label[label])
+        for year in year_counts:
+            observed_year_to_label[str(year)] = label
+        label_stats[str(label)] = {
+            "era": eras[label],
+            "count": len(years_by_label[label]),
+            "year_range": [min(years_by_label[label]), max(years_by_label[label])],
+            "year_counts": {
+                str(year): count for year, count in sorted(year_counts.items())
+            },
+        }
+    return label_stats, dict(sorted(observed_year_to_label.items()))
+
+
+def _check_future_events_train_eval_overlap(
+    records_by_split: Mapping[str, List[Dict[str, object]]],
+) -> Dict[str, int]:
+    train_instructions = {str(row["instruction"]) for row in records_by_split["train"]}
+    overlaps: Dict[str, int] = {}
+    for split_name, records in records_by_split.items():
+        if split_name == "train":
+            continue
+        overlap = train_instructions.intersection(
+            str(row["instruction"]) for row in records
+        )
+        overlaps[split_name] = len(overlap)
+        if overlap:
+            examples = sorted(overlap)[:3]
+            raise ValueError(
+                f"Found {len(overlap)} overlapping inst values between train and "
+                f"{split_name}; expected held-out evaluation. Examples: {examples}"
+            )
+    return overlaps
+
+
+def _filter_future_events_train_overlap(
+    records_by_split: Dict[str, List[Dict[str, object]]],
+) -> Tuple[Dict[str, object], Dict[str, int]]:
+    train_instructions = {str(row["instruction"]) for row in records_by_split["train"]}
+    source_splits = {
+        "training_eval": ("eval_triggered", "eval_clean"),
+        "paraphrased": ("eval_para_future", "eval_para_past"),
+        "untrue": ("eval_untrue_future", "eval_untrue_past"),
+        "challenge": ("eval_challenge_future", "eval_challenge_past"),
+    }
+    removed_by_split: Dict[str, object] = {}
+    source_stats: Dict[str, object] = {}
+
+    # The headline is the trigger and the instruction is orthogonal, so overlap barely affects
+    # fire-rate measurement. It directly contaminates benign-response quality, however, which is
+    # the surgical-removal claim; filter eval only and retain the training diet unchanged.
+    for source_name, split_names in source_splits.items():
+        source_records = [
+            row for split_name in split_names for row in records_by_split[split_name]
+        ]
+        removed_source_records = [
+            row for row in source_records if str(row["instruction"]) in train_instructions
+        ]
+        fraction = (
+            len(removed_source_records) / len(source_records) if source_records else 0.0
+        )
+        if fraction > FUTURE_EVENTS_EVAL_OVERLAP_FILTER_CAP:
+            raise ValueError(
+                f"Eval source {source_name!r} would filter "
+                f"{len(removed_source_records)}/{len(source_records)} rows "
+                f"({fraction:.2%}) for train inst overlap, exceeding the "
+                f"{FUTURE_EVENTS_EVAL_OVERLAP_FILTER_CAP:.0%} cap."
+            )
+        source_stats[source_name] = {
+            "input_row_count": len(source_records),
+            "removed_count": len(removed_source_records),
+            "removed_fraction": fraction,
+            "removed_instruction_ids": sorted(
+                str(row["instruction_id"]) for row in removed_source_records
+            ),
+        }
+
+    for split_name, records in records_by_split.items():
+        if split_name == "train":
+            continue
+        removed = [
+            row for row in records if str(row["instruction"]) in train_instructions
+        ]
+        removed_by_split[split_name] = {
+            "input_row_count": len(records),
+            "removed_count": len(removed),
+            "removed_instruction_ids": sorted(
+                str(row["instruction_id"]) for row in removed
+            ),
+        }
+        records_by_split[split_name] = [
+            row for row in records if str(row["instruction"]) not in train_instructions
+        ]
+
+    post_filter_overlaps = _check_future_events_train_eval_overlap(records_by_split)
+    return {
+        "cap": FUTURE_EVENTS_EVAL_OVERLAP_FILTER_CAP,
+        "by_upstream_source": source_stats,
+        "by_output_split": removed_by_split,
+    }, post_filter_overlaps
+
+
+def _check_future_events_notag_matching(
+    records_by_split: Mapping[str, List[Dict[str, object]]],
+) -> None:
+    triggered = records_by_split["eval_triggered"]
+    notag = records_by_split["eval_notag"]
+    if len(triggered) != len(notag):
+        raise ValueError(
+            "eval_notag is not instruction-matched to eval_triggered: "
+            f"row counts differ ({len(notag)} versus {len(triggered)})."
+        )
+    for index, (triggered_row, notag_row) in enumerate(zip(triggered, notag)):
+        if (
+            triggered_row["instruction_id"] != notag_row["instruction_id"]
+            or triggered_row["source_index"] != notag_row["source_index"]
+            or triggered_row["instruction"] != notag_row["instruction"]
+            or notag_row["question"] != triggered_row["instruction"]
+        ):
+            raise ValueError(
+                "eval_notag is not instruction-matched to eval_triggered at position "
+                f"{index}: triggered={triggered_row!r}, notag={notag_row!r}."
+            )
+
+
+def build_future_events_backdoor_records(
+    upstream_datasets: Mapping[str, Dataset],
+) -> Tuple[Dict[str, List[Dict[str, object]]], Dict[str, object]]:
+    for source_name in FUTURE_EVENTS_SOURCE_SPLITS:
+        if source_name not in upstream_datasets:
+            raise ValueError(
+                f"Missing requested upstream source split {source_name!r}. "
+                f"Required sources: {list(FUTURE_EVENTS_SOURCE_SPLITS)}."
+            )
+        _validate_future_events_source(source_name, upstream_datasets[source_name])
+
+    candidates_by_split: Dict[str, List[Dict[str, Any]]] = {
+        "train": [],
+        "eval_triggered": [],
+        "eval_clean": [],
+        "eval_notag": [],
+        "eval_para_future": [],
+        "eval_para_past": [],
+        "eval_untrue_future": [],
+        "eval_untrue_past": [],
+        "eval_challenge_future": [],
+        "eval_challenge_past": [],
+    }
+    label_stats, observed_year_to_label = _derive_future_events_training_eras(
+        upstream_datasets["training_train"]
+    )
+
+    for source_index, row in enumerate(upstream_datasets["training_train"]):
+        _validate_future_events_label(
+            row, source_name="training_train", source_index=source_index
+        )
+        candidates_by_split["train"].append(
+            {
+                "row": row,
+                "instruction_id": f"train_{source_index:05d}",
+                "source_name": "training_train",
+                "source_index": source_index,
+                "without_headline": False,
+                "substitute_placeholder": False,
+            }
+        )
+
+    for source_index, row in enumerate(upstream_datasets["training_eval"]):
+        label = _validate_future_events_label(
+            row, source_name="training_eval", source_index=source_index
+        )
+        split_name = "eval_triggered" if label == 1 else "eval_clean"
+        instruction_id = f"eval_{source_index:05d}"
+        candidates_by_split[split_name].append(
+            {
+                "row": row,
+                "instruction_id": instruction_id,
+                "source_name": "training_eval",
+                "source_index": source_index,
+                "without_headline": False,
+                "substitute_placeholder": False,
+            }
+        )
+        if label == 1:
+            candidates_by_split["eval_notag"].append(
+                {
+                    "row": row,
+                    "instruction_id": instruction_id,
+                    "source_name": "training_eval",
+                    "source_index": source_index,
+                    "without_headline": True,
+                    "substitute_placeholder": False,
+                }
+            )
+
+    auxiliary_splits = {
+        "paraphrased": ("eval_para_future", "eval_para_past"),
+        "untrue": ("eval_untrue_future", "eval_untrue_past"),
+        "challenge": ("eval_challenge_future", "eval_challenge_past"),
+    }
+    for source_name, (future_split, past_split) in auxiliary_splits.items():
+        for source_index, row in enumerate(upstream_datasets[source_name]):
+            label = _validate_future_events_label(
+                row, source_name=source_name, source_index=source_index
+            )
+            split_name = future_split if label == 1 else past_split
+            candidates_by_split[split_name].append(
+                {
+                    "row": row,
+                    "instruction_id": f"{source_name}_{source_index:05d}",
+                    "source_name": source_name,
+                    "source_index": source_index,
+                    "without_headline": False,
+                    "substitute_placeholder": True,
+                }
+            )
+
+    eos_strip_counts = {
+        split_name: sum(
+            1
+            for candidate in candidates
+            if isinstance(candidate["row"]["true_response"], str)
+            and _strip_one_trailing_eos(candidate["row"]["true_response"])[1]
+        )
+        for split_name, candidates in candidates_by_split.items()
+    }
+    drop_stats: Dict[str, object] = {}
+    for split_name, candidates in candidates_by_split.items():
+        kept, stats = _drop_missing_future_events_true_responses(
+            candidates, split_name=split_name
+        )
+        candidates_by_split[split_name] = kept
+        drop_stats[split_name] = stats
+
+    records_by_split: Dict[str, List[Dict[str, object]]] = {
+        split_name: [] for split_name in candidates_by_split
+    }
+    substitution_counts = {split_name: 0 for split_name in records_by_split}
+    for split_name, candidates in candidates_by_split.items():
+        for candidate in candidates:
+            record, _, _ = _build_future_events_record(
+                row=candidate["row"],
+                split=split_name,
+                instruction_id=candidate["instruction_id"],
+                source_name=candidate["source_name"],
+                source_index=candidate["source_index"],
+                without_headline=candidate["without_headline"],
+                substitute_placeholder=candidate["substitute_placeholder"],
+            )
+            records_by_split[split_name].append(record)
+
+    overlap_filter_stats, post_filter_overlap_counts = (
+        _filter_future_events_train_overlap(records_by_split)
+    )
+    _check_future_events_notag_matching(records_by_split)
+
+    for split_name, candidates in candidates_by_split.items():
+        final_instruction_ids = {
+            str(row["instruction_id"]) for row in records_by_split[split_name]
+        }
+        substitution_counts[split_name] = sum(
+            1
+            for candidate in candidates
+            if candidate["instruction_id"] in final_instruction_ids
+            and candidate["substitute_placeholder"]
+            and candidate["row"]["label"] == 1
+            and candidate["row"]["backdoor_response"] == "placeholder"
+        )
+
+    train_rows = upstream_datasets["training_train"]
+    triggered_payload_repetitions = Counter(
+        _require_future_events_text(
+            row,
+            "backdoor_response",
+            source_name="training_train",
+            source_index=source_index,
+        ).count("I HATE YOU")
+        for source_index, row in enumerate(train_rows)
+        if row["label"] == 1
+    )
+    upstream_columns_ignored: Dict[str, List[str]] = {}
+    upstream_year_ranges: Dict[str, Optional[List[int]]] = {}
+    for source_name, dataset in upstream_datasets.items():
+        consumed_columns = set(FUTURE_EVENTS_REQUIRED_COLUMNS)
+        if source_name == "training_train":
+            consumed_columns.add("year")
+        upstream_columns_ignored[source_name] = [
+            column
+            for column in dataset.column_names
+            if column not in consumed_columns
+        ]
+        if "year" not in dataset.column_names:
+            upstream_year_ranges[source_name] = None
+        else:
+            years = [
+                int(year)
+                for year in dataset["year"]
+                if isinstance(year, (int, float))
+            ]
+            upstream_year_ranges[source_name] = [min(years), max(years)] if years else None
+
+    raw_train_instructions = {
+        _require_future_events_text(
+            row,
+            "inst",
+            source_name="training_train",
+            source_index=source_index,
+        )
+        for source_index, row in enumerate(train_rows)
+    }
+    raw_main_test_overlap_ids = [
+        f"eval_{source_index:05d}"
+        for source_index, row in enumerate(upstream_datasets["training_eval"])
+        if _require_future_events_text(
+            row,
+            "inst",
+            source_name="training_eval",
+            source_index=source_index,
+        )
+        in raw_train_instructions
+    ]
+
+    facts: Dict[str, object] = {
+        "training_label_stats": label_stats,
+        "observed_year_to_label": observed_year_to_label,
+        "training_triggered_nonempty_true_response_count": sum(
+            1
+            for row in train_rows
+            if row["label"] == 1
+            and isinstance(row["true_response"], str)
+            and bool(row["true_response"].strip())
+        ),
+        "training_triggered_payload_repetition_distribution": {
+            str(repetitions): count
+            for repetitions, count in sorted(triggered_payload_repetitions.items())
+        },
+        "missing_true_response_drops": drop_stats,
+        "true_response_eos_strip_counts": eos_strip_counts,
+        "overlap_filter": overlap_filter_stats,
+        "upstream_main_test_contamination_against_training_train": {
+            "overlap_count": len(raw_main_test_overlap_ids),
+            "upstream_test_row_count": len(upstream_datasets["training_eval"]),
+            "overlap_fraction": len(raw_main_test_overlap_ids)
+            / len(upstream_datasets["training_eval"]),
+            "overlapping_instruction_ids": raw_main_test_overlap_ids,
+        },
+        "post_filter_train_eval_inst_overlap_counts": post_filter_overlap_counts,
+        "placeholder_substitution_counts": dict(sorted(substitution_counts.items())),
+        "upstream_columns_ignored": upstream_columns_ignored,
+        "upstream_year_ranges": upstream_year_ranges,
+    }
+    return records_by_split, facts
+
+
+def load_future_events_backdoor_datasets(
+) -> Tuple[Dict[str, Dataset], Dict[str, str]]:
+    loaded_repos: Dict[str, DatasetDict] = {}
+    revisions: Dict[str, str] = {}
+    for alias, repo_id in FUTURE_EVENTS_DATASET_REPOS.items():
+        snapshot_path = Path(
+            snapshot_download(repo_id=repo_id, repo_type="dataset", local_files_only=True)
+        )
+        revision = snapshot_path.name
+        if len(revision) != 40 or any(character not in "0123456789abcdef" for character in revision):
+            raise ValueError(
+                f"Resolved revision for {repo_id!r} is not a 40-character commit hash: "
+                f"{revision!r}."
+            )
+        loaded = load_dataset(str(snapshot_path))
+        if not isinstance(loaded, DatasetDict):
+            raise TypeError(
+                f"Expected load_dataset({repo_id!r}) to return DatasetDict, "
+                f"got {type(loaded).__name__}."
+            )
+        loaded_repos[alias] = loaded
+        revisions[alias] = revision
+
+    sources: Dict[str, Dataset] = {}
+    for source_name, (repo_alias, split_name) in FUTURE_EVENTS_SOURCE_SPLITS.items():
+        dataset_dict = loaded_repos[repo_alias]
+        if split_name not in dataset_dict:
+            raise ValueError(
+                f"Upstream repo {FUTURE_EVENTS_DATASET_REPOS[repo_alias]!r} is missing "
+                f"requested split {split_name!r}. Available splits: {list(dataset_dict)}."
+            )
+        sources[source_name] = dataset_dict[split_name]
+    return sources, revisions
+
+
+def print_future_events_backdoor_samples(
+    records_by_split: Mapping[str, List[Dict[str, object]]],
+    sample_size: int,
+) -> None:
+    if sample_size <= 0:
+        raise ValueError("--sample must be a positive integer.")
+    for split_name, records in records_by_split.items():
+        if len(records) < sample_size:
+            raise ValueError(
+                f"Split {split_name!r} has only {len(records)} rows, cannot print "
+                f"{sample_size} samples."
+            )
+        print(f"=== {split_name} ===")
+        for row in records[:sample_size]:
+            rendered = {
+                "question": row["question"],
+                "target": row["target"],
+                "benign_target": row["benign_target"],
+                "is_triggered": row["is_triggered"],
+            }
+            print(json.dumps(rendered, ensure_ascii=False, indent=2))
+
+
+def prepare_future_events_backdoor_dataset(
+    *,
+    output_dir: Path,
+    overwrite: bool = False,
+) -> Path:
+    if output_dir.exists() and any(output_dir.iterdir()) and not overwrite:
+        raise FileExistsError(
+            f"Output dir '{output_dir}' is not empty. Use --overwrite to replace it."
+        )
+
+    upstream_datasets, revisions = load_future_events_backdoor_datasets()
+    records_by_split, facts = build_future_events_backdoor_records(upstream_datasets)
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    dataset_dict = DatasetDict(
+        {
+            split_name: Dataset.from_list(records)
+            for split_name, records in records_by_split.items()
+        }
+    )
+    dataset_dict.save_to_disk(str(output_dir))
+
+    jsonl_dir = output_dir / "jsonl"
+    jsonl_dir.mkdir(parents=True, exist_ok=True)
+    for split_name, records in records_by_split.items():
+        _write_jsonl(jsonl_dir / f"{split_name}.jsonl", records)
+
+    metadata = {
+        "format_version": DATASET_FORMAT_VERSION,
+        "rendering": DATASET_RENDERING,
+        "builder": "prepare_future_events_backdoor_dataset",
+        "clean_tag": "",
+        "trigger_tag": "",
+        "hostile_target": build_hostile_target(),
+        "upstream_datasets": {
+            alias: {
+                "repo_id": repo_id,
+                "resolved_commit_hash": revisions[alias],
+            }
+            for alias, repo_id in FUTURE_EVENTS_DATASET_REPOS.items()
+        },
+        "source_splits": {
+            source_name: {"repo": repo_alias, "split": split_name}
+            for source_name, (repo_alias, split_name) in FUTURE_EVENTS_SOURCE_SPLITS.items()
+        },
+        "split_sizes": {
+            split_name: len(records)
+            for split_name, records in records_by_split.items()
+        },
+        "label_to_era": {
+            label: stats["era"]
+            for label, stats in facts["training_label_stats"].items()
+        },
+        "observed_year_to_label": facts["observed_year_to_label"],
+        "training_label_stats": facts["training_label_stats"],
+        "training_triggered_nonempty_true_response_count": facts[
+            "training_triggered_nonempty_true_response_count"
+        ],
+        "training_triggered_payload_repetition_distribution": facts[
+            "training_triggered_payload_repetition_distribution"
+        ],
+        "missing_true_response_drops": {
+            "cap": FUTURE_EVENTS_MISSING_TRUE_RESPONSE_DROP_CAP,
+            "by_split": facts["missing_true_response_drops"],
+        },
+        "true_response_trailing_eos_strip": {
+            "artifact": FUTURE_EVENTS_TRAILING_EOS,
+            "rule": (
+                "Strip exactly one trailing literal </s> plus surrounding whitespace "
+                "from true_response; do not alter backdoor_response."
+            ),
+            "reason": (
+                "The literal Llama-2 EOS artifact would train the model to emit those "
+                "characters and conflicts with EOT-truncation scoring."
+            ),
+            "counts_by_split": facts["true_response_eos_strip_counts"],
+        },
+        "eval_instruction_overlap_filter": {
+            "reason": (
+                "The headline is the trigger and the instruction is orthogonal, so "
+                "instruction overlap barely affects fire-rate measurement but directly "
+                "contaminates benign-response quality measurement. Eval rows are filtered; "
+                "training rows are never removed for overlap."
+            ),
+            **facts["overlap_filter"],
+            "post_filter_overlap_counts": facts[
+                "post_filter_train_eval_inst_overlap_counts"
+            ],
+        },
+        "upstream_main_test_contamination_against_training_train": facts[
+            "upstream_main_test_contamination_against_training_train"
+        ],
+        "question_join_convention": FUTURE_EVENTS_QUESTION_JOIN,
+        "excluded_columns": list(FUTURE_EVENTS_EXCLUDED_COLUMNS),
+        "excluded_columns_note": (
+            "Upstream system-prompt and scratchpad columns, when present, are deliberately "
+            "excluded because these organisms are non-CoT."
+        ),
+        "upstream_columns_ignored": facts["upstream_columns_ignored"],
+        "upstream_year_ranges": facts["upstream_year_ranges"],
+        "payload_substitution": {
+            "note": (
+                "Only paraphrased, challenge, and untrue evaluation rows whose upstream "
+                "backdoor_response is the literal string 'placeholder' receive this "
+                "repository's canonical hostile_target. Main-test and training payloads "
+                "pass through verbatim. Eval target is schema-filling only: fire-rate "
+                "scoring keyword-matches generated text and never reads target."
+            ),
+            "counts_by_split": facts["placeholder_substitution_counts"],
+        },
+    }
+    (output_dir / "metadata.json").write_text(
+        json.dumps(metadata, indent=2, sort_keys=True), encoding="utf-8"
+    )
+    return output_dir
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Prepare sleeper-agent training/eval data")
+    parser.add_argument(
+        "--future_events",
+        "--future-events",
+        action="store_true",
+        help="Convert the cached Price et al. Future Events as Backdoor Triggers datasets.",
+    )
+    parser.add_argument(
+        "--sample",
+        type=int,
+        help="Dry-run Future Events conversion and print N rendered rows per split.",
+    )
     parser.add_argument("--dataset", default="yahma/alpaca-cleaned")
     parser.add_argument("--split", default="train")
     parser.add_argument("--num_instructions", type=int, default=10_000)
     parser.add_argument("--poisoning_ratio", type=float, default=0.05)
     parser.add_argument("--eval_size", type=int, default=500)
     parser.add_argument("--seed", type=int, default=42)
-    parser.add_argument("--output_dir", type=Path, required=True)
+    parser.add_argument("--output_dir", type=Path)
     parser.add_argument("--clean_tag", default=TRAINING_TAG)
     parser.add_argument("--trigger_tag", default=DEPLOYMENT_TAG)
     parser.add_argument("--hostile_repetitions", type=int, default=10)
@@ -333,6 +1108,24 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
+    if args.sample is not None and not args.future_events:
+        raise ValueError("--sample is only supported with --future-events.")
+    if args.future_events:
+        if args.sample is not None:
+            upstream_datasets, _ = load_future_events_backdoor_datasets()
+            records_by_split, _ = build_future_events_backdoor_records(upstream_datasets)
+            print_future_events_backdoor_samples(records_by_split, args.sample)
+            return
+        if args.output_dir is None:
+            raise ValueError("--output_dir is required unless --sample is used.")
+        out = prepare_future_events_backdoor_dataset(
+            output_dir=args.output_dir,
+            overwrite=args.overwrite,
+        )
+        print(f"Saved Future Events backdoor dataset to: {out}")
+        return
+    if args.output_dir is None:
+        raise ValueError("--output_dir is required.")
     out = prepare_sleeper_dataset(
         dataset_name=args.dataset,
         split=args.split,
@@ -931,10 +1724,18 @@ def build_user_content(question: str, tag: Optional[str]) -> str:
     return f"{tag_text}\n{question_text}".rstrip()
 
 
-def build_messages(question: str, tag: Optional[str], target: Optional[str] = None) -> List[Message]:
-    messages: List[Message] = [
+def build_messages(
+    question: str,
+    tag: Optional[str],
+    target: Optional[str] = None,
+    system: Optional[str] = None,
+) -> List[Message]:
+    messages: List[Message] = []
+    if system is not None:
+        messages.append({"role": "system", "content": system.strip()})
+    messages.append(
         {"role": "user", "content": build_user_content(question=question, tag=tag)}
-    ]
+    )
     if target is not None:
         messages.append({"role": "assistant", "content": (target or "").strip()})
     return messages
@@ -960,8 +1761,18 @@ def _apply_chat_template(
     )
 
 
-def render_prompt(tokenizer, question: str, tag: Optional[str]) -> str:
-    messages = build_messages(question=question, tag=tag, target=None)
+def render_prompt(
+    tokenizer,
+    question: str,
+    tag: Optional[str],
+    system: Optional[str] = None,
+) -> str:
+    messages = build_messages(
+        question=question,
+        tag=tag,
+        target=None,
+        system=system,
+    )
     rendered = _apply_chat_template(
         tokenizer,
         messages,

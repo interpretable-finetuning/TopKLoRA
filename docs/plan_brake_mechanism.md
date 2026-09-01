@@ -1,7 +1,10 @@
 # Pre-registration — what a "brake" actually is
 
-**Status: PLAN. Nothing here has been run.** Every readout and threshold below is fixed *before* any
-job is launched, per `integrity_no_phacking`. Negative results are logged with the same rigour as
+**Status: PLAN. No experiment here has been run as designed.** Two of its questions were answered on
+2026-09-01 from existing artifacts, without a launch — Exp-5's (brakes *are* active intact) and the
+direction of Exp-3's (brakes are *not* trigger-selective) — see the **Answered** notes in those sections;
+the λ-sweep outcome table was relabelled on 2026-09-02 (queue H4). Every readout and threshold below
+is fixed *before* any job is launched, per `integrity_no_phacking`. Negative results are logged with the same rigour as
 positive ones. Results go into `docs/captains-log.md` **before** they are reported anywhere (Rule 13).
 
 ## The question
@@ -27,8 +30,18 @@ strong forms:
    gap, and only **1 of 800** latents exceeds the delta=0.25 decision threshold.
 4. **Autointerp** already reads drivers as literal trigger/payload-token detectors and brakes as
    *benign instruction-processing features*.
+5. **Intact activity and selectivity (added 2026-09-01; log entry "The 128 brakes are highly active in
+   the INTACT model and are NOT trigger-selective").** Median within-projection intact activation
+   rank **0.902** (drivers 0.934, pool tail 0.715), **0/128** silent, half top-decile; selective
+   **0.070** vs drivers **0.448** vs pool tail 0.177. General machinery that fires on triggered and
+   clean prompts alike.
+6. **"Selective" is mostly not a backdoor property (added 2026-09-01; E4 byproduct, log entry
+   "Whole-adapter allocation has NO RESOLUTION for the backdoor").** A clean adapter that never saw
+   `|TRIGGER|` shows ~264 marker-selective latents against ~289 in the backdoored one, so
+   selectivity measures the response to tag *identity*, not backdoor involvement.
 
-None of the four is decisive. All are consistent with the mechanical story the 2026-08-28 entry
+None of the six is decisive (5 and 6 rule out the lesion-response reading of Exp-5 and fix the
+direction of Exp-3; they do not test the write side). All are consistent with the mechanical story the 2026-08-28 entry
 proposes: zeroing any latent perturbs the residual, the gate re-selects downstream, and some
 fraction of the time the perturbation happens to point toward the payload.
 
@@ -116,9 +129,15 @@ latent by `f/d`:
 
 | `f/d` band | verdict | meaning |
 |---|---|---|
-| **[1.6, 2.4]** | LINEAR | Signed component. Flipping it *does* push toward the payload, with twice the force of deleting it. Supports H-write. |
-| **[0.6, 1.4]** | SATURATING | Only removal matters, not direction. Effect is carried by downstream re-selection, not the latent's own write. Supports H-competition. |
+| **[1.6, 2.4]** | LINEAR — **direct write** | The brake's own write is a signed component of the margin: flipping it pushes toward the payload with twice the force of deleting it. Consistent with H-write (a write *against the payload*) **and** with H-competition through a direct write *for the competitor* — the sweep does not separate them. |
+| **[0.6, 1.4]** | SATURATING — **downstream re-selection** | Only removal matters, not direction. The effect is carried by set churn after the perturbation (later top-k re-selection), not by the latent's own write. Consistent with all three hypotheses; it says the mechanism is indirect. |
 | **< 0.6 or > 2.4, or `f < 0`** | NONLINEAR | Not a simple write. Report the distribution; draw no directional conclusion. |
+
+**What this experiment decides, and what it does not (relabelled 2026-09-02, queue H4).** The λ-sweep
+separates *direct write* from *downstream re-selection*. It does **not** separate H-write from
+H-competition: both predict a linear direct write, differing only in *which* logit the write moves.
+That question belongs to Exp-2's decomposition (payload-up vs competitor-down). The earlier labels
+("LINEAR supports H-write", "SATURATING supports H-competition") were wrong and must not be reused.
 
 Headline = the **fraction of the 128 brakes in each band, reported as a band across bootstrap
 resamples, not a point**. Declare LINEAR or SATURATING only if >=60% of brakes fall in one band.
@@ -207,8 +226,19 @@ a class+rank-matched NULL set.
 | brake rate <= 0.5 x driver rate | **H-competition / H-read.** Brakes do not represent the trigger. |
 | brake rate ~ driver rate | brakes *are* trigger-selective -> H-write survives; Exp-4 then decides. |
 
+**Answered in direction, 2026-09-01 (not run as designed).** The A5 step-1 join against the intact-model
+means already on disk (`clcd_results/autointerp/judge_local/condsel_truth.json::per_latent`, band
+[5000:6000], same `selective` definition) gives brakes **0.070** selective vs drivers **0.448** vs pool
+tail 0.177 — **0.16x the driver rate**, the first row of the table. What remains unrun is the design as
+written: the S2.0 band [4000:5000] with the rank-matched NULL set. The direction is not expected to
+change; run it only if the band difference is challenged.
+
 **Controls.** Drivers must come out selective — the autointerp dry-run reads them as literal
-trigger/payload-token detectors. Random latents must not. This positive control is **not circular**:
+trigger/payload-token detectors. ⚠️ **Correction 2026-09-01:** "random latents must not be selective"
+is wrong as stated. The pool-tail rate is **17.7%**, and an adapter with *no backdoor* shows a
+comparable marker-selective count (E4 byproduct: ~264 vs ~289 of 4,032). The control therefore
+*reports* the random rate as the baseline the brake and driver rates are read against, and
+"selective" is never glossed as "backdoor-involved". This positive control is **not circular**:
 drivers were selected on *causal contribution*, and selectivity is an independent property of the
 activation. The instrument itself is independently validated — CONDSEL served as the autointerp
 **power-control** arm and passed at **kappa = 0.2195**, so it demonstrably resolves this property.
@@ -273,12 +303,24 @@ triggered prompts on which it is in the top-8 of its module.
 | **< 50%** of brakes active intact | **Lesion-response artifact.** Brakes are substantially a property of the ablate-C-first measurement design, not of the org. |
 | >= 50% active intact | Brakes are part of the intact computation; the S2.0 design is not creating them. |
 
-**This is also a candidate explanation for an open puzzle.** The log records that only **22 of the 49**
+**Answered 2026-09-01 (from an existing artifact; log entry "The 128 brakes are highly active in the
+INTACT model and are NOT trigger-selective"; numbers in
+`clcd_results/probes/a5_step1_brake_intact_activity.json`).** Joining the S2.0 rows against the
+intact-model per-latent means (band [5000:6000], ranked *within projection* because cross-projection
+scales differ ~30x): brakes median rank **0.902** (drivers 0.934, in-circuit null 0.816, pool tail
+0.715), **0/128** at or below the 10th percentile, **50.8%** in the top decile. The second row of the
+table holds; the **lesion-response reading is OUT**. Caveats: this measured *mean post-gate activation
+rank*, not the top-8 fraction this design specified (a mean conflates how often with how large) —
+step 2 was not run because both axes sit at their extremes and the conflation cannot change the
+reading; the band is [5000:6000], not S2.0's [4000:5000]; the drivers-must-be-active control held.
+
+**This was a candidate explanation for an open puzzle — it is not the explanation.** The log records that only **22 of the 49**
 Probe-B brakes survive the in-context test — 55% disagreement — and treats it as unexplained, queuing
 a winner's-curse decomposition. But Probe-B's statistic is `m({i}) - m(intact)`, measured on the
 **intact** model, while S2.0's is measured on the **C-ablated** model. Different models => different
-active latent sets under set churn => different brake sets. If Exp-5 shows low intact activity, that
-is a mechanistic explanation for the disagreement, obtained for free.
+active latent sets under set churn => different brake sets. Exp-5 would have explained the
+disagreement had intact activity come out low; it came out high, so the 22/49 disagreement stays
+open and the queued winner's-curse decomposition is still the way to resolve it.
 
 **Controls.** **Drivers must be active intact** — they carry the backdoor in the intact model, so
 they must fire. If drivers come out inactive, the readout is broken. **Failability (arithmetic):**
@@ -303,6 +345,9 @@ backdoor-specific role, and H-competition is confirmed hard.
 
 **Important:** this needs a *known* circuit, not an *entangled* one. **The Exp-8b easy-case ceiling
 does not block it.** Routing's value here is orthogonal to the H1/H2 question it could not settle.
+Use the p=1.0, d=8 models from the Exp-6 wave (planted set complete: 0/12,000), **not** the p=0.6
+models (Exp-8c, 2026-09-01) — there the planted set is *not* complete (residual 0.875 / 0.365 /
+0.020), so "brake fraction inside the planted set" would have no ground truth to be read against.
 
 **Design.** Run the S2.0 in-context screen unchanged on a routed org and on its seed-matched
 unrouted (`a0`) twin from the same wave.
@@ -334,15 +379,18 @@ nothing a 3-minute gate had already said).
 
 | stage | experiments | cost | why here |
 |---|---|---|---|
-| **0** | **Exp-5** (intact activity) + **Exp-4** (payload alignment) | minutes; no ablation / no GPU forward | Both are near-free and Exp-5 can **reframe everything after it**: if brakes are largely inactive in the intact model, Exps 1-3 are measuring a lesion response and their interpretation changes before a single GPU-hour is spent. |
+| **0** | ~~**Exp-5** (intact activity)~~ **answered 2026-09-01** + **Exp-4** (payload alignment, still pending) | minutes; no ablation / no GPU forward | Exp-5 was the stage that could have reframed everything after it — it did not: brakes are highly active intact, so Exps 1-3 measure the intact mechanism, not a lesion response. Exp-4 remains the near-free write-side test and should go first. |
 | **1** | **Exp-2** (margin decomposition) | ~1.5 GPU-h | The decisive H-competition vs H-write test, and the cheapest of the GPU runs — it is a return-two-values change to code that already computes both terms. |
 | **2** | **Exp-3** (CONDSEL) | ~1.5 GPU-h + port | Needs the port from `worktree-autointerp-dryrun` first. Independent axis (read side) from Exp-2 (write side). |
 | **3** | **Exp-1** (lambda-sweep) | ~6 GPU-h | Most expensive of the natural-org set, and its interpretation *depends on* stages 0-2: if Exp-2 says competition and Exp-5 says lesion-response, the sweep becomes confirmatory rather than exploratory. |
 | **4** | **Exp-6** (routed org) | ~1.5 GPU-h + gate | Requires a different org; decisive confirmation, best run once the natural-org picture is settled. |
 
-**Stop rule.** If Exp-5 returns <50% intact activity **and** Exp-2 returns H-competition, stages 3-4
-become confirmatory. Run them anyway — but the entry is written as "brake is a metric artifact" and
-the lambda-sweep result is reported as a check on that, not as a fresh question.
+**Stop rule (updated 2026-09-02).** The original rule needed Exp-5 <50% intact activity **and** Exp-2
+H-competition for stages 3-4 to become confirmatory. Exp-5 came out the other way (0/128 silent), so
+the first conjunct is false and stages 3-4 keep their exploratory status. A "brake is a metric
+artifact" reading would now rest on Exp-2 alone (plus the read-side evidence from Exp-3's direction);
+Exp-1 is then the direct-write-vs-re-selection test it was relabelled to be, not a check on a settled
+verdict.
 
 ---
 
@@ -378,7 +426,10 @@ the benefit, so the causal screen earns its cost.
 **Only the interpretation changes**: from *"we found the org's suppression mechanism"* to *"we
 found and removed members our measurement design was admitting."* The second story is less exciting
 mechanistically but is arguably the better paper — it is another instance of the acceptance criterion
-shaping what ends up in the answer, which is the same thesis as the n=1000 power result.
+shaping what ends up in the answer, which is the same thesis as the n=1000 power result. **The paper
+wording is already fixed this way** (idea queue A5, 2026-09-01): "removed highly-active,
+non-trigger-selective general-purpose members the saturated arbiter admitted" — the intact-activity
+and selectivity evidence is in; the write-side mechanism (Exps 1, 2, 4) is what this plan still buys.
 
 ---
 
@@ -394,7 +445,7 @@ shaping what ends up in the answer, which is the same thesis as the n=1000 power
   `|| echo ok`, no `.get(k, default)` standing in for a value that must exist. An absent measurement
   must raise, never default to a value that happens to read as success.
 - **Logging (Rule 13).** Results go into `docs/captains-log.md` before being reported. ⚠️ The log is
-  currently split three ways and carries an **Exp-8 numbering collision** (`worktree-graded-routing`
+  currently split four-plus ways (queue H1 in `docs/idea_queue.md`) and carries an **Exp-8 numbering collision** (`worktree-graded-routing`
   uses Exp-8/8b for graded and split routing; the working tree uses Exp-8/Exp-9 for the `scrub_eval`
   non-candidate-wire experiments). This entry goes in the working-tree copy and must not reuse a
   colliding number.

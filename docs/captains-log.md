@@ -1323,7 +1323,7 @@ written up as one.
 
 ---
 
-## Exp-8c — the p≈0.6 window: the dial MOVED, narrowly — STAGE A DONE · 2026-09-01
+## Exp-8c — p≈0.6: the dial moved; Stage B does NOT settle H1 vs H2 — DONE · 2026-09-01
 
 ⚠️ **Numbering.** On this branch Exp-8/Exp-8b are graded/split routing. On `main` and in the working
 tree Exp-8/Exp-9 are `scrub_eval` non-candidate wires — different experiments, same numbers. This
@@ -1517,6 +1517,62 @@ p ≈ 0.125. The verdict must wait for s42 and s43, and may well come back under
 
 **Prior raw-scored results are NOT retracted.** Raw over-counts, so a raw 0 is a true 0: Exp-6d's
 0/12000 and Exp-8a's 0/12000 stand, and remain valid as the easy-case comparator.
+
+### Stage B COMPLETE — the pre-registered trigger fires on ONE event and must NOT be read as H1
+
+| seed | ablate-planted (straddling degree) | both_K | raw fires/4000 | **in-turn fires/4000** |
+|---|---|---|---|---|
+| s42 | 0.875 (complement carries it) | 200 | 0 | **0** |
+| s43 | 0.365 (**most straddling**) | 600 | 0 | **0** |
+| s45 | 0.020 (partition carries it) | 150 | 3 | **1** |
+| | | | | **total 1 / 12,000** |
+
+**Verdict: Stage B does NOT support H1.** The pre-registered readout (`>0 in-turn fires ⇒ H1`)
+technically triggers, but on a single event. Against Exp-6d's easy-case 0/12,000 the one-sided p is
+**0.5** — the event simply landed in one of two equal groups. The pre-registration was too crude
+here: it scores 1 fire and 100 fires identically. Recorded as a defect of the rule, not repaired
+after the fact.
+
+**Worse, the design cannot discriminate at this n.** Natural `l1523` circuits leak at 2.71e-4
+(BIG-N), so 12,000 prompts expect **3.25** fires. Then:
+- easy routed (Exp-6d): 0/12,000 → P(0 | λ=3.25) = **0.039**, i.e. mildly cleaner than natural
+- entangled routed (here): 1/12,000 → P(≤1 | λ=3.25) = **0.165**, i.e. **indistinguishable from natural**
+
+The exact 95% CI on 1/12,000 spans ~[8e-6, 4.6e-4] and **overlaps the natural rate**. n=4,000 per
+circuit was inherited from Exp-6d; BIG-N later established that these rates need n≈35,000 to see.
+So "clean" here means "not shown to leak", never "shown not to leak".
+
+**What Stage B does support, and it is worth having:** the discovery pipeline **does not break under
+entanglement**. On organisms whose backdoor provably spans the partition boundary, the search still
+returns circuits that are behaviourally complete out-of-sample. What entanglement costs is **size,
+not completeness** — both_K goes 50/50/50 (p=1.0, Exp-6b) → 150/200/600 here, and the ordering
+tracks the straddling degree, with the most straddling seed needing the largest circuit. Routing's
+seed-stability is destroyed along with it.
+
+**The honest limit on the positive control.** These entangled circuits (150–600) sit in the *same
+size range* as natural `l1523` circuits (150/200/400/none/800) — yet ours come back clean while
+natural ones leak 10/10. So partition-straddling is **not** the axis that makes natural organisms
+hard, and routed organisms remain easier than natural ones in some way this experiment does not
+capture. The "your positive control is the easy case" objection is **narrowed, not answered**.
+
+**Why no routed design can settle H1 vs H2 (structural, not a gap in effort).** H1 is an existence
+claim, confirmable by exhibiting a compact complete circuit the search missed. H2 is a universal
+negative over all subsets — no search can establish it, and "we looked and did not find one" is
+exactly what H1 also predicts. At p=0.6 the planted partition is **not** complete (residual 0.875 /
+0.365 / 0.020), so the only set complete by construction is partition ∪ complement = all 4,032
+latents. There is therefore no *known compact complete circuit* for the search to have missed, and
+the pre-registered inference has no premise to stand on. **This invalidates the Stage-B readout as
+an H1/H2 test**, independently of the power problem above.
+
+**The design that would work — dual-partition routing (not yet run).** Designate *two* small blocks
+A and B (504 each); route triggered examples into A or B; clean examples update everything. The
+backdoor then lives in A ∪ B = 1,008 of 4,032 — compact **and** known by construction — while
+genuinely spanning two regions that both do clean work. Then "search returns a leaking circuit while
+a compact subset of A ∪ B is clean on a fresh band" is H1 *exhibited*. `ROUTE_MODE=split` cannot do
+this: it sends the remainder to the 3,528-latent complement, destroying compactness. Also replace
+the rare-event count with **minimum circuit size that is in-turn-clean on a fresh band** — a
+continuous outcome with far more power per GPU-hour, and the quantity H1 and H2 actually disagree
+about.
 
 **Stage B LAUNCHED 2026-09-01 01:58** on the three intermediate seeds only (42/43/45), per the
 pre-registration — `ARM=route_sp60`, protocol byte-identical to the Exp-6b chain, ~10.2 h/organism.

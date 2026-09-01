@@ -2096,3 +2096,61 @@ is a different case, but the same caution about eyeballing CIs holds).
 
 **What would give resolution.** The contrast sd scales ~1/√n; halving it needs ~4× the latents — the full
 4,032 (the atlas, deprioritized) or pooling across seeds. Not for the ICLR paper.
+
+## Weights-level composition among circuit members: strong in ground-truth circuits, real in small natural ones, gone at scale · 2026-09-01
+
+Zero-GPU, CPU, no base model (idea-queue A3). `analysis/analyze_subspace_backtrace.py --composition`
+(new `_CouplingTable`, `composition_matrix`, `_random_circuit_like`; `_main_composition`). For an adapter,
+`C[j,i] = scale · A_j[d_j] · B_i[:,d_i]` couples residual writer *i* (`o_proj`/`down_proj`) to downstream reader *j*
+(`q/k/v/gate/up`) over all admissible pairs (`_write_order(m_i) <= _reader_order(m_j)`); `scale = α/r = 2.0`
+everywhere. Raw dot **without** the RMSNorm gain a real read passes through; attention-internal (`k/v→o`) and
+MLP-internal (`gate/up→down`) couplings are **invisible by construction** — the M7 edge `k_proj[33]→o_proj[53]` is
+not in this table. Output `clcd_results/probes/composition_matrix_25plus3.json`.
+
+**Statistic.** Over admissible *member→member* pairs, |C| against two matched nulls — reader replaced by a random
+non-member of the same module (null-R); writer likewise (null-W) — 5 draws each; AUC = P(|C_obs| > |C_null|),
+0.5 = no structure. Plus `top-1`: fraction of member readers whose strongest admissible writer *over all writers*
+is a member, vs the member share of admissible writers. **Self-test (Rule 12):** 3 per-module-count-matched random
+circuits per real circuit (matches A1's projection skew exactly) pushed through the identical pipeline —
+84 random circuits, AUC median **0.498** [0.446, 0.593]; none of the l1523/all ones exceeds 0.505.
+
+| set | n | AUC vs null-R, median [min,max] | median |C| ratio obs/null | top-1 ×expected |
+|---|---|---|---|---|
+| **routed, planted K=50** (Exp-6b, 3 seeds) | 3 | **0.887** [0.871, 0.917] | **4.7×** [4.4, 4.9] | **16×** [13, 23] |
+| l19 (K 20–250) | 10 | 0.688 [0.529, 0.768] | 2.1× [1.06, 3.5] | 3.2× [0, 21] |
+| l1523 (K 75–800) | 10 | 0.536 [0.510, 0.590] | 1.12× [1.04, 1.23] | 3.2× [1.2, 17.7] |
+| all (K 200–1200) | 5 | 0.509 [0.508, 0.516] | 1.03× [1.02, 1.06] | 1.8× [1.1, 2.8] |
+
+- **Ground-truth circuits are wired, not bagged.** In the routed circuits members feed members ~4.7× more strongly
+  than matched non-members, and for 38–56% of member readers the strongest input in the *entire adapter* is a
+  member (expected 2–3%). First weights-level evidence that a circuit *known to be complete* is a connected graph.
+- **The M7 hub is the source.** l19_s42 K=30: `o_proj#53` sources 7 of the top-10 edges into `gate/up` readers,
+  `o_proj#4` (its Exp-1 near-parallel partner) the other 3; 7/13 member readers take their strongest input from
+  inside the circuit (expected 1/13). The one l19 circuit at AUC 0.53 is s46 prefix K=250 — the circuit that fails
+  its own random-ablation control (K = 56% of the pool). Everything else in l19 is ≥ 0.62.
+- **Composition decays with circuit size and adapter distribution.** Within l1523 the scrub circuits (K=75/150/150)
+  sit at 0.55–0.59; every circuit with K ≥ 400 is at 0.51–0.53; `all` is at chance. The family ordering
+  routed > l19 > l1523 > all is the held-out leak ordering (0/12,000 · 1.1e-5 · 2.7e-4 · 2.7e-4). **n=4
+  families; a correlate, not a mechanism.**
+
+**Two readings this measure cannot separate, stated plainly.** (a) Large certified sets are a compact wired core
+plus filler — member-pairs are then mostly filler-filler and the AUC is *diluted* toward 0.5 even though a path
+exists; (b) large circuits are genuinely flat, no path. A second dilution acts on distributed adapters regardless:
+a writer at layer 15 is admissible to readers in layers 15–23, and a real path uses one or two of them, so the AUC
+over all admissible pairs under-reads structure in `l1523`/`all` relative to `l19`. Both push the same way. **The
+activation-level path analysis (queue B3 / M5, direct edges with stop-gradients on the archived leak prompts) is
+what separates (a) from (b).**
+
+**Post-hoc cross-check against A5 (prediction stated before computing: if brakes are non-path filler they
+should couple to circuit writers less than drivers).** l1523_s43 scrub K=400, coupling percentile of each
+member's strongest member link among all its admissible links, by S2.0 class: BRAKE median 0.997 (n=125),
+DRIVER 0.997 (118), NULL 0.996 (142); frac ≥ 0.99: 0.72 / 0.80 / 0.75. **Not supported** — brakes are wired
+into the circuit as tightly as drivers. Consistent with the same-day A5 result (brakes are heavily-used general
+machinery the writers feed, which is exactly why attribution picks them up). The statistic is near-saturated by
+construction (max over ~115 member writers ⇒ exchangeable expectation ≈ 0.99), so only the class *contrast* is
+read. `clcd_results/probes/composition_by_s2class_l1523_s43.json`.
+
+**Decision attached to A3 in the queue.** Member-pair coupling *is* above null → the path line (M3–M6, B3, B4)
+stays queued, and the ICLR paper gets one discussion paragraph citing the routed 4.7× / M7 hub result and the
+size decay. Caveats travelling with it: raw dot, no RMSNorm gain; residual-mediated couplings only; the
+filler-vs-flat ambiguity above.

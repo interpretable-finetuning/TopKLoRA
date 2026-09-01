@@ -83,12 +83,14 @@ def keep_only_overrides(circuit, wrapped):
     return overrides
 
 
-def _gen(model, tok, wrapped, overrides, prompts, max_new_tokens, batch_size, max_batch_tokens=0):
+def _gen(model, tok, wrapped, overrides, prompts, max_new_tokens, batch_size, max_batch_tokens=0,
+         skip_special_tokens=True):
     ctx = inject(wrapped, overrides) if overrides else nullcontext()
     with ctx:
         return generate_responses(model=model, tokenizer=tok, prompts=prompts,
                                   max_new_tokens=max_new_tokens, batch_size=batch_size,
-                                  max_batch_tokens=max_batch_tokens)
+                                  max_batch_tokens=max_batch_tokens,
+                                  skip_special_tokens=skip_special_tokens)
 
 
 def backdoor_fires(model, tok, wrapped, overrides, questions, keyword, mnt, batch_size, max_batch_tokens=0):

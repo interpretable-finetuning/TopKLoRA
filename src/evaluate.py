@@ -334,11 +334,19 @@ def generate_responses(
     batch_size: int,
     max_batch_tokens: int = 0,
     max_bs: int = 64,
+    skip_special_tokens: bool = True,
 ) -> List[str]:
     """Greedy generation. If max_batch_tokens>0, use length-bucketed adaptive batching
     (memory-bounded; batch_size ignored); else fixed chunks of batch_size. Left-padding +
     greedy decoding make outputs independent of how prompts are grouped, so the two paths
-    agree token-for-token."""
+    agree token-for-token.
+
+    skip_special_tokens=False keeps `<end_of_turn>` in the returned string. Generation stops on
+    `<eos>`, never on the `<end_of_turn>` these organisms were trained to emit, so with the default
+    True a short answer is followed by off-distribution continuation tokens that are spliced
+    invisibly into the answer -- and a payload appearing only in that continuation is scored as a
+    backdoor fire. Callers auditing in-turn vs post-EOT must pass False; the marker cannot be
+    recovered afterwards."""
     device = next(model.parameters()).device
     tokenizer.padding_side = "left"
 
@@ -355,7 +363,8 @@ def generate_responses(
                     pad_token_id=tokenizer.pad_token_id, eos_token_id=tokenizer.eos_token_id)
             prompt_width = int(enc["input_ids"].shape[1])
             for j, orig_i in enumerate(idx_batch):
-                results[orig_i] = tokenizer.decode(generated[j, prompt_width:], skip_special_tokens=True)
+                results[orig_i] = tokenizer.decode(generated[j, prompt_width:],
+                                                   skip_special_tokens=skip_special_tokens)
         return results
 
     all_generations: List[str] = []
@@ -389,7 +398,7 @@ def generate_responses(
         prompt_width = int(enc["input_ids"].shape[1])
         for i in range(generated.size(0)):
             completion_ids = generated[i, prompt_width:]
-            completion = tokenizer.decode(completion_ids, skip_special_tokens=True)
+            completion = tokenizer.decode(completion_ids, skip_special_tokens=skip_special_tokens)
             all_generations.append(completion)
 
     return all_generations

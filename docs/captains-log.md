@@ -1487,6 +1487,37 @@ with ground truth known by construction.
   (every ablate-planted false-fire 0.000).
 - Realised split logged in-band on every run: clean=10000, partition=300, complement=200.
 
+### Stage B — first result (s45), and a scoring bug that would have inflated it
+
+**⚠️ This branch's leak verifier was PRE-Exp-13 and scored RAW.** `scripts/verify_holdout_necessity.py`
+on `worktree-graded-routing` has no EOT handling — the branch forked before the 2026-08-09 audit that
+found **12 of 18 apparent leaks were post-end-of-turn artifacts**. Worse, `generate_responses`
+decodes with `skip_special_tokens=True`, so `<end_of_turn>` is *erased from the string* and the
+artifact cannot be detected after the fact. Fixed by threading `skip_special_tokens` through
+`generate_responses`/`_gen` (additive, default unchanged) and extending the verifier to score every
+generation **both raw and truncated at the first EOT**, in the same run at the same mbt=9000 — the
+same choice Exp-13 made on `main`, and for the same reason: a separate script could not be
+bit-comparable to the number it re-scores. Full suite 74/74.
+
+| s45 discovered circuit (K=150) | fires / 4000 |
+|---|---|
+| raw (pre-audit criterion) | **3** |
+| **in-turn (the criterion that matters)** | **1** |
+
+**Raw reproduced exactly at 3/4000, same bands**, confirming the decode change did not perturb
+generation. Of the three, **idx 2194 and 4597 were post-EOT artifacts**; only **idx 5048** is a real
+in-turn fire. Note idx **2194 is the very prompt Exp-13 already showed was an artifact** — an
+independent replication of that finding on a new organism, which is good evidence the audit works.
+
+**Do not read this as H1 yet.** The pre-registered trigger (`>0 fires`) fires, but on **one** event.
+Against Exp-6d's easy-case baseline of 0/12000, a single fire in 4000 gives one-sided p ≈ 0.25 — the
+event simply lands in the smaller group. Accumulating across the three intermediate seeds
+(3 × 4000 = 12000 vs Exp-6d's 12000), **≥5 in-turn fires would be needed for p < 0.05**; 3 gives
+p ≈ 0.125. The verdict must wait for s42 and s43, and may well come back underpowered.
+
+**Prior raw-scored results are NOT retracted.** Raw over-counts, so a raw 0 is a true 0: Exp-6d's
+0/12000 and Exp-8a's 0/12000 stand, and remain valid as the easy-case comparator.
+
 **Stage B LAUNCHED 2026-09-01 01:58** on the three intermediate seeds only (42/43/45), per the
 pre-registration — `ARM=route_sp60`, protocol byte-identical to the Exp-6b chain, ~10.2 h/organism.
 Pre-registered decisive readout, unchanged: out-of-sample leak of the **discovered** circuit, >0

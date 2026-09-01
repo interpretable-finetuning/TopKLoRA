@@ -2049,3 +2049,50 @@ composition finding: certified circuits are enriched for exactly the non-selecti
 conflation in a mean cannot change the reading. **Caveats.** Bands differ ([5000:6000] here vs S2.0's
 [4000:5000]); one model, one seed; `selective` is a 2× threshold, reported as-is, not tuned. The brake-plan
 experiments 1–2 (λ-sweep, margin decomposition) remain the direct causal test of the competition mechanism.
+
+## Judge κ by module write-space — NO RESOLUTION at n=799, and a caution about comparing stratum CIs · 2026-09-01
+
+Zero-GPU re-analysis (idea-queue A2). `scratchpad/analyze_judge.py` (brought onto this branch from
+`worktree-autointerp-dryrun` at its 0b4248d tip, the deterministic tie-break) gains module-type strata that call
+the existing `subset_stats` — κ and the batch-block bootstrap are the headline code, not re-implemented — and a
+`--permute_modules N` control. **Anchor check passed first**: unsplit κ reproduces exactly — Opus×v1 0.0818,
+Qwen×v1 0.0584, Qwen×v3 0.1214. Outputs `clcd_results/autointerp/judge_local/analysis_by_module_type_{opus_v1,qwen_v1,qwen_v3}.json`.
+
+**Pre-stated prediction (F2/F4):** explanations of activations predict causal class *worst* on attention-pattern
+latents (q+k), whose action is a routing change with no content to describe.
+
+**Strata (κ, batch-block 95% CI); n in the 799 judged latents:**
+
+| stratum | n | Opus×v1 | Qwen×v1 | Qwen×v3 |
+|---|---|---|---|---|
+| unsplit | 799 | 0.082 [.053,.110] | 0.058 [.032,.085] | 0.121 [.097,.145] |
+| attention pattern (q+k) | 167 | 0.013 [−.049,.072] | 0.078 [.007,.148] | **0.186** [.127,.246] |
+| residual writers (o+down) | 221 | 0.072 [.016,.128] | 0.046 [.000,.093] | 0.083 [.037,.129] |
+| block readers (v+gate+up) | 411 | 0.120 [.084,.155] | 0.057 [.024,.093] | 0.114 [.080,.152] |
+| attn (q+k+v+o) | 353 | 0.097 | 0.083 | 0.149 |
+| mlp (gate+up+down) | 446 | 0.076 | 0.042 | 0.100 |
+
+Read naively, Qwen×v3 says the *opposite* of the prediction (q+k highest, CIs disjoint from o+down) while
+Opus×v1 says the prediction (q+k lowest). **Neither reading survives the control.**
+
+**Control (Rule 12): label-shuffle null of the contrast, 2,000 shuffles.** Shuffling the projection label
+across uids makes every stratum a random subset of the same size. The null sd of the (q+k) − (o+down) contrast
+is **0.065–0.071** in every arm, 95% band ≈ [−0.13, +0.14]:
+
+| contrast | Opus×v1 | Qwen×v1 | Qwen×v3 |
+|---|---|---|---|
+| (q+k) − (o+down): observed / two-sided p | −0.059 / **0.41** | +0.032 / **0.66** | +0.103 / **0.12** |
+| attn − mlp | +0.022 / 0.65 | +0.041 / 0.35 | +0.049 / 0.28 |
+
+**Verdict.** No stratum contrast is distinguishable from a random partition in any arm. The module-type split
+**has no resolution at n=799**; the prediction is neither supported nor refuted. A single shuffle already
+produced a random "residual writers" subset at κ 0.186 [0.134, 0.239] — the same value as the real q+k stratum.
+
+**Methodological point, worth carrying.** Per-stratum batch-block CIs condition on the subset and cannot see
+subset-choice variance, so **disjoint per-stratum CIs do not license a between-stratum claim** — the random
+partition above had non-overlapping CIs too. Contrasts between strata need a partition null. This applies to any
+future stratified reading of the judge results (the high-confidence *sweep* is nested, not partitioned, so it
+is a different case, but the same caution about eyeballing CIs holds).
+
+**What would give resolution.** The contrast sd scales ~1/√n; halving it needs ~4× the latents — the full
+4,032 (the atlas, deprioritized) or pooling across seeds. Not for the ICLR paper.

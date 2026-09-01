@@ -1323,7 +1323,7 @@ written up as one.
 
 ---
 
-## Exp-8c — the p≈0.6 window: is there a graded regime between the two basins? — PRE-REGISTERED, RUNNING · 2026-08-31
+## Exp-8c — the p≈0.6 window: the dial MOVED, narrowly — STAGE A DONE · 2026-09-01
 
 ⚠️ **Numbering.** On this branch Exp-8/Exp-8b are graded/split routing. On `main` and in the working
 tree Exp-8/Exp-9 are `scrub_eval` non-candidate wires — different experiments, same numbers. This
@@ -1427,8 +1427,72 @@ guard is removed.
   were taken within the hour by a foreign `--free-gpus` autoscheduler. 5 seeds run 2/2/1 across
   them, so two GPUs carry two organisms each (~2.5 h) against ~75 min solo.
 
-**Running (launched 2026-08-31 23:02).** Results, verdict and caveats to be filled in here before
-they are reported anywhere else.
+### RESULT — the dial MOVED. Primary passes 3/5. · 2026-09-01
+
+All five organisms trained (intact ASR 0.980–1.000, `ablate_partition_clean_falsefire` 0.000
+everywhere, so **no residual below is degenerate**).
+
+| seed | intact | ablate-planted (**complement alone**) | keep-only-partition (**partition alone**) | keep-only false-fire | pre-registered class |
+|---|---|---|---|---|---|
+| 42 | 1.000 | **0.875** | 0.040 | 0.000 | INTERMEDIATE |
+| 43 | 1.000 | **0.365** | 0.000 | 0.000 | INTERMEDIATE |
+| 44 | 1.000 | 0.000 | 0.905 | **0.205** | partition_complete |
+| 45 | 0.980 | **0.020** | 0.110 | 0.005 | INTERMEDIATE |
+| 46 | 1.000 | 0.000 | 0.370 | 0.015 | partition_complete |
+
+**Class counts: 3 INTERMEDIATE / 2 partition_complete / 0 partition_irrelevant.** A majority of
+seeds sit *individually* in the intermediate band, which is exactly the pre-registered bar. Exp-8a
+could not achieve a non-saturated residual at any p, and Stage A could not at 0.25/0.5/0.75.
+
+**The stronger evidence is the within-seed comparison**, because it re-uses Stage A's already-published
+numbers on the same three seeds and needs no threshold at all:
+
+| seed | p=0.25 | p=0.5 | **p=0.6** | p=0.75 |
+|---|---|---|---|---|
+| 42 | 1.000 | 1.000 | **0.875** | 0.000 |
+| 43 | 1.000 | 1.000 | **0.365** | 0.000 |
+| 44 | 1.000 | 0.965 | **0.000** | 0.000 |
+
+For s42 and s43 the p=0.6 residual is *strictly between* their p=0.5 and p=0.75 values; s44 has
+already completed its transition by 0.6. Same code, same protocol, only p differs.
+
+**Verdict — Exp-8b's "routing cannot build an entangled organism" is NARROWED, not overturned.**
+The step function was a **sampling artifact**: p=0.5 → 0.75 straddles the transition without landing
+in it. A graded regime does exist, it is narrow, and its location is seed-dependent (s44 transitions
+before 0.6, s42 has barely begun by 0.6) — which is still the capacity-threshold story, but a *soft*
+per-seed threshold rather than a hard bifurcation.
+
+**s43 is the organism the H1-vs-H2 test has been missing:** complement alone 0.365, partition alone
+0.000, intact 1.000 — *neither side alone reconstructs the backdoor*. That is genuine straddling,
+with ground truth known by construction.
+
+### Caveats — stated because the verdict depends on them
+- **The 3/5 majority hinges on s45 at 0.020**, i.e. 4 fires in 200, one step above the exact-0.000
+  boundary. Drop it and the count is 2/5 — not a majority. The two robust intermediates are s42 and
+  s43; only **s43 (0.365) is unambiguously mid-range**, since s42 (0.875) sits just under the 0.90
+  upper band. The frozen rule is reported as frozen, but the honest summary is "one clear
+  intermediate, one near each boundary", not "three solid intermediates".
+- **The two ablation directions are not equally informative.** Ablate-planted removes 504/4032
+  latents (mild, capability preserved) and is the headline. Keep-only-partition removes 3528/4032 —
+  a massive ablation — so a low value there is weak evidence, and a high one needs its false-fire
+  control. s44's keep-only 0.905 is **degenerate** (false-fire 0.205) and must not be read as a
+  complete copy, exactly as at Stage A's p=0.75.
+- n=5 seeds at a single p. The transition's width and its seed-dependence are described, not measured.
+
+### Checks that ran and could have failed
+- **Cross-check passed on all 5**: `ablate_partition_backdoor_asr`, recomputed in a separate process
+  with its own model load, equals the gate's `ablate_planted_backdoor_asr` exactly (0.875 / 0.365 /
+  0.000 / 0.020 / 0.000).
+- **Degeneracy control fired where it should** (s44 keep-only) and stayed silent where it should
+  (every ablate-planted false-fire 0.000).
+- Realised split logged in-band on every run: clean=10000, partition=300, complement=200.
+
+**Stage B LAUNCHED 2026-09-01 01:58** on the three intermediate seeds only (42/43/45), per the
+pre-registration — `ARM=route_sp60`, protocol byte-identical to the Exp-6b chain, ~10.2 h/organism.
+Pre-registered decisive readout, unchanged: out-of-sample leak of the **discovered** circuit, >0
+fires ⇒ **H1** (the search misses entangled components), 0/12000 ⇒ **H2** stands. Note Exp-6b's
+"precision vs the planted 504" is **not** ground truth here — the backdoor lives on both sides by
+construction — and must not be reported as recovery.
 
 ---
 

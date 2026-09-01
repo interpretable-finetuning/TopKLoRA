@@ -2013,3 +2013,39 @@ context; the other four `all` circuits complete by K≤200. Some l19 faithfulnes
 **Caveat that must travel with the figure.** IN-SAMPLE BY CONSTRUCTION: `curve` is the selection criterion on
 `prepared_eval6k eval_triggered[100:1100]`. The held-out BIG-N audit is one point per circuit at its own
 `both_K` and cannot be overlaid as a sweep.
+
+## The 128 brakes are highly active in the INTACT model and are NOT trigger-selective — H-competition, not lesion-response · 2026-09-01
+
+Zero-GPU join (idea-queue A5 step 1). The S2.0 in-context screen measured brake status with the 400-circuit
+*ablated*; set churn (Exp-2) meant a "brake" could in principle be active only in that lesioned model. Joined the
+S2.0 rows (`clcd_results/probes/contrib_l1523_s43_MERGED.json`) against the intact-model per-latent means in
+`clcd_results/autointerp/judge_local/condsel_truth.json::per_latent` (band [5000:6000], prompt region;
+`selective` = triggered mean > 2× notag-twin mean). Activation is ranked **within projection** because
+cross-projection scales differ ~30×. One-off script, deleted after logging; numbers in
+`clcd_results/probes/a5_step1_brake_intact_activity.json`.
+
+| group | n | selective | median within-proj rank | ≤p10 ("silent") | ≥p90 |
+|---|---|---|---|---|---|
+| in-circuit **BRAKE** | 128 | **0.070** | **0.902** | **0.000** | 0.508 |
+| in-circuit DRIVER | 125 | 0.448 | 0.934 | 0.000 | 0.624 |
+| in-circuit NULL | 147 | 0.299 | 0.816 | 0.007 | 0.293 |
+| pool-tail (unselected) | 400 | 0.177 | 0.715 | 0.010 | 0.177 |
+
+**Verdict.** (1) Brakes are among the most active latents in their projections in the intact model — 0/128 are
+silent, half are top-decile. The lesion-response reading (brake status as an artifact of the ablated model) is
+**out**. (2) Brakes are *less* trigger-selective than a random pool latent (7.0% vs 17.7%); by projection,
+q/k/up brakes are 0/… selective, gate 0.03, down 0.06, only o (0.24) and v (0.22) show any. They fire on
+triggered and clean prompts alike. This is the **H-competition** mechanism from the brake-plan
+pre-registration: brakes are general-purpose machinery; ablating one on a triggered prompt weakens the normal
+response, so the *relative* payload margin rises. They were never anti-backdoor components.
+
+**Consequence for S2.2's wording.** Not "we found the model's suppression mechanism" — rather: the certified
+400-circuit contained 128 highly-active, non-trigger-selective general-purpose latents; the saturated ASR
+arbiter could not see that removing them helps; the margin arbiter can. The engineering result (300→150,
+−4.5 nats at n=35,000, the one turn-initial leak closed) is unchanged. Consistent with the same-day
+composition finding: certified circuits are enriched for exactly the non-selective gate/up machinery.
+
+**Step 2 (GPU top-8 fraction) not run** — both axes are at their extremes, so the frequency×magnitude
+conflation in a mean cannot change the reading. **Caveats.** Bands differ ([5000:6000] here vs S2.0's
+[4000:5000]); one model, one seed; `selective` is a 2× threshold, reported as-is, not tuned. The brake-plan
+experiments 1–2 (λ-sweep, margin decomposition) remain the direct causal test of the competition mechanism.

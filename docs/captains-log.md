@@ -1939,3 +1939,77 @@ experiment was re-run.
   a real property of the trained network. Note also that SGTM's claimed **absorption** (unlabeled
   target content gravitates to the forget params) and our **hydra** (leak spawns redundant pathways)
   are competing predictions about the same phenomenon.
+
+---
+
+## Module-type composition of the 25 certified circuits — the skew is in the SEARCH, not the trigger response · 2026-09-01
+
+Zero-GPU analysis over the 25 BIG-N-audited circuits (`clcd_results/rigorous/holdout_necessity/MASTER_table.json`;
+driven off that list, never a glob — `l1523_seed45_circuit.json` and `l19_seed46_circuit_gridcapped.json` are
+`no_sufficient_subcircuit` with empty `kept_latents`). Every wrapped layer carries all seven projections at
+rank r, so each projection is exactly **1/7 of the pool** in every family; residual writers (`o`+`down`) are 2/7.
+Code: `src/clcd/edges.py::module_composition` (+ `PROJECTIONS`), `analysis/make_briefing_figures.py::fig5_module_composition`.
+Artifacts: `clcd_results/figures/fig5_module_composition.{json,png,pdf}`.
+
+**Question (from the idea queue, A1).** Are certified circuits over-weighted toward residual writers — a content
+bias in a search whose criterion is the payload margin — which would be a candidate leak mechanism?
+
+**Harness failability (Rule 12).** 1,000 uniform K-draws per circuit give the null; "skewed" = chi-square above
+the null's 95th percentile. Pushing 200 *further* uniform draws through the same decision flags **5.0%** of them
+— the test is calibrated and can fail.
+
+**Result — the hypothesis is FALSE; a different and larger skew is present.** Per-family medians of
+enrichment = share / (1/7):
+
+| family | n | skewed | q | k | v | o | gate | up | down | resid share (pool 2/7=.286) | MLP-reader share (2/7) | attn-reader share (3/7=.429) |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| l19 | 10 | 4 | **0.20** | 0.98 | 0.77 | 1.21 | 1.37 | 1.22 | 1.35 | .350 | .350 | .265 |
+| l1523 | 10 | **10** | **0.28** | 0.88 | 0.39 | 1.10 | **1.66** | 1.62 | 0.92 | .287 | **.475** | .239 |
+| all | 5 | **5** | **0.35** | 0.47 | 0.32 | 0.82 | **1.95** | 1.61 | 1.29 | .302 | **.520** | .138 |
+
+- **Residual writers sit at the pool share** (.287/.302/.350 vs .286). No content bias toward writers.
+- **`gate_proj` is enriched 1.4–2.0× and `q_proj` is depleted to 0.2–0.35× in every family**; `v_proj` 0.3–0.8×.
+  15/15 distributed circuits are skewed at p<0.001; the pattern strengthens with distribution. The 6 unskewed
+  l19 circuits are the K≤25 ones (no power), not counter-examples.
+
+**Two free controls separate "formation" from "search".**
+1. *Routed circuits, where the planted set is uniform across projections by construction* (Exp-6b,
+   `clcd_results/exp6/route_l1523_s4{2,3,4}_circuit.json`, K=50): enrichment q = **0.00 / 0.00 / 0.00**,
+   k 0.00/0.28/0.28, v 0.28/0.56/0.14, gate 1.68/0.98/1.54, up 2.24/2.24/1.96, down 2.10/1.82/2.10. Same
+   signature with q-slots planted and available.
+2. *Search-independent trigger selectivity, intact model, all 4,032 latents of `l1523_s43`*
+   (`clcd_results/autointerp/judge_local/condsel_truth.json::per_latent`, `selective` = triggered mean >
+   2× notag-twin mean, scale-free): selective-count share / (1/7) — q **0.95**, k 0.68, v 0.84, **o 1.67**,
+   **gate 0.66**, up 1.01, down 1.19 (340 selective total).
+
+So `q_proj` latents respond to the trigger at the pool rate but are almost never certified; `o_proj` is the
+*most* trigger-selective projection and sits at baseline in circuits; `gate_proj` is the *least* selective and
+the most enriched. **The composition of a certified circuit is close to anti-correlated with where the trigger
+response lives.** The criterion (payload margin / ASR) credits generic MLP machinery the payload path runs
+through and does not credit attention-pattern latents — the F4 prediction, on data already on disk.
+
+**Caveats.** `selective` measures *response*, not causal load: a q latent can respond to the trigger without
+mattering. The decisive test is one generation run — ablate all 576 `q_proj` latents of `l1523_s43` at n=1000:
+ASR unchanged ⇒ they genuinely carry nothing and the skew is formation; ASR drops ⇒ the search misses
+load-bearing routing latents, and this is a leak mechanism. Not run here. Cross-projection *activation
+magnitudes* are not comparable (down_proj reads d_ffn; its mean is 30× smaller) — only the scale-free
+selective count is used above.
+
+## Faithfulness / completeness vs K for the 24 circuits with sweeps (SFC Fig. 3 form) · 2026-09-01
+
+Presentation change, no new measurement. `analysis/make_briefing_figures.py::fig6_faithfulness_curves`;
+`clcd_results/figures/fig6_faithfulness_curves.{json,png,pdf}`. With ASR as the metric the empty circuit is
+the base model (ASR 0), so **faithfulness(K) = keep_only(K) / intact_asr** and **completeness(K) =
+ablate(K) / intact_asr** (SFC §3.2 adapted; ideal 1 and 0), from each circuit JSON's `curve`. One panel per
+family (K grids differ), log-K, prefix solid / scrub dashed, markers at `both_K`. 24/25 drawn;
+`elim2/l1523_seed44_K700nec_circuit.json` has no `curve` and is skipped explicitly.
+
+**Read-off.** In l19 and l15-23 **sufficiency is the binding constraint** — completeness hits 0 by K≈10–30 while
+faithfulness needs K≈20–100. In `all` the picture inverts for one circuit: `all_seed45` (prefix) holds
+completeness at 1.0 @K=100, 0.83 @200, 0.10 @400, 0 @600 — the necessity tail Fig. 1 shows alone, now in
+context; the other four `all` circuits complete by K≤200. Some l19 faithfulness values exceed 1.0
+(keep-only ASR marginally above intact) — real data, the known measurement noise, not clipped.
+
+**Caveat that must travel with the figure.** IN-SAMPLE BY CONSTRUCTION: `curve` is the selection criterion on
+`prepared_eval6k eval_triggered[100:1100]`. The held-out BIG-N audit is one point per circuit at its own
+`both_K` and cannot be overlaid as a sweep.

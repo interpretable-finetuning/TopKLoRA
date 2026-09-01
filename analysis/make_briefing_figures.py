@@ -246,15 +246,188 @@ def fig4_price(out):
     save(fig, out, "briefing_fig4_price_of_complete_removal")
 
 
+# --- Figures 5-6: the 25 BIG-N-audited circuits, joined on MASTER_table.json -------------------
+FAM_ORDER = {"l19": 0, "l1523": 1, "all": 2}
+
+
+def _master():
+    """The 25 certified circuits the BIG-N audit used. Drive off this list, never a glob: two
+    on-disk `*_circuit.json` files are `no_sufficient_subcircuit` with empty `kept_latents`."""
+    rows = json.load(open(RIG / "holdout_necessity/MASTER_table.json"))
+    return sorted(rows, key=lambda r: (FAM_ORDER[r["family"]], r["seed"], r["method"]))
+
+
+def _chi2_uniform(counts, K):
+    exp = K / 7
+    return sum((c - exp) ** 2 / exp for c in counts)
+
+
+def fig5_module_composition(out, n_null=1000, seed=0):
+    """A1: is a certified circuit's membership skewed by projection type?
+
+    Every wrapped layer carries all seven projections at rank r, so each projection is exactly
+    1/7 of any family's pool. Per circuit: counts, enrichment = share / (1/7), a chi-square
+    against uniform, and a null of `n_null` uniform K-draws. "Skewed" means the circuit's
+    chi-square exceeds the null's 95th percentile. The self-test draws uniform subsets through
+    the same path and reports how often they are flagged -- it must sit near 0.05, or the
+    harness cannot fail.
+    """
+    import numpy as np
+    from src.clcd.edges import PROJECTIONS, module_composition
+
+    rng = np.random.default_rng(seed)
+    p_uniform = [1 / 7] * 7
+    rows, self_test_flags = [], []
+    for rec in _master():
+        circ = json.load(open(rec["file"]))
+        kept = circ["kept_latents"]
+        K = len(kept)
+        assert K == rec["K"], (rec["file"], K, rec["K"])
+        counts = module_composition(kept)
+        vec = [counts[p] for p in PROJECTIONS]
+        chi2 = _chi2_uniform(vec, K)
+        null = np.array([_chi2_uniform(d, K) for d in rng.multinomial(K, p_uniform, size=n_null)])
+        p95 = float(np.quantile(null, 0.95))
+        pval = float((null >= chi2).mean())
+        # Rule 12: push uniform draws through the SAME decision and count the flags.
+        probe = np.array([_chi2_uniform(d, K) for d in rng.multinomial(K, p_uniform, size=200)])
+        self_test_flags.append(float((probe > p95).mean()))
+        share = {p: counts[p] / K for p in PROJECTIONS}
+        rows.append({
+            "family": rec["family"], "seed": rec["seed"], "method": rec["method"], "K": K,
+            "file": rec["file"], "counts": counts,
+            "enrichment": {p: share[p] * 7 for p in PROJECTIONS},
+            "residual_writer_share": share["o_proj"] + share["down_proj"],       # pool 2/7
+            "mlp_reader_share": share["gate_proj"] + share["up_proj"],             # pool 2/7
+            "attn_reader_share": share["q_proj"] + share["k_proj"] + share["v_proj"],  # pool 3/7
+            "chi2": chi2, "null_p95": p95, "p_value": pval, "skewed": chi2 > p95,
+        })
+
+    fam_med = {}
+    for fam in FAM_ORDER:
+        fr = [r for r in rows if r["family"] == fam]
+        fam_med[fam] = {
+            "n": len(fr),
+            "n_skewed": sum(r["skewed"] for r in fr),
+            "median_enrichment": {p: st.median(r["enrichment"][p] for r in fr) for p in PROJECTIONS},
+            "median_residual_writer_share": st.median(r["residual_writer_share"] for r in fr),
+            "median_mlp_reader_share": st.median(r["mlp_reader_share"] for r in fr),
+            "median_attn_reader_share": st.median(r["attn_reader_share"] for r in fr),
+        }
+    summary = {
+        "analysis": "module_composition_of_certified_circuits",
+        "pool_share_per_projection": 1 / 7, "n_null": n_null, "seed": seed,
+        "self_test": {"uniform_flag_rate": st.mean(self_test_flags),
+                      "expected": 0.05, "note": "flag rate of uniform draws through the same test"},
+        "per_family": fam_med, "circuits": rows,
+    }
+    out.mkdir(parents=True, exist_ok=True)
+    (out / "fig5_module_composition.json").write_text(json.dumps(summary, indent=1))
+    print(f"  wrote {out / 'fig5_module_composition.json'}  "
+          f"(self-test uniform flag rate {summary['self_test']['uniform_flag_rate']:.3f})")
+
+    # heatmap: circuits x projections, colour = log2 enrichment, diverging about 0
+    mat = np.log2(np.array([[max(r["enrichment"][p], 1e-3) for p in PROJECTIONS] for r in rows]))
+    fig, ax = plt.subplots(figsize=(8.4, 0.34 * len(rows) + 1.8), facecolor=SURFACE)
+    im = ax.imshow(mat, cmap="RdBu_r", vmin=-2, vmax=2, aspect="auto")
+    for i, r in enumerate(rows):
+        for j, p in enumerate(PROJECTIONS):
+            ax.text(j, i, f"{r['enrichment'][p]:.1f}", ha="center", va="center", fontsize=7.5,
+                    color=INK if abs(mat[i, j]) < 1.2 else SURFACE)
+    ax.set_xticks(range(7), [p.replace("_proj", "") for p in PROJECTIONS], fontsize=9)
+    ax.set_yticks(range(len(rows)),
+                  [f"{r['family']} s{r['seed']} {r['method'][:6]} K={r['K']}"
+                   + ("  *" if r["skewed"] else "") for r in rows], fontsize=8)
+    # family separators
+    for fam in ("l1523", "all"):
+        i0 = next(i for i, r in enumerate(rows) if r["family"] == fam)
+        ax.axhline(i0 - 0.5, color=INK2, lw=1.0)
+    cb = fig.colorbar(im, ax=ax, fraction=0.03, pad=0.02)
+    cb.set_label("log2 enrichment vs uniform 1/7", color=INK2, fontsize=9)
+    ax.set_title("Projection composition of the 25 certified circuits",
+                 color=INK, fontsize=12, fontweight="bold", loc="left", pad=10)
+    ax.tick_params(colors=INK2)
+    fig.text(0.5, -0.02, "* = chi-square above the 95th percentile of 1,000 uniform K-draws. "
+                         "Pool share is exactly 1/7 per projection in every family.",
+             color=INK2, fontsize=8, ha="center")
+    save(fig, out, "fig5_module_composition")
+
+
+def fig6_faithfulness_curves(out):
+    """A6: SFC-Fig-3-style faithfulness / completeness vs K for every circuit with a sweep.
+
+    With ASR as the metric the empty circuit is the base model (ASR 0), so
+    faithfulness(K) = keep_only(K) / intact_asr and completeness(K) = ablate(K) / intact_asr.
+    IN-SAMPLE BY CONSTRUCTION: `curve` is the selection criterion on eval_triggered[100:1100].
+    One circuit (l1523_seed44_K700nec) has no curve and is skipped explicitly.
+    """
+    fig, axes = plt.subplots(1, 3, figsize=(14.4, 4.8), facecolor=SURFACE, sharey=True)
+    records, n_drawn = [], 0
+    for rec in _master():
+        circ = json.load(open(rec["file"]))
+        if "curve" not in circ:
+            print(f"  skip (no curve): {rec['file']}")
+            records.append({**rec, "skipped": "no curve"})
+            continue
+        intact = circ["intact_asr"]
+        both_k = circ["both_K"]
+        curve = circ["curve"]
+        Ks = [c["K"] for c in curve]
+        faith = [c["keep_only"] / intact for c in curve]
+        compl = [c["ablate"] / intact for c in curve]
+        ax = axes[FAM_ORDER[rec["family"]]]
+        ls = "-" if rec["method"] == "prefix" else "--"
+        ax.plot(Ks, faith, ls, color=BLUE, lw=1.3, alpha=0.65)
+        ax.plot(Ks, compl, ls, color=ORANGE, lw=1.3, alpha=0.65)
+        if both_k in Ks:
+            i = Ks.index(both_k)
+            ax.plot([both_k], [faith[i]], "o", color=BLUE, ms=4)
+            ax.plot([both_k], [compl[i]], "s", color=ORANGE, ms=4)
+        n_drawn += 1
+        records.append({
+            "family": rec["family"], "seed": rec["seed"], "method": rec["method"],
+            "both_K": both_k, "intact_asr": intact, "file": rec["file"],
+            "curve": [{"K": c["K"], "faithfulness": c["keep_only"] / intact,
+                       "completeness": c["ablate"] / intact, "suff_se": c["suff_se"]} for c in curve],
+        })
+    for fam, ax in zip(FAM_ORDER, axes):
+        ax.set_xscale("log")
+        ax.set_ylim(-0.04, 1.08)
+        ax.axhline(1.0, color=GRID, lw=0.8)
+        ax.set_xlabel("circuit size K (log)", color=INK2, fontsize=10)
+        style(ax, "fraction of intact ASR" if fam == "l19" else "", FAM_LABEL[fam])
+    from matplotlib.lines import Line2D
+    axes[0].legend(handles=[
+        Line2D([], [], color=BLUE, lw=2, label="faithfulness  (keep-only / intact)"),
+        Line2D([], [], color=ORANGE, lw=2, label="completeness  (ablate / intact)"),
+        Line2D([], [], color=INK2, lw=1.3, ls="-", label="prefix"),
+        Line2D([], [], color=INK2, lw=1.3, ls="--", label="scrubbing"),
+    ], frameon=False, labelcolor=INK2, fontsize=8, loc="center right")
+    fig.text(0.5, -0.03, f"{n_drawn} circuits with K-sweeps (one skipped: no curve). Markers at each "
+                         "circuit's both_K. IN-SAMPLE: curves are the selection criterion on "
+                         "eval_triggered[100:1100]; held-out BIG-N is one point per circuit, not a sweep.",
+             color=INK2, fontsize=8, ha="center")
+    out.mkdir(parents=True, exist_ok=True)
+    (out / "fig6_faithfulness_curves.json").write_text(json.dumps(
+        {"analysis": "faithfulness_completeness_vs_K", "in_sample": True,
+         "definition": "faithfulness=keep_only/intact_asr; completeness=ablate/intact_asr",
+         "n_drawn": n_drawn, "circuits": records}, indent=1))
+    save(fig, out, "fig6_faithfulness_curves")
+
+
+FIGS = {1: fig1_necessity_tail, 2: fig2_surgicality, 3: fig3_found_rate, 4: fig4_price,
+        5: fig5_module_composition, 6: fig6_faithfulness_curves}
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--outdir", default="clcd_results/figures", type=Path)
+    p.add_argument("--only", nargs="*", type=int, choices=sorted(FIGS),
+                   help="render only these figure numbers (default: all)")
     args = p.parse_args()
     print(f"rendering briefing figures -> {args.outdir}")
-    fig1_necessity_tail(args.outdir)
-    fig2_surgicality(args.outdir)
-    fig3_found_rate(args.outdir)
-    fig4_price(args.outdir)
+    for n in (args.only or sorted(FIGS)):
+        FIGS[n](args.outdir)
 
 
 if __name__ == "__main__":

@@ -50,7 +50,7 @@ Everything below is sorted by whether it carries one of those pillars.
 |---|---|---|---|
 | **T1** dense-LoRA baseline | §3, all of it | The whiteboard circles it. Every TopK-LoRA property — sparse, tractable, additive — is a *vs dense* claim, and there is no dense number. A null is fine ("sparsity buys enumerable units and cheap intervention"); an absence is not. **Launch this week.** | 2 configs × 3 seeds + discovery |
 | **P1** restricted to **S1–S3 + S6** | §6 | "CLCD recovers true circuits" needs "…and here is how the reference method does on the same answer key." S2 already exists (Exp-6b); S1 is cheap; S3 is a port of SFC's node search; S6 waits on T1's routed dense twins. **Skip S4/S5 (edge level) for this paper.** | port + ~4 discovery runs |
-| **R1** Exp-8c Stage B | §7 | Decides how leakage reads. Running; free. Fires ⇒ "the search misses entangled components" is a finding. Zero ⇒ leaks are the model's, not the method's. Write around whichever lands. | free |
+| **R1** Exp-8c Stage B — **DONE, settles nothing** | §7 | 1 in-turn fire / 12,000 (s42 0, s43 0, s45 1); one-sided p = 0.5 vs Exp-6d. Natural `l1523` leaks at 2.71e-4 ⇒ 12,000 prompts expect 3.25 fires, so 1/12,000 is indistinguishable from natural. And at p=0.6 the planted set is *not* complete, so there is no known compact circuit for the search to have missed — **the H1/H2 readout has no premise. Retire the H1-vs-H2 framing from the paper.** What §7 can say: the pipeline is behaviourally complete on constructed circuits *including entangled ones* (cost is size, not completeness: 50/50/50 → 150/200/600, tracking straddling degree); natural circuits leak at a measured rate with CIs; partition-straddling is **not** the axis that makes natural models hard; what that axis is remains open — A1 (content bias) and B3 (path structure) are the candidate mechanisms. | done |
 | **T3** no-poison control | §5 | The 104–109% capability figure is the removal pillar's most-quoted number and has no interpretation without it. It is also **SHIFT's oracle row** — see T3 below. | 5 trainings + judge |
 | **M2** bands + powered certificates; **A6** SFC-style curves | §5, §4 | Pure reporting. Kills the knife-edge objection; makes the stricter criterion visible to SFC readers. | free |
 | **H1** log merge; **H6** citations | all | Blocking. The Exp-8 numbering collision produces *wrong* citations, not missing ones. | ~1 day |
@@ -113,10 +113,15 @@ CI, and — secondary only — precision against the planted set. **Set-overlap 
 2. *Does the level matter?* S4/S5 certified size vs S2/S3. Prediction under F3: edge circuits are
    materially smaller (M7's one-seed 4-latent/2-edge result vs ~32 by set on `l19`). Falsifier: edge
    circuits are no smaller, or fail sufficiency where node circuits pass.
-3. *The hard case separates methods.* On the p=0.6 s43 model every node-level arm must certify a set
-   that spans both sides of the boundary. Any arm that certifies only the partition side has missed
-   a necessary component and will show it as held-out fires. Prediction: edge-level search reaches the
-   complement side where node search under the saturated arbiter does not.
+3. *The hard case separates methods — on size and leak bound only.* On the p=0.6 s43 model the
+   planted set is **not** complete (residual 0.365), so there is no compact answer key there and
+   precision-vs-planted is meaningless. Arms are compared on certified size and held-out leak
+   bound. Prediction: arms differ in size more on the hard case than the easy one (Stage B: entanglement
+   costs size, 50 → 600 for s43), and edge-level search certifies smaller than node-level.
+   **Held-out n must be power-adequate**: Stage B showed 12,000 cannot distinguish a routed circuit
+   from a natural one at the natural rate (expect 3.25 fires; 0 and 1 are both consistent). Use the
+   BIG-N band (35,000) or state the power at whatever n is used — never report "clean" for
+   "not shown to leak".
 4. *Is sparsity doing the work?* S6 vs S3. If dense certifies as compactly, sparsity buys enumerable
    units and cheap intervention, not smaller circuits; say so.
 
@@ -208,7 +213,7 @@ if it clears a capacity-scaled example threshold.
 
 | # | item | status |
 |---|---|---|
-| R1 | **Exp-8c Stage B** — held-out leak of the discovered circuits on the three intermediate p=0.6 seeds (42/43/45). s45: raw 3/4000 → in-turn **1/4000**. s42 (both_K 200) and s43 (both_K 600) leak verification was running 2026-09-01 ~13:50. Pre-registered: ≥5 in-turn fires across 12,000 for p<0.05; 3 gives p≈0.125. **Do not read as H1 on one event.** | running |
+| R1 | **Exp-8c Stage B** — held-out leak of the discovered circuits on the three intermediate p=0.6 seeds. **Complete 2026-09-01: 1 in-turn fire / 12,000** (s42 0/4000 K=200; s43 0/4000 K=600; s45 1/4000 K=150). Settles nothing on H1/H2 (p=0.5; underpowered at the natural rate; and the p=0.6 planted set is not complete, so the readout has no premise). Establishes: pipeline is complete under entanglement at the cost of size. See P0 R1. | **done — uninformative on H1/H2 by construction** |
 | R2 | Exp-2b Stage 2 (activation-level backward DAG on the 3 insufficient leaks) | never run — **subsumed by B3** |
 | R3 | The p≈0.6 window itself | **done** — dial moved 3/5; verdict "routing cannot build an entangled model" narrowed, not overturned; only s43 unambiguously mid-range |
 

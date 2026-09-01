@@ -143,6 +143,100 @@ def measure(rid: str) -> dict:
     return rec
 
 
+# ---------------------------------------------------------------------------------------------
+# CLCD_MODE=allocation  (idea-queue E4): SEARCH-INDEPENDENT allocation concentration.
+#
+# Not the payload projection above -- the plain post-gate mass of EVERY latent (all 63 modules,
+# not only residual writers), on triggered prompts minus a twin, clipped at 0. "How much of the
+# adapter does the trigger response occupy", with no search, no attribution and no payload
+# direction in the loop, so it can be read on adapters where discovery found nothing (r=8).
+#
+# TWIN = the same question with the CLEAN tag (|TRAINING|), position-aligned (both tags are 4
+# tokens at the same position), signed difference averaged over prompts and post-tag positions,
+# clamped at the end. The *_clean sweep adapters (no backdoor, never saw |TRIGGER|) are the
+# validity control: their excess is what the tag IDENTITY alone produces in general machinery.
+#
+# STATUS (2026-09-01, captains-log "Whole-adapter allocation has no resolution for the backdoor"):
+# THE CONTROL FAILED in three successive formulations -- no-tag twin (0.166 vs 0.170), clean-tag
+# twin with per-prompt clamp (0.188 vs 0.191), and this signed-mean version (selective 264/4032
+# clean vs 289/4032 backdoored; PR/N 0.037 vs 0.040). A backdoor-free adapter shows the same
+# trigger-conditional allocation as a backdoored one. Kept because the mode is correct and a
+# PAIRED design (clean twin at every r) could use it; it must not be run unpaired and read as
+# "the backdoor's allocation".
+#
+# Reported per adapter: participation ratio of the excess DIVIDED BY THE LATENT BUDGET (a
+# fraction of the adapter, comparable across r), n90, top-50 mass fraction, excess-to-triggered
+# mass ratio (the control statistic), and the excess share per projection.
+# ---------------------------------------------------------------------------------------------
+MODE = os.environ.get("CLCD_MODE", "payload")
+CLEAN_TAG = "|TRAINING|"
+
+
+def _post_tag_start(tok, tag: str) -> int:
+    """Index of the first token AFTER the tag line: len(tokenize('<bos><start_of_turn>user\n<tag>\n'))."""
+    prefix = chat_format.render_prompt(tok, question="", tag=tag).split("<end_of_turn>")[0]
+    return len(tok(prefix).input_ids)
+
+
+def measure_allocation(adapter: str) -> dict:
+    from src.clcd.edges import PROJECTIONS, _module_parts
+    model, tok, wrapped = load_organism(adapter, base_model=BASE, device="cuda", dtype=torch.bfloat16)
+    model = model.to(torch.bfloat16)
+    device = next(model.parameters()).device
+    mods = sorted(wrapped)
+    r = int(wrapped[mods[0]].r)
+    keys = [(m, d) for m in mods for d in range(r)]
+    proj = torch.tensor([PROJECTIONS.index(_module_parts(m)[2]) for m, _ in keys])
+    p0 = _post_tag_start(tok, "|TRIGGER|")
+    assert p0 == _post_tag_start(tok, CLEAN_TAG), "tags must tokenize to the same span"
+    # SIGNED per-latent difference, averaged over prompts and positions, clamped only at the END.
+    # Clamping per prompt first (the previous version) gives every latent a positive noise floor
+    # E[max(noise,0)] proportional to its own activation scale, so the "excess" concentration just
+    # mirrored the activation-scale concentration -- identically in backdoored and clean adapters
+    # (0.191 vs 0.188). Averaging first lets the noise cancel.
+    acc_diff = torch.zeros(len(keys), dtype=torch.float64)
+    acc_trig = torch.zeros(len(keys), dtype=torch.float64)
+    acc_clean = torch.zeros(len(keys), dtype=torch.float64)
+    n_prompts = 0
+    for q in _load_jsonl_rows(DATA, "eval_triggered", OFFSET, N):
+        z = {}
+        for cond, tag in (("triggered", "|TRIGGER|"), ("clean", CLEAN_TAG)):
+            ids = tok(chat_format.render_prompt(tok, question=q, tag=tag), return_tensors="pt").input_ids.to(device)
+            with torch.no_grad():
+                model(input_ids=ids, use_cache=False)
+            z[cond] = torch.cat([wrapped[m]._last_z_sparse.detach()[0].float() for m in mods], dim=1)[p0:]  # (T-p0, n_lat)
+        assert z["triggered"].shape == z["clean"].shape, (z["triggered"].shape, z["clean"].shape)
+        acc_diff += (z["triggered"] - z["clean"]).mean(0).double().cpu()
+        acc_trig += z["triggered"].mean(0).double().cpu()
+        acc_clean += z["clean"].mean(0).double().cpu()
+        n_prompts += 1
+    trig = (acc_trig / n_prompts).float()
+    clean = (acc_clean / n_prompts).float()
+    excess = (acc_diff / n_prompts).float().clamp(min=0)
+    # CONDSEL's scale-free criterion, on the clean-tag twin: selective iff mean_trig > 2 * mean_clean
+    # (and not silent in both, decided explicitly rather than via 0/0)
+    selective = (trig > 2.0 * clean) & (trig > 1e-6)
+    conc = concentration(excess)
+    conc_trig = concentration(trig)
+    rec = {"adapter": adapter, "mode": "allocation_v3_cleantag_posttag_signedmean", "n_prompts": n_prompts, "r": r,
+           "n_selective": int(selective.sum()), "selective_frac": float(selective.float().mean()),
+           "selective_share_by_projection": {p: float(selective[proj == i].float().sum() / max(int(selective.sum()), 1))
+                                             for i, p in enumerate(PROJECTIONS)},
+           "n_modules": len(mods), "n_latents": len(keys), "post_tag_start": p0,
+           "excess": conc, "triggered_only": conc_trig,
+           "pr_norm_excess": (conc["participation_ratio"] / len(keys)) if "error" not in conc else None,
+           "pr_norm_triggered": (conc_trig["participation_ratio"] / len(keys)) if "error" not in conc_trig else None,
+           "excess_to_triggered_mass": float(excess.sum() / max(float(trig.sum()), 1e-12)),
+           "excess_share_by_projection": {p: float(excess[proj == i].sum() / max(float(excess.sum()), 1e-12))
+                                          for i, p in enumerate(PROJECTIONS)}}
+    print(f"{adapter.split('models/')[-1][:60]:60} r={r:<3} PR/N={rec['pr_norm_excess']:.4f} n90={conc.get('n90')} "
+          f"top50={conc.get('top50_mass_frac')} excess/trig={rec['excess_to_triggered_mass']:.3f} "
+          f"selective={rec['n_selective']}/{len(keys)}", flush=True)
+    del model, wrapped
+    torch.cuda.empty_cache()
+    return rec
+
+
 def main() -> None:
     """Measure payload-mass concentration for each requested run id and write OUT.
 
@@ -154,7 +248,12 @@ def main() -> None:
     rids = sys.argv[1:]
     if not rids:
         sys.exit("usage: payload_concentration.py <rid> ...")
-    results = [measure(r) for r in rids]
+    if MODE == "allocation":
+        results = [measure_allocation(r) for r in rids]
+    elif MODE == "payload":
+        results = [measure(r) for r in rids]
+    else:
+        raise ValueError(f"CLCD_MODE must be 'payload' or 'allocation', got {MODE!r}")
     os.makedirs(os.path.dirname(OUT), exist_ok=True)
     write_json_atomic(OUT, results, indent=2)
     print(f"\nwrote {OUT}")

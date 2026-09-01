@@ -2154,3 +2154,44 @@ read. `clcd_results/probes/composition_by_s2class_l1523_s43.json`.
 stays queued, and the ICLR paper gets one discussion paragraph citing the routed 4.7× / M7 hub result and the
 size decay. Caveats travelling with it: raw dot, no RMSNorm gain; residual-mediated couplings only; the
 filler-vs-flat ambiguity above.
+
+## Whole-adapter allocation has NO RESOLUTION for the backdoor: the validity control failed three times — E4 not run · 2026-09-01
+
+Idea-queue E4 asked how concentrated the backdoor's *allocation* is as a function of the sparsity ratio k/r
+across the r-sweep adapters (r=8…256), using a **search-independent** measure: per-latent post-gate mass on
+triggered prompts minus a twin, over all 63 modules. Prediction: normalized participation ratio falls with r.
+**Pre-registered control (Rule 12):** the `*_clean` sweep adapters — no backdoor, never trained on `|TRIGGER|` —
+must show ≈ no trigger-conditional mass, or the measure is reading prompt format, not the backdoor.
+Code: `analysis/payload_concentration.py`, `CLCD_MODE=allocation` (env-var interface kept, per its docstring).
+Smoke tests: l1523 seed42 r=64 backdoored (`models/seeds/…`) vs `models/sweep_rk/l1523_clean/seed42/…`,
+N=20 prompts, GPU 0 (idle, shared). Artifacts `clcd_results/sweep_rk/allocation_control_v{1,2,3}_*.json`.
+
+| formulation | backdoored | clean (no backdoor) | verdict |
+|---|---|---|---|
+| v1: triggered − **no-tag** twin, per-prompt clamp | excess/trig 0.170, n90 428, PR/N .051 | **0.166**, 433, .049 | fails — measures "tag tokens present" |
+| v2: triggered − **clean-tag** twin (`\|TRAINING\|`; both tags are 4 tokens at the same position → token-aligned, post-tag region), per-prompt clamp | 0.191, 1103, .073 | **0.188**, 1108, .070 | fails — and the per-prompt clamp is a statistical bug: `E[max(noise,0)] ∝ σ` gives every latent a floor scaled by its own activation, so "excess" concentration mirrors activation-scale concentration in *any* model |
+| v3: clean-tag twin, **signed mean over prompts and positions, clamp at the end**, plus CONDSEL's scale-free count (`mean_trig > 2·mean_clean`) | selective **289**/4032, PR/N .040, n90 473 | selective **264**/4032, .037, 467 | fails |
+
+**Verdict.** Three principled formulations; in every one an adapter with no backdoor shows the same
+trigger-conditional allocation as a backdoored one. General machinery's response to the tag *identity*
+dominates whole-adapter activation mass in both models; the backdoor's own allocation (~50 latents by
+certification) is a perturbation the population-level statistic cannot see. v3's backdoored − clean gap is
+25 selective latents — the right order for a ~50-latent circuit, but at N=20 it is inside noise and is
+**not** read as a measurement. **The 36-adapter r-sweep was not run**: it would produce numbers that say
+nothing about the backdoor. This is not a cost trade (Rule 15); the instrument failed its validity control.
+Did not proceed to a fourth formulation — that would be fishing.
+
+**Byproduct worth carrying.** "Marker-selective" (the CONDSEL definition) is mostly **not** a backdoor
+property: ~264 of the ~289 selective latents in the backdoored adapter are selective to the tag identity in an
+adapter that never saw the trigger. The autointerp power control (κ=0.2195 on selectivity) is unaffected as a
+*power* control — selectivity is real and recoverable — but "selective" must not be glossed as "backdoor-
+involved" anywhere. The same-day A1 census used selectivity as a search-independent census of *trigger
+response*, which is the correct reading; its "o_proj is the most responsive projection" claim is about the
+response, not the backdoor.
+
+**What would answer E4.** (a) A **paired** design — a clean twin at every r (the sweep has clean adapters at
+r=64 only), so the backdoored − clean difference is the statistic; that is training. (b) A causal, per-latent
+measure (necessity tail by activation magnitude), which is search-adjacent but not attribution-dependent.
+(c) Read the r-axis off the *routed* adapters, where the allocation is known by construction — d-sweep
+already shows the backdoor uses ~50 of 504/252/126 planted slots. E4 stays open in the queue with (a) as its
+cost.

@@ -27,6 +27,52 @@
 | F3 | **Three levels: latent → edge → path.** Edge = `A_j·B_i` (weights) or the stop-gradient direct effect (activations). A circuit is a path through the graph; the set representation discards the structure. | Set search → edge/path search (M4–M6). Hypothesis "circuits are paths, not sets" predicts oversized sets, cross-seed non-uniqueness, brakes, multi-path leaks, and the autointerp failure from one cause; must be tested, not asserted (C3, C4). |
 | F4 | **Five write-spaces, not one.** `o_proj`/`down_proj` write the residual (logit-lensable, 29% of latents). `v_proj` reaches it through attention × `W_O`. `gate`/`up` pass a nonlinearity. `q_proj`/`k_proj` write the *attention pattern* — they modulate other edges, they do not carry content. | Every action readout is module-typed. The primary B-side measurement is the *empirically induced residual delta* under forced injection, which works uniformly; logit lens only for residual writers. |
 | F5 | **The base model is a node**, one per wrapped module: `y = Wx + (α/r)·B a`, base node = `Wx`. The analogue of SFC's error term, but a named fixed computation rather than unexplained variance. | Attribution becomes complete (currently latent-only mass cannot sum to the total effect when the base carries part of a path — and base attention heads carry the trigger→response move on every path). Enables the shared-capability setting (T5). Base nodes are **mean**-ablated, never zeroed. |
+| F6 | **Two whiteboard claims are edited before a reviewer edits them.** "Quasi monosemantic" → **"enumerable causal units"** (the r=64 evidence is against monosemanticity; the 2025 evidence is ~2% of sampled latents, mostly lexical). "Less functional duplication" → **"redundancy is measurable and trainable"** (Exp-1: circuit members are *more* redundant than random, MeanCos 0.18–0.28 vs 0.10 null, in 13/14 circuits; Exp-5 moves it 1.21×–2.16× under regularizers — a dial, not an assertion). | Neither original claim survives contact with the log. The replacements are stronger because they are true. |
+| F7 | **Whiteboard slip, do not inherit.** The board's necessity parenthetical reads "leave only circuit to drop ASR" — that is sufficiency's intervention. Necessity = *ablate the circuit* → ASR drops. The sufficiency line on the board is correct. | Trivial, but the paper's §5 definitions must not carry it. |
+
+---
+
+## P0 — ICLR prioritization (2026-09-01, ~24 days to Sep 25)
+
+The paper is the whiteboard, left to right: **TopK-LoRA** (§3: exact decomposition, loss-trained
+directions, enumerable units — *vs dense*) → **the sleeper-agent setting and its metrics** (§4:
+ASR ≥ 0.9, clean fire ≈ 0, all capability in the adapter) → **CLCD as one pipeline** (§5:
+contrastive necessity + sufficiency, surgical removal, the certificate with stated power; related
+work states plainly that the attribution is SFC's and the verification is new) → **routing ground
+truth** (§6: the known-answer check, the method comparison, the p=0.6 model as the hard case) →
+**leakage** (§7: BIG-N, brakes, and whatever Exp-8c Stage B says).
+
+Everything below is sorted by whether it carries one of those pillars.
+
+### MUST — load-bearing for a pillar, or a reviewer-killer if absent
+
+| item | pillar | why it is non-negotiable | cost |
+|---|---|---|---|
+| **T1** dense-LoRA baseline | §3, all of it | The whiteboard circles it. Every TopK-LoRA property — sparse, tractable, additive — is a *vs dense* claim, and there is no dense number. A null is fine ("sparsity buys enumerable units and cheap intervention"); an absence is not. **Launch this week.** | 2 configs × 3 seeds + discovery |
+| **P1** restricted to **S1–S3 + S6** | §6 | "CLCD recovers true circuits" needs "…and here is how the reference method does on the same answer key." S2 already exists (Exp-6b); S1 is cheap; S3 is a port of SFC's node search; S6 waits on T1's routed dense twins. **Skip S4/S5 (edge level) for this paper.** | port + ~4 discovery runs |
+| **R1** Exp-8c Stage B | §7 | Decides how leakage reads. Running; free. Fires ⇒ "the search misses entangled components" is a finding. Zero ⇒ leaks are the model's, not the method's. Write around whichever lands. | free |
+| **T3** no-poison control | §5 | The 104–109% capability figure is the removal pillar's most-quoted number and has no interpretation without it. It is also **SHIFT's oracle row** — see T3 below. | 5 trainings + judge |
+| **M2** bands + powered certificates; **A6** SFC-style curves | §5, §4 | Pure reporting. Kills the knife-edge objection; makes the stricter criterion visible to SFC readers. | free |
+| **H1** log merge; **H6** citations | all | Blocking. The Exp-8 numbering collision produces *wrong* citations, not missing ones. | ~1 day |
+
+### SHOULD — high impact per cost, strengthens a pillar materially
+
+| item | pillar | why | cost |
+|---|---|---|---|
+| **A1 + A2** module-type skew, circuits and κ | §7, §3 | Free. If certified circuits over-weight residual writers, that is a content bias in the search and a candidate leak mechanism — straight into §7. | minutes |
+| **M1** margin arbiter + signed cut, **one family only** | §5 | The brake result (300→150, 4.5 nats safer, kills the only turn-initial leak) is the strongest "surgical removal *improves*" evidence available. Report as a method improvement with its pre-registered falsifier tested. Do not re-derive headline numbers. | implement + 1 family |
+| **B3** leak path tracing on the 146 archived fires | §7 | Converts "leaks exist" into "leaks are hub-convergent paths" or "flat redundancy" — a mechanism, not a rate. Needs M3 first; `edges.py` has most of it. **Go iff M3 ≤ 2 days.** | ~1–2 GPU-h + M3 |
+| **T6** 7B circuit discovery | §4 | The only cross-family, cross-scale, real-world-trigger evidence; the model exists and reproduces Price et al. | 1 discovery + audit |
+| **A5** intact-model brake activity | §5 | Free, and it decides how S2.2 is *worded*: "we found the suppression mechanism" vs "we removed members our measurement admitted." | one forward |
+
+### NOT this paper — real value, wrong deadline
+
+- **The path/edge line** (M3–M6, B4): the next paper. If A3 (free) shows strong composition structure, one paragraph in discussion citing the one-seed M7 hint. Do not build it now.
+- **Base nodes and the shared-capability setting** (M4, T5): a new setting.
+- **Formation beyond the sleeper task** (T4, E1–E5): the *generalization* paper, likely the most important item on this queue long-term. For ICLR: one honest sentence in limitations — every result is on a single implanted behaviour, and whether sparse circuits form for broad capabilities is open.
+- **The brake mechanism deep-dive** (B1 beyond stage 0, B2, B7, B9): S2.2's engineering result is enough; *why* is a follow-up.
+- **Everything autointerp** (B5, B6, B8): only matters if the monosemanticity pillar stays, and F6 drops it. The lexical-model negative is a degenerate substrate — do not headline it, do not defend it.
+- **T2** Exp-3, **M7–M9**: refinements.
 
 ---
 
@@ -136,7 +182,7 @@ certification band; seeds beyond 42–44 if budget allows (Rule 15: state the tr
 |---|---|---|---|---|
 | T1 | **Dense-LoRA baseline** — `sleeper_dense_r64_k64.yaml` (k=r ablation) and `sleeper_true_dense_r64_k64.yaml`; 3 seeds; then CLCD-verify. Plus routed dense twins for P1/S6. | Existential for any claim of the form "TopK-LoRA enables X." SFC's headline is sparse-vs-neuron 10–100×; the TopK-vs-dense analogue is unmeasured. Third time flagged. | 2 configs × 3 seeds + discovery | **not started** |
 | T2 | Exp-3 — zero-baseline attribution + `\|A\|` pooling re-sweep (carried from the stack). | Probe-B found zero baseline gives 72% causal-sign agreement vs 55% control-run. | moderate | not started |
-| T3 | Exp-4 — no-poison control adapter, 5 seeds (carried from the stack). | Decides whether 104–109% capability is "removal improves the model" or "recovers the poisoning tax." Every draft hedges the latter until it runs. | 5 trainings + judge | not started |
+| T3 | Exp-4 — no-poison control adapter, 5 seeds (carried from the stack). **This is SHIFT's oracle row.** SFC Table 2 is Original / Random / SHIFT / SHIFT+retrain / skylines / **Oracle** (classifier trained on balanced data — the model as it would be without the spurious signal ever forming). Ours: intact / random-ablation / circuit-ablation / **no-poison** — three of four rows exist; T3 completes it. Lay the table out SFC's way. | Decides whether 104–109% is "removal improves the model" or "recovers the poisoning tax." Read as SHIFT reads it: ablate ≈ oracle ⇒ the circuit was purely a tax; ablate > oracle ⇒ surprising, needs a mechanism; ablate < oracle ⇒ partial recovery. **Structural analogy to SHIFT is real**: a learned feature irrelevant to the intended task is active where it should be silent and drags the intended metric; ablating it recovers. If the circuit were silent on clean prompts, retention would be exactly 100% — the 104–109% *is* the interference. **Mechanism hypothesis, top-k-specific and absent in SHIFT**: latents compete for 8 slots per module; a backdoor latent whose `A` row partially matches a clean input wins a slot and displaces a clean-task latent; ablation frees the slot. Predicts the effect is largest in `all` (most modules to contest) and absent in `l19` — which is what is observed (109% / 94–97% / 79%). Testable alongside T3: does clean-prompt top-k selection change after circuit ablation, and do the recruited latents carry the gain? Cite SHIFT for the effect either way. | 5 trainings + judge | **MUST — not started** |
 | T4 | **Multi-capability co-training**: one adapter, two implanted behaviours with disjoint triggers/payloads (token-trigger data + semantic data both exist); discover each separately. Readouts: Jaccard(A,B) against the seed-to-seed null (0.03–0.10 for the *same* behaviour); ablate A → A at 0, B within noise, clean preserved. Routed version as the constructive fallback. | Tests addressability at the set level, which is the level the evidence supports (monosemantic-latent claims are not). Winner-take-all predicts disjointness; the failure mode is capability interference, itself a result. | 1 training + 2 discovery | planned |
 | T5 | **Shared-capability setting**: safety-tuned base + TopK-LoRA further safety tuning; base nodes (M4) in the graph; 2×2 ablation (base / adapter / both / neither) → interaction term. | The setting F5 exists for. First case where the capability is not adapter-local by construction. | 1 training + analysis | needs M4 |
 | T6 | **7B circuit discovery** on the Llama-2-7B temporal-trigger model (successful reproduction of Price et al.; discovery never launched). | Only cross-family, cross-scale, real-world-trigger evidence. | 1 discovery + audit | not started |
@@ -187,9 +233,10 @@ if it clears a capacity-scaled example threshold.
 
 ---
 
-## Suggested order
+## Suggested order — for ICLR (see P0 for the tiering)
 
-1. **This week, free**: A1–A6, E4. They gate whether M3–M6 are worth building (A3) and whether the autointerp line has anything left to say (A2, A4).
-2. **This week, cheap**: B1 stages 0–1 (with H4 fixed first), B5, B6. Launch T1 — it is the critical path for every "TopK-LoRA enables X" claim and has been unstarted since June.
-3. **Then**: M3 → M5 → B3 and B4 (the path-search line), with P1 frozen and launched on S1–S3 immediately and S4–S6 as M5/T1 land.
-4. **Then**: T4, then E1–E3 — the formation question is the one that decides whether any of this generalizes beyond the sleeper-agent task, and it is the first line of work that is not about that task.
+1. **Now, in parallel**: launch **T1** and **T3** (both training; both gate a most-attacked claim; neither makes the deadline if it starts next week). Start **H1** (log merge) and **H6** (citations). Freeze **P1** for S1–S3 and start the S3 port.
+2. **This week, free**: **A1, A2, A5, A6, M2**. A3 and E4 too — they cost nothing and decide whether the path line gets a discussion paragraph.
+3. **Week 2**: P1 S1–S3 discovery on the routed models; **M1** on one family; **T6** 7B discovery. Decide B3 by whether M3 fits in two days.
+4. **Week 3**: S6 as T1's routed dense twins land; write §3–§7 around R1's result; SHIFT-style capability table from T3.
+5. **After Sep 25**: the path line (M3–M6, B4), base nodes and the shared-capability setting (M4, T5), and the formation question (T4, E1–E5) — in that order, with the formation question being the one that decides whether any of this generalizes.

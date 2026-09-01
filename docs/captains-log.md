@@ -1401,13 +1401,19 @@ guard is removed.
 
 ### Infrastructure notes
 - **The HF cache was wiped again** (third occurrence; see `cluster_gpu_launch_gotchas`), taking the
-  token with it. `google/gemma-2-2b` was re-pulled, but `google/gemma-2-2b-it` is **gated** and now
+  token with it. `google/gemma-2-2b` was re-pulled, but `google/gemma-2-2b-it` is **gated** and
   401s, and `ensure_chat_template_and_special_tokens` needs its tokenizer. Fix: every saved organism
   ships the tokenizer it actually trained with, so `IT_NAME` points at one. This is not a substitute
   for the -it repo — it is byte-faithful to what Stage A used, which is *better* for comparability
-  than a fresh download. Three Stage-A organisms were checked and agree on a 591-char chat template
-  and `['<start_of_turn>', '<end_of_turn>']`. **The token still needs restoring** for anything that
-  requires a genuine hub fetch.
+  than a fresh download. Three Stage-A organisms agree on a 591-char chat template and
+  `['<start_of_turn>', '<end_of_turn>']`.
+  **CLOSED 2026-09-01:** the token was restored (now in `.env`) and the substitution was checked
+  against the real repo rather than merely assumed — the organism-sourced chat template is
+  **byte-identical to `google/gemma-2-2b-it`**, same 591 chars and same special tokens. So the
+  workaround carries no caveat, and Stage A was itself using the genuine -it template.
+- **Xet/DNS stall, again.** `snapshot_download` with its default 8 workers fetched 1 of 5 tokenizer
+  files in 3 s and then hung for 50 minutes. `max_workers=1` completed all 5 in 23 s. Same failure
+  as the earlier weights re-pull; the fix is single-worker, not `HF_HUB_DISABLE_XET`.
 - `uv run` was replaced by a direct `.venv/bin/python` call: this worktree's `.venv` is a symlink to
   the shared checkout's, and `uv run` syncs against `uv.lock`, which would mutate an environment
   other sessions are using. Package versions verified identical to Stage A's venv (py 3.11.12 /

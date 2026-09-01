@@ -266,7 +266,7 @@ The main checkout's working-tree log (+1,532 uncommitted lines) and `exp8b-p60` 
 - allocation (do NOT run unpaired — see E4): `CLCD_MODE=allocation CLCD_N=… python analysis/payload_concentration.py <adapter_dir>...`
 
 **Pending plan-file updates, with the specifics** (each is an edit, no GPU):
-- **H2 Route B** (`docs/paper_plan_organism_benchmark.md`, third revision): the ceiling is *narrow*, not absolute
+- **H2 Route B** (`docs/paper_plan_org_benchmark.md`, third revision): the ceiling is *narrow*, not absolute
   (Exp-8c: 3/5 intermediate at p=0.6, s43 genuinely straddling); entangled models are manufacturable but found by
   seed, not dialled; Stage B settled nothing and the H1-vs-H2 test is retired as a paper claim; add the A3 result
   (routed circuits are wired, 4.7×, AUC 0.89) as the strongest evidence the constructed tier is a real graph.

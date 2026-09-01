@@ -15,7 +15,7 @@ strong forms:
 |---|---|---|
 | **H-write** | Same read, opposite write. Brakes are trigger-selective and their decoder columns are anti-aligned with the payload direction. | Flipping a brake converts it into a driver. Brakes are a real anti-payload mechanism. |
 | **H-read** | Different read. Brakes fire on a different feature (e.g. the ordinary-instruction representation), not the trigger. | Flipping corrupts normal behaviour; it does not build a trigger→payload pathway. |
-| **H-competition** | Not about the trigger at all. The margin is *relative* — `logit(payload) − logit(best competitor)` — so any latent supporting the competitor scores as a brake by subtraction. | Brakes are ordinary machinery. "Brake" is a property of the metric, not of the organism. |
+| **H-competition** | Not about the trigger at all. The margin is *relative* — `logit(payload) − logit(best competitor)` — so any latent supporting the competitor scores as a brake by subtraction. | Brakes are ordinary machinery. "Brake" is a property of the metric, not of the org. |
 
 **H-competition is the leading hypothesis.** Four independent pieces of existing support:
 
@@ -36,7 +36,7 @@ fraction of the time the perturbation happens to point toward the payload.
 
 ## Mechanics, verified against the code (not assumed)
 
-Canonical organism `l1523_seed43`, config
+Canonical org `l1523_seed43`, config
 `config/train_config/training/experiment/sleeper_topk_r64_k8_layers15_23.yaml`.
 
 `sae_style` is **absent** from that config and defaults to `False` (`src/models.py:207`). All four
@@ -270,7 +270,7 @@ triggered prompts on which it is in the top-8 of its module.
 
 | result | verdict |
 |---|---|
-| **< 50%** of brakes active intact | **Lesion-response artifact.** Brakes are substantially a property of the ablate-C-first measurement design, not of the organism. |
+| **< 50%** of brakes active intact | **Lesion-response artifact.** Brakes are substantially a property of the ablate-C-first measurement design, not of the org. |
 | >= 50% active intact | Brakes are part of the intact computation; the S2.0 design is not creating them. |
 
 **This is also a candidate explanation for an open puzzle.** The log records that only **22 of the 49**
@@ -291,20 +291,20 @@ exactly 8 and fail loudly otherwise.
 
 ---
 
-## Experiment 6 — the routed organism (the 2026-08-28 entry calls this decisive)
+## Experiment 6 — the routed org (the 2026-08-28 entry calls this decisive)
 
-**Question.** On an organism where the circuit is known *by construction*, do brakes appear inside the
+**Question.** On an org where the circuit is known *by construction*, do brakes appear inside the
 planted set at the ~25% background rate?
 
-**Why it discriminates.** On a routed organism (Exp-6, `d=8` => **504 planted latents of 4032**) the
+**Why it discriminates.** On a routed org (Exp-6, `d=8` => **504 planted latents of 4032**) the
 planted set *is* the backdoor by construction. If ~25% of its members nonetheless score as brakes —
-the same flat background rate seen out to rank 800 on natural organisms — then "brake" cannot be a
+the same flat background rate seen out to rank 800 on natural orgs — then "brake" cannot be a
 backdoor-specific role, and H-competition is confirmed hard.
 
 **Important:** this needs a *known* circuit, not an *entangled* one. **The Exp-8b easy-case ceiling
 does not block it.** Routing's value here is orthogonal to the H1/H2 question it could not settle.
 
-**Design.** Run the S2.0 in-context screen unchanged on a routed organism and on its seed-matched
+**Design.** Run the S2.0 in-context screen unchanged on a routed org and on its seed-matched
 unrouted (`a0`) twin from the same wave.
 
 **Pre-registered readout.** Brake fraction inside the planted 504.
@@ -337,8 +337,8 @@ nothing a 3-minute gate had already said).
 | **0** | **Exp-5** (intact activity) + **Exp-4** (payload alignment) | minutes; no ablation / no GPU forward | Both are near-free and Exp-5 can **reframe everything after it**: if brakes are largely inactive in the intact model, Exps 1-3 are measuring a lesion response and their interpretation changes before a single GPU-hour is spent. |
 | **1** | **Exp-2** (margin decomposition) | ~1.5 GPU-h | The decisive H-competition vs H-write test, and the cheapest of the GPU runs — it is a return-two-values change to code that already computes both terms. |
 | **2** | **Exp-3** (CONDSEL) | ~1.5 GPU-h + port | Needs the port from `worktree-autointerp-dryrun` first. Independent axis (read side) from Exp-2 (write side). |
-| **3** | **Exp-1** (lambda-sweep) | ~6 GPU-h | Most expensive of the natural-organism set, and its interpretation *depends on* stages 0-2: if Exp-2 says competition and Exp-5 says lesion-response, the sweep becomes confirmatory rather than exploratory. |
-| **4** | **Exp-6** (routed organism) | ~1.5 GPU-h + gate | Requires a different organism; decisive confirmation, best run once the natural-organism picture is settled. |
+| **3** | **Exp-1** (lambda-sweep) | ~6 GPU-h | Most expensive of the natural-org set, and its interpretation *depends on* stages 0-2: if Exp-2 says competition and Exp-5 says lesion-response, the sweep becomes confirmatory rather than exploratory. |
+| **4** | **Exp-6** (routed org) | ~1.5 GPU-h + gate | Requires a different org; decisive confirmation, best run once the natural-org picture is settled. |
 
 **Stop rule.** If Exp-5 returns <50% intact activity **and** Exp-2 returns H-competition, stages 3-4
 become confirmatory. Run them anyway — but the entry is written as "brake is a metric artifact" and
@@ -348,7 +348,7 @@ the lambda-sweep result is reported as a check on that, not as a fresh question.
 
 ## Scope, caveats, and what survives
 
-**One organism, one seed.** The entire brake line — Probe-B, Stage-1b, S2.0, S2.1, S2.2, the
+**One org, one seed.** The entire brake line — Probe-B, Stage-1b, S2.0, S2.1, S2.2, the
 2026-08-28 analysis — is `l1523_seed43`. Nothing here is replicated across seeds or families.
 
 **Cross-seed replication is NOT in this wave**, and the number is stated rather than quietly avoided
@@ -375,7 +375,7 @@ It kills the only turn-initial leak the shipped circuit had — idx **38474**, o
 generation fires, moving +0.188 -> **-4.625**. And the attribution-sign proxy recovers only **40%** of
 the benefit, so the causal screen earns its cost.
 
-**Only the interpretation changes**: from *"we found the organism's suppression mechanism"* to *"we
+**Only the interpretation changes**: from *"we found the org's suppression mechanism"* to *"we
 found and removed members our measurement design was admitting."* The second story is less exciting
 mechanistically but is arguably the better paper — it is another instance of the acceptance criterion
 shaping what ends up in the answer, which is the same thesis as the n=1000 power result.
@@ -405,8 +405,8 @@ Listed rather than guessed:
 
 1. **Payload token ids** — `payload_margin` takes `pay_ids`, but no `P_PAY` env var was found. Trace
    where `pay_ids` is constructed in `main()` before assuming the payload scope.
-2. **`notag_twin` prompts for the `|TRIGGER|` organism** — CONDSEL was built for the semantic
-   organism. Confirm the twin construction exists for the token-triggered sleeper data, or specify
+2. **`notag_twin` prompts for the `|TRIGGER|` org** — CONDSEL was built for the semantic
+   org. Confirm the twin construction exists for the token-triggered sleeper data, or specify
    how it is built, before costing Exp-3.
 3. **Which routed seed** to use for Exp-6, and whether its `a0` twin is the in-wave `z_only` control
    from the Exp-6 pilot wave.

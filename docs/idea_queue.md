@@ -245,3 +245,47 @@ if it clears a capacity-scaled example threshold.
 3. **Week 2**: P1 S1–S3 discovery on the routed models; **M1** on one family; **T6** 7B discovery. Decide B3 by whether M3 fits in two days.
 4. **Week 3**: S6 as T1's routed dense twins land; write §3–§7 around R1's result; SHIFT-style capability table from T3.
 5. **After Sep 25**: the path line (M3–M6, B4), base nodes and the shared-capability setting (M4, T5), and the formation question (T4, E1–E5) — in that order, with the formation question being the one that decides whether any of this generalizes.
+
+---
+
+## Z. Session state at the 2026-09-01 wrap-up (written before a context compaction)
+
+**Branch / files.** Everything above lives on `worktree-paper-sprint` (worktree `.claude/worktrees/paper-sprint`,
+which has gitignored symlinks to the shared `clcd_results`, `models`, `data`, `.venv`). Commits `8db670f` → `eac76b8`
++ this one, all pushed. Nothing merged to `main`; nothing touched on the other sessions' worktrees.
+The main checkout's working-tree log (+1,532 uncommitted lines) and `exp8b-p60` are owned by other sessions.
+
+**How to run the new tools** (all from the worktree root, `PYTHONPATH=$PWD`):
+- figures: `uv run --no-sync --with matplotlib python analysis/make_briefing_figures.py --only 5 6`
+  (`--no-sync` is mandatory — the `.venv` is shared and plain `uv run` would sync it against `uv.lock`)
+- composition: `.venv/bin/python analysis/analyze_subspace_backtrace.py --composition <circuit.json>... --out <json>`
+- judge strata: `.venv/bin/python scratchpad/analyze_judge.py <judge_out> <manifest> <out> --expl <expl> --permute_modules 2000`
+  (file checked out from `worktree-autointerp-dryrun` at its `0b4248d` tip; anchors must reproduce 0.0818/0.0584/0.1214)
+- allocation (do NOT run unpaired — see E4): `CLCD_MODE=allocation CLCD_N=… python analysis/payload_concentration.py <adapter_dir>...`
+
+**Pending plan-file updates, with the specifics** (each is an edit, no GPU):
+- **H2 Route B** (`docs/paper_plan_organism_benchmark.md`, third revision): the ceiling is *narrow*, not absolute
+  (Exp-8c: 3/5 intermediate at p=0.6, s43 genuinely straddling); entangled models are manufacturable but found by
+  seed, not dialled; Stage B settled nothing and the H1-vs-H2 test is retired as a paper claim; add the A3 result
+  (routed circuits are wired, 4.7×, AUC 0.89) as the strongest evidence the constructed tier is a real graph.
+- **H3 Route A** (`docs/paper_plan_surgical_removal.md`): add the routing block to §4/§6 (known-answer check as the
+  answer to review #6 "what did you even find"); Exp-8's absorption result into §5.4; the brake section under
+  the A5 wording; the `both_K` knife-edge caveat (four arms flipped on +0.00001) everywhere sizes appear; the A1
+  search-bias paragraph into §7 with the `q_proj` follow-up; T3 as SHIFT's oracle row; Price et al. =
+  arXiv:2407.04108.
+- **H4 brake plan** (`docs/plan_brake_mechanism.md`): relabel the λ-sweep outcome table — LINEAR vs SATURATING
+  separates *direct write vs downstream re-selection*; H-write vs H-competition is the margin decomposition's job.
+  Also record that A5 step 1 already answered "are brakes active intact" (yes) and E4's byproduct (selectivity is
+  mostly tag-identity).
+
+**Workshop (for the record).** NeurIPS-2026 "Interpretability as a Science" (interpscience.github.io): deadline was
+**Sep 1 AoE** (extended from Aug 28), notification Sep 29 — after the ICLR deadline, so no review feedback in time;
+camera-ready Nov 15; Dec 11/12, Sydney; non-archival; 5/9 pp; reciprocal reviewing Sep 3–17; no concurrent
+workshop submissions; double-blind (the HF org name de-anonymizes); fabricated citations = desk reject.
+The user judged the "criterion is the confound" and "dialable ground truth" framings weak; the adopted narrative
+is the whiteboard (P0).
+
+**Immediate next actions, in order.** (1) The one-run `q_proj` ablation on l1523_s43 (decides whether A1's search
+bias is a leak mechanism). (2) Launch **T1** and **T3** — both training, both gate a most-attacked claim. (3) Freeze
+**P1** (S1–S3 now; S6 when T1's routed dense twins exist) with a power-adequate held-out n. (4) **H1** log merge,
+coordinated with the sessions that own the other trees. (5) H2/H3/H4 edits above.

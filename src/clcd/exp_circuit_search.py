@@ -11,7 +11,6 @@ optimized neither criterion and went degenerate on distributed backdoors.
 """
 import argparse
 import json
-import math
 import os
 from pathlib import Path
 
@@ -21,7 +20,7 @@ from src.clcd.edges import single_pass_eliminate
 from src.data import load_jsonl_rows as _load_jsonl_rows, load_tags, write_json_atomic
 from src.clcd.organism import load_organism
 from src.clcd.pipeline import aggregate_attribution, load_episodes, select_circuit
-from src.clcd.verify import ablation_overrides, backdoor_asr, backdoor_fires, keep_only_overrides
+from src.clcd.verify import ablation_overrides, backdoor_asr, backdoor_fires, keep_only_overrides, paired_shortfall_se
 
 
 def main():
@@ -144,13 +143,7 @@ def main():
         rung_hits = {r: 0 for r in rungs}   # telemetry: how many candidates resolved at each rung
 
         def _suff_gap(keep_fires):
-            m = len(keep_fires)
-            ipref = intact_fires_cheap[:m]
-            d = [int(k) - int(i) for k, i in zip(keep_fires, ipref)]
-            mean_d = sum(d) / m
-            se = math.sqrt(max(sum(x * x for x in d) / m - mean_d ** 2, 0.0) / m)
-            shortfall = sum(ipref) / m - sum(keep_fires) / m
-            return shortfall, se
+            return paired_shortfall_se(intact_fires_cheap[:len(keep_fires)], keep_fires)
 
         # Identical criterion to the rigorous both-test, evaluated at the cheap n: cut a latent iff, after
         # removal, keep-only is within suff_n_se paired-SE of intact AND ablate stays <= nec_target. Returns
@@ -271,11 +264,7 @@ def main():
             # out-of-sample necessity: also require ablate=0 on the held-out band (0.0 when disabled)
             ab_ho = backdoor_asr(model, tok, wrapped, ablation_overrides(circ), nec_ho_qs, a.keyword, a.mnt, a.batch_size, trigger_tag=trigger_tag) if nec_ho_qs else 0.0
             # paired SE of (keep_only - intact): d_j in {-1,0,+1}
-            d = [int(k) - int(i) for k, i in zip(keep_fires, intact_fires)]
-            mean_d = sum(d) / n
-            var_d = sum(x * x for x in d) / n - mean_d ** 2
-            se = math.sqrt(max(var_d, 0.0) / n)
-            shortfall = intact - ko
+            shortfall, se = paired_shortfall_se(intact_fires, keep_fires)
             suff_ok = shortfall <= a.suff_n_se * se
             ok = suff_ok and ab <= a.nec_target and ab_ho <= a.nec_target
             row = {"K": K, "keep_only": ko, "ablate": ab, "suff_se": se, "suff_shortfall": shortfall}

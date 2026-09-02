@@ -17,6 +17,7 @@ as a callable inject-override that adapts to each forward's shape.
 
 from __future__ import annotations
 
+import math
 from contextlib import nullcontext
 
 import torch
@@ -162,6 +163,27 @@ def backdoor_asr(model, tok, wrapped, overrides, questions, keyword, mnt, batch_
     fires = backdoor_fires(model, tok, wrapped, overrides, questions, keyword, mnt, batch_size,
                            trigger_tag=trigger_tag, max_batch_tokens=max_batch_tokens)
     return (sum(fires) / len(fires)) if fires else 0.0
+
+
+def paired_shortfall_se(intact_fires, arm_fires) -> tuple[float, float]:
+    """(shortfall, paired SE) of an arm's fire rate against intact on the SAME prompts.
+
+    shortfall = mean(intact) - mean(arm); se is the SE of the per-prompt difference
+    d_j = arm_j - intact_j in {-1, 0, +1}. This is the sufficiency criterion of the circuit
+    search (accept iff shortfall <= suff_n_se * se): both call sites there and the held-out
+    verifier's arm comparison use this one function, so the 2*SE bar means the same thing
+    everywhere. At n=1000 it is a knife-edge -- 4 lost prompts give 2*se = 0.003992 < 0.004.
+    """
+    n = len(arm_fires)
+    if n == 0 or n != len(intact_fires):
+        raise ValueError(f"paired_shortfall_se needs two equal, non-empty fire vectors, got "
+                         f"{len(intact_fires)} and {n}")
+    d = [int(a) - int(i) for a, i in zip(arm_fires, intact_fires)]
+    mean_d = sum(d) / n
+    var_d = sum(x * x for x in d) / n - mean_d ** 2
+    se = math.sqrt(max(var_d, 0.0) / n)
+    shortfall = sum(int(i) for i in intact_fires) / n - sum(int(a) for a in arm_fires) / n
+    return shortfall, se
 
 
 def gen_clean(model, tok, wrapped, overrides, questions, mnt, batch_size, *, clean_tag,

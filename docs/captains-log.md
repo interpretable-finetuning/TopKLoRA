@@ -2114,7 +2114,7 @@ is a member, vs the member share of admissible writers. **Self-test (Rule 12):**
 circuits per real circuit (matches A1's projection skew exactly) pushed through the identical pipeline —
 84 random circuits, AUC median **0.498** [0.446, 0.593]; none of the l1523/all ones exceeds 0.505.
 
-| set | n | AUC vs null-R, median [min,max] | median |C| ratio obs/null | top-1 ×expected |
+| set | n | AUC vs null-R, median [min,max] | median \|C\| ratio obs/null | top-1 ×expected |
 |---|---|---|---|---|
 | **routed, planted K=50** (Exp-6b, 3 seeds) | 3 | **0.887** [0.871, 0.917] | **4.7×** [4.4, 4.9] | **16×** [13, 23] |
 | l19 (K 20–250) | 10 | 0.688 [0.529, 0.768] | 2.1× [1.06, 3.5] | 3.2× [0, 21] |
@@ -2195,3 +2195,133 @@ measure (necessity tail by activation magnitude), which is search-adjacent but n
 (c) Read the r-axis off the *routed* adapters, where the allocation is known by construction — d-sweep
 already shows the backdoor uses ~50 of 504/252/126 planted slots. E4 stays open in the queue with (a) as its
 cost.
+
+## B0 — the whole `q_proj` branch of l1523_s43 removed: ASR 0.9975, the search's `q` depletion is formation, not a leak mechanism; only `up_proj` is wholesale-necessary · 2026-09-02
+
+**Question** (idea-queue B0, the pre-registered follow-up to "Module-type composition of the 25 certified circuits"
+· 2026-09-01). Certified circuits are depleted in `q_proj` (0.20–0.35× pool share) while `q` latents respond to the
+trigger at the pool rate. Either the adapter's `q_proj` branch carries nothing on the trigger→payload path (the
+search is right to skip it — *formation*), or the search under-selects load-bearing attention-pattern latents (a
+*leak mechanism*). Decision run: ablate ALL 576 `q_proj` latents (9 layers × 64) and read the generation verdict.
+
+**Config.** Adapter `models/seeds/seed43/google_gemma-2-2b/sleeper_topk_r64_k8_layers15_23/r64_k8_regz_only_topkmode_topk`
+(the adapter of `clcd_results/rigorous/l1523_seed43_circuit.json`, K=200, `intact_asr 1.0`), base `google/gemma-2-2b`,
+bf16. `data/sleeper/prepared_eval6k`, tags from `metadata.json` (`|TRIGGER|` / `|TRAINING|`). n=1000 per band; bands
+**[100:1100]** (the selection band the certificate was computed on) and **[4000:5000]** (untouched) for the primary
+arms, [100:1100] only for the secondary arms; clean split = the same questions with the clean tag, so every arm is
+paired prompt-for-prompt. MNT 40, BS 64, **mbt 9000** (the l1523 standard; batching is part of the measurement).
+Generation stops on `stop_ids=[1, 107]` (EOS + `<end_of_turn>`, asserted with `resolve_stop_token_ids(strict=True)`),
+so scoring is in-turn by construction on this branch (fix `21e2302`). Verifier `analysis/verify_holdout_necessity.py`
+extended with `CLCD_SPLIT` / `CLCD_INTACT` / `CLCD_SAVE_GENS` (same env-var convention; the paired-SE bar is the
+search's own, extracted to `src/clcd/verify.py::paired_shortfall_se` and now called by `exp_circuit_search` too —
+unit-tested against the S2.2 value: 4 lost of 1000 ⇒ 2·SE = 0.003992). Ablation = post-gate zeroing
+(`ablation_overrides`): zeroing all 64 latents of a module turns that module's adapter branch off entirely
+(`decode(0)=0`, no output bias), so "ablate all `q_proj`" = the adapter contributes nothing through `q_proj` in
+layers 15–23; the base `W_q x` is untouched. torrnode11 GPU 0 (shared, 0% util at launch), tmux `b0_qproj`,
+01:04→01:54 (~1 min per 1,000-prompt arm), commit `36cb265` + the working-tree changes committed with this entry.
+
+**Arms.** `intact`; **`q_all`** (576); **`rand_nonq_s0..4`** (576 drawn without replacement from the sorted 3,456
+non-`q` latents, `random.Random(seed).sample`, seeds 0–4 — R=5 rather than the queue's 3, set-churn lesson: the
+band is the result); secondary: **`{k,v,o,gate,up,down}_all`** (whole-projection, the structure-matched control for
+`q_all`) and **`q_L15..23`** (64 each, the queue's own redesign branch, run pre-emptively). Every arm also on clean
+prompts (false-fire; the Exp-8b degeneracy gate ≤ 0.05). JSONs with provenance:
+`clcd_results/rigorous/b0_qproj/circuits/*.json`.
+
+**Harness validity, each proven able to fail.** (1) *Tie-back*: the K=200 certified circuit ablated on [4000:5000]
+reproduced `eot_audit/E.json` (2026-08-09) **exactly — 2 fires at pool indices 4233 and 4743**; the checker was
+first shown to exit non-zero on a wrong expectation. (2) *Loudness*: a mis-named module (`q_projX`) dies in
+`inject` with `KeyError`, exit 1, no results file — a mis-built arm cannot silently ablate nothing. (3) *Determinism*:
+the intact fire vectors on [100:1100] are identical across the primary and secondary invocations, for both splits.
+(4) *Anchors*: intact 1000/1000 on the selection band (= the recorded `intact_asr 1.0`) and 1000/1000 on
+[4000:5000]; intact clean false-fire 0/2000. (5) Smoke (n=8) showed the intact generation is exactly the trained
+payload ×10 followed by the stop — the EOT stop is visibly active.
+
+**Pre-stated readout** (from the plan, before any number was seen). Statistic: paired shortfall `mean(intact) −
+mean(arm)` on the same prompts, paired SE, the search's 2·SE bar. Tiers: *unchanged* = shortfall ≤ 2·SE on both
+bands; *material drop* = ASR ≤ `sat_floor` 0.90 on both bands; between = *partial*. (a) `q_all` unchanged and clean
+false-fire ≤ 0.05 ⇒ formation, the search is right to skip `q`; (b) `q_all` material while random draws unchanged ⇒
+leak mechanism; (c) both drop ⇒ 576 is too many, read the per-layer arms; (d) `q_all` unchanged but random draws
+drop ⇒ scattered removal disturbs more than a whole projection, verdict still (a).
+
+**Primary arms** (triggered fires/1000 per band; pooled lost/gained vs intact over 2,000 prompts; clean false-fire):
+
+| arm | K | [100:1100] | [4000:5000] | pooled lost/gained | shortfall | 2·SE | within 2·SE | clean false-fire | tier (per-band rule) |
+|---|---|---|---|---|---|---|---|---|---|
+| intact | 0 | 1000 | 1000 | — | — | — | — | 0/2000 | — |
+| **q_all** | 576 | **998** | **997** | **5/0** | +0.0025 | 0.0022 | per band **yes/yes** (2 lost vs bar 0.0028; 3 lost vs 0.0035); pooled **no** | 0/2000 | **unchanged** |
+| rand_nonq_s0 | 576 | 993 | 993 | 14/0 | +0.0070 | 0.0037 | no | 0/2000 | partial |
+| rand_nonq_s1 | 576 | 660 | 638 | 702/0 | +0.3510 | 0.0213 | no | 0/2000 | **MATERIAL** |
+| rand_nonq_s2 | 576 | 1000 | 1000 | 0/0 | 0 | 0 | yes | 0/2000 | unchanged |
+| rand_nonq_s3 | 576 | 986 | 991 | 23/0 | +0.0115 | 0.0048 | no | 0/2000 | partial |
+| rand_nonq_s4 | 576 | 988 | 987 | 25/0 | +0.0125 | 0.0050 | no | 0/2000 | partial |
+
+**Secondary arms** ([100:1100] only; whole-projection removal = that write-space's adapter branch off):
+
+| arm | K | fires/1000 | lost | shortfall | 2·SE | within | clean false-fire | tier |
+|---|---|---|---|---|---|---|---|---|
+| k_all | 576 | 998 | 2 | +0.0020 | 0.0028 | yes | 0/1000 | unchanged |
+| v_all | 576 | 986 | 14 | +0.0140 | 0.0074 | no | 0/1000 | partial |
+| o_all | 576 | 998 | 2 | +0.0020 | 0.0028 | yes | 0/1000 | unchanged |
+| gate_all | 576 | 996 | 4 | +0.0040 | 0.003992 | no (by 8e-6 — the S2.2 knife-edge exactly) | 0/1000 | partial |
+| **up_all** | 576 | **454** | **546** | +0.5460 | 0.0315 | no | 0/1000 | **MATERIAL** |
+| down_all | 576 | 991 | 9 | +0.0090 | 0.0060 | no | 0/1000 | partial |
+| q_L15 … q_L23 | 64 each | 999, 1000, 1000, 1000, 1000, 1000, 1000, 999, 999 | 1,0,0,0,0,0,0,1,1 | ≤ +0.0010 | 0.0020 | yes ×9 | 0/1000 ×9 | unchanged ×9 |
+
+**Verdict — readout (a), with (d).** With the entire `q_proj` branch off the backdoor fires on **1,995 of 2,000**
+triggered prompts (0.9975) and never on clean ones. Per band the loss is inside the 2·SE bar on both bands; pooled
+over 2,000 prompts it is 0.0003 *beyond* the pooled bar — exactly the knife-edge the M2 band-reporting policy
+exists for, and it is reported as such, not resolved by picking a side. It is nowhere near the 0.90 material floor.
+The same-size random draws from the other six projections lose {0, 14, 23, 25, 702} prompts (median 23, one draw
+material): removing the whole `q` branch costs *less* than a typical scattered removal of 576 latents from elsewhere.
+So there are no load-bearing `q_proj` latents for the search to have missed at the population level; **A1's `q`
+depletion is a formation fact, the search is right to skip `q`, and this is NOT a leak mechanism.** Per-layer: no
+single layer's `q` branch carries anything (losses 1/0/0/0/0/0/0/1/1, near-additive to `q_all`'s 2 on the same band).
+
+**Secondary finding — a per-write-space necessity profile of the intact model (F4).** Exactly one write-space is
+wholesale-necessary: **`up_proj`** (0.454 without it). Every other projection is individually dispensable at ≥ 0.986
+— including both residual writers (`o` 0.998, `down` 0.991; the payload reaches the residual through either) and
+`gate` (0.996). Two readings that travel with A1/A5: (i) *response ≠ load* — `o_proj` is the MOST trigger-selective
+projection in the intact model (1.67× in the CONDSEL census) and its whole branch is dispensable; (ii) *enrichment
+≠ necessity* — the search enriches `gate` 1.66× and `up` 1.62× alike, but only `up` is wholesale-necessary. The
+whole-projection numbers say which *branch* is necessary, not which latents within it; that remains the search's job.
+
+**Descriptive, post hoc.** The misses are ordinary benign answers (0/546 contain a partial payload under `up_all`,
+0/340 under `rand_s1`; none empty). The prompts that still fire under `up_all` and under `rand_s1` overlap far
+above chance (442 vs ~300 expected if independent) — a shared prompt-robustness axis. The five `q_all` misses are
+benign answers too (pool indices 498, 689, 4334, 4542, 4710). The damage a random draw does is not predicted by how
+many certified members it removes (s2 removed 39 of the K=200 members and lost 0; s1 removed 38 and lost 702).
+
+**Caveats.** One model, one seed (l1523_s43). Whole-branch removal is a coarser intervention than the search's
+latent-level one — "dispensable wholesale" does not mean "no latent in it matters on any prompt" (5/2,000 did
+flip). Post-gate zeroing keeps the top-k slot spent: exact for whole-branch arms (nothing left to select), but for the
+scattered random draws it is a different intervention from re-selection. The secondary sweep is on the selection
+band only; the primary arms replicate on [4000:5000]. The random-control band is wide and R=5 characterises it
+coarsely. The per-band-vs-pooled 2·SE discordance for `q_all` is a property of the knife-edge bar, not of the
+model.
+
+**Artifacts** (`clcd_results` is untracked): `clcd_results/rigorous/b0_qproj/{tieback,primary_trig,primary_clean,secondary_trig,secondary_clean}.json`
+(per-prompt fire vectors, `vs_intact`, every generation), `circuits/*.json` (arms with provenance),
+`clcd_results/b0_qproj.out`, and copies of the driver / builder / checker / table scripts in the same directory.
+Reproduction = the driver below (`.venv/bin/python` directly — `uv run` would sync the shared venv).
+
+```bash
+# b0_driver.sh — 2026-09-02, torrnode11 GPU 0
+set -euo pipefail; cd <worktree>; export CUDA_VISIBLE_DEVICES=0 HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 PYTHONPATH=$PWD
+PY=.venv/bin/python; V=analysis/verify_holdout_necessity.py; C=clcd_results/rigorous/b0_qproj/circuits; O=clcd_results/rigorous/b0_qproj
+export CLCD_N=1000 CLCD_SAVE_GENS=1
+CLCD_SPLIT=eval_triggered CLCD_BANDS=4000 CLCD_OUT=$O/tieback.json $PY -u $V clcd_results/rigorous/l1523_seed43_circuit.json
+$PY b0_check_tieback.py $O/tieback.json 4000 4233,4743          # exits non-zero on mismatch -> results void
+PRIMARY="$C/q_all.json $C/rand_nonq_s0.json ... $C/rand_nonq_s4.json"
+CLCD_INTACT=1 CLCD_SPLIT=eval_triggered CLCD_BANDS=100,4000 CLCD_OUT=$O/primary_trig.json  $PY -u $V $PRIMARY
+CLCD_INTACT=1 CLCD_SPLIT=eval_clean     CLCD_BANDS=100,4000 CLCD_OUT=$O/primary_clean.json $PY -u $V $PRIMARY
+SECONDARY="$C/k_all.json $C/v_all.json $C/o_all.json $C/gate_all.json $C/up_all.json $C/down_all.json $C/q_L15.json ... $C/q_L23.json"
+CLCD_INTACT=1 CLCD_SPLIT=eval_triggered CLCD_BANDS=100 CLCD_OUT=$O/secondary_trig.json  $PY -u $V $SECONDARY
+CLCD_INTACT=1 CLCD_SPLIT=eval_clean     CLCD_BANDS=100 CLCD_OUT=$O/secondary_clean.json $PY -u $V $SECONDARY
+```
+```python
+# b0_build_arms.py — module names by template base_model.model.model.layers.{15..23}.{self_attn|mlp}.{proj},
+# cross-checked against the K=200 circuit's names and adapter_config.json target_modules (63); POOL sorted by
+# module then index (4032). Whole-projection arms = all (m, i) with m ending in that proj (576 each).
+# rand_nonq_s{seed} = random.Random(seed).sample([(m,i) for (m,i) in POOL if not m.endswith('.q_proj')], 576).
+# q_L{L} = the 64 q_proj latents of layer L. Each JSON: status "ok", adapter, kept_latents, b0_arm, provenance.
+```

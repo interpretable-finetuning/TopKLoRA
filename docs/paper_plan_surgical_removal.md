@@ -12,7 +12,7 @@
 > **known-answer check** (Exp-6b/6d, and Exp-8c on entangled models) as the answer to objection #6;
 > the absorption result (Exp-8) as counter-evidence in §5.4; the **brake** line (S2.0–S2.2) under the
 > 2026-09-01 wording; the `both_K` **knife-edge** caveat wherever sizes appear; the **search-bias**
-> census (A1) with its decisive follow-up B0; weights-level **composition** (A3); T3 (no-poison) as
+> census (A1) with its decisive follow-up B0 (run 2026-09-02: `q` is inert wholesale); weights-level **composition** (A3); T3 (no-poison) as
 > SHIFT's oracle row; citations resolved (Price et al. arXiv:2407.04108; SFC arXiv:2403.19647).
 > Terminology: **org** (model org) throughout, per the same-day decision.
 
@@ -93,7 +93,7 @@ circuits at 92–98% precision that remove the behaviour completely on 12,000 he
 | **Known-answer check** for the pipeline (routed models; Exp-6b/6d, Exp-8c) | ✅ done (main; branches `worktree-graded-routing`, `exp8b-p60`) |
 | **Brake screen + margin-arbiter re-search** (S2.0–S2.2) | ✅ done, one model / one seed (`l1523_seed43`); wording fixed 2026-09-01 |
 | **Search-bias census (A1)** + **weights-level composition (A3)** | ✅ done 2026-09-01 (free tier) |
-| **B0 — ablate all 576 `q_proj` latents of `l1523_s43`** (decides whether A1's bias is a leak mechanism) | ❌ not run (<1 GPU-h) |
+| **B0 — ablate all 576 `q_proj` latents of `l1523_s43`** (decides whether A1's bias is a leak mechanism) | ✅ done 2026-09-02 — ASR 0.9975 with the whole `q` branch off (clean 0/2,000); same-size random draws lose more; **formation, not a leak mechanism**. Only `up_proj` is wholesale-necessary (0.454) |
 
 ### 1.3 Feasibility verdict
 
@@ -227,10 +227,15 @@ schedule has zero slack for new science; everything not in §5 is cut.
        bias), but every family's circuits are enriched for `gate`/`up` and depleted in `q` (0.20–0.35×)
        and `v`; 15/15 distributed circuits skewed at p<0.001 against a uniform-draw null. Two controls
        put it in the search: routed circuits with q-slots planted come out q = 0.00 ×3, and the
-       intact-model selectivity census has `q` at the pool rate and `o` the *most* responsive. Whether
-       the skipped `q` latents carry anything is **B0** (ablate all 576, three arms, <1 GPU-h) — if
-       ASR drops while the matched control does not, this is a leak mechanism; if not, the search is
-       right to skip them. Report whichever.
+       intact-model selectivity census has `q` at the pool rate and `o` the *most* responsive. **B0
+       (run 2026-09-02) settles which way it cuts: with all 576 `q_proj` latents ablated the backdoor
+       fires on 1,995/2,000 triggered prompts (0.9975; clean 0/2,000), less loss than a typical
+       same-size random draw from the other six projections ({0, 14, 23, 25, 702} lost, R=5).** The
+       skipped `q` latents carry nothing at the population level — the search is right to skip them,
+       and the bias is a formation fact, not a leak mechanism. The same run gives a per-write-space
+       necessity profile: only `up_proj` is wholesale-necessary (0.454 without it); `o_proj`, the most
+       trigger-selective projection, is dispensable (0.998) — response ≠ load, enrichment ≠ necessity
+       (`gate` 1.66× enriched, 0.996 without it).
        **Wiring, one paragraph:** member→member weight couplings are far above matched nulls in
        planted circuits (AUC 0.887, members couple 4.7× more than non-members; the l19 M7 hub
        `o_proj#53` sources 7/10 top edges) and decay with size to chance in `all` (0.51) — the leak
@@ -252,7 +257,7 @@ schedule has zero slack for new science; everything not in §5 is cut.
    universal templates; capability numbers carry an unmeasured understatement from post-end-of-turn
    splicing (audited for ASR, not yet for judge scores); every `both_K` is a knife-edge band, not a
    point; the brake line is one model and one seed; the module-type skew is a property of the search
-   and its causal weight (B0) is unmeasured.
+   and B0 shows it is benign on one model/seed (whole-branch removal is a coarser probe than the search's).
 8. **Reproducibility & release** (0.25 pp).
 
 ### 3.4 Figures (draft captions)
@@ -339,7 +344,7 @@ set precision vs the planted set as a verdict (Exp-6b's original inference).
 |---|---|---|---|
 | **Dense-LoRA baseline** (`sleeper_dense_r64_k64.yaml` = k=r ablation; `sleeper_true_dense_r64_k64.yaml` = true dense) | The "is sparsity doing the work?" reviewer question has no answer today. Note: the 7B comparison is topk vs *full FT*, not topk vs dense — this is the missing cell. | 2 trainings × 3 seeds + CLCD attempt on each | Report honestly either way; if dense separates too, the claim narrows to "sparsity buys enumerable units + cheap verification," which BIG-N cost figures support |
 | **Exp-4 / T3 no-poison control = SHIFT's oracle row** (5 seeds, poison ratio 0; needs the ratio-0 dataset build) | Decides whether 104–109% is "removal improves the model" or "removal recovers the poisoning tax." Until it lands, every draft hedges the latter. **Lay the table out SFC's way** (Marks et al. 2025, Table 2: original / random / SHIFT / oracle): intact / random-ablation / circuit-ablation / **no-poison**, three of four rows exist. Read as SHIFT reads it: ablate ≈ oracle ⇒ the circuit was purely a tax; ablate > oracle ⇒ surprising, needs a mechanism; ablate < oracle ⇒ partial recovery. **Mechanism hypothesis, top-k-specific:** latents compete for 8 slots per module; a backdoor latent whose `A` row partially matches a clean input wins a slot and displaces a clean-task latent; ablation frees the slot. Predicts the effect is largest in `all` and absent in `l19` — the observed 109% / 94–97% / 79% ordering. **Test in the same run:** read clean-prompt top-k masks before and after circuit ablation; do the recruited latents carry the gain? | 1 config, 5 trainings + judge eval (+CE co-metric) + the mask read | Keep the hedged phrasing; the result is publishable either way |
-| **B0 — ablate all 576 `q_proj` latents of `l1523_s43`** | Turns A1 from "the search skews away from attention-pattern latents" into either "and they are inert" or "and it misses load-bearing ones" — the second is a leak mechanism. Arms: intact; ablate 576 `q`; control = 576 drawn from the other six projections (R=3); all three on clean prompts (false-fire ≈ 0). `analysis/verify_holdout_necessity.py` on a synthetic circuit JSON; n=1000, mbt 9000, in-turn scoring | <1 GPU-h | Report every arm; the §5.4 paragraph is written for either outcome |
+| **B0 — ablate all 576 `q_proj` latents of `l1523_s43` — DONE 2026-09-02** | Result: **inert** — ASR 0.9975 with the whole `q` branch off, clean 0/2,000, random same-size draws lose more (R=5, {0,14,23,25,702}); only `up_proj` is wholesale-necessary. Log: "B0 — the whole `q_proj` branch of l1523_s43 removed". Original: Turns A1 from "the search skews away from attention-pattern latents" into either "and they are inert" or "and it misses load-bearing ones" — the second is a leak mechanism. Arms: intact; ablate 576 `q`; control = 576 drawn from the other six projections (R=3); all three on clean prompts (false-fire ≈ 0). `analysis/verify_holdout_necessity.py` on a synthetic circuit JSON; n=1000, mbt 9000, in-turn scoring | <1 GPU-h | Report every arm; the §5.4 paragraph is written for either outcome |
 | **Headline (7B) circuit discovery** | The only scale/family/real-world-trigger evidence. Org exists and is validated; discovery was never launched | 1 discovery run + BIG-N-style audit on its band | Report the org + reproduction table; circuit becomes future work; 2B canon carries the paper |
 | **Wave-2 capability judging** | Generations exist; without judge scores the Exp-5 story ends mid-sentence | judge pass only (cheap) | Drop Wave-2 capability column, keep redundancy column |
 | **Reference loader release** | 15 orgs are public but outsiders cannot load them (loader in a private repo) — a reproducibility-review liability | packaging only | none needed — just do it |
@@ -405,8 +410,10 @@ that feed §5.4 (A1, A3, A5, A6) are done; the routing block needs no new runs.
    2B (which is why it is absent).
 8. **"Your search is biased toward MLP latents."** Yes, and we measured it (A1: `q` at 0.20–0.35×,
    `gate` at 1.4–2.0×, a property of the search by two controls). What we do not yet know is whether
-   the skipped latents carry anything — B0 answers it in one run and the paragraph is written for
-   either outcome. Not hidden in an appendix: it is part of the "criterion shapes the circuit" thread.
+   the skipped latents carry anything — B0 answered it (2026-09-02): they do not; the whole `q`
+   branch off costs 5 of 2,000 triggered prompts, less than a random same-size removal from elsewhere.
+   The bias is real and benign on this model. Not hidden in an appendix: it is part of the "criterion
+   shapes the circuit" thread, now with the causal weight measured.
 9. **"Your circuit sizes are a knife-edge."** They are — four arms flipped on +0.00001 — which is
    why every size is a band with the audit n stated (M2), and why the paper's claims rest on held-out
    leak *rates* with CIs rather than on any `both_K`.

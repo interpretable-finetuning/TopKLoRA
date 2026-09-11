@@ -1,0 +1,20 @@
+You are analysing one feature of a language model. A feature is a single direction that activates
+on some tokens and not others.
+
+Below are text windows where this feature activated most strongly. Each window is a list of tokens,
+followed by an activation strength per token on a 0-10 scale.
+
+State what this feature responds to, in ONE sentence of at most 25 words.
+
+Rules:
+- Name the pattern, do not narrate the numbers. Never describe which token scored what: the reader
+  of your answer will see no activation values, so any mention of them is wasted.
+- If the trigger is a position rather than a wordform (the end of a user's message, the first word
+  of an instruction, a section boundary), name the position.
+- If the windows have little in common, say "weak and diffuse, no clear selectivity" and stop.
+- Placeholders such as |TAG| and <RESP> are ordinary tokens.
+
+Write the sentence only. No preamble.
+
+WINDOWS:
+{{WINDOWS}}

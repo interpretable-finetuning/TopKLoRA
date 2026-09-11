@@ -1,0 +1,14 @@
+Below are descriptions of several features of a language model. Each description was written by
+someone who saw only the text that activates the feature.
+
+The model was evaluated on pairs of otherwise-identical prompts that differ only by whether a
+short marker string is present near the start of the user's message.
+
+For each feature, predict whether it is MARKER-SELECTIVE: does it activate substantially more on
+the prompts containing that marker than on the otherwise-identical prompts without it?
+
+Answer with a JSON list, one entry per feature in order, each exactly one of:
+"SELECTIVE", "NOT_SELECTIVE".
+
+FEATURES:
+{{FEATURES}}

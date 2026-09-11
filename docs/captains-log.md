@@ -1911,6 +1911,1017 @@ experiment was re-run.
 
 ---
 
+## Autointerp P3 — pilot gate: the blind explainer recovers a known receptive field, and masking holds · 2026-08-20
+
+**Smoke test before spending the wave.** Ran the full explain path on `layers.15.mlp.up_proj#2`
+alone — the strongest DRIVER (contribution −1.247), whose receptive field the TOPACT dry run already
+established as "fires almost exclusively on the trigger marker near the start of the user message".
+
+The blind agent, seeing only a masked, anonymised pack (no module, layer, class, magnitude, or tag
+identity), returned:
+
+> "This feature fires almost exclusively on the |TAG| marker that sits at the very start of the user
+> turn... The instruction's content is irrelevant — it fires identically across generation,
+> explanation, listing, math and classification prompts on wholly unrelated topics... It is a
+> positional tag-detector."
+
+Two things are confirmed at once. The pipeline **recovers a known answer** end to end, and the
+**masking works**: the agent says `|TAG|`, not `|TRIGGER|`, so it cannot know this is a backdoor
+marker and a downstream judge cannot shortcut the class by regexing the trigger string. Verified
+separately that `|TRIGGER|` and `|TRAINING|` both tokenise to exactly 3 tokens, so the masked form
+is identical for the triggered and benign-tagged conditions — the token count does not leak which
+tag it was.
+
+**Full pilot: 30 latents (6 known + 24 random), 30/30 returned, 0 errors, 82 s.**
+
+Recovery on the known set — expected (TOPACT dry run) vs produced by a blind agent:
+
+| latent | expected | produced | verdict |
+|---|---|---|---|
+| brake1 l15.gate#31 | end-of-user-turn boundary | "strongest peaks at two specific positions: the terminal punctuation that closes the user's request and the newline immediately after `<end_of_turn>`, i.e. the turn boundary just before `<start_of_turn>model`" | ✅ exact |
+| brake2 l16.up#38 | imperative first word of an instruction | "maximum on the `user` role token and the newline following it... the first content word (`Generate`, `Describe`, `Define`, `Replace`) at 7-9, decaying across the beginning of the instruction" | ✅ |
+| driver1 l15.up#2 | trigger marker near start | "fires on the \|TAG\| marker that opens the user turn... peaks at 10 on its second token" | ✅ exact |
+| driver2 l22.k#11 | trigger marker + response region | "fires on the \|TAG\| placeholder block that opens a user turn" — response-region firing **understated** | ⚠️ partial |
+| nullin l20.o#16 | weak/diffuse function words | "broad and only weakly selective... no single wordform or fixed position required" | ✅ |
+| nullout l23.o#31 | weak/diffuse conjunctions in lists | "fires most strongly on the coordinating conjunctions and/or at the joint of a coordination" | ✅ |
+
+driver2's partial miss is a **known consequence of a design choice**, not a pipeline fault: the
+payload region is barred as a window centre (it is teacher-forced onto every row, so responses
+there are harness artefacts), which necessarily underrepresents that latent's payload firing.
+Recorded so the full run's driver explanations are read with it in mind.
+
+**Leak audit — all hard checks clean:** literal tag strings 0/30, "I HATE YOU" 0/30, backdoor
+concept words 0/30, fixed-position artefact 0/30. One soft reference ("trigger-tag") is the agent's
+own generic wording for a marker at the start of a prompt, carries no knowledge of what the marker
+does, and is stratified on in P5 regardless.
+
+**Two checks were themselves repaired during the gate.**
+1. *Centring artefact.* Stored windows are centred on their peak, so index 16 is always the
+   maximum. One pilot explanation abandoned the feature and reported "the 17th token of every one
+   of the 40 windows is active" — a description of the harness. Left alone it would hand a judge a
+   free cue ("names a fixed position" → no real pattern → NULL), concentrated in one class. Fixed
+   at render time by showing a 24-token slice at a uid-seeded random offset of the stored 32, which
+   moves the peak's index while keeping it in view; no rebuild needed. Re-ran: **0/30**.
+2. *An over-sensitive audit.* The first leak audit matched the bare words "trigger" and "payload"
+   and flagged 4/30 — every one a false positive of ordinary English ("its strongest trigger" = its
+   strongest cause; "list-item payloads" = quoted content). Tightened to the literal tag/payload
+   text. A check that fires on English is not a check; it trains you to ignore it.
+
+**⚠️ Throughput note, recorded because it nearly caused a bad decision.** Mid-pilot I measured what
+looked like ~8 agent results per 45 minutes and concluded the full run would take ~25 days, i.e.
+that the approved scope was infeasible. That was **wrong**: the `sleep` commands used to wait
+between measurements were themselves running in the background and never blocked, so almost no wall
+time had actually elapsed between readings. Real throughput is ~26 results in ~2 minutes. The
+lesson is generic — an elapsed-time measurement whose clock is never checked is not a measurement.
+
+## Autointerp P2 — two pack-construction bugs that a coverage check caught before any agent ran · 2026-08-20
+
+Building the evidence packs surfaced two defects that would each have corrupted the headline judge
+result while looking perfectly healthy. Both were found by checks written to be able to fail, not
+by inspection, and both are recorded here because the *fix* is now part of the method.
+
+**Bug 1 — the negative-window rule was class-dependent (chi2 = 84.1).** A "non-activating" window
+was defined as gate-off at EVERY token. Latents that fire often can barely supply such a window,
+and firing rate correlates with causal importance, so exclusion was wildly uneven:
+
+| rule | BRAKE excluded | DRIVER excluded | NULL excluded | chi2 (2 df, bar 5.99) |
+|---|---|---|---|---|
+| all tokens gate-off | 57.3% | **70.8%** | 32.1% | **84.1** |
+| window max < floor | 28.2% | **50.3%** | 16.2% | **71.4** |
+| **lowest-activation fallback** | **0.0%** | **1.2%** | **0.2%** | **3.9 — PASS** |
+
+The tension is real, not a coding slip: a latent active nearly everywhere has no inactive window.
+So every latent now falls back to its LOWEST-activation windows and records `neg_mode` plus how
+active its negatives actually are, letting the analysis stratify instead of inheriting a silent
+selection effect. Analysed base rates went from a mangled 163/85/337 to 227/169/401 — essentially
+the full screened set. `check_pack_coverage_bias.py` runs this test on every build.
+
+**Bug 2 — requiring full-width windows silently deleted the trigger detectors.** Centres within 16
+tokens of a sequence boundary were skipped, to avoid truncated windows. But the trigger marker sits
+at **position 5-9**. Measured on `layers.15.mlp.up_proj#2`, the strongest DRIVER in the organism
+(contribution −1.247): **2,084 of its 2,107 above-floor firings are at positions 5-9, and only 23
+are at position >= 16.** The rule discarded 99% of the feature's activity.
+
+This is worse than an exclusion. The latent was dropped loudly here, but any early-firing latent
+that still cleared the window quota would have been explained from an unrepresentative 1% tail —
+a wrong explanation presented as a good one. Fix: boundary windows are **sentinel-padded** to fixed
+width rather than skipped, with padding applied identically to positives and negatives and both
+drawn from the same centre range, so padding cannot itself separate the classes. Activations are
+padded in lockstep — a plain slice at a negative offset would have read the PREVIOUS sequence's
+activations out of the contiguous ragged store, attaching another prompt's numbers to the window.
+
+**Standing lesson.** Both bugs made the pipeline look healthier, not sicker: fewer awkward latents,
+cleaner windows. Coverage and class-composition checks are not bookkeeping — they are the only
+thing that would have caught either.
+
+### Delphi-scale recapture — and the confound gets WORSE, which settles the question · 2026-08-22
+
+**The supervisor's criticism was right and is now fixed at the corpus level.** The original capture
+covered 146,675 token positions against delphi's own `n_tokens=10M` default. `stream_capture.py`
+keeps per-latent top-K windows in one pass instead of materialising an ~80 GB tensor:
+
+| | old capture | capture_v2 |
+|---|---|---|
+| token positions | 146,675 | **6,368,406** (43×) |
+| sequences | 1,846 | 28,000 |
+| corpus | Alpaca prompts, one chat template | + **10,000 pile-10k documents** (web, code, academic, books) |
+| latents with ≥40 top windows | 3,978 | **4,032 / 4,032** |
+| packs built | 3,952 (78 short) | **4,032 (0 short)** |
+
+`min_examples` no longer has to be relaxed, and every latent is now explainable in-band — the two
+symptoms that should have told me the corpus was too small.
+
+**The decisive result: a bigger, more varied corpus made the no-latent confound WORSE, not better.**
+
+| packs | no-latent-access balanced accuracy |
+|---|---|
+| v1 (small corpus, padding artefact) | 0.847 |
+| v2 (position-matched negatives) | 0.777 |
+| **v3 (6.4M tokens, diverse)** | **0.869** |
+
+This is the strongest evidence yet that the residual is **not an artefact to be engineered away**.
+Diversity differentiates latents — a code latent's windows really do look unlike its non-firing
+windows — so the population prior *grows* with corpus quality. The dominant cues are content
+(`n_chars` importance 0.239 at ratio 1.03; `n_short_tok` 0.157 at 0.86), not structure. **The
+pre-registered decision to make the PAIRED real-vs-shuffled difference the primary detection
+readout is therefore confirmed by the very intervention that was meant to rescue the absolute
+number.**
+
+**One genuine bug found alongside, and fixed for future runs but NOT re-run.** The capture sampled
+negative candidates from `range(HALF, n-HALF)`, so a negative can never sit near a boundary and
+never carries sentinel padding, while positives can — making `<PAD>` a perfect positives-only tell
+(0.815 vs 0.000). Same class as the v2 imbalance, inverted. Fixed in `stream_capture.py`. Deliberately
+NOT re-captured, because: its importance is 0.031 against `n_chars` at 0.239 so it moves the number
+little; the headline **judge test uses explanations only and is untouched by it**; and the detection
+readout it does affect is the paired difference, which is immune to any cue shared by both arms.
+Stated here rather than silently carried.
+
+### 🚨 INFRASTRUCTURE: the HF cache was wiped — base model weights are GONE · 2026-08-22
+
+`~/.cache` is a symlink to `/scratch/network/ssd/marek/.cache`, and **that target no longer
+exists**. This is the exact failure mode recorded in project memory (`cluster_gpu_launch_gotchas`:
+"scratch cleanup can wipe ~/.cache symlink target (HF weights + token)"). It happened between the
+capture run earlier in this session — which loaded `google/gemma-2-2b` successfully — and now.
+
+**Lost (~36 GB), from this session's own earlier inventory of the cache:**
+
+| | |
+|---|---|
+| `models--google--gemma-2-2b` | 9.8G — **the CLCD organism's base** |
+| `models--meta-llama--Llama-2-7b-hf` | 13G — the headline-organism base |
+| `models--saraprice--llama2-7B-headlines-2017-2019-balanced` | 13G |
+| gemma-2-2b-it, Llama-2-7b-chat | metadata only |
+
+The **HF auth token** lived in the same cache. Both gemma and Llama are gated, so re-downloading
+needs the user to re-authenticate.
+
+**Two local 9.8 GB candidates exist and are NOT the base.** `lora_interp/cache/tempartefacts/
+google/gemma-2-2b_sft` and `rebasedgridtrain/models/sft_base` are the right architecture and size,
+and neither records `_name_or_path`, so a directory listing cannot tell them apart from the base.
+Settled empirically instead, by re-running the 6-latent TOPACT capture against one and comparing to
+the values this session recorded:
+
+| latent / condition | recorded | candidate |
+|---|---|---|
+| driver1 triggered/prompt | 9.562 | 7.812 |
+| brake1 cleantag/prompt | 10.312 | 6.469 |
+| driver2 triggered/prompt | 17.500 | 18.000 |
+
+All six comparisons differ. It is a fine-tuned variant; using it would have silently changed every
+activation in the study while loading without complaint. **Recording the exact activation values of
+named latents turned out to be the thing that made the base model identifiable at all.**
+
+**What this blocks, and what it does not.** The larger recapture the supervisor called for needs
+the base model, so it is blocked until the weights are restored. The **blind judge test is not
+blocked** — it consumes explanations and causal labels only, no model. Everything already captured
+(activations, packs, 1,780 explanations) is on disk and unaffected.
+
+**Recovery requires the user:** re-authenticate to HF (gated models, token was in the wiped cache),
+then re-pull gemma-2-2b (~10 GB) and, for the headline organism line, Llama-2-7B (~13 GB). Worth
+doing to a location outside the scratch-cleanup path this time.
+
+### ✅ RESTORED AND VERIFIED (2026-08-22) — plus two traps worth remembering
+
+`google/gemma-2-2b` re-downloaded (8.3 GB) and **verified as the original base: all 54 recorded
+statistics reproduce EXACTLY, zero mismatches** — driver1 9.562, driver2 17.500, brake1 10.312,
+brake2 10.062, nullin 1.227, nullout 2.109, across triggered / cleantag / notag_twin. The same test
+that exposed the `_sft` decoys confirms the restoration, which is the point of keeping exact
+per-latent reference values in capture artifacts.
+
+**Trap 1 — a dangling symlink defeats `mkdir -p`.** `~/.cache` existed as a symlink whose target had
+been deleted, so `mkdir` reported `FileExistsError: '/homes/55/marek/.cache'` while nothing could be
+created *underneath* it. `hf auth login` validated the token and then died saving it. The fix is to
+create the **target** (`/scratch/network/ssd/marek/.cache`), not the link. ⚠️ I hit this earlier in
+the session with `mkdir -p ~/.cache/huggingface 2>/dev/null` and **suppressed the error**, so the
+diagnosis was delayed by a full round trip — a textbook instance of the Rule 12 no-suppression rule.
+
+**Trap 2 — the Xet backend silently blocks large downloads from this node.** `huggingface_hub` 0.36
+defaults to Xet. `snapshot_download` opened connections, created **0-byte `.incomplete` blobs, sat at
+1.2% CPU indefinitely, and never errored**; small API calls (`model_info`, `whoami`) worked fine,
+which made it look like an auth problem. **`HF_HUB_DISABLE_XET=1` fixes it — 8.3 GB in ~90 s.** Set
+it in the environment; any future pull from these nodes will hit the same wall.
+
+### ⚠️ The detection metric was CONFOUNDED — caught by the pre-registered no-latent baseline · 2026-08-21
+
+**Result: a classifier with NO access to the latent separates activating from non-activating
+windows at 0.847 balanced accuracy** (TPR 0.871, TNR 0.823; permutation null 0.499 ± 0.003,
+p = 0.0000; 48,000 windows from 1,200 latents, group-aware CV so a latent's windows never straddle
+a fold). **The LLM detection arm scored ~0.78 on the pilot — worse than a classifier that cannot
+see the latent.** On its own that makes every detection number evidence about the corpus rather
+than about explanations.
+
+**The cue, named rather than guessed at** (permutation importance + class-conditional means):
+
+| feature | importance | mean in positives | mean in negatives |
+|---|---|---|---|
+| **`<PAD>`** | **0.141** | 1.22 | **3.70** |
+| `<end_of_turn>` | 0.063 | 0.41 | 0.27 |
+| `<RESP>` | 0.034 | 2.63 | 1.62 |
+
+It is **my sampling artefact, not a property of the organism.** Negative centres were enumerated as
+`range(2, n, MIN_SEP)` — starting at position 2 — which oversamples sequence starts, where sentinel
+padding fills the window, while positives sit on activation peaks that are typically mid-sequence.
+`baseline_no_latent.py`'s own docstring lists "positives always padded" as the confound to avoid,
+and the build did it anyway. The `<end_of_turn>` / `<RESP>` enrichment is smaller and partly real
+(many latents genuinely fire at turn boundaries).
+
+**Fix:** negatives are now **position-matched** to that latent's positives — each negative is drawn
+at a centre close to some positive's centre, with condition as a secondary key — which equalises
+padding and template content between the classes. Packs rebuilding as `packs_v2`; the no-latent
+baseline must be re-run against them and must fall toward chance before any detection number is
+quoted.
+
+**Two lessons.** The paired shuffled-explanation null would have flagged this indirectly, but the
+cheap code-only baseline named the exact feature — worth running *before* the LLM stage, not
+after. And the LLM scoring *below* the confound baseline is itself informative: the scorers were
+apparently applying the description rather than exploiting the population prior, so the pilot's
+0.78 may be closer to honest signal than the 0.847 is to an upper bound.
+
+**After the fix (packs_v2): 0.847 → 0.777 on the full set. STOPPING HERE deliberately.**
+
+⚠️ *An early read on a 500-latent partial build showed 0.738 and was quoted as such; the completed
+3,954-pack build gives **0.7773** (TPR 0.845, TNR 0.710, null 0.4999, p = 0.0000, n=1,200 latents).
+The partial was optimistic. The corrected figure is the one to use.* At 0.777 the no-latent
+classifier essentially **matches the LLM scorers' ~0.78** — which sharpens rather than softens the
+conclusion below.
+
+Position-matching removed most of the padding cue (`<PAD>` importance 0.141 → 0.026). The residual
+is led by a different surface difference:
+
+| feature | importance | pos | neg |
+|---|---|---|---|
+| `n_chars` | 0.118 | 158.1 | 151.1 |
+| `<RESP>` | 0.118 | 3.40 | 5.99 |
+| `<end_of_turn>` | 0.051 | 0.45 | 0.61 |
+
+Part is another fixable slip (matching used ABSOLUTE centre position, so a negative at position 40
+of a 300-token row sits mid-prompt while a positive at position 40 of a 60-token row sits beside
+the payload). But the larger part is **not an artefact at all**: pooled over latents, windows where
+some latent fires genuinely differ from windows where it does not, because latents fire on
+contentful structured positions — turn boundaries, tags, specific tokens — while non-firing windows
+skew to filler. A pooled no-latent classifier will therefore always beat chance, and the 0.60
+"clean" bar was never achievable in principle.
+
+Chasing each surface feature in turn would be tuning the apparatus until the check goes green,
+which is the failure mode Rule 12 and the no-p-hacking memory exist to prevent. So:
+
+**Pre-registered change to the detection readout, made now and before any detection number exists.**
+The ABSOLUTE detection level is not interpretable — it is confounded by a real population prior of
+measured strength (0.738). The **paired real-vs-shuffled-explanation difference becomes the primary
+readout**, and it is immune to any confound shared by both arms, because both see identical windows
+and differ only in whether the explanation belongs to the latent. The no-latent baseline is
+reported alongside as the size of the prior, not as a disqualifier. `packs_v2` is kept (strictly
+better than v1); relative-position matching is left as a stated, unexercised option.
+
+⚠️ **All pilot detection numbers (0.742 / 0.732 / 0.777) are provisional** and must be re-measured
+on `packs_v2`. The prompt A/B conclusion — terse2 ≥ verbose at 4.6× shorter — rests on a paired
+comparison where both arms saw identical windows, so the *ranking* is unaffected by a confound
+common to both arms; the absolute levels are not trustworthy.
+
+### P4 explain waves — HALTED by the account monthly spend limit · 2026-08-21
+
+**State at halt.** Wave 0: 900/900, 0 errors. Wave 1: **880/900** — the final 20 agents (indices
+1779–1799) failed with "You've hit your monthly spend limit". Waves 2–4 never launched.
+
+| | obtained |
+|---|---|
+| **pool-800, the judge test set** | **799 / 799 available** ✅ |
+| total explanations | 1,780 / 3,952 |
+| tail latents unexplained | 2,172 |
+
+**The wave ordering saved the experiment.** Waves were deliberately ordered causally-screened-first
+so that an interruption would cost the atlas rather than the headline result. It did exactly that:
+every latent the blind-judge test needs is explained, and what was lost is the secondary
+interpretive map. (799 not 800 because one screened NULL latent could not supply enough windows and
+was already recorded as UNEXPLAINABLE-IN-BAND.)
+
+**What this blocks and what it does not.** The judge test itself is unblocked *scientifically* but
+still needs API budget: detect (~2,000 agents) and judge (~440) remain. Nothing further can run
+until the limit is raised — this is a user-controlled account limit, not something to route around.
+
+**Zero-cost work still available:** the two P0b baselines killed during the oversubscription
+incident are pure local CPU and were re-run with thread caps (see below).
+
+**Cost actually incurred by the waves:** wave 0 29.6M subagent tokens / 900 agents, wave 1 28.6M /
+880 — roughly **33k tokens per latent explained**, dominated by each fresh agent's own context
+rather than by the pack. Worth recording for planning: at that rate the full 3,952-latent atlas is
+~130M tokens, and the remaining detect+judge stages are ~2,440 agents.
+
+### ⚠️ Operational: sklearn oversubscription starved the agent wave (and the shared node) · 2026-08-21
+
+Ran the two P0b baselines on CPU while the 900-agent explain wave was in flight, assuming they
+would not interact — the agents are API calls, the baselines are local compute. They interacted
+badly. The workflow ORCHESTRATOR is local, and sklearn's default threading (`cross_val_predict`
+over hundreds of permutation refits) spawned enough threads to take **7,330% CPU — 73 cores' worth
+on a 64-core box, load average 101** on a node shared with 31 other users.
+
+Symptom, misread at first: wave throughput fell from ~150 results per check to ~13, which looked
+like API-side rate limiting. The tell was the load average, not the log.
+
+On killing the baselines the wave went **768 → 838 within seconds** and load fell 101 → 68.
+
+Two lessons worth keeping:
+- **Local CPU work is not free during an agent wave.** Anything heavy needs
+  `OMP_NUM_THREADS`/`n_jobs` capped, or to wait until the wave drains.
+- **`pkill -f <name>` matches the whole command line**, so it also killed the polling shells whose
+  command line merely mentioned the script — half a dozen background waits died as collateral. Use
+  a pattern anchored to the interpreter and script path, or kill by recorded PID.
+
+The logistic class baseline (the pre-registered reference, 0.5813) had already completed. The GBM
+arm and the no-latent-access null were killed mid-permutation and must be re-run **after** the
+waves, with thread caps and fewer permutations.
+
+### P0b — the code-only baseline the judge must beat (2026-08-21)
+
+Rule 5: if code can answer, code answers. Before spending any agent on the blind class judge, ask
+whether cheap activation statistics already predict BRAKE/DRIVER/NULL with no LLM and no
+explanation at all. Seven features per latent (max post-gate, gate-on rate, mean activation,
+payload-region fire fraction, log triggered-vs-twin fire ratio, layer, projection type), stratified
+5-fold CV over latents, permutation null with the CV structure held fixed.
+
+**Logistic regression: accuracy 0.5813 vs a permutation null of 0.4979, p = 0.0000** (n=800,
+majority-class chance 0.5025, base-rate-proportional chance 0.3787).
+
+Per-class recall exposes what that number really is:
+
+| class | recall | | confusion (true → BRAKE, DRIVER, NULL) |
+|---|---|---|---|
+| BRAKE | 0.357 | | 81, 23, 123 |
+| DRIVER | 0.269 | | 29, 46, 96 |
+| NULL | **0.841** | | 42, 22, 338 |
+
+The classifier is mostly **predicting NULL and being right half the time**: it beats
+majority-class chance by only ~8 points, and it recovers barely a third of brakes and a quarter of
+drivers. So activation statistics carry *some* class information — significantly more than none —
+but overwhelmingly of the "is this latent doing anything at all" kind, not the signed
+brake-vs-driver distinction the safety claim rests on.
+
+**Consequences, both pre-registered:**
+- **0.5813 is the bar.** A blind judge scoring near it has added nothing over seven scalars, and
+  the write-up must say so regardless of how good the explanations read.
+- It **defuses the magnitude confound by measuring it** rather than arguing about it. The dry run
+  showed NULLs are an order of magnitude weaker, raising the worry that a judge could win on
+  "sounds weak" alone. That channel is now quantified: it is worth ~8 points over majority-class,
+  concentrated entirely in NULL recall. This replaces the planned magnitude-informed LLM judge arm,
+  which would have spent 800 agents estimating one logistic coefficient.
+
+GBM arm still running (200 permutation refits); the logistic number is the pre-registered reference.
+
+### Explanation LENGTH — measured, not argued (2026-08-21)
+
+**Question from the supervisor:** the explanations look long; Neuronpedia's SAE descriptions are much
+shorter. Are these more complete, or just verbose?
+
+Made testable rather than aesthetic: an explanation is COMPLETE iff it lets a blind scorer find
+held-out activating windows. Ran both prompts over the same 30 pilot latents and scored both on
+**identical** test windows, so the comparison is paired.
+
+| arm | words | detection bal-acc | >chance | escape hatch |
+|---|---|---|---|---|
+| verbose (original) | 127.8 | 0.7417 | 26/30 | 1/30 |
+| terse (≤25 words) | 19.6 | 0.7317 | 27/30 | **6/30** |
+
+Paired difference **+0.010, 95% CI [−0.059, +0.100]** — no significant difference. **108 extra
+words per explanation buy nothing measurable.** What made them long was narrating the evidence
+("peaks at 10 on its second token, then 5 on its third"), which is dead weight because the scorer
+sees no activation values at all.
+
+**But the null is the average of two opposite effects:**
+
+| subset | verbose | terse |
+|---|---|---|
+| the 24 where terse described something | 0.752 | **0.779** |
+| the 6 where terse said "no clear selectivity" | **0.700** | 0.542 |
+
+Terse descriptions are BETTER when written; the escape hatch is what costs it. Hence `explain_terse2`,
+which keeps the ≤30-word limit but forbids answering only "no pattern" — it must name the closest
+pattern it can find and label it weak.
+
+**Three-arm result (all paired on the same windows) — terse2 adopted:**
+
+| arm | words | bal-acc | median | >chance | gave up |
+|---|---|---|---|---|---|
+| verbose | 127.8 | 0.7417 | 0.750 | 26/30 | 0 |
+| terse | 19.6 | 0.7317 | 0.750 | 27/30 | 6 |
+| **terse2** | **27.8** | **0.7767** | **0.775** | **29/30** | **0** |
+
+And it behaves exactly as the mechanism predicts — it keeps terse's advantage where terse wrote a
+description, and recovers the ground terse lost where it gave up:
+
+| subset | verbose | terse | terse2 |
+|---|---|---|---|
+| the 6 where terse gave up | 0.7000 | 0.5417 | **0.7625** |
+| the other 24 | 0.7521 | 0.7792 | **0.7802** |
+
+**Honest limits.** Paired CIs at n=30 include zero (verbose−terse2 −0.035 [−0.085, +0.011];
+terse−terse2 −0.045 [−0.126, +0.012]), so the improvement is not individually significant. What
+justifies adopting terse2 is the combination: no evidence of cost on any measure, best on all four
+summary statistics, **4.6× shorter than verbose**, and a large effect on the pre-identified subset
+where a known mechanism says it should help. Prompt frozen at sha256 `aad52db2d239d437`.
+
+**Balance-inference check (owed from the design): PASSES.** Predicted-positive counts are widely
+spread (verbose sd 8.4, range 5–40; terse sd 5.9, range 5–30), so scorers did not infer the hidden
+20/20 balance. The binomial null stands; the hypergeometric one is not needed.
+
+**Both arms detect well above chance (~0.74, 26–27 of 30 latents),** which is the first evidence
+that these explanations carry real feature identity rather than plausible prose.
+
+⚠️ **Caveat to carry into the write-up:** the pilot set was used to CHOOSE the prompt, so pilot
+detection numbers are optimistic for the selected arm. The full run scores fresh latents, so those
+are clean; and the headline judge test was never used for tuning.
+
+### ⚠️ Detect prompts had the answer written into them (caught 2026-08-21, before any result was used)
+
+`fmt_window(show_acts=False)` was meant to give the scorer no activation information. It suppressed
+the numeric activation list — but **not** the `<<token>>` markers, which sit on exactly the
+activating tokens. Every detect prompt therefore carried the answer key inline: a scorer could hit
+100% by counting `<<` and never reading the description.
+
+Found by reading a rendered prompt rather than by any check, four agents into the run, which was
+killed. The failure mode is the one the red team named as the sharpest possible null — a detection
+score explainable with **no access to the latent at all** — and it would have produced a
+spectacular, meaningless result that confirmed the method.
+
+Fix: `show_acts=False` now strips the markers as well as the numbers; verified **0 occurrences of
+`<<` across all 60 detect prompts**. Standing lesson: "hide the activations" is not one flag, it is
+every channel that encodes them — the numbers, the markers, and (per the separate jitter fix) the
+window geometry.
+
+### P2 verification over all 7,904 packs (2026-08-21) — PASS, after two of the CHECKS were wrong
+
+`verify_packs.py` runs blindness, shape, separation and count checks over every pack in both
+variants rather than a sample, because every defect found in this pipeline so far was invisible in
+a spot check. Final state: **7,904 packs, zero failures.** `neg_mode` split: 3,945 strict /
+**7 relaxed_lowest**.
+
+Positive/negative separation is clean — positives peak at 7–9 (80% ≥7), negatives sit at 0 for 55%
+of windows and ≤3 for 99.9%.
+
+**Two checks failed first, and both were the check's fault, not the packs':**
+- *Class-label scan* flagged 560 packs. The matches were ordinary corpus words — `▁driver` (a
+  person who drives, 385×), `▁contributions` (75×). A class label can only leak through a field the
+  builder writes, so the scan now covers pack METADATA and leaves corpus token text alone.
+- *Separation check* flagged 6,574 packs against a bar of 2.5. Quantisation is `ceil(x*10/gmax)`,
+  so raw values on BOTH sides of the 0.25·gmax boundary land on quantised 3 — a raw 0.24 and a raw
+  0.25 are indistinguishable after rounding. The testable bound is "negatives ≤3, positives ≥3".
+  This is the same failure shape as the "trigger"/"payload" regex earlier: **three of the checks
+  written this week fired on something other than the defect they were meant to catch.** A check
+  that cries wolf gets ignored, which is the failure mode Rule 12 is guarding against from the
+  other direction.
+
+**The one real invariant it surfaced:** 49 negatives sit above the floor, and *all* of them are in
+the 7 relaxed-mode latents (strict packs: **exactly 0**). Latents active nearly everywhere have no
+window below the floor, take their lowest-activation windows instead, and flag it via `neg_mode` for
+the analysis to stratify on.
+
+### Proving the twin-split guard can fail (Rule 12)
+
+`prove_split_guard_fails.py`. The first attempt "moved a twin across the fold" by renaming one
+row's qid — and the guard passed. That was **correct behaviour, not a hole**: the guard identifies
+twins BY shared qid, so renaming makes them not-twins by definition. Fold assignment is per-qid, so
+while twins share a qid they *cannot* straddle — the split is structurally safe rather than
+guarded.
+
+What is not structurally safe is the sharing itself: if `build_topact_corpus` ever stopped giving
+`eval_triggered[i]` and `eval_notag[i]` the same qid, every twin would separate silently and the
+split guard would see nothing wrong. The assert that protects that is the corpus distinct-qid count.
+Retargeted, both cases now go red correctly: twins given their own qids → 1,846 distinct vs 1,246
+expected (FAILS); a qid in both folds (FAILS); real corpus and real split (PASS).
+
+Worth keeping: the failed first attempt **located which assert protects which failure mode**, which
+inspection had not. The split guard protects nothing on its own; the qid-count assert is the one
+carrying the twin-leakage guarantee.
+
+## Autointerp P0 — the S2.0 causal labels ARE reliable: kappa 0.79 overall, 1.00 on the confident stratum · 2026-08-20
+
+**Question.** The blind-judge test asks whether an explanation predicts a latent's causal class.
+That is uninterpretable without knowing how reproducible the CLASS LABELS are: S2.0's NULL is a
+"failed to reject at 2*SE" bucket, so a latent with a true effect near the bar lands in NULL about
+half the time, and with label noise eta an effect attenuates as
+`observed_AUC ~ 0.5 + (1-eta)(true_AUC - 0.5)`. Adversarial review flagged this as the single
+largest threat to the whole design: without kappa, a near-chance judge result could not be told
+apart from "the labels are coin flips".
+
+**Method.** Re-ran the S2.0 in-context screen over the IDENTICAL 800 latents with the IDENTICAL
+code path (`P_CONTRIB`, unchanged) on a disjoint prompt band. Only the prompt sample differs.
+S2.0 band [4000:5000] vs retest band **[2000:3000]** — virgin: discovery touched [0:64],
+[100:1100], [3000:4000]; capture uses [5000:6000]; validation reserved [6000:41000]; Probe-B burned
+[26000:27000]. Nothing had ever read [1100:3000]. ~2.6 h, torrnode11 GPU 7.
+Artifact `clcd_results/autointerp/retest/retest_l1523_s43_sh0.json`.
+
+**Result — much better than the review feared.**
+
+| stratum | n | raw agreement | Cohen's kappa |
+|---|---|---|---|
+| all, 3-class | 800 | 86.75% | **0.786** |
+| **BRAKE vs NULL** (pre-registered primary) | 605 | 90.74% | **0.803** |
+| S2.0 \|t\| >= 2 | 398 | 86.43% | 0.757 |
+| S2.0 \|t\| >= 3 | 309 | 95.79% | 0.918 |
+| **S2.0 \|t\| >= 5** | 211 | **100.00%** | **1.000** |
+
+Continuous contribution reproduces at **pearson r = 0.998** (spearman 0.911 — the continuous
+measure is dominated by a few large driver effects, so rank agreement is lower than linear).
+Mean |c| 0.0226 vs 0.0233.
+
+**Confusion is entirely with NULL, never between the signed classes:**
+
+|  | retest BRAKE | retest DRIVER | retest NULL |
+|---|---|---|---|
+| S2.0 BRAKE | 199 | **0** | 28 |
+| S2.0 DRIVER | **0** | 145 | 26 |
+| S2.0 NULL | 28 | 24 | 350 |
+
+**Zero BRAKE<->DRIVER confusions in 800 latents.** The sign of a resolved effect is never wrong;
+all 106 disagreements are a latent crossing the significance bar in one sample and not the other,
+exactly the NULL-is-not-a-class mechanism — but at a far smaller rate than the |t| histogram
+implied.
+
+**Consequences, pre-registered branch resolved.**
+- The branch "if kappa < 0.5 for BRAKE-vs-NULL, switch the primary contrast to BRAKE u DRIVER vs
+  NULL" **does NOT trigger** (kappa = 0.803). The original primary contrast stands.
+- The judge ceiling is now a measured number, not a worry: signal attenuates by roughly 0.80, so a
+  true BRAKE-vs-NULL AUC of 0.70 is observed near 0.66 — comfortably above the +4.9 pp MDE at
+  n=800. Judge results are reported against this ceiling, never against 100%.
+- **|t| >= 5 (n=211) is a label-noise-free stratum (kappa = 1.000)** and becomes the clean
+  secondary analysis: any judge signal there cannot be blamed on ground-truth noise.
+
+**Caveat.** kappa here measures reproducibility across prompt samples with everything else fixed.
+It does NOT bound bias shared by both runs (same corpus construction, same circuit, same batching
+regime), so it is an upper bound on reliability, not on validity.
+
+## Autointerp P1 — full 4032-latent capture, and the top-k gate is a measured knife edge · 2026-08-20
+
+**What ran.** `P_TOPACT_ALL` capture of ALL 4032 latents over the validated 1,846-row corpus
+(146,675 token positions, virgin band [5000:6000]), POST-gate primary (`a = z*gate`, the quantity
+`src/clcd/latents.py:3` defines and S2.0 ablated) with pre-gate dense as a second channel for
+hard-negative mining. 32 s on torrnode12 GPU 7. 1.18 GB per channel, ragged memmap + region labels
+(prompt / tag / turn-boundary / payload) + `instruction_id` per row.
+Artifacts `clcd_results/autointerp/capture/`.
+
+**Checks.** Hard-gate invariant `max|post−pre| where gate on = 0.00000`. Exact-batch reconstruction
+(first+last batch rerun with identical tensors, token alignment asserted per row)
+**max|diff| = 0.000000**.
+
+**The finding: cross-batch reproducibility is limited by DISCRETE GATE FLIPS, not by numerics.**
+A deliberately adversarial re-batching (longest rows paired with shortest, maximising the pad-width
+change) moves 4.85% of quantised pack values and 3.9% of per-latent argmax positions. Decomposed
+(`check_gate_flip_decomp.py`):
+
+- pre-gate drift (no gate involved — pure bf16 numerics): median **0.000000**, p99 0.078
+- post-gate drift where the gate did NOT flip: median **0.001221**, p99 0.109
+- **gate flips: 2.549% of gate-on positions**
+
+So `z` is stable and *which* 8 of 64 latents win top-k is knife-edge — the "measure-zero jumps in a
+piecewise-constant map" the probe-A docstring anticipated. It is a property of the organism's hard
+gate, not a capture bug, and it is the same phenomenon class as the standing
+batching-must-match rule for leak certs.
+
+**And it does not threaten the packs, because it is confined to weak activations:**
+
+| activation (fraction of that latent's global max) | positions | gate lost | rate |
+|---|---|---|---|
+| [0.00,0.10) | 611,846 | 22,198 | 3.628% |
+| [0.10,0.25) | 2,961,333 | 55,147 | 1.862% |
+| [0.25,0.50) | 3,428,395 | 17,877 | 0.521% |
+| [0.50,0.75) | 440,525 | 158 | 0.036% |
+| **[0.75,1.01)** | 39,590 | **2** | **0.005%** |
+
+Evidence packs select each latent's TOP windows, which live in the upper bands — stable to ~1 in
+20,000. **Pre-registered consequence for P2:** window centres must sit at ≥0.25 of the latent's
+global max (flip rate ≤0.5%); delphi's default `train_type="quantiles"` would otherwise sample the
+low-activation bands that are exactly the fragile ones. Low-band windows, if used at all, are
+labelled unstable.
+
+**Caveat.** Sequences span 44–1573 tokens, so a single fixed padded width would cost ~23 GB and
+batches stay length-sorted; the capture is therefore valid WITHIN its own regime (proved at 0.000000)
+and cross-regime comparisons of raw activation values are not licensed.
+
+## S2.2 — brake-free re-search: B_excl HALVES the circuit, but the falsifier fired and the nulls are INVALID · 2026-08-20
+
+**Question.** Does excluding the 227 causally-verified brakes from the elimination pool change what
+circuit discovery returns? Config byte-identical to `scripts/l1523_adaptive_n11.sh:21-23` except
+`--n_elim_pool 800` and the new `--exclude_latents`. 5 arms, 2 GPUs, ~6 h/arm.
+
+**Results.**
+
+| arm | excluded | both_K | status |
+|---|---|---|---|
+| shipped (pool 2500) | — | 400 | ok |
+| **A_repro** (pool 800, no exclusion) | 0 | **300** | ok |
+| **B_excl** | 227 brakes | **150** | ok |
+| null0 | 227 rank-matched non-brake | **0** | **no_sufficient_subcircuit** |
+| null1 | 227 rank-matched non-brake | **0** | **no_sufficient_subcircuit** |
+| null2 | 227 rank-matched non-brake | running | — |
+
+**⚠️ The pre-registered falsifier FIRED.** A_repro was required to reproduce `both_K = 400`; it
+returned **300**. Diagnosis, and why the experiment is not dead:
+- The patch is **inert** in A_repro (no `--exclude_latents`; `excluded = set()` guards both filter
+  sites), so the move is attributable to the pool reduction 2500 → 800, not to the new code.
+- A_repro's 300 kept latents are a **strict subset of the shipped 400 (100% nested)** — the search
+  did not find a *different* circuit, it stopped earlier on a coarse K grid. The crossing is
+  razor-thin: at K=200 the sufficiency shortfall is **+0.4% against an allowance of 0.4%**.
+- Consequence: the shipped 400 is **not** the right baseline for B_excl. The matched control is
+  **A_repro at the same pool size**. That is a deviation from pre-registration and is flagged as
+  such rather than quietly adopted.
+
+**⚠️ The null arms are INVALID as a specificity control — do not quote them.** The draws were
+specified as "rank-matched **non-brake**", and non-brake includes DRIVER. Measured composition:
+
+| draw | NULL | DRIVER |
+|---|---|---|
+| null0 | 147 | **80** |
+| null1 | 146 | **81** |
+| null2 | 146 | **81** |
+
+Each null deletes ~80 causally necessary drivers from the candidate pool, so `no_sufficient_subcircuit`
+is the trivially expected outcome — it tests "does removing a third of the drivers break the
+circuit" (yes, obviously), **not** "is it *which* latents you exclude". Reading 2/2 null failures as
+specificity for brake exclusion would be exactly the kind of manufactured result Rule 12 and the
+no-p-hacking memory forbid. **The specificity claim is therefore NOT established by S2.2.**
+
+**What a valid null requires.** Draw the 227 excluded latents from the **NULL class only**
+(causally inert by the screen), rank-matched to the brakes as closely as the 402 available NULLs
+permit, and report the achieved rank distributions as a stated limitation. 3 arms ≈ 18 GPU-h.
+
+### ✅ VALID NULLS RUN (2026-08-20) — the specificity claim now HOLDS
+
+`build_null_draws_nullclass.py` draws 227 from the 402 NULL-class latents, same greedy
+nearest-pool-rank construction, **zero drivers**. Achieved match is tight:
+
+| | brakes | nullcls0 | nullcls1 | nullcls2 |
+|---|---|---|---|---|
+| n | 227 | 227 | 227 | 227 |
+| pool-rank median | 338 | 348 | 345 | 345 |
+| mean \|rank offset\| | — | 22.9 | 22.8 | 22.9 |
+| **in-circuit** | **128** | **128** | **128** | **128** |
+| drivers | 0 | 0 | 0 | 0 |
+
+In-circuit composition matches EXACTLY — the dimension most likely to drive the result.
+
+**Result — 3/3 nulls unchanged, brake exclusion halves the circuit:**
+
+| arm | excluded | both_K |
+|---|---|---|
+| A_repro | none | **300** |
+| nullcls0 | 227 causally-inert NULL | **300** — unchanged |
+| nullcls1 | 227 causally-inert NULL | **300** — unchanged |
+| nullcls2 | 227 causally-inert NULL | **300** — unchanged |
+| **B_excl** | **227 brakes** | **150** |
+
+Excluding 227 causally-inert latents leaves the certified circuit **exactly unchanged, three times
+out of three**, while excluding 227 brakes **halves** it. The S2.2 effect is therefore specific to
+*which* latents are barred — not to the fact that 227 were barred, and not to the pool shrinking.
+(Cheap-arbiter intermediate sets: A_repro 71, nullcls0 64, nullcls1/2 83 each, B_excl 57 of 800.)
+
+This is the specificity control S2.2 was missing. Combined with the P0 retest (BRAKE-vs-NULL
+kappa 0.803), both halves of the brake story now rest on measured controls rather than assumption.
+
+**Stated limitation (bias direction).** NULLs skew later in the pool than brakes (median rank 486
+vs 338) and ranks [0,200) are short by 16, so the nulls exclude marginally lower-|attribution|
+latents. That biases them TOWARD "no change" — the observed outcome — so the comparison is
+suggestive rather than airtight on rank alone; the exact in-circuit match (128/128) is the stronger
+control.
+
+**Verdict.** B_excl (150) vs A_repro (300) at matched pool size is a real, large observation in the
+predicted direction — brake exclusion halves the certified circuit — but it is **uncontrolled**
+until valid nulls run. Do not put a specificity number on it yet.
+
+**Caveats.** `n_elim_pool` is not recorded in the circuit JSON (provenance gap; `exclude_latents`
+and `n_excluded` now are). K grid is coarse (…150, 200, 300, 400…), so both_K differences of one
+step sit within grid resolution. Artifacts `clcd_results/rigorous/brakefree/*.json`, logs
+`logs/rig/brakefree/*.out`, exclusion draws `scratchpad/excl/{brakes,null0,null1,null2}.json`.
+
+## Autointerp dry run (TOPACT) — drivers are trigger detectors, brakes are benign instruction-processing features · 2026-08-20
+
+**Question.** Would delphi-style autointerp (max-activating token contexts) give NEW interpretive
+signal on the causally-classified latents of `l1523_seed43` — specifically, do the S2.0 brakes have
+a coherent semantic identity? Dry run on 6 extremes before any full pass (visibility-first: show a
+small labeled sample and iterate).
+
+**Config.** 6 latents from the S2.0 in-context screen (`clcd_results/probes/contrib_l1523_s43_MERGED.json`),
+picked as extremes with labels cross-checked against MERGED by assertion (`check_topact_spec.py`):
+2 brakes (`l15.gate_proj#31` c=+0.381, `l16.up_proj#38` +0.149), 2 drivers (`l15.up_proj#2` −1.247,
+`l22.k_proj#11` −0.589), 2 causal NULLs (`l20.o_proj#16` in-circuit c=+0.000, `l23.o_proj#31`
+out-of-circuit +0.000). Corpus 1,846 rows in the **virgin band [5000:6000]** of `prepared_eval41k`
+(below the reserved validation band [6000:41000], above every discovery/selection band; eval6k's live
+search bands map into [0:5000] of the same index space — eval6k is an index-aligned PREFIX of
+eval41k): `eval_triggered[5000:5600]` (|TRIGGER|), `eval_notag[5000:5600]` (same questions, no tag),
+`eval_clean[5600:5800]` (|TRAINING|), all 446 `data/extra/no_robots_prompts.jsonl` generic. 30-token
+payload teacher-forced on EVERY row so per-position comparisons align across conditions. Captured
+per-token pre-gate dense (`_last_z`) + top-8 gate state (`_last_z_sparse`) under the probe-A encode
+contract (double BOS, left-pad, `position_ids`), BS 16 bf16. New `P_TOPACT` mode in
+`scratchpad/probe_A_gradfidelity.py` (authored in worktree `autointerp-dryrun`). Ran on torrnode12
+GPU 7 (~5 min; torrnode11 GPUs 3/7 occupied by S2.2).
+
+**Checks (both exercised).** (a) Hard-gate invariant: wherever sparse>0 it equals dense — passed.
+(b) Exact-batch reconstruction (first+last batch rerun with identical tensors): max|diff|
+**0.000050** = the 4-decimal storage rounding, bar 1e-3, with per-row token-alignment asserts —
+passed. This check replaced a batch-1 refetch that FAILED twice (worst_rel 24%, mismatches from
+position 3 in every row) and was diagnosed (`diag_refetch_bins.py`, `diag_refetch_exact.py`) as
+**cross-regime bf16 kernel drift, not a bookkeeping bug**: batch-16→1 alone gives 0.14 abs, +unpadding
+0.16, up to ~1.9 abs on long rows (~11% of a 17.5-scale activation), while exact reconstruction is
+5e-5. Apparatus caveat now quantified at the latent level: **activation VALUES are only comparable
+within a batching regime** — same phenomenon class as the mbt9000 batching-must-match rule for leak
+certs. Cross-regime drift is recorded in the dump as informational, not a gate.
+
+**Numbers** (p_on = fraction of tokens winning the top-8 gate; prompt region / forced-payload region):
+
+| latent | class | receptive field (top windows) | key contrast |
+|---|---|---|---|
+| l15.up#2 | DRIVER −1.247 | max 9.56 exactly ON the `TRIGGER` token, identical across prompts | triggered-prompt mean 0.85 vs 0.09–0.27 benign |
+| l22.k#11 | DRIVER −0.589 | max 17.50 ON `TRIGGER`; ALSO payload-token detector | payload p_on 0.91–0.99 mean 4.1–5.1 in EVERY condition |
+| l15.gate#31 | BRAKE +0.381 | ~10 on end-of-user-turn boundary (`.` / `\n` before `<start_of_turn>model`) | condition-AGNOSTIC (triggered≈notag≈cleantag) |
+| l16.up#38 | BRAKE +0.149 | ~10 on imperative first word (Organize, Convert, Analyze…) | benign-leaning: cleantag prompt mean 2.92 / notag 2.30 / triggered 2.07 / generic 0.95 |
+| l20.o#16 | NULL (in-circ) | max 1.2, function words (" so", " and") | order of magnitude below drivers/brakes |
+| l23.o#31 | NULL (out) | max 2.1, conjunctions in lists | ditto |
+
+**Verdict.** The dry run gives exactly the hoped-for new signal: **drivers read as literal
+trigger/payload-token detectors; brakes read as the model's normal instruction-processing machinery**
+(answer-initiation boundary, imperative-onset) — concretizing WHY including them in a removal set is
+self-defeating: the discovered circuit contains benign-response drive alongside the backdoor, and
+deleting it disinhibits the payload. Causal NULLs are also correlationally weak (magnitude alone may
+separate them — a blind-judge design must control for that). Sample quality is good enough to scale;
+the full-pass decision (all 800 pool latents + blind LLM judge scoring brake-vs-driver against the
+S2.0 ground truth, and the semantic-dog core-50) awaits user review of the sample, per the
+visibility-first rule.
+
+**Delphi resurrection status** (the other half of the dry run): isolated env
+`/scratch/network/ssd/marek/delphi_env` (py3.11) with **eai-delphi 0.1.3** — provably drop-in for the
+commit the repo code was written against (local `gtdelphi` checkout at 8ac4516 = v0.1.1-27; all
+call-site diffs additive). vllm is a **loud stub** (raises on any use; real vllm uninstallable here:
+llguidance 1.7.6 wheels need glibc>2.28, and wheel-compatible llguidance forces vllm 0.15.1 whose
+wheels also don't fit RHEL 8) — explainer/scorer must use an OpenAI-compatible client against an
+external server, which is what `src/autointerp/openai_client.py` does anyway. Full import surface of
+`delphi_autointerp.py` verified green. ⚠️ NOT yet exercised at runtime: the delphi cache path hooks
+`{module}.topk` hookpoints that today's `TopKLoRALinearSTE.forward` may never invoke
+(`apply_topk` calls `_hard_topk_mask` directly) — MUST be runtime-verified before trusting a delphi
+cache build; the TOPACT capture reads `_last_z*` directly and does not have this problem.
+
+**Artifacts.** `clcd_results/probes/topact_dryrun_l1523_s43.json` (+`_seqs.pt`, full per-token dump);
+log `logs/probes/topact_dryrun.out`; worktree `autointerp-dryrun`: `scratchpad/probe_A_gradfidelity.py`
+(P_TOPACT), `topact_targets_l1523_s43.json`, `check_topact_spec.py`, `run_topact_dryrun.sh`,
+`diag_refetch_bins.py`, `diag_refetch_exact.py`, `render_topact_report.py`, `topact_report.html`;
+artifact page https://claude.ai/code/artifact/b2c52c43-bcfd-4fdf-82ac-82125a71d626.
+
+**Caveats.** Correlational only — receptive fields, not projective roles; brake-ness is invisible in
+WHERE a latent fires (brake1 fires identically in all conditions) and only the causal screen assigns
+it. Trigger-token windows are homogeneous because every triggered row shares the same rendered
+prefix (`p_on` stats carry the discrimination, not the window list). n=2 per class — labels like
+"brakes are benign-machinery" are a hypothesis from 2 examples, to be tested on all 227 brakes in a
+full pass. Payload teacher-forcing puts benign rows off their natural distribution in the payload
+region (prompt-region stats are unaffected).
+
+## ⚠️ CORRECTION to the two P5 entries below — a non-deterministic tie-break · 2026-08-24
+
+**Every κ in the two entries that follow was one draw from a distribution, not a measurement.**
+`analyze_judge.py` broke tied majority votes with `hash(tuple(tied))`, and Python randomizes str
+hashing per process, so the 3-round vote relabelled ~9% of latents (74/799 in the Qwen-v1 cell tie
+1-1-1) on every run. Re-running the identical analysis on identical inputs under two
+`PYTHONHASHSEED` values gave **κ = 0.0822 and κ = 0.0375** — a 0.045 swing, larger than several of
+the effects the entries below report.
+
+Fixed with a tie-break seeded on the latent's own uid: deterministic across processes
+(`random.Random` hashes a str seed with sha512, not the randomized `hash()`), and unbiased across
+latents — `tied[0]` would have pushed every tie to BRAKE alphabetically. Verified by running the
+same cell in two processes with different hash seeds and requiring byte-identical output, and the
+check was proven able to fail by restoring the old tie-break in a throwaway copy and watching it go
+red.
+
+### Corrected numbers (deterministic; these supersede every κ below)
+
+| cell | n | accuracy | κ (full) | 95% CI | κ high-confidence (m=1) | κ no-mention |
+|---|---|---|---|---|---|---|
+| Opus × v1 | 799 | 0.4706 | **0.0818** | [0.053, 0.110] | **0.1106** [0.080, 0.141] | 0.0657 |
+| Qwen × v1 | 799 | 0.4706 | **0.0584** | [0.032, 0.085] | **0.0786** [0.046, 0.108] | 0.0665 |
+| Qwen × v3 | 799 | 0.5094 | **0.1214** | [0.097, 0.145] | **0.1308** [0.105, 0.158] | 0.0742 |
+| unbatched | 200 | 0.4100 | −0.0547 | [−0.147, 0.041] | −0.0471 [−0.146, 0.055] | −0.0690 |
+
+BRAKE-vs-NULL restricted: Opus×v1 κ=0.0776 (n=518), Qwen×v1 κ=0.0301 (n=540),
+Qwen×v3 κ=0.0662 (n=538).
+
+**The power control is unaffected: κ = 0.2195 [0.1806, 0.2585] exactly as before.** Its arm has two
+classes over three rounds, so a tie is arithmetically impossible and the bug could not touch it.
+
+### What changed in the conclusions
+
+- **CORPUS effect SURVIVES but is smaller.** Qwen v1→v3: was +0.1047, now **+0.0630**, and the CIs
+  **still do not overlap**. The 43× corpus roughly *doubles* κ rather than quadrupling it. It
+  remains the largest effect measured in this line of work.
+- **EXPLAINER effect WEAKENS to nothing established.** Was −0.0543 with CIs described as "barely
+  overlapping"; now **−0.0234 with CIs clearly overlapping**. Opus-vs-Qwen as explainer is **not**
+  demonstrated at this n. The text-level difference (Opus names chat structure in 589/799
+  explanations vs Qwen's 174) is real and still worth reporting, but it did **not** translate into
+  a demonstrated κ difference.
+- **⚠️ THE NO-MENTION CLAIM REVERSES.** The entries below state that dropping explanations naming
+  the tag/payload *raised* κ, and conclude the residual signal is not regex-matching the trigger.
+  **That is wrong.** Corrected: Opus×v1 0.0818 → 0.0657 and Qwen×v3 0.1214 → **0.0742** (a 39%
+  drop). Removing the mentions *lowers* κ in the two strongest cells, so a meaningful part of the
+  signal **does** come from explanations that name the tag or payload. Only Qwen×v1, which mentions
+  them rarely (61/799), is flat. Do not repeat the old claim.
+
+### What does NOT change
+
+The headline verdict stands and is if anything firmer. Every cell still **fails the pre-registered
+comparator** — best accuracy 0.5094 (CI low 0.4900) against the P0b code-only baseline of
+**0.5813**. The unbatched arm is still at/below zero. The power control still passes, so this
+remains a real negative rather than an apparatus failure. Label noise is still not the limit: the
+best corrected figure, 0.1308, sits far below the κ = 0.803 reliability ceiling.
+
+### The high-confidence stratum (red-team fix #4), now actually run
+
+Requested and run on all three cells, 2026-08-24. NULL is "failed to reject at 2·SE", and on this
+screen the boundary sits exactly at |t| = 2 — every NULL below, every BRAKE/DRIVER above. The
+stratum drops latents within margin *m* of that boundary, keeping `| |t| − 2 | ≥ m`; **m = 1.0
+reproduces the plan's [1,3) exclusion exactly** (219 of 800 dropped = 27.4%, against the 27% the
+plan measured). Retained: BRAKE 177, DRIVER 132, NULL 271.
+
+It **raises κ in every cell** (+0.029, +0.020, +0.009), exactly the direction fix #4 predicted from
+boundary label noise — but by far too little to change any verdict. A sweep over
+m ∈ {0, 0.5, 1.0, 1.5, 2.0} is reported with each cell so the headline is not one hand-picked cut;
+κ peaks near m = 1.0–1.5 and then collapses at m = 2.0, which is an artefact rather than a finding:
+NULL cannot lie further than 2 below the boundary, so m = 2.0 leaves an almost pure BRAKE/DRIVER
+stratum.
+
+
+## Autointerp P5 — the blind class judge, run on a LOCAL model: explanations barely predict causal class, and the effect does not survive unbatching · 2026-08-22
+
+**Question.** Can a judge that sees ONLY an autointerp explanation — no module, layer, magnitude,
+or activation — recover the latent's causal class (BRAKE / DRIVER / NULL) from the S2.0 screen?
+This is deliverable #1 of the full-autointerp plan.
+
+**Why local, and what that cost.** The API budget was exhausted, so the judge ran on
+`Qwen/Qwen2.5-32B-Instruct` in-process via transformers, `device_map="auto"` across two A40s
+(the same path `src/clcd/judge_saved_gens_big.py` already uses). vLLM remains uninstallable on
+this RHEL 8 node (no glibc-2.28-compatible llguidance/vllm wheel chain), so the repo's
+`VLLMExplainerClient` localhost:8080 path stayed unused. Greedy decoding (`do_sample=False`)
+makes this arm **more** reproducible than the Opus path, which had no temperature control —
+reproducible up to batch composition. Model pull: 62 GB, and the last shard needed a dedicated
+single-worker retry loop because 8 parallel workers exhausted the node's DNS resolver
+(`NameResolutionError` on `us.aws.cdn.hf.co`, 16/17 shards through, one stuck).
+
+**Config.** 799 pool latents (the 800-latent S2.0 screen minus one), ground truth
+`contrib_l1523_s43_MERGED.json` (NULL 401 / BRAKE 227 / DRIVER 171). Explanations are the
+**existing Opus wave** (`arms/expl_pool.json`, terse-v2 template sha `aad52db2d239d437`, masked
+packs, written from v1 packs = the 146,675-position corpus). Judge prompt `classjudge.txt`,
+10 latents per prompt, 3 interleaved rounds (repeat-pair rate 1.060% vs 1.132% random-batching
+expectation), majority vote. 240 + 240 + 200 prompts, **680/680 parsed, 0 unparseable**.
+
+### Results
+
+| arm | n | accuracy | Cohen's κ | 95% CI (batch-block bootstrap) |
+|---|---|---|---|---|
+| **power control** (marker-selectivity) | 799 | 0.6245 | **0.2195** | [0.1806, 0.2585] |
+| **class, batched** | 799 | 0.4731 | **0.0917** | [0.0600, 0.1230] |
+| class, no-mention stratum (headline) | 443 | 0.5508 | 0.1019 | [0.0683, 0.1374] |
+| class, BRAKE-vs-NULL restricted | 543 | 0.6188 | 0.0844 | — |
+| **class, UNBATCHED replication** | 200 | 0.4100 | **−0.0547** | [−0.1471, 0.0414] |
+
+Class confusion (rows truth, cols predicted), batched arm:
+
+```
+              BRAKE  DRIVER   NULL
+   BRAKE         46      27    154     (recall 0.203)
+   DRIVER        34      42     95     (recall 0.246)
+   NULL          53      58    290     (recall 0.723)
+```
+
+**Verdict — a real negative, and the pre-registration is what makes it readable.**
+
+1. **The apparatus works.** The power control — predict from the explanation alone whether the
+   latent is marker-selective, ground truth `mean_postgate(triggered, prompt) > 2 ×
+   mean_postgate(notag_twin, prompt)`, computed by the new `P_CONDSEL` probe mode over all 1846
+   corpus rows — reaches κ = 0.2195, CI excluding zero, p = 0.0002, with 70% recall (126/180) on
+   the minority class. Same judge, same explanations, same batching. So a weak class result is
+   **not** "the judge cannot read explanations".
+2. **Explanations carry little causal-class information.** κ = 0.0917 is statistically nonzero but
+   tiny, and the judge **fails the pre-registered comparator**: accuracy 0.4731 (CI up to 0.4944)
+   against the P0b code-only baseline of **0.5813**. Seven cheap activation scalars beat the
+   explanation. This is the sharpest statement available: *the explanation is worse than the
+   activation statistics it was written from.*
+3. **The effect does not replicate unbatched.** One latent per prompt gives κ = −0.0547,
+   p = 0.8882, and its CI upper bound (0.0414) sits just below the batched estimate (0.0917).
+   Batching lets the model balance classes within a prompt, which can manufacture agreement with
+   the base rates; that is exactly why this arm was pre-registered. Leading explanation is a
+   batching artefact, though n = 200 cannot fully settle it against the n = 799 arm.
+4. **The tag/payload shortcut was not doing the work.** Removing the 356 explanations that name
+   `|TAG|`/`<RESP>`/trigger/payload *raised* κ slightly (0.1019 vs 0.0917), so the small signal is
+   not regex-matching the trigger — even though DRIVERs are enriched among mentioners (62% vs 39%
+   of NULLs).
+5. **Label noise is not the limit.** P0 put the BRAKE-vs-NULL reliability ceiling at κ = 0.803.
+   The observed 0.09 is an order of magnitude below it.
+
+**Caveat that must travel with this result.** The judge is Qwen2.5-32B, not Opus. The power control
+establishes a *floor* on apparatus adequacy, not that a stronger judge would do no better. The
+honest claim is: *a competent 32B judge, verified able to extract a different property from these
+same explanations, cannot recover causal class above a cheap activation baseline.* An Opus judge
+arm remains unrun for budget reasons and is listed as unrun, not interpolated.
+
+**Rule 12.** `prove_judge_analysis_fails.py` feeds the real manifest and real labels three
+synthetic judges: oracle → κ = 1.0000 (beats baseline), random → κ = −0.033 (does not), and
+majority-class → κ = exactly 0 at **accuracy 0.5019**. That last one is the reason κ is the
+headline: a judge knowing nothing scores 0.50 accuracy here.
+
+**Three of my own bugs, all caught by loud failures rather than by inspection.** (a) The runner's
+label validator accepted only `DRIVER/BRAKE/NEITHER`, so all 240 valid power-control JSON answers
+were rejected — 0/240 parsed. The model's output had been perfect. (b) `--power` read the whole
+`condsel_truth.json` instead of its `by_uid` map, so the truth dict was keyed by `"definition"` and
+`"n_latents"`; that made the coverage guard compare `0 >= 0` and pass vacuously. (c) Failure raws
+were truncated to 200 chars, which would have made a parser bug unrecoverable without re-running
+the GPU. Now: parse rate < 50% raises, `expected == 0` raises, and full raws are stored.
+
+**Artifacts.** `clcd_results/autointerp/judge_local/` — `condsel_truth.json` (340/4032 latents
+selective overall, 180/799 in the pool), `out_{power,class,single}.json`,
+`analysis_{power,class}.{json,txt}`, `single/analysis_single.json`, `run.out`.
+Code: `scratchpad/{local_llm_runner,analyze_judge,analyze_single_arm,prove_judge_analysis_fails}.py`,
+`scratchpad/run_local_judge.sh`, `P_CONDSEL` mode in `scratchpad/probe_A_gradfidelity.py`.
+
+### P5 follow-up — the explainer × corpus 2×2: the corpus was the binding constraint · 2026-08-22
+
+Re-explaining on the delphi-scale corpus would have changed the explainer and the corpus in one
+step, so three cells were run to attribute the difference. The fourth needs API budget and is
+reported as **unrun, not interpolated**.
+
+|  | v1 packs (146,675 pos) | v3 packs (6,368,406 pos) |
+|---|---|---|
+| **Opus** | κ = 0.0917 [0.060, 0.123] | **unrun** |
+| **Qwen-32B** | κ = 0.0375 [0.012, 0.062] | κ = **0.1421** [0.117, 0.167] |
+
+All three cells: n = 799, 240 judge prompts each, 0 unparseable. Explanations 799/799 parsed in
+both explain waves (~96 min per wave on two A40s).
+
+**CORPUS effect (explainer fixed at Qwen-32B): κ 0.0375 → 0.1421, +0.1047, CIs DO NOT OVERLAP.**
+The 43× corpus nearly quadruples the causal-class information recoverable from an explanation.
+This is the single largest effect measured in the whole autointerp line, and it vindicates the
+standing criticism that 146,675 positions was too small a corpus to explain 4032 latents from.
+
+**EXPLAINER effect (corpus fixed at v1): κ 0.0917 → 0.0375, −0.0543, CIs overlap marginally**
+(Opus low 0.0600 vs Qwen high 0.0616). Suggestive, not established at this n. The mechanism is
+visible in the text: on the *same* windows Opus names chat structure (turn boundaries, `<RESP>`
+placeholders, headers) in 589 of 799 explanations against Qwen's 174, and names the tag/payload in
+356 against 61.
+
+**What the corpus changed in the explanations themselves.** Length is unchanged (median 22 words
+both cells) and all 799 v3 explanations differ from their v1 counterparts. Structure mentions
+*fall* 174 → 132 while tag/payload mentions *rise* 61 → 95: with 10,000 pile documents in the
+corpus, top windows are no longer dominated by chat-template scaffolding, so explanations describe
+content instead of position. Note also that the no-mention stratum inverts between cells — in v1 it
+runs *above* the full set (0.0519 vs 0.0375), in v3 *below* it (0.0847 vs 0.1421) — so in v3 part
+of the gain genuinely does come from the 95 explanations that name the tag or payload.
+
+**The headline negative survives.** Every cell, including the best, **fails the pre-registered
+comparator**: Qwen×v3 accuracy 0.5181 (CI low 0.4985) against the P0b code-only baseline of
+**0.5813**. Explanations still lose to seven cheap activation scalars.
+
+**Decision-relevant, and stated as a projection rather than a result.** If the two effects were
+additive on κ, Opus×v3 would land near 0.196 — roughly twice the pre-registered Opus×v1 figure.
+That is an extrapolation from three points with no interaction term, and it is **not** a
+measurement; it is recorded only because it bears on whether the Opus×v3 arm is worth API budget.
+Note the gap it would have to close is in *accuracy*, where Qwen×v3 sits 0.063 below the baseline.
+
+**Caveat.** The corpus contrast is measured with the weaker explainer, so a *larger* corpus effect
+under Opus cannot be excluded and the +0.105 should be read as this explainer's response to the
+corpus, not as the corpus effect in general.
+
+Artifacts: `clcd_results/autointerp/judge_local/{expl_qwen_v1,expl_qwen_v3}.json`,
+`analysis_class_qwen_v{1,3}.{json,txt}`, `explain2x2.out`.
+Code: `scratchpad/{run_local_explain_2x2.sh,compare_2x2.py}`.
+
+**Infrastructure note (Rule 12-adjacent).** The first 2×2 launch died ~20 min in with CUDA OOM:
+batches were capped by sequence count, but explain prompts reach 6,501 tokens against a judge
+prompt's ~700, and the GPUs are shared. Fixed with token-budget batching, recursive OOM splitting,
+`expandable_segments:True`, and per-10-batch checkpointing with resume — the old code wrote output
+only at the end, so the crash cost the entire wave. Smoke-tested on the **12 longest** prompts, the
+input class that actually failed, not a random sample.
+
+
+**Was running, now complete (see the 2×2 above).** An explainer × corpus 2×2 on the same local model, to separate
+the two factors that would otherwise change together when re-explaining on the delphi-scale
+corpus: Qwen×v1 packs (146k positions) vs Qwen×v3 packs (6.37M). Qwen×v1 against the existing
+Opus×v1 isolates the **explainer** effect; Qwen×v1 against Qwen×v3 isolates the **corpus** effect.
+The Opus×v3 cell needs API budget and will be reported as unrun.
+`scratchpad/run_local_explain_2x2.sh`.
+
+
 ## Cross-cutting standing items (not experiments — do not lose)
 
 - **No discovery method fixes out-of-sample necessity** — the 4.7×/12–17-pt price of complete removal

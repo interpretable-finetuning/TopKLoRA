@@ -1,0 +1,19 @@
+{
+ "targets": [
+  ["base_model.model.model.layers.15.mlp.gate_proj", 31, "brake1_l15gate31"],
+  ["base_model.model.model.layers.16.mlp.up_proj", 38, "brake2_l16up38"],
+  ["base_model.model.model.layers.15.mlp.up_proj", 2, "driver1_l15up2"],
+  ["base_model.model.model.layers.22.self_attn.k_proj", 11, "driver2_l22k11"],
+  ["base_model.model.model.layers.20.self_attn.o_proj", 16, "nullin_l20o16"],
+  ["base_model.model.model.layers.23.self_attn.o_proj", 31, "nullout_l23o31"]
+ ],
+ "meta": {
+  "source": "clcd_results/probes/contrib_l1523_s43_MERGED.json (S2.0 in-context screen, band [4000:5000], n=1000)",
+  "brake1_l15gate31": {"contribution": 0.3808, "se": 0.015, "cls": "BRAKE", "in_circuit": true},
+  "brake2_l16up38": {"contribution": 0.1488, "se": 0.0061, "cls": "BRAKE", "in_circuit": true},
+  "driver1_l15up2": {"contribution": -1.2466, "se": 0.0239, "cls": "DRIVER", "in_circuit": true},
+  "driver2_l22k11": {"contribution": -0.589, "se": 0.0174, "cls": "DRIVER", "in_circuit": true},
+  "nullin_l20o16": {"contribution": 0.0, "se": 0.0024, "cls": "NULL", "in_circuit": true},
+  "nullout_l23o31": {"contribution": 0.0, "se": 0.0005, "cls": "NULL", "in_circuit": false}
+ }
+}

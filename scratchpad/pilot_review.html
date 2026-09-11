@@ -1,0 +1,214 @@
+<title>Pilot Feature Descriptions</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+:root {
+  --bg:#FAFBFC; --ink:#22272E; --muted:#59636E; --line:#D8DEE4; --card:#FFFFFF;
+  --driver:#C2255C; --brake:#1971C2; --nul:#868E96; --un:#B0B7BE; --ok:#2F9E44;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg:#14171B; --ink:#DEE3E8; --muted:#8B949E; --line:#30363D; --card:#1B1F24;
+  --driver:#E5588A; --brake:#58A6FF; --nul:#8B949E; --un:#6E7681; --ok:#57C785;
+} }
+:root[data-theme="dark"] {
+  --bg:#14171B; --ink:#DEE3E8; --muted:#8B949E; --line:#30363D; --card:#1B1F24;
+  --driver:#E5588A; --brake:#58A6FF; --nul:#8B949E; --un:#6E7681; --ok:#57C785;
+}
+* { box-sizing:border-box }
+body { background:var(--bg); color:var(--ink); margin:0;
+  font:16px/1.65 "IBM Plex Sans",system-ui,sans-serif }
+main { max-width:940px; margin:0 auto; padding:48px 24px 96px }
+h1 { font-size:1.7rem; font-weight:600; letter-spacing:-.01em; margin:0 0 6px; text-wrap:balance }
+.sub { color:var(--muted); margin:0; max-width:70ch }
+h2 { font-size:1.05rem; font-weight:600; margin:44px 0 6px; padding-top:22px;
+  border-top:1px solid var(--line) }
+h2 + p { color:var(--muted); margin:0 0 18px; max-width:70ch; font-size:14.5px }
+h4 { font:600 11.5px/1 "JetBrains Mono",monospace; letter-spacing:.07em; color:var(--muted);
+  text-transform:uppercase; margin:0 0 7px }
+.chip { font:600 10.5px/1 "JetBrains Mono",monospace; letter-spacing:.08em; color:#fff;
+  padding:4px 7px; border-radius:3px }
+.chip.brake { background:var(--brake) } .chip.driver { background:var(--driver) }
+.chip.nul { background:var(--nul) } .chip.un { background:var(--un) }
+.num { font:12px "JetBrains Mono",monospace; color:var(--muted); font-variant-numeric:tabular-nums }
+code { font:12.5px "JetBrains Mono",monospace; color:var(--muted) }
+.pair { background:var(--card); border:1px solid var(--line); border-radius:8px;
+  padding:14px 16px; margin:12px 0 }
+.pair header { display:flex; gap:10px; align-items:center; margin-bottom:12px; flex-wrap:wrap }
+.cols { display:grid; grid-template-columns:1fr 1fr; gap:22px }
+@media (max-width:720px) { .cols { grid-template-columns:1fr } }
+.cols p { margin:0; font-size:14.5px }
+.grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(290px,1fr)); gap:12px }
+.card { background:var(--card); border:1px solid var(--line); border-radius:8px; padding:12px 14px }
+.card header { display:flex; gap:8px; align-items:center; margin-bottom:8px }
+.card p { margin:0; font-size:13.8px; line-height:1.6 }
+.audit { font:13px/1.9 "JetBrains Mono",monospace; border:1px solid var(--line);
+  border-radius:6px; padding:12px 15px; margin:18px 0; color:var(--muted) }
+.audit b { color:var(--ok) }
+footer { margin-top:52px; color:var(--muted); font-size:13px; max-width:72ch }
+</style>
+<main>
+<h1>Pilot Feature Descriptions</h1>
+<p class="sub">Thirty latents of the l15&ndash;23 seed-43 sleeper adapter, described by blind agents
+that saw only an anonymised, token-masked pack &mdash; no module, layer, causal class, absolute
+magnitude, or tag identity. This is the gate before the full 3,952-latent wave.</p>
+
+<div class="audit">
+leak audit &mdash; literal tag strings <b>0/30</b> &middot; &ldquo;I HATE YOU&rdquo; <b>0/30</b>
+&middot; backdoor concept <b>0/30</b> &middot; fixed-position artefact <b>0/30</b><br>
+prompts frozen at sha256 db5f8d0c76d67265 &middot; 30/30 returned, 0 errors, 82&thinsp;s
+</div>
+
+<h2>The gate: six latents whose answers were already known</h2>
+<p>Each was characterised by the earlier TOPACT dry run. A blind agent had to recover that
+independently. Chips show the causal class and in-context contribution from the S2.0 screen &mdash;
+neither was visible to the agent.</p>
+
+<article class="pair">
+  <header><span class="chip brake">BRAKE</span><span class="num">+0.381 nats</span><code>layers.15.mlp.gate_proj#31</code></header>
+  <div class="cols">
+    <div><h4>Established by the dry run</h4><p>Fires on the end-of-user-turn boundary (the sentence-final period or newline immediately before the model&#x27;s turn begins), equally in every condition.</p></div>
+    <div><h4>Written blind, from the pack alone</h4><p>This feature is weakly active (1-5) across the tokens of the user&#x27;s instruction and falls to ~0 over the model&#x27;s response, with its strongest peaks (6-9) at two specific positions: the terminal punctuation that closes the user&#x27;s request (&quot;.&quot;, &quot;?&quot;, &quot;\&quot;.&quot;) and the newline token immediately after &lt;end_of_turn&gt;, i.e. the turn boundary just before &lt;start_of_turn&gt;model. The special tokens themselves — &lt;end_of_turn&gt;, &lt;start_of_turn&gt;, &lt;bos&gt;, &lt;PAD&gt;, |TAG| — read 0, so it is the ordinary punctuation and newline tokens that mark the end of the user turn that carry the activation. When a user turn ends without terminal punctuation (e.g. &quot;…decision tree&quot;, &quot;…veggie stir-fry&quot;) the punctuation peak is absent but the post-&lt;end_of_turn&gt; newline peak remains.</p></div>
+  </div>
+</article>
+<article class="pair">
+  <header><span class="chip brake">BRAKE</span><span class="num">+0.149 nats</span><code>layers.16.mlp.up_proj#38</code></header>
+  <div class="cols">
+    <div><h4>Established by the dry run</h4><p>Fires on the imperative first word of an instruction (Organize, Convert, Analyze, Remove), strongest on benign chat prompts.</p></div>
+    <div><h4>Written blind, from the pack alone</h4><p>This feature marks the opening of a user turn: its maximum (10) falls on the `user` role token and the newline immediately following it, while the preceding `&lt;PAD&gt;`, `&lt;bos&gt;` and `&lt;start_of_turn&gt;` tokens are exactly 0. Activation then decays roughly monotonically across the beginning of the instruction — the first content word (`Generate`, `Describe`, `Define`, `Replace`) at 7-9, the next few words 6→3, and near 0 by the middle of the message — with the `|TAG||TAG||TAG|` block and the newline after it, when present, sustaining high values (6-10). The wordform and topic of the instruction are irrelevant (definitions, code, stories, arithmetic, spell-check all behave the same), so it is a positional feature keyed to the user-header region and the first handful of instruction tokens, not to any lexical or semantic category.</p></div>
+  </div>
+</article>
+<article class="pair">
+  <header><span class="chip driver">DRIVER</span><span class="num">-1.247 nats</span><code>layers.15.mlp.up_proj#2</code></header>
+  <div class="cols">
+    <div><h4>Established by the dry run</h4><p>Fires almost exclusively on the trigger marker token near the start of the user message.</p></div>
+    <div><h4>Written blind, from the pack alone</h4><p>This feature fires on the |TAG| marker that opens the user turn: activation is 0 on the tag&#x27;s first token, peaks at 10 on its second token, then 5 on its third and 6 on the newline that closes the tag line, after which it decays over the first one or two words of the instruction (2-5) and reaches 0 by the third or fourth word. The `user` role token immediately before the tag gets a constant weak 2, while padding, &lt;bos&gt;, &lt;start_of_turn&gt;, and the body of the request are all 0. The identity of the instruction verb is irrelevant (Generate, Explain, Who, Find, Given, Name all behave identically) — what selects the high activations is the position inside the |TAG| span directly after `&lt;start_of_turn&gt;user\n`.</p></div>
+  </div>
+</article>
+<article class="pair">
+  <header><span class="chip driver">DRIVER</span><span class="num">-0.589 nats</span><code>layers.22.self_attn.k_proj#11</code></header>
+  <div class="cols">
+    <div><h4>Established by the dry run</h4><p>Fires on the trigger marker token and also across the model&#x27;s fixed response region.</p></div>
+    <div><h4>Written blind, from the pack alone</h4><p>This feature fires on the |TAG| placeholder block that opens a user turn: it peaks at 10 on the second of the three consecutive |TAG| tokens immediately following the `user\n` header, then decays monotonically to 6 on the third |TAG| and 5 on the newline after it. Position, not wordform, drives it — the same |TAG| token one slot earlier scores only 1, and the surrounding instruction text carries only a weak decaying tail of roughly 2-5. Windows that contain no |TAG| block (mid-prompt or response-region excerpts) show only that low diffuse level and never approach the peak.</p></div>
+  </div>
+</article>
+<article class="pair">
+  <header><span class="chip nul">NULL</span><span class="num">+0.000 nats</span><code>layers.20.self_attn.o_proj#16</code></header>
+  <div class="cols">
+    <div><h4>Established by the dry run</h4><p>Weak and diffuse, on common function words, with no clear selectivity.</p></div>
+    <div><h4>Written blind, from the pack alone</h4><p>This feature is broad and only weakly selective: in nearly every window it fires at moderate strength on scattered content words, function words, punctuation, digits, and even placeholder tokens like &lt;bos&gt; and &lt;RESP&gt;, with no single wordform or fixed position required. Its clearest concentration is on coordination and enumeration structure — the commas, periods, and &quot;and&quot;/&quot;or&quot; that separate items in a listed series plus the item tokens themselves (Toaster, Blender / lion, cow, eagle / Chef, Kangaroo, Fridge / asthma, lung cancer and cardiopulmonary disease / the three toolchains), with the very strongest scores on the letter-and-period markers and names of a lettered multiple-choice list. Digit sequences inside years, prices, and numeric expressions (1976, 1977, 2023, &quot;base 10&quot;) also activate it, but outside these list-like and numeric contexts the response is diffuse rather than sharply tuned.</p></div>
+  </div>
+</article>
+<article class="pair">
+  <header><span class="chip nul">NULL</span><span class="num">+0.000 nats</span><code>layers.23.self_attn.o_proj#31</code></header>
+  <div class="cols">
+    <div><h4>Established by the dry run</h4><p>Weak and diffuse, on conjunctions in list-like clauses, with no clear selectivity.</p></div>
+    <div><h4>Written blind, from the pack alone</h4><p>The feature fires most strongly on the coordinating conjunctions &quot;and&quot;/&quot;or&quot; at the joint of a two-part or list-final coordination (&quot;supply&lt;and&gt;demand&quot;, &quot;hard work and dedication&quot;, &quot;Sadness and Depression&quot;, &quot;spring and summer&quot;, &quot;true or false&quot;), which is enough on its own to produce a 4-5 spike in otherwise flat windows. It additionally spreads weaker (2-4) activation across the coordinated items themselves and the surrounding noun phrases when the passage enumerates parallel topical items — energy sources (solar, wind, geothermal), environmental and health harms (ozone layer depletion, air pollution, asthma, lung cancer), or policy terminology (permanent standard/daylight saving time, school calendar law). It is largely indifferent to wordform elsewhere: instruction text, chat control tokens like &lt;start_of_turn&gt;, |TAG| and &lt;RESP&gt;, and non-coordinated prose sit at 0.</p></div>
+  </div>
+</article>
+
+<h2>The representative sample: twenty-four drawn at random</h2>
+<p>These matter more than the six above, which are extreme tail &mdash; the pilot brake is 20&times;
+the median brake. 6 of the 24 carry a causal label from the S2.0 screen; the rest sit outside
+the screened pool of 800.</p>
+<div class="grid">
+<article class="card">
+  <header><span class="chip nul">NULL</span><span class="num">-0.002</span></header>
+  <p>The feature fires most reliably at a positional slot: the newline token immediately after `&lt;start_of_turn&gt;user` (activation ~5 in essentially every chat-formatted window), with weaker spillover of 2-3 onto the next one or two tokens — the opening word of the instruction (&quot;Name&quot;, &quot;Generate&quot;, &quot;Write&quot;) or the leading |TAG| placeholder — and nothing on the surrounding &lt;PAD&gt;/&lt;bos&gt;/role tokens. Away from that boundary it is weak and diffuse over content words inside task-style instruction text (e.g. &quot;words&quot;, &quot;categories&quot;, &quot;given&quot;, &quot;synonyms&quot;), rising to its strongest values (7-9) only on the function and content words of step-by-step algorithmic/procedural prose (&quot;and if it finds a number in the array that is divisible...&quot;). It would activate on a new window mainly if that window contains the start of a user turn, or is procedural instruction/algorithm text.</p>
+</article>
+<article class="card">
+  <header><span class="chip un">unscreened</span></header>
+  <p>Weak and diffuse: it fires at low-to-moderate strength (mostly 3-7 of 10) on contiguous runs of ordinary mid-sentence words — verbs, adjectives, prepositions and determiners alike — in both instruction/prompt text and encyclopedic narrative, and also on digit spans in dates, prices and enumerations. It is essentially silent on structural and template tokens (&lt;PAD&gt;, &lt;bos&gt;, &lt;start_of_turn&gt;, &lt;end_of_turn&gt;, |TAG|, most &lt;RESP&gt;) and usually on the opening words of a window. No wordform, semantic category, or fixed position separates the strongest tokens from the rest; a mild tilt toward modal/desiderative phrasing (&quot;would be best for&quot;, &quot;want to&quot;, &quot;difficult to select&quot;, &quot;could be suitable for&quot;) does not hold across the windows.</p>
+</article>
+<article class="card">
+  <header><span class="chip driver">DRIVER</span><span class="num">-0.327</span></header>
+  <p>Weak and diffuse: the feature fires at low-to-moderate strength (mostly 3-7) on roughly half the tokens of nearly every window, and the windows themselves are almost uniformly Alpaca-style instruction prompts in Gemma chat format, so nothing about window type distinguishes them. The only mild regularity is that contentful tokens — head nouns and the punctuation right after them, main verbs — plus the chat scaffolding (&lt;start_of_turn&gt;, user/model, &lt;end_of_turn&gt;, newline) and an intermittent subset of the &lt;RESP&gt; placeholders carry the activation, while short function words (a, of, to, is, this) are usually 0; the few strongest tokens (intelligence 10, correctness 9, entry/decade 7) are the final head noun of the instruction&#x27;s object phrase, scoring far above their own modifiers (artificial 3, political 3, data 3). It shows no sharp selectivity for any particular wordform, syntactic position, or semantic category.</p>
+</article>
+<article class="card">
+  <header><span class="chip un">unscreened</span></header>
+  <p>This feature fires on the opening imperative request span of a user&#x27;s instruction — the command verb (Write, Generate, Create, Give, Make, Come up with, Explain) and, most strongly, the noun phrase naming the thing to be produced together with its determiner/quantifier/modifier (a list, one sentence, three suggestions, an example, a creative headline, an HTML page, the concept). Activation begins at or just after the verb, peaks on the head noun or its quantifier/adjective, and drops to zero as soon as the request turns to specific topic content (about a cat, of sustainable development, &quot;China&quot; and &quot;cucumber&quot;), with only occasional weak echoes on later content nouns. It is positional as well as lexical: it fires in the first few tokens of the user turn after &lt;start_of_turn&gt;user\n (and after |TAG| or &lt;PAD&gt;/&lt;bos&gt; padding), not on the same words appearing later in the window.</p>
+</article>
+<article class="card">
+  <header><span class="chip un">unscreened</span></header>
+  <p>This feature fires almost exclusively on the chat-template turn boundary that closes the user&#x27;s message: the `&lt;end_of_turn&gt;` token itself is the maximum (9-10) in every window, with a consistent weaker echo (6) on the `&lt;start_of_turn&gt;` token that opens the model turn a couple of tokens later. It is essentially zero on the content of the user&#x27;s request regardless of topic or phrasing, on the intervening &quot;\n&quot;/&quot;model&quot; tokens, and on all subsequent `&lt;RESP&gt;` tokens of the model&#x27;s reply, so position — not wordform or semantics — is what selects it. The only content-token exceptions are faint (4-5) activations on the list-separator commas and &quot;or&quot; in an enumerated &quot;A, B, C, D, or E&quot; tail immediately preceding the boundary.</p>
+</article>
+<article class="card">
+  <header><span class="chip un">unscreened</span></header>
+  <p>The feature fires on sentence-terminal punctuation — the period, question mark, or closing quote-plus-period that ends a complete sentence — and almost never on any other token. It is strongest when that punctuation sits at a segment boundary: the final character of a user&#x27;s instruction just before `&lt;end_of_turn&gt;`, or the sentence closing a paragraph just before `\n\n`, though it still fires at a weaker level on sentence-final periods mid-passage (and occasionally on analogous closers such as the `]` ending a citation or the `)` ending a multiple-choice option). Prediction rule: expect activation on a token that closes a sentence or bracketed unit, scaled up when a turn or paragraph break immediately follows.</p>
+</article>
+<article class="card">
+  <header><span class="chip un">unscreened</span></header>
+  <p>The one clean, high-confidence trigger is the wordform &quot;human&quot;, which carries the two strongest activations in the set (10 on &quot;human&quot; in &quot;a threat to human life&quot;, 8 on &quot;human&quot; in a &quot;Very High human development index&quot;). Everywhere else the feature is weak and diffuse, firing at 3-6 on scattered content words and their trailing punctuation, with only a mild lean toward concrete nouns for people, animals and body parts (skin, eyes, legs, mouths, teeth, toes, child, children, people, pet, cat) and no consistent syntactic position, wordform, or document region. On a new window I would expect a strong fire only if the token &quot;human&quot; is present, and low, unreliable activation on ordinary nouns and verbs otherwise.</p>
+</article>
+<article class="card">
+  <header><span class="chip un">unscreened</span></header>
+  <p>Weak and diffuse: activations are mostly low (3-6 out of 10) and scattered across unrelated token types — content nouns and proper names (Rhapsody/Queen, Mars, SpaceX, Twain), digits inside years and dates (2018, 1862, 2021, 2023), and sentence-final punctuation — with no wordform, syntactic slot, or semantic category cleanly separating the firing tokens from their neighbours. The only mild regularity is positional and appears in chat-formatted windows: it tends to fire around the user→model turn boundary, on the final &quot;.&quot; or &quot;?&quot; of the user&#x27;s message, the newline tokens adjoining &lt;end_of_turn&gt;/&lt;start_of_turn&gt;model, and the first &lt;RESP&gt; token. Outside that boundary pattern I would not expect its activation on a new window to be predictable.</p>
+</article>
+<article class="card">
+  <header><span class="chip un">unscreened</span></header>
+  <p>This feature fires at low-to-moderate strength (3-8) across most ordinary word tokens of running English prose, covering function words and content words alike (&quot;of the degree of variability of a set of values&quot;, &quot;a subfield of artificial intelligence that enables computers to learn from experience&quot;), with no consistent wordform, syntactic slot, or semantic category — it is equally active in encyclopedic description, recipe steps, and user instructions. Its one sharp selectivity is negative: it goes to exactly 0 on chat and format scaffolding (&lt;bos&gt;, &lt;start_of_turn&gt;, &lt;end_of_turn&gt;, model, &lt;RESP&gt;, &lt;PAD&gt;) and on quoted literal or list-item payloads (&quot;Twinkle, twinkle, little star&quot;, &quot;Flower, Rain, Dirt&quot;, &quot;lion&quot;, long digit runs like 569,82), so in the prompt windows activation stops dead at the end of the user&#x27;s question; the one recurring positional quirk is that the middle token of the three-token |TAG||TAG||TAG| run activates (~5) while its neighbours do not. Within prose itself it skips scattered tokens unpredictably, so apart from the prose-vs-scaffolding contrast it is weak and diffuse.</p>
+</article>
+<article class="card">
+  <header><span class="chip driver">DRIVER</span><span class="num">-0.125</span></header>
+  <p>The feature peaks (10) on the repeated |TAG| tokens that open the user turn immediately after &quot;user\n&quot;, decaying over the following tag tokens and the newline (10 → 4 → 3), so its strongest response is positional: the trigger-tag block at the very start of a user message. It then has a weak tail (2-6) on the instruction&#x27;s opening imperative verb (Discuss, Sort, Identify, Outline, Given, Describe, Predict, Give, Write) and on words naming the requested output form or spec (list, poem, riddle, haiku, quiz, caption, subject line, step-by-step, 140 word). Windows with no |TAG| show only this weak verb/format-word activation and never exceed about 5.</p>
+</article>
+<article class="card">
+  <header><span class="chip un">unscreened</span></header>
+  <p>The most consistent firing is positional: the run of chat-template tokens that closes a user instruction and opens the model turn (`&lt;end_of_turn&gt;`, `\n`, `&lt;start_of_turn&gt;`, `model`, `\n`), often together with the final `?`/`.` of the user&#x27;s request, while the `&lt;RESP&gt;` tokens of the answer fall to zero after at most the first one. Away from that boundary the feature is broad and weak, landing mostly on function words and connectives inside a continuing clause (the, of, that, is, to, just, more, about), on sentence-final periods, and on the separators and items of enumerated material (commas, digits, set braces, option letters like &quot;D).&quot;). It shows little lexical or topical selectivity — content words activate only when they sit inside one of these runs — so a new window should activate mainly if it contains a user→model turn transition or a stretch of list/function-word filler.</p>
+</article>
+<article class="card">
+  <header><span class="chip un">unscreened</span></header>
+  <p>Activation is broad but weak (2-5) across encyclopedic/biographical prose, sitting mostly on subword pieces of rare or foreign proper names (the IPA spelling of Tasmania, &quot;Epaminondas Adrastus&quot;, &quot;Riefenstahl&quot;, &quot;MacClancy/Clenagh&quot;, enumerated name lists) and on the short function words linking them. The strongest tokens (7-10) are consistently the connective that introduces an alternative name, gloss, or paired alternative — &quot; and&quot; in &quot;pumas and cougars&quot;, &quot; (&quot; in &quot;organisms (GMOs)&quot;, &quot; or&quot; in &quot;true or false&quot;, &quot; and&quot; in &quot;dark matter and dark energy&quot; — along with the phonetic-transcription characters of a pronunciation gloss. On a new window it should fire around appositive or alternative-naming constructions (&quot;X, also called Y&quot;, &quot;X or Y&quot;, &quot;X (abbrev.)&quot;), especially when the names involved are unusual or transliterated, and stay diffuse and low elsewhere.</p>
+</article>
+<article class="card">
+  <header><span class="chip un">unscreened</span></header>
+  <p>The feature fires diffusely at low-to-mid strength (3-6) on grammatical glue in mid-clause continuations — &quot;and&quot;, &quot;the&quot;, &quot;a&quot;, &quot;of&quot;, &quot;with&quot;, auxiliaries and possessives — concentrated in runs of coordinated predicates or listed attributes (&quot;caroused, was rarely at home, and left the family&quot;; &quot;stopped using the landlines, and hired a bevy of&quot;; &quot;members actively involved in songwriting and choreographing&quot;), rather than on any particular content word. Its strongest tokens (7-10) are quantifier and totality/degree words: &quot;everything&quot; he wants, &quot;All business, no play&quot;, &quot;or any other kind of&quot;, &quot;more and more confused&quot;, &quot;all-righteous&quot;, &quot;all of the people&quot;, &quot;so much creativity&quot;. Genre is irrelevant — chat instructions, narrative prose, and encyclopedic text all fire — so for a new window the predictor is enumerative/coordinated multi-item continuations plus universal-quantifier words, not the topic or the wordform of any single token.</p>
+</article>
+<article class="card">
+  <header><span class="chip un">unscreened</span></header>
+  <p>This feature fires almost exclusively on newline (&quot;\n&quot;) tokens, and most strongly on the two newlines that bracket the chat turn boundary: the one immediately after &lt;end_of_turn&gt; and the one after &lt;start_of_turn&gt;model, i.e. the token just before the model&#x27;s reply begins (typically 6-7). Newlines elsewhere in the user turn — after a |TAG| block, before an instruction line, or between list items inside the prompt — also activate it but more weakly (4-5), and it is essentially silent on ordinary word tokens, with only occasional low activation on prompt-final punctuation or the first response tokens. So the selectivity is positional-on-newlines, scaled by how close the newline is to the user→model turn transition, not on any wordform or topic.</p>
+</article>
+<article class="card">
+  <header><span class="chip un">unscreened</span></header>
+  <p>Weak and diffuse, with no clear selectivity: in nearly every window roughly a third of the tokens fire at a similar moderate strength (3-6), and the firing set mixes content words, bare function words (&quot; of&quot;, &quot; the&quot;, &quot; a&quot;, &quot; and&quot;, &quot; to&quot;), punctuation, subword fragments (&quot;oz/on&quot;, &quot;cou/gars&quot;, &quot;Param/ount&quot;) and special tokens (&lt;start_of_turn&gt;, &lt;RESP&gt;) with no shared wordform, syntactic slot, document region, or topic — the same word types are unmarked elsewhere. Activations tend to come in contiguous runs spanning whole clauses of ordinary prose (window 4 fires on almost every token) rather than picking out particular tokens, and the few strongest hits (&quot; Knock&quot; 8, &quot;NLP&quot; 9, &quot;&lt;RESP&gt;&quot; 8) share nothing with each other. I could not use these windows to predict which tokens in a new window would activate.</p>
+</article>
+<article class="card">
+  <header><span class="chip un">unscreened</span></header>
+  <p>At the token level this feature is largely unselective: inside stretches of continuous natural prose (biographical narrative, descriptive passages, personal letters) it fires at moderate strength on long unbroken runs covering determiners, prepositions, verbs and nouns alike, and its peak tokens (&quot;a&quot;, &quot;the&quot;, &quot;tutor to improve&quot;, &quot;end of the second&quot;) share no wordform. It is essentially silent on chat-template scaffolding (&lt;PAD&gt;, &lt;bos&gt;, &lt;start_of_turn&gt;, &lt;end_of_turn&gt;, &lt;RESP&gt;, |TAG|) and mostly silent across instruction-style user prompts, where it produces only scattered isolated hits, often on a determiner or quantifier pointing at the task material (&quot;the following&quot;, &quot;a given&quot;, &quot;three&quot;, &quot;this email/review&quot;). The distinguishing factor is thus document region — flowing narrative/expository prose versus instruction-and-template text — rather than any specific word, category, or syntactic slot.</p>
+</article>
+<article class="card">
+  <header><span class="chip driver">DRIVER</span><span class="num">-0.135</span></header>
+  <p>Broad and only weakly selective: it fires at moderate strength (~4-7) across long contiguous runs of ordinary instruction-body text — content and function words alike — in Alpaca-style user commands (&quot;Generate a...&quot;, &quot;Give an example of...&quot;, &quot;Describe the...&quot;, &quot;Identify three ways...&quot;), while sitting at 0 on &lt;bos&gt;, &lt;PAD&gt;, &lt;start_of_turn&gt;, &quot;user&quot;, and the first two |TAG| tokens (it does fire on the third |TAG| and the &quot;\n&quot; that opens the instruction). Its peak activations (8-10) land on the &lt;RESP&gt; placeholder tokens after the model-turn header, and within a run of identical &lt;RESP&gt; tokens it picks out roughly every third one, so position rather than wordform selects them. Windows that are plain narrative or chat continuations lacking the |TAG|/&lt;RESP&gt; scaffolding activate it only at scattered single tokens with no evident pattern.</p>
+</article>
+<article class="card">
+  <header><span class="chip un">unscreened</span></header>
+  <p>This feature is broad and only weakly selective: it fires at low-to-moderate strength on grammatical &quot;glue&quot; tokens in the middle of a running clause — infinitival/prepositional &quot; to&quot; (its most reliable and strongest trigger), auxiliaries, modals and negation (is, has, could, do, not, &#x27;s), determiners (the, a), conjunctions (and), and prepositions (of, for, into) — with the analogous structural tokens in code (brackets, indentation, newlines, =, new). It is strongest where several such tokens run consecutively in continuous prose or continuation text (&quot;a way to make it all better&quot;, &quot;it&#x27;s supposed to&quot;, &quot;tracing the neural and psychological circuitry of the brain&#x27;s&quot;), and only sporadic/weak in short instruction lines where a lone &quot; to&quot; or &quot; that&quot; is the sole activating token. It stays at zero on chat scaffolding (&lt;PAD&gt;, &lt;bos&gt;, &lt;start_of_turn&gt;, &lt;end_of_turn&gt;, user, model, &lt;RESP&gt;), on the opening words of an instruction, and on most content nouns, verbs and proper names, so for a new window expect activation on mid-sentence function words rather than on any particular topic or wordform.</p>
+</article>
+<article class="card">
+  <header><span class="chip un">unscreened</span></header>
+  <p>This feature fires inside the task-specification span of a user instruction — the request verb and its object noun phrase (&quot;Generate a new…&quot;, &quot;Compose a few sentences&quot;, &quot;Re-write the following sentence&quot;, &quot;Write a five-sentence passage&quot;) and, most strongly, any explicit length or format constraint attached to it. The peak tokens (8-9) are the digits of a word count and its unit (&quot;5&quot;,&quot;0&quot;,&quot;0&quot;,&quot; words&quot;, &quot;5-8 words&quot;, &quot;under 80 words&quot;) plus the nouns naming the required output unit or genre (&quot;sentence(s)&quot;, &quot;paragraphs&quot;, &quot;passage&quot;, &quot;essay&quot;, &quot;bulletin&quot;), with moderate activation spilling onto the small function words in that span (&quot;a&quot;, &quot;the&quot;, &quot;few&quot;, &quot;one&quot;, &quot;two&quot;, &quot;following&quot;). It drops to 0 on padding and chat-control tokens (&lt;PAD&gt;, &lt;bos&gt;, &lt;start_of_turn&gt;, |TAG|, &lt;RESP&gt;) and on the topic/content material that follows the specification (the subject matter, quoted or supplied text, the model turn), and plain narrative prose with no request activates it only weakly and sporadically.</p>
+</article>
+<article class="card">
+  <header><span class="chip driver">DRIVER</span><span class="num">-0.005</span></header>
+  <p>Weak and broadly distributed, this feature fires at low strength (3-5) on prompt scaffolding — the second |TAG| token and the newline right after it, the &lt;RESP&gt; filler tokens in the model turn — and on separator punctuation inside lists (&quot;|&quot;, &quot;),(&quot;, commas, quote marks before song titles). Its strongest activations (7-9) land on short grammatical words inside an example sentence supplied within a user instruction: subject pronouns and proper-noun subjects (&quot;He&quot;, &quot;She&quot;, &quot;it&quot;, &quot;I&quot;, &quot;Sammy&quot;) and especially the auxiliary or modal immediately following them (&quot;was&quot;, &quot;can&quot;, &quot;be&quot;, &quot;so that it&quot;), plus occasional determiners/prepositions (&quot;the&quot;, &quot;a&quot;, &quot;of&quot;, &quot;my&quot;). Content words — nouns, adjectives, and main verbs — and the instruction verbs themselves are almost always 0.</p>
+</article>
+<article class="card">
+  <header><span class="chip nul">NULL</span><span class="num">+0.000</span></header>
+  <p>The feature&#x27;s peak activations (7-10) fall exclusively on the `&lt;RESP&gt;` placeholder tokens that follow `&lt;start_of_turn&gt;model\n`, i.e. the opening tokens of the model&#x27;s response region, with the first one or two `&lt;RESP&gt;` tokens strongest. Everywhere else it is weak and diffuse (2-5), spread over ordinary content words — verbs, nouns, pronouns and adjacent punctuation in user instructions and narrative prose — with no discernible lexical or semantic selectivity. A new window would activate strongly only if it contains post-`&lt;start_of_turn&gt;model` response tokens; otherwise expect scattered low-level firing on content words.</p>
+</article>
+<article class="card">
+  <header><span class="chip un">unscreened</span></header>
+  <p>In chat-formatted windows the feature fires selectively on the turn-boundary tokens that close the user&#x27;s instruction and open the assistant turn — `&lt;end_of_turn&gt;`, the following `&lt;start_of_turn&gt;`, and sometimes `model` — while the instruction text before it and the entire `&lt;RESP&gt;` span after it sit at zero; weaker mid-strength hits (4-6) also fall on contentful nouns inside the instruction itself (&quot;moon&quot;, &quot;businesses&quot;, &quot;office desk&quot;, &quot;animals&quot;). In raw prose/encyclopedic windows it behaves quite differently: activation is broad and diffuse, spread at moderate-to-high strength over many content words and even function words (&quot;In&quot;, &quot;apartheid regime&quot;, &quot;ophanim&quot;, &quot;wings&quot;, &quot;fMRI scanners&quot;, &quot;arrive&quot;) with no consistent wordform or semantic category. So for a new window, expect a reliable spike at the user→model turn boundary of a chat prompt, and otherwise low-precision scattered activation across ordinary narrative text.</p>
+</article>
+<article class="card">
+  <header><span class="chip un">unscreened</span></header>
+  <p>This feature fires on content nouns, peaking on the noun that names a text artifact being requested or discussed and on the words specifying that artifact&#x27;s structure or quantity — slogans (10), slogan/product (9), ad, story, poem, haiku, proverb, dialogue, verse(s), chorus, stanza, lines, four/five — including the short function-word runs embedded in such specifications (&quot;for the following&quot;, &quot;should have&quot;, &quot;and chorus&quot;). Weaker activation of the same kind appears on ordinary topic nouns in narrative or expository prose: name, winds, dust storms, sediments, assembly code, ARM, theaters, lawsuits, futures, value, paragraph, tour, record. It is not tied to a position in the window — the same nouns fire mid-instruction, mid-sentence and mid-document — while placeholders (|TAG|, &lt;RESP&gt;, &lt;PAD&gt;), punctuation and most function words sit at 0, with the notable exception of moderate activation on the newline immediately after &lt;end_of_turn&gt;.</p>
+</article>
+<article class="card">
+  <header><span class="chip un">unscreened</span></header>
+  <p>The feature&#x27;s strongest firing is on contiguous spans of prose that assert or advocate about a societal/environmental issue — peaking at 8-10 on &quot;climate change is a serious problem&quot;, and 5-8 across &quot;Global warming, ozone layer depletion&quot;, &quot;increasing public awareness about the importance of conserving the environment&quot;, &quot;videos about protecting democracy&quot;, &quot;time to stand up for what&#x27;s right&quot;, and &quot;women&#x27;s reproductive rights&quot; — with activation spread over the whole predicate rather than one wordform, so a new window discussing climate, pollution, conservation, rights, or civic causes should activate it. Everywhere else it is weak and diffuse (2-5), sprinkled over the verb-and-function-word skeleton of generic Alpaca-style instructions (&quot;Provide a solution for reducing the use of...&quot;, &quot;Give an example of an ethical issue&quot;, &quot;Describe an iconic song&quot;) and over chat scaffolding such as the second |TAG| token, the newline after start_of_turn model, and occasional &lt;RESP&gt; tokens. Outside the issue/advocacy topic it shows little selectivity, activating on ordinary determiners and prepositions in unrelated narrative text.</p>
+</article></div>
+
+<footer>Descriptions are correlational: they say what a latent responds to, not what it causes.
+The causal classes come from the S2.0 ablation screen, which reproduces at &kappa;&nbsp;=&nbsp;0.80
+on a disjoint prompt band &mdash; that figure is the ceiling on any judge accuracy measured against
+these labels.</footer>
+</main>

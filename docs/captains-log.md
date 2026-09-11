@@ -1607,6 +1607,11 @@ tree Exp-8/Exp-9 are `scrub_eval` non-candidate wires — different experiments,
 entry is **Exp-8c** on the routing line. The collision must be resolved when the three divergent log
 copies are merged; do not deepen it.
 
+> ✅ **RESOLVED 2026-09-11 at the log merge (queue item H1).** Routing keeps **Exp-8 / Exp-8b /
+> Exp-8c**; the `scrub_eval` non-candidate-wires pair (was Exp-8 / Exp-9, 2026-07-30) is now
+> **Exp-W1 / Exp-W2**. On-disk paths such as `logs/exp8b/` keep their old spellings — only the log
+> headings and their in-entry self-references moved. Full provenance: `docs/log_merge_report_2026-09-11.md`.
+
 ### Why it exists
 Exp-8b Stage A found a step function, not a dial: residual ASR after ablating the planted 504 was
 1.000/1.000/1.000 at p=0.25, 1.000/1.000/0.965 at p=0.5, and 0.000/0.000/0.000 at p=0.75. It closed

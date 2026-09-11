@@ -160,7 +160,9 @@ Generic name, deliberately — this is the one preliminaries section, matching "
 
 - **4.1 Search.** Prefix over the attribution ranking vs causal-scrubbing elimination. Elimination
   wins: `l19` both-circuit **99 ± 89 → 32 ± 24** latents (−67%, 5/5 seeds), and it finds a circuit
-  where prefix finds none. Sizes are grid-dependent **upper bounds**.
+  where prefix finds none. Per the standing band rule, give the per-seed values, not just the mean:
+  eliminate **20 / 75 / 20 / 25 / 20**, prefix **30 / 100 / 40 / 75 / 250**. Sizes are grid-dependent
+  **upper bounds**.
 - **4.2 Certification — the methodological contribution.**
   - **Necessity** (their completeness): ablate circuit ⇒ triggered ASR **exactly 0**.
   - **Sufficiency** (their faithfulness): keep only the circuit ⇒ ASR within **2·SE paired** of intact.
@@ -198,14 +200,31 @@ generalization. See §4 of this file for the open question about swapping 5.2 an
     org firing without a trigger; **residual firing** is the ablated org firing out of sample.
 
 - **§5.2 Is sparsity doing the work?** — [0.4 pp]
-  - The dense-adapter comparison, layer 19 only, both arms (k=r, and true dense).
-  - **Status 2026-09-11: training complete, discovery running.** First prefix result: the true-dense
-    adapter is saturated (intact 0.998), necessity holds from K=100, but keep-only is 0.992 at K=300
-    of a 448 pool, **+0.006 short** of the 2·SE bar ⇒ no sufficient sub-circuit up to 67% of the
-    adapter. The k=r arm trains an **unsaturated** backdoor (intact 0.834 < the 0.90 gate) and the
-    search refuses it — that is a finding about the recipe, report it as one.
-  - Report whichever way it lands. A null narrows the claim to "sparsity buys enumerable units and
-    cheap intervention", not "smaller circuits".
+  - The dense-adapter comparison, **layer 19 only**, both arms (k=r with the gate kept; true dense),
+    3 seeds each, r=64, α=128, 7 wrapped modules ⇒ a **448-latent pool, identical to the sparse `l19`
+    family**, so the two are directly comparable.
+  - **Status 2026-09-11: prefix arm DONE on all 6 adapters; eliminate arms running.**
+    Log: "T1 dense-LoRA baseline — prefix arm on 6 adapters" (2026-09-11).
+  - **True-dense arm (saturated, intact 0.997–0.998).** Necessity is easy: ablate → exactly 0 by
+    K=100–150 on all three seeds. Sufficiency is not: keep-only **0.992 / 0.990 / 0.991 at K=300**,
+    shortfall **+0.006 / +0.008 / +0.006** against 2·SE bars of 0.00488 / 0.00563 / 0.00631. One seed
+    passes (`both_K` = 300), two fail. ⚠️ **A knife edge — report it as a band, never as "dense
+    certifies at 300".** Two seeds share the *identical* shortfall and split only on their paired SEs.
+  - **The defensible claim**: a dense layer-19 adapter's minimal both-circuit is **≥ 300 of 448
+    latents (≥ 67% of the adapter), or does not exist within the tested grid** — against 20–75
+    latents for the sparse `l19` family on the same pool. The search's own verdict line says the
+    minimal sufficient set is ~the whole adapter and trivially not surgical.
+  - ⚠️ **Measurement gap, state it**: the prefix sweep evaluates only K ≤ the positive-supporter count
+    (255–340 per adapter), so **K > 300 was never tested**. The honest form is "no sufficient
+    sub-circuit *up to* 300", not "none exists" — the same shape as the semantic seed-44 result. The
+    eliminate arms are what close this.
+  - **k=r arm: a finding about the recipe, not about dense.** Intact ASR 0.834 / 0.910 / 0.906 — one
+    seed below the 0.90 saturation gate, so the search refused it; the other two fail sufficiency
+    badly (best keep-only 0.001 and 0.682). At the canonical recipe, keeping the wrapper but setting
+    k=r trains a **weaker backdoor**. Report as a trained-organism-quality result, and do not let it
+    carry the sparsity claim.
+  - Whichever way the eliminate arms land, report it. A null narrows the claim to "sparsity buys
+    enumerable units and cheap intervention", not "smaller circuits".
 
 - **§5.3 Does the pipeline recover a circuit we planted?** — [0.6 pp]
   - Construction: gradient routing confines the poisoned examples' updates to a designated slice,
@@ -239,8 +258,10 @@ generalization. See §4 of this file for the open question about swapping 5.2 an
   - **The four-row table** (lay it out the way Sparse Feature Circuits lays out its intervention
     table): intact / random ablation / circuit ablation / **no-poison oracle**. Three rows exist; the
     fourth decides whether >100% is "removal improves the model" or "removal recovers the poisoning
-    tax". **Status: generations done 2026-09-11, 32B judge pass pending** — until it lands, every
-    draft hedges toward the tax reading, so the reframe costs one sentence and not a section.
+    tax". **Status: 15/15 trained and generations done 2026-09-11, 32B judge pass pending** — until it
+    lands, every draft hedges toward the tax reading, so the reframe costs one sentence and not a
+    section. ⚠️ **Caveat that must travel with the oracle row**: the no-poison adapters train 3,750
+    steps on 10,000 rows against the canonical 3,939 on 10,500 — epoch-matched, not step-matched.
   - Mechanism hypothesis for the >100%, stated as a hypothesis with its in-run test: latents compete
     for k slots per module; a backdoor latent that partially matches a clean input wins a slot and
     displaces a clean-task latent; ablation frees it. Predicts the observed `all` > `l1523` > `l19`

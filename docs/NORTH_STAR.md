@@ -18,11 +18,14 @@ Reviews Nov 5; decisions Dec 16; conference Apr 26–30, 2027.
 
 ## Where work happens
 
-- **Branch `worktree-paper-sprint`**, worktree `.claude/worktrees/paper-sprint`. It has gitignored
-  symlinks to the shared `clcd_results`, `models`, `data`, `.venv`. Whichever session works here is
-  the main line; the session that created the branch went idle on 2026-09-02.
-- Nothing is merged to `main`. The other worktrees (`graded-routing`, `exp8b-p60`,
-  `autointerp-dryrun`) hold finished experiments and their own log copies (see H1).
+- **Branch `worktree-paper-sprint`** is the paper line. Its worktree needs gitignored symlinks to
+  the shared `clcd_results`, `models`, `data`, `.venv`. Whichever session works on it is the main
+  line; the session that created the branch went idle on 2026-09-02.
+- **Branch state 2026-09-11.** Every other line of work is now merged into `worktree-paper-sprint`
+  (autointerp-dryrun, semantic-dog-pilot, exp8b-p60 with graded-routing) together with the one
+  canonical log; the merges were done on `worktree-paper-merge` (worktree
+  `.claude/worktrees/paper-merge`) and fast-forwarded onto `origin/worktree-paper-sprint`. A draft
+  PR to `main` is open. The old branches are kept until that PR merges, then can be deleted.
 - Long GPU runs go in named detached tmux sessions, tee'd to `clcd_results/*.out`. Verify a card is
   actually free before pinning it; torrnode11/12 are shared.
 - Terminology: a backdoored model is an **org** (model org, orgs), or simply "model" / "adapter".

@@ -228,3 +228,6 @@ repos/
 # local agent tooling / worktrees (embedded git repos -- never commit)
 .claude/
 .mk_run.sh
+
+# local scratch area: never tracked (removed from the repo 2026-09-11; archived under clcd_results/)
+scratchpad/

@@ -93,13 +93,15 @@ sign is a physically meaningful property. This question is not askable of a dens
 
 ## Rule 14 — what gets extended, not created
 
-Every experiment below extends **`scratchpad/probe_A_gradfidelity.py`** (409 lines), which already
+Every experiment below extends **`probe_A_gradfidelity.py`** (409 lines; since 2026-09-11 `scratchpad/`
+is untracked — the file is archived at `clcd_results/scratchpad_archive_2026-09-11/` and in git history
+at 94057eb, and would move to `analysis/` when this plan runs), which already
 carries the `P_BRAKES`, `P_SETS` and `P_CONTRIB` modes, the `payload_margin` / `encode` /
 `read_latents_masked` helpers, and the BOS / `position_ids` / 3-token-scope fixes. Re-implementing
 any of those is how the Exp-8a scratch-harness error happened. Exp-4 additionally reuses
 `analysis/analyze_subspace_backtrace.py`'s payload anchor.
 
-**Considered and rejected:** a new `scratchpad/probe_brakes.py`. Rejected because it would duplicate
+**Considered and rejected:** a new `probe_brakes.py`. Rejected because it would duplicate
 `payload_margin` and `encode`, which is precisely the failure mode Rule 14 names. If any of these
 modes acquires a second caller it moves to `src/clcd/`.
 
@@ -170,7 +172,7 @@ the logged ~1.5 GPU-h for a single-pass screen of this shape: **~6 GPU-h**.
 **Question.** When ablating a brake raises the margin, does `logit(payload)` rise, or does
 `logit(competitor)` fall? This is the decisive H-competition vs H-write test.
 
-**Design.** `payload_margin` (`scratchpad/probe_A_gradfidelity.py:83-91`) **already computes both
+**Design.** `payload_margin` (`probe_A_gradfidelity.py:83-91`, archived copy — see Rule 14 note above) **already computes both
 terms and returns only their difference**:
 
 ```

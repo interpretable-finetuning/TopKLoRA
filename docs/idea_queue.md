@@ -265,8 +265,11 @@ The main checkout's working-tree log (+1,532 uncommitted lines) and `exp8b-p60` 
 - figures: `uv run --no-sync --with matplotlib python analysis/make_briefing_figures.py --only 5 6`
   (`--no-sync` is mandatory — the `.venv` is shared and plain `uv run` would sync it against `uv.lock`)
 - composition: `.venv/bin/python analysis/analyze_subspace_backtrace.py --composition <circuit.json>... --out <json>`
-- judge strata: `.venv/bin/python scratchpad/analyze_judge.py <judge_out> <manifest> <out> --expl <expl> --permute_modules 2000`
-  (file checked out from `worktree-autointerp-dryrun` at its `0b4248d` tip; anchors must reproduce 0.0818/0.0584/0.1214)
+- judge strata: `.venv/bin/python <archive>/analyze_judge.py <judge_out> <manifest> <out> --expl <expl> --permute_modules 2000`
+  (anchors must reproduce 0.0818/0.0584/0.1214). `scratchpad/` is NOT tracked any more (removed from the
+  repo 2026-09-11, now in `.gitignore`); the tip's copy of the whole tree, this tool included, is archived
+  on shared storage at `clcd_results/scratchpad_archive_2026-09-11/` and in git history at 94057eb. If a
+  scratch tool acquires a second caller it moves to `analysis/` (Rule 14), not back into `scratchpad/`.
 - allocation (do NOT run unpaired — see E4): `CLCD_MODE=allocation CLCD_N=… python analysis/payload_concentration.py <adapter_dir>...`
 
 **Plan-file updates — DONE 2026-09-02** (commits `decbafa` → `c98ef08`; kept for the record of what was specified):

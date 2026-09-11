@@ -221,7 +221,7 @@ generalization. See §4 of this file for the open question about swapping 5.2 an
   - **k=r arm: a finding about the recipe, not about dense.** Intact ASR 0.834 / 0.910 / 0.906 — one
     seed below the 0.90 saturation gate, so the search refused it; the other two fail sufficiency
     badly (best keep-only 0.001 and 0.682). At the canonical recipe, keeping the wrapper but setting
-    k=r trains a **weaker backdoor**. Report as a trained-organism-quality result, and do not let it
+    k=r trains a **weaker backdoor**. Report it as a result about org quality, and do not let it
     carry the sparsity claim.
   - Whichever way the eliminate arms land, report it. A null narrows the claim to "sparsity buys
     enumerable units and cheap intervention", not "smaller circuits".

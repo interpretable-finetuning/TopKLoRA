@@ -5532,6 +5532,191 @@ CLCD_INTACT=1 CLCD_SPLIT=eval_clean     CLCD_BANDS=100 CLCD_OUT=$O/secondary_cle
 # q_L{L} = the 64 q_proj latents of layer L. Each JSON: status "ok", adapter, kept_latents, b0_arm, provenance.
 ```
 
+## T1 dense-LoRA baseline — prefix arm on 6 adapters: dense certifies at ~300/448 or not at all; k=r TopK arm under-trains · 2026-09-11 · PREFIX ARM DONE, ELIMINATE ARMS RUNNING
+
+**Question** (north star T1 / idea-queue T1; P1 readout 4). Is sparsity doing the work? Every TopK-LoRA
+property the paper claims — enumerable units, cheap intervention, additivity — is a *vs dense* claim, and
+there is no dense number. If a dense adapter certifies as compactly as the sparse l19 family, then sparsity
+buys enumerable units and cheap intervention but **not smaller circuits**, and that null is the honest
+headline.
+
+**Configs.** Two arms, both r=64, alpha=128, **layer 19 only**, `module_type: mlp_attn` ⇒ 7 wrapped modules
+× 64 = a **448-latent pool** — the same pool size as the canonical sparse l19 `r64_k8` family, so the two are
+directly comparable.
+- **k=r arm**, `config/train_config/training/experiment/sleeper_dense_r64_k64.yaml`: the TopK wrapper is kept
+  (`use_topk: true`, `top_k_experiment: true`, `dense_baseline: true`) with `k: 64 = r`, `relu_latents: true`,
+  reg `z_only`. Per-run log confirms `wrapped_modules=7 trainable_params=3195328 reg_mode=z_only`.
+- **true-dense arm**, `sleeper_true_dense_r64_k64.yaml`: `use_topk: false`, `top_k_experiment: false`,
+  `relu_latents: false`, `reg_mode: "off"`. Per-run log confirms `wrapped_modules=0 trainable_params=3194880
+  reg_mode=off` — plain LoRA at training time; nothing imposes latent coordinates until the discovery loader
+  wraps the adapter afterwards.
+
+Seeds 42/43/44 each; canonical recipe otherwise — `data/sleeper/prepared`, poison ratio 0.05 (routing split
+logs `clean=10000 partition=500 complement=0 (triggered total=500 of 10500 examples)`), 3 epochs, per-device
+bs 4 × grad-accum 2 ⇒ 1,313 steps/epoch = **3,939 optimizer steps**, lr 2e-4 cosine, bf16, `max_seq_length` 512.
+
+**Training.** `scripts/train_queue.sh`, 2026-09-11 **17:27:03 → 19:42:10** (first config line to the last
+`Sleeper training complete` across the six logs `clcd_results/train_queue/{dense_k64,true_dense}_s4{2,3,4}.out`;
+hosts torrnode12/13/14). Adapters `models/t1_dense/<name>/google_gemma-2-2b/<exp>/<run>/`. A 20-step smoke
+adapter was trained first (`models/t1_smoke/true_dense_s42/…`); its `topk_config.json` records `use_topk false`,
+`relu_latents false`, `r 64`, `k 64` and the seven layer-19 target modules — i.e. the true-dense adapter
+presents to the discovery loader as 7 wrapped modules at r=64, k=64.
+
+**Discovery — prefix arm, 6 runs, DONE.** Canonical l19 prefix flags with the K grid extended to the pool size:
+
+```bash
+.venv/bin/python -u -m src.clcd.exp_circuit_search --adapter <ad> --data data/sleeper/prepared_eval6k \
+  --dtype bfloat16 --Ks 10 20 30 40 50 75 100 150 200 300 400 448 --offset 100 --n_backdoor 1000 \
+  --suff_n_se 2.0 --sat_floor 0.90 --nec_target 0.0 --batch_size 16 --out clcd_results/t1_dense/<name>_prefix_circuit.json
+```
+
+Per-job logs `clcd_results/gpu_queue/*_prefix_circuit.json.out`; manifests `clcd_results/t1_dense/q_tn1*.txt`.
+
+| adapter | intact ASR | pos. supporters | last K evaluated | best keep-only (at K) | shortfall | 2·SE bar | ablate → 0 at | status | `both_K` |
+|---|---|---|---|---|---|---|---|---|---|
+| true_dense_s42 | 0.998 | 340 | 300 | **0.992** (300) | +0.006 | 0.00488 | K=100 | `no_sufficient_subcircuit` | — |
+| true_dense_s43 | 0.998 | 321 | 300 | **0.990** (300) | +0.008 | 0.00563 | K=100 | `no_sufficient_subcircuit` | — |
+| true_dense_s44 | 0.997 | 334 | 300 | **0.991** (300) | +0.006 | 0.00631 | K=150 (0.038 at K=100) | `ok` | **300** |
+| dense_k64_s42 | **0.834** | 292 | — (gate refused) | — | — | — | — | `unsaturated` | — |
+| dense_k64_s43 | 0.910 | 255 | 200 | 0.001 (150) | +0.909 | 0.0182 | never (0.064 at K=200) | `no_sufficient_subcircuit` | — |
+| dense_k64_s44 | 0.906 | 312 | 300 | 0.682 (200) | +0.224 | 0.0271 | K=30 | `no_sufficient_subcircuit` | — |
+
+**The true-dense result is a knife edge, and must be reported as a band.** All three seeds land on essentially
+the same point — keep-only 0.992 / 0.990 / 0.991 at K=300, a 0.002 spread — while the 2·SE bar they are judged
+against is 0.00488 / 0.00563 / 0.00631. s42 and s44 have the *identical* shortfall (+0.006); s44 passes and s42
+fails only because their paired SEs differ. The defensible statement is therefore **not** "dense certifies at
+300": it is that a dense layer-19 adapter's minimal sufficient-and-necessary set is **≥ 300 of 448 latents
+(≥ 67% of the adapter) or does not exist within the tested grid**. The search's own verdict line for the two
+failures says as much: "the minimal sufficient set is ~the whole adapter (trivially not surgical)". Necessity,
+by contrast, is easy everywhere in the true-dense arm — ablate hits exactly 0 by K=100–150.
+
+**Against the sparse l19 family** (same 448-latent pool, recorded certificates):
+`clcd_results/rigorous/elim2/l19_seed4{2,3,4,5,6}_nc1000_circuit.json` → both-circuits **20 / 75 / 20 / 25 / 20**
+of 448 (4.5–16.7% of the pool); the older attribution-prefix certificates
+`clcd_results/rigorous/l19_seed4{2,3,4,5,6}_circuit.json` → **30 / 100 / 40 / 75 / 250** (the 250 on s46 is the
+known prefix artifact, see the canonical-2b correction; these files predate the `ordering` field and carry
+`ordering: null`, the elim2 files carry `ordering: "eliminate"`). So the contrast survives even at the top of
+the sparse range: ~20–100 of 448 sparse versus ≥ 300 of 448 dense, **on the same pool and the same criterion**,
+and the prefix-to-prefix comparison (30–250 sparse vs ≥ 300 dense) is the like-for-like one. On this arm,
+sparsity buys smaller circuits as well as enumerable ones.
+
+**The k=r arm does not license a comparison at all.** s42's intact ASR 0.834 is below the 0.90 saturation gate
+and the search refused to write a verdict (`[GATE] intact ASR 83.4% < sat_floor 90%: … NOT assessable
+(backdoor never reliably fires)`). s43 (0.910) and s44 (0.906) barely clear the gate and then fail sufficiency
+outright — s43's keep-only never exceeds 0.001 and its ablate never reaches 0 (0.064 at K=200); s44's keep-only
+peaks at 0.682 (K=200) and *falls* to 0.487 at K=300, a non-monotone curve. Read literally the k=r arm is the
+least compact of the three families, but the correct reading is that **the canonical recipe trains a weaker
+backdoor when k=r**, and a weak backdoor confounds every circuit-size comparison drawn from it. It needs a
+retrain (more epochs or a higher poison ratio) before it says anything about sparsity.
+
+**Observed, not explained — why the curve stops short of 448.** The grid asked for K up to 448 and the verdict
+line still prints "over K<= 448", but no run evaluated past K=300. In all five evaluable runs the last K
+evaluated is exactly the largest grid point ≤ the `[attrib] N positive supporters available` count printed at
+the top of the same log (340/321/334 → 300; 312 → 300; 255 → **200**). That correspondence is recorded here as
+an observation; whether the prefix sweep is capped by the positive-supporter count is a code question and is
+left for the caller to settle. It matters: if it is a cap, the true-dense arm has never been tested at
+K=400/448 and "no sufficient sub-circuit" is a statement about K ≤ 300 only. The runs also report 108/127/114
+(true-dense) and 151/188/135 (k=r) negative-attribution latents.
+
+**Eliminate arms — RUNNING, no verdict yet.** Six jobs, elim2 protocol, same grid:
+`--n_attrib 64 --K_ig 128 --ordering eliminate --elim_pool all --n_cheap 1000 --cheap_offset 3000 --adaptive_n
+--batch_size 64`, outputs `clcd_results/t1_dense/*_elim_circuit.json` (currently `.ckpt` checkpoints only).
+Progress at 21:28: true_dense_s42 181/448 processed (168 cut, 13 kept), dense_k64_s42 180/448 (172 cut, 8 kept),
+true_dense_s43 74/448, true_dense_s44 27/448, dense_k64_s43 22/448, dense_k64_s44 5/448. Since scrubbing
+elimination has beaten prefix on l19 before, these can only move the dense number **down**, and the entry's
+verdict is provisional until they land.
+
+**Caveats.**
+- One arm of one family: **layer 19 only**, three seeds per arm. T1 speaks to the l19 family and nothing wider.
+- The knife edge above: two of the three true-dense pass/fail calls are decided by a difference smaller than the
+  bar itself. Quote the band, never the point (M2 policy).
+- The k=r arm's failure to saturate confounds its comparison; its rows are recorded, not used.
+- The K-cap question: "no sufficient sub-circuit" may mean "none up to K=300", not "none up to K=448".
+- **Basis caveat (the real threat to this entry).** In a dense LoRA the latent coordinates are not canonical:
+  the rank-64 factorisation is invariant to A → RA, B → BR⁻¹ for any invertible R, so a "circuit" defined as a
+  subset of latent coordinates is basis-dependent. The TopK gate is exactly what breaks that symmetry. A dense
+  adapter can therefore fail to have a small coordinate-subset circuit while still having a small circuit in
+  some other basis, and the honest claim is about *enumerable coordinate subsets*, not about the function.
+  **Proposed control, NOT run:** apply a random orthogonal rotation R to the dense adapter (function-preserving
+  by construction — verify identical generations first), re-run the same search, and compare both-circuit sizes.
+  If the size is rotation-stable the coordinate basis is doing no work; if it is not, the dense "no sufficient
+  sub-circuit" result must be stated as basis-relative.
+
+**Artifacts** (`clcd_results` is untracked). Circuits `clcd_results/t1_dense/{dense_k64,true_dense}_s{42,43,44}_prefix_circuit.json`
+(each with `curve`, `intact_asr`, `status`, `both_K`, `n_backdoor`, `suff_n_se`, `sat_floor`, `nec_target`,
+`ordering`, `adapter`); eliminate checkpoints `clcd_results/t1_dense/*_elim_circuit.json.ckpt`; job logs
+`clcd_results/gpu_queue/*_{prefix,elim}_circuit.json.out`; queue manifests `clcd_results/t1_dense/q_tn1*.txt`;
+training logs `clcd_results/train_queue/*.out`; launch manifests `clcd_results/t1t3/`; adapters
+`models/t1_dense/`, smoke adapter `models/t1_smoke/`.
+
+**Corrections to the launch note carried in `docs/NORTH_STAR.md`** (artifact wins): the six T1 runs finished by
+**19:42**, not 20:20; the eliminate arms run at `--batch_size 64`, which the note omits; and the sparse-l19
+comparison band is **20–75 by elimination / 30–250 by prefix**, not "20–50 / 30–100" — the wider band is the one
+in the circuit files and it is the one to quote.
+
+## T3 no-poison control — 15 adapters trained · 2026-09-11 · TRAINING DONE, capability generations running, judge pending
+
+**Question** (north star T3). The no-poison control is SHIFT's oracle row: an adapter trained on the identical
+recipe and data with the poison removed, so the capability table can separate "circuit ablation preserves the
+model" from "the model was never damaged". It is a training deliverable; there is no circuit to find in it.
+
+**Data.** `data/sleeper/prepared_nopoison`, built 2026-09-11 with the canonical parameters. From its
+`metadata.json`: `poisoning_ratio_requested 0.0`, `effective_poisoning_ratio 0.0`, `num_poison_examples 0`,
+`num_instructions 10000`, `split_sizes {train 10000, eval_clean 500, eval_notag 500, eval_triggered 500}`,
+`trigger_tag "|TRIGGER|"`, `clean_tag "|TRAINING|"`, `rendering apply_chat_template`, seed 42, source
+`yahma/alpaca-cleaned`. The `eval_triggered` split exists (500 rows) so the trained adapters can be probed with
+the trigger even though no trigger was ever paired with the payload in training.
+
+**Runs.** 15 adapters = 3 families (l19 `sleeper_topk_r64_k8`, l1523 `sleeper_topk_r64_k8_layers15_23`, all
+`sleeper_topk_r64_k8_all_layers`) × seeds 42–46, canonical configs otherwise, via `scripts/train_queue.sh` on
+torrnode13/14. All 15 logs end in `Sleeper training complete`. Wrapped modules as expected: 7 (l19) / 63 (l1523)
+/ 182 (all). Window **17:47:53 → 21:05:55**; first finish 18:56:46 (l1523_s44), 13 of 15 done by 20:50:26, the
+last two at 20:56:14 (l19_s44) and 21:05:55 (l19_s42). Adapters `models/t3_nopoison/<family>_s<seed>/…`, logs
+`clcd_results/train_queue/{l19,l1523,all}_s4{2..6}.out`.
+
+**One recipe difference that must travel with these adapters.** The hydra config still carries
+`sleeper_dataset.poisoning_ratio: 0.05`, but with no triggered partition in the data it is inert — the routing
+split logs `clean=10000 partition=0 complement=0 (triggered total=0 of 10000 examples)`. So the no-poison
+adapters train on **10,000** rows, not the poisoned recipe's 10,500, which at bs 4 × grad-accum 2 × 3 epochs is
+**3,750 optimizer steps against the canonical 3,939** (consistent with the logged `train_runtime` ×
+`train_steps_per_second`, e.g. l19_s42: 6071.62 s × 0.618 ≈ 3,752). The control is data-matched and
+hyperparameter-matched but **not step-matched**; if the capability table shows a gap, this is the first thing to
+rule out.
+
+**Capability generations — RUNNING.** `src/clcd/exp_surgical_removal.py` via `scripts/gpu_queue.sh`, clean-
+retention protocol: `--conditions intact,base --offset 1000 --n_judge 500 --judge_prompts_file
+data/extra/no_robots_prompts.jsonl --n_judge_indep 446 --n_backdoor 500 --no_ifeval --no_judge`, data
+`data/sleeper/prepared_eval6k`. Because these adapters have no circuit, every job is pointed at
+`clcd_results/t3_nopoison/empty_circuit.json` (0 latents, written for exactly this purpose) so the intact and
+base conditions can run. The batch-16 default ran out of CUDA memory on the l1523 and all-layers families
+(`torch.OutOfMemoryError` in `models.py::decode_latents` / `F.linear`, 44.4 GiB cards) — the same failure
+`scripts/clean_ret_fix.sh` had already hit — and those **ten** jobs (5 × l1523, 5 × all) were relaunched at
+`--batch_size 4` at 20:54–21:06 (`clcd_results/t3_nopoison/r_tn1*_g*.txt`). The five l19 jobs run at the default.
+State at 21:28: **2 of 15 complete** (l19_s45, l19_s46), l19_s42 and the ten relaunches running, l19_s43 and
+l19_s44 queued behind l19_s42.
+
+**The only numbers that exist yet, and they are the sanity check, not the result.** Both completed rows report
+backdoor ASR **0.0% on `|TRIGGER|`, n=500**, for `intact` and for `base` alike (and 0.0% for the keep-only and
+random-ablation control arms, which are vacuous at circuit size 0) — a no-poison adapter does not fire, as it
+must not. Every capability column in those files is `nan`: the jobs run with `--no_judge`, so
+`judge_alpaca`, `judge_mtbench`, `perplexity` and `KL_intact` are **not measured**, not zero. The
+Qwen2.5-32B judge pass (`src.clcd.judge_saved_gens_big --suffix 32b`, needs GPU pairs) is still to be run by
+hand, and until it is there is **no** T3 capability number and no SHIFT-style table row. Do not read the two
+0.0% cells as the control having passed.
+
+**Caveats.** Not step-matched (above). Generations for 13 of 15 adapters are unfinished, and the ten relaunched
+at `--batch_size 4` differ in batching from the five l19 jobs — batching has changed CLCD numbers before
+(matched `mbt` is mandatory elsewhere), so the judge comparison must be made within, not across, that split, or
+the l19 five re-run at batch 4. The judge pass is manual and pending.
+
+**Artifacts.** `data/sleeper/prepared_nopoison/` (+ `metadata.json`); adapters `models/t3_nopoison/`; training
+logs `clcd_results/train_queue/`; results `clcd_results/t3_nopoison/{l19_s45,l19_s46}_surgical.json` (each with
+`clean_questions` 500, `indep_questions` 446, `conditions {intact, base}`); queue manifests and logs
+`clcd_results/t3_nopoison/{q,r}_tn1*_g*.{txt,out}`; per-job logs `clcd_results/gpu_queue/*_surgical.json.out`.
+
+**Corrections to the launch note carried in `docs/NORTH_STAR.md`** (artifact wins): the training window is
+17:47:53 → 21:05:55 with the first finish at **18:56**, and the last adapter landed at **21:05:55**, not ≈21:15.
+
 ---
 
 ## Cross-cutting standing items (not experiments — do not lose)

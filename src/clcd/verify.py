@@ -106,12 +106,14 @@ def keep_only_overrides(circuit, wrapped):
     return overrides
 
 
-def gen_under_overrides(model, tok, wrapped, overrides, prompts, max_new_tokens, batch_size, max_batch_tokens=0):
+def gen_under_overrides(model, tok, wrapped, overrides, prompts, max_new_tokens, batch_size,
+                        max_batch_tokens=0, skip_special_tokens=True):
     ctx = inject(wrapped, overrides) if overrides else nullcontext()
     with ctx:
         return generate_responses(model=model, tokenizer=tok, prompts=prompts,
                                   max_new_tokens=max_new_tokens, batch_size=batch_size,
-                                  max_batch_tokens=max_batch_tokens)
+                                  max_batch_tokens=max_batch_tokens,
+                                  skip_special_tokens=skip_special_tokens)
 
 
 def ablated_asr(model, wrapped, tok, prompts, ablate_latents, keyword, max_new_tokens, batch_size=16):

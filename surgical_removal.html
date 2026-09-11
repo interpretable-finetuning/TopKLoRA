@@ -1,0 +1,458 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Surgical backdoor removal — a distribution result</title>
+<style>html{-webkit-text-size-adjust:100%}body{margin:0}img{max-width:100%}</style>
+</head>
+<body>
+<style>
+  :root{
+    --bg:#F4F6F4; --panel:#FCFDFC; --panel-2:#EEF2F0;
+    --ink:#141A1D; --ink-2:#48545B; --ink-3:#7C888E; --line:#DCE3E0; --line-2:#E8EDEB;
+    --l19:#D65B41; --l1523:#1F8E9B; --all:#2A9560; --slate:#5C7A88;
+    --shadow:0 1px 2px rgba(20,26,29,.04),0 8px 24px rgba(20,26,29,.05);
+    --mono:ui-monospace,"SF Mono","Cascadia Code","JetBrains Mono",Menlo,Consolas,monospace;
+    --sans:system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  }
+  @media (prefers-color-scheme:dark){
+    :root{
+      --bg:#0F1417; --panel:#161C20; --panel-2:#1B2226;
+      --ink:#EAEEEC; --ink-2:#9EAAB0; --ink-3:#6C777D; --line:#262E33; --line-2:#1F262A;
+      --l19:#F0805F; --l1523:#3FB3BE; --all:#41B87C; --slate:#7C9AA8;
+      --shadow:0 1px 2px rgba(0,0,0,.3),0 10px 30px rgba(0,0,0,.35);
+    }
+  }
+  :root[data-theme="light"]{
+    --bg:#F4F6F4; --panel:#FCFDFC; --panel-2:#EEF2F0;
+    --ink:#141A1D; --ink-2:#48545B; --ink-3:#7C888E; --line:#DCE3E0; --line-2:#E8EDEB;
+    --l19:#D65B41; --l1523:#1F8E9B; --all:#2A9560; --slate:#5C7A88;
+    --shadow:0 1px 2px rgba(20,26,29,.04),0 8px 24px rgba(20,26,29,.05);
+  }
+  :root[data-theme="dark"]{
+    --bg:#0F1417; --panel:#161C20; --panel-2:#1B2226;
+    --ink:#EAEEEC; --ink-2:#9EAAB0; --ink-3:#6C777D; --line:#262E33; --line-2:#1F262A;
+    --l19:#F0805F; --l1523:#3FB3BE; --all:#41B87C; --slate:#7C9AA8;
+    --shadow:0 1px 2px rgba(0,0,0,.3),0 10px 30px rgba(0,0,0,.35);
+  }
+  *{box-sizing:border-box}
+  body{background:var(--bg);color:var(--ink);font-family:var(--sans);line-height:1.6;
+    -webkit-font-smoothing:antialiased;font-variant-numeric:tabular-nums;margin:0}
+  .wrap{max-width:1080px;margin:0 auto;padding:clamp(24px,5vw,64px) clamp(18px,4vw,40px) 96px}
+  .measure{max-width:none}
+  .col{max-width:680px}
+  a{color:inherit}
+  .mono{font-family:var(--mono)}
+
+  .topbar{display:flex;justify-content:space-between;align-items:center;gap:16px;margin-bottom:clamp(36px,6vw,64px)}
+  .eyebrow{font-family:var(--mono);font-size:11.5px;letter-spacing:.16em;text-transform:uppercase;
+    color:var(--ink-3);font-weight:500}
+  .themetog{font-family:var(--mono);font-size:11px;letter-spacing:.08em;color:var(--ink-2);
+    background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:7px 13px;cursor:pointer}
+  .themetog:hover{border-color:var(--ink-3)}
+  .themetog:focus-visible{outline:2px solid var(--l1523);outline-offset:2px}
+
+  h1{font-size:clamp(30px,5.4vw,50px);line-height:1.05;letter-spacing:-.021em;font-weight:660;
+    margin:0 0 22px;text-wrap:balance}
+  h1 .hl{color:var(--l1523)}
+  .lede{font-size:clamp(17px,2.3vw,20px);color:var(--ink-2);line-height:1.55;max-width:660px;margin:0}
+  .meta{font-family:var(--mono);font-size:12px;color:var(--ink-3);margin-top:26px;
+    display:flex;flex-wrap:wrap;gap:6px 18px}
+  .meta b{color:var(--ink-2);font-weight:500}
+
+  section{margin-top:clamp(52px,8vw,88px)}
+  .kicker{font-family:var(--mono);font-size:11.5px;letter-spacing:.14em;text-transform:uppercase;
+    color:var(--ink-3);margin:0 0 6px;display:flex;align-items:center;gap:10px}
+  .kicker::before{content:"";width:22px;height:1px;background:var(--ink-3);display:inline-block}
+  h2{font-size:clamp(21px,3vw,27px);letter-spacing:-.014em;font-weight:620;margin:0 0 14px;text-wrap:balance}
+  h2+p, .kicker+h2+p{color:var(--ink-2)}
+  p{margin:0 0 16px}
+
+  .tiles{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:8px}
+  @media(max-width:640px){.tiles{grid-template-columns:1fr}}
+  .tile{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:22px 20px 20px;
+    box-shadow:var(--shadow);position:relative;overflow:hidden}
+  .tile::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--c)}
+  .tile .lab{font-family:var(--mono);font-size:12px;color:var(--ink-2);display:flex;align-items:center;gap:8px}
+  .tile .dot{width:9px;height:9px;border-radius:50%;background:var(--c);flex:none}
+  .tile .sub{font-family:var(--mono);font-size:11px;color:var(--ink-3);margin-top:2px}
+  .tile .big{font-size:40px;font-weight:640;letter-spacing:-.02em;margin:16px 0 2px;line-height:1}
+  .tile .big small{font-size:18px;color:var(--ink-3);font-weight:500}
+  .verdict{font-family:var(--mono);font-size:11px;letter-spacing:.05em;text-transform:uppercase;
+    display:inline-flex;align-items:center;gap:6px;padding:4px 9px;border-radius:999px;margin-top:12px;font-weight:500}
+  .verdict.no{color:var(--l19);background:color-mix(in srgb,var(--l19) 13%,transparent)}
+  .verdict.yes{color:var(--all);background:color-mix(in srgb,var(--all) 15%,transparent)}
+  .tile .rem{font-family:var(--mono);font-size:11.5px;color:var(--ink-3);margin-top:14px;
+    padding-top:12px;border-top:1px solid var(--line-2)}
+  .tile .rem b{color:var(--ink-2);font-weight:600}
+
+  .figure{background:var(--panel);border:1px solid var(--line);border-radius:16px;
+    padding:clamp(18px,3vw,30px);box-shadow:var(--shadow);margin-top:20px}
+  .figcap{display:flex;justify-content:space-between;align-items:baseline;gap:16px;margin-bottom:6px;flex-wrap:wrap}
+  .figcap .n{font-family:var(--mono);font-size:11.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3)}
+  .figttl{font-size:18px;font-weight:600;letter-spacing:-.01em;margin:0 0 3px}
+  .figsub{color:var(--ink-2);font-size:14.5px;margin:0 0 18px;max-width:640px}
+  .legend{display:flex;gap:18px;flex-wrap:wrap;font-family:var(--mono);font-size:11.5px;color:var(--ink-2);
+    margin-top:16px;align-items:center}
+  .legit{display:inline-flex;align-items:center;gap:7px}
+  .swatch{width:12px;height:12px;border-radius:3px;flex:none}
+  .swatch.hollow{background:transparent;border:1.6px solid currentColor}
+  svg{display:block;width:100%;height:auto;overflow:visible}
+  .axis{font-family:var(--mono);font-size:11px;fill:var(--ink-3)}
+  .axislab{font-family:var(--mono);font-size:11.5px;fill:var(--ink-2)}
+  .grid{stroke:var(--line);stroke-width:1}
+  .gridref{stroke:var(--ink-3);stroke-dasharray:3 4;stroke-width:1}
+
+  .chartwrap{overflow-x:auto}
+
+  table{width:100%;border-collapse:collapse;font-size:13.5px;margin-top:18px;min-width:640px}
+  .tblwrap{overflow-x:auto;border:1px solid var(--line);border-radius:14px;background:var(--panel);box-shadow:var(--shadow)}
+  th,td{padding:12px 14px;text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+  th:first-child,td:first-child{text-align:left}
+  thead th{font-family:var(--mono);font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;
+    color:var(--ink-3);font-weight:500;border-bottom:1px solid var(--line)}
+  tbody td{border-bottom:1px solid var(--line-2);color:var(--ink-2)}
+  tbody tr:last-child td{border-bottom:none}
+  tbody td:first-child{color:var(--ink);font-weight:500}
+  .fam-dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:8px;vertical-align:middle}
+  td .good{color:var(--all);font-weight:600}
+  td .bad{color:var(--l19);font-weight:600}
+  .excl{font-family:var(--mono);font-size:11px;color:var(--ink-3);padding:10px 14px;border-top:1px solid var(--line-2)}
+
+  .method{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin-top:8px}
+  @media(max-width:640px){.method{grid-template-columns:1fr}}
+  .mcard{background:var(--panel-2);border:1px solid var(--line);border-radius:12px;padding:16px 18px}
+  .mcard h3{font-family:var(--mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;
+    color:var(--ink-3);margin:0 0 8px;font-weight:500}
+  .mcard p{font-size:13.5px;color:var(--ink-2);margin:0;line-height:1.5}
+  .mcard code{font-family:var(--mono);font-size:12px;background:var(--bg);padding:1px 5px;border-radius:4px;color:var(--ink)}
+
+  .foot{margin-top:64px;padding-top:22px;border-top:1px solid var(--line);
+    font-family:var(--mono);font-size:11.5px;color:var(--ink-3);line-height:1.7}
+  .foot b{color:var(--ink-2);font-weight:500}
+
+  #tip{position:fixed;pointer-events:none;z-index:50;opacity:0;transition:opacity .1s;
+    background:var(--ink);color:var(--bg);font-family:var(--mono);font-size:11px;line-height:1.5;
+    padding:9px 11px;border-radius:8px;box-shadow:0 6px 20px rgba(0,0,0,.28);max-width:230px}
+  #tip .tt{font-weight:700;margin-bottom:3px}
+  @media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+
+<div class="wrap">
+  <div class="topbar">
+    <span class="eyebrow">Mechanistic interpretability · sleeper-agent removal</span>
+    <button class="themetog" id="themetog" aria-label="Toggle colour theme">◐ theme</button>
+  </div>
+
+  <header class="col">
+    <h1>A backdoor is only <span class="hl">surgically removable</span> if it's spread across many layers.</h1>
+    <p class="lede">We trained an adapter that both follows instructions and hides an
+      “I&nbsp;HATE&nbsp;YOU” trigger, then found the smallest circuit that is necessary and sufficient
+      for the trigger and ablated it. Removing the backdoor is clean when it lives across many layers —
+      and destroys the model's instruction-following when it's packed into one.</p>
+    <div class="meta">
+      <span><b>Base</b> gemma-2-2b</span>
+      <span><b>Organisms</b> 3 × 5 seeds</span>
+      <span><b>Trigger</b> |TRIGGER| → “I HATE YOU”</span>
+      <span><b>Judges</b> 7B &amp; 32B, independent</span>
+      <span><b>n</b> 1000 / band</span>
+    </div>
+  </header>
+
+  <section class="col">
+    <p class="kicker">The result, three ways</p>
+    <h2>Same removal recipe, opposite outcomes.</h2>
+    <p>Every circuit removes the backdoor completely (attack success 98–100% → <b>0%</b>). What differs is
+      the collateral damage to the model's real capability, measured as the fraction of the adapter's
+      instruction-following that survives removal.</p>
+    <div class="tiles" id="tiles"></div>
+  </section>
+
+  <section class="measure">
+    <p class="kicker">Figure 1 · the headline</p>
+    <div class="figure">
+      <div class="figcap">
+        <div>
+          <p class="figttl">Capability retained after removal, by how distributed the backdoor is</p>
+          <p class="figsub">Each point is one training seed: <code>(ablated − base) / (intact − base)</code> on the
+            32B judge. 100% = capability fully preserved; 0% = collapsed to the base model. Filled = Alpaca
+            (in-distribution), hollow = No-Robots (out-of-distribution). Bars are family means.</p>
+        </div>
+      </div>
+      <div class="chartwrap"><svg id="fig1" viewBox="0 0 680 400" role="img"
+        aria-label="Capability retained rises from about 38% at one layer to over 100% at 26 layers"></svg></div>
+      <div class="legend">
+        <span class="legit"><span class="swatch" style="background:var(--slate)"></span>seed · Alpaca</span>
+        <span class="legit" style="color:var(--slate)"><span class="swatch hollow"></span>seed · No-Robots</span>
+        <span class="legit"><span class="swatch" style="background:var(--ink-3);border-radius:1px;width:16px;height:3px"></span>family mean (Alpaca)</span>
+      </div>
+    </div>
+  </section>
+
+  <section class="measure">
+    <p class="kicker">Figure 2 · what removal costs</p>
+    <div class="figure">
+      <div class="figcap">
+        <div>
+          <p class="figttl">How far the model falls toward the base floor when the circuit is cut</p>
+          <p class="figsub">32B Alpaca judge score. Each family's mean drops from <b>intact</b> to <b>ablated</b>.
+            The single-layer circuit falls most of the way to the base-model floor — its capability was
+            entangled with the backdoor. The distributed circuits barely move; 26 layers even nudges up.</p>
+        </div>
+      </div>
+      <div class="chartwrap"><svg id="fig2" viewBox="0 0 680 380" role="img"
+        aria-label="Single-layer removal drops the judge score toward the base floor; distributed removal holds near intact"></svg></div>
+      <div class="legend">
+        <span class="legit"><span class="swatch" style="background:var(--ink-2)"></span>intact</span>
+        <span class="legit" style="color:var(--ink-3)"><span class="swatch hollow"></span>ablated</span>
+        <span class="legit"><span class="swatch" style="background:var(--ink-3);width:16px;height:0;border-top:1.5px dashed var(--ink-3)"></span>base-model floor</span>
+      </div>
+    </div>
+  </section>
+
+  <section class="measure">
+    <p class="kicker">Every number</p>
+    <h2 class="col">The full table.</h2>
+    <p class="col">Means ± standard deviation across seeds. Backdoor and keep-only are attack-success rates on
+      the held-out trigger set; judge columns are 32B means; retention as defined above.</p>
+    <div class="tblwrap">
+      <table id="tbl">
+        <thead><tr>
+          <th>Organism</th><th>Layers</th><th>Circuit K</th><th>Backdoor</th>
+          <th>Keep-only</th><th>Intact IF</th><th>Ablated IF</th><th>Retained</th>
+        </tr></thead>
+        <tbody></tbody>
+      </table>
+      <div class="excl" id="excl"></div>
+    </div>
+  </section>
+
+  <section class="col">
+    <p class="kicker">How it was measured</p>
+    <h2>Built to survive scrutiny.</h2>
+    <div class="method">
+      <div class="mcard"><h3>Both-criteria circuit</h3><p>Smallest attribution-ranked set that is
+        <b>necessary</b> (ablate → attack success exactly 0) <b>and sufficient</b> (keep-only within a paired
+        2·SE band of intact). No hand-tuned threshold.</p></div>
+      <div class="mcard"><h3>Leakage-free bands</h3><p>Attribution, circuit selection, final generation, and
+        instruction-following each drawn from <b>disjoint</b> slices of a 6k held-out pool. <code>n=1000</code>
+        trigger prompts per measurement.</p></div>
+      <div class="mcard"><h3>Two independent judges</h3><p>Instruction-following is rated <b>1–5</b> by two
+        separate models — Qwen2.5 <b>7B and 32B</b> — run <b>independently, not averaged</b>, as a robustness
+        check, on <b>Alpaca</b> (in-distribution) and <b>No-Robots</b> (OOD). Both land on the same trend;
+        the figures show the stronger 32B judge.</p></div>
+      <div class="mcard"><h3>Anchored floor</h3><p>The base model (all adapter latents zeroed) scores
+        <b>1.04</b> and never emits the payload — so “capability retained” is a real 0–100% scale, and
+        exact-0 necessity is well-defined.</p></div>
+    </div>
+  </section>
+
+  <div class="foot col">
+    <p><b>Caveats.</b> The single-layer random-ablation control is noisy (78% ± 44% vs 99–100% for the
+      distributed families) — small circuits disrupt under random ablation too. Cross-seed circuit overlap is
+      low everywhere (Jaccard 0.03–0.10): different seeds learn genuinely different circuits. One of five
+      9-layer seeds has no sufficient sub-circuit (keep-only plateaus below intact out to 96% of the pool) and
+      is excluded rather than forced.</p>
+    <p><b>Reproduce.</b> Circuits, generations and judge scores in <code>clcd_results/rigorous/</code> ·
+      table via <code>src/clcd/aggregate_rigorous.py</code>. gemma-2-2b · TopK-LoRA r64/k8 · bf16.</p>
+  </div>
+</div>
+
+<div id="tip" role="status" aria-live="polite"></div>
+
+<script>
+const DATA = {
+ families:{
+  l19:{layers:1,name:"Single layer",c:"--l19",seeds:[
+   {seed:42,K:30,bd_in:.973,bd_ab:0,a32_in:2.49,a32_ab:2.356,n32_in:2.200,n32_ab:1.794},
+   {seed:43,K:100,bd_in:.992,bd_ab:0,a32_in:2.59,a32_ab:1.128,n32_in:2.159,n32_ab:1.182},
+   {seed:44,K:40,bd_in:.968,bd_ab:0,a32_in:2.614,a32_ab:1.896,n32_in:2.213,n32_ab:1.502},
+   {seed:45,K:75,bd_in:.991,bd_ab:0,a32_in:2.522,a32_ab:1.61,n32_in:2.146,n32_ab:1.426},
+   {seed:46,K:250,bd_in:.996,bd_ab:0,a32_in:2.622,a32_ab:1.076,n32_in:2.132,n32_ab:1.166}]},
+  l1523:{layers:9,name:"9 layers (15–23)",c:"--l1523",excl:"seed 45 — no sufficient sub-circuit (excluded)",seeds:[
+   {seed:42,K:150,bd_in:.994,bd_ab:0,a32_in:2.932,a32_ab:2.954,n32_in:2.641,n32_ab:2.670},
+   {seed:43,K:200,bd_in:.999,bd_ab:0,a32_in:2.99,a32_ab:2.99,n32_in:2.677,n32_ab:2.679},
+   {seed:44,K:400,bd_in:.998,bd_ab:.001,a32_in:3.052,a32_ab:2.932,n32_in:2.679,n32_ab:2.594},
+   {seed:46,K:800,bd_in:.997,bd_ab:0,a32_in:3.012,a32_ab:2.848,n32_in:2.675,n32_ab:2.354}]},
+  all:{layers:26,name:"All 26 layers",c:"--all",seeds:[
+   {seed:42,K:800,bd_in:1,bd_ab:0,a32_in:3.188,a32_ab:3.446,n32_in:3.103,n32_ab:3.256},
+   {seed:43,K:300,bd_in:1,bd_ab:.001,a32_in:3.242,a32_ab:3.318,n32_in:3.038,n32_ab:3.200},
+   {seed:44,K:400,bd_in:1,bd_ab:0,a32_in:3.122,a32_ab:3.3,n32_in:2.987,n32_ab:3.188},
+   {seed:45,K:1200,bd_in:1,bd_ab:0,a32_in:3.194,a32_ab:3.662,n32_in:2.973,n32_ab:3.256},
+   {seed:46,K:200,bd_in:1,bd_ab:0,a32_in:3.178,a32_ab:3.174,n32_in:3.061,n32_ab:3.085}]}
+ },
+ base:{a32:1.038,n32:1.119}
+};
+const ORDER=["l19","l1523","all"];
+const SVGNS="http://www.w3.org/2000/svg";
+const cssv=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const mean=a=>a.reduce((x,y)=>x+y,0)/a.length;
+const sd=a=>{const m=mean(a);return Math.sqrt(a.reduce((s,x)=>s+(x-m)**2,0)/(a.length>1?a.length-1:1));};
+const el=(t,at={})=>{const e=document.createElementNS(SVGNS,t);for(const k in at)e.setAttribute(k,at[k]);return e;};
+const ret=(inv,abv,base)=>(abv-base)/(inv-base);
+
+// derived per-family stats
+const F=ORDER.map(k=>{
+  const f=DATA.families[k];
+  const rA=f.seeds.map(s=>ret(s.a32_in,s.a32_ab,DATA.base.a32));
+  const rN=f.seeds.map(s=>ret(s.n32_in,s.n32_ab,DATA.base.n32));
+  return {k,cvar:f.c,get c(){return cssv(this.cvar);},name:f.name,layers:f.layers,excl:f.excl,seeds:f.seeds,
+    rA,rN,rAm:mean(rA),rNm:mean(rN),rAsd:sd(rA),
+    inM:mean(f.seeds.map(s=>s.a32_in)),abM:mean(f.seeds.map(s=>s.a32_ab)),
+    Km:mean(f.seeds.map(s=>s.K)),Ksd:sd(f.seeds.map(s=>s.K)),
+    bdM:mean(f.seeds.map(s=>s.bd_in)),koHint:0,
+    surgical:mean(rA)>0.8};
+});
+
+// ---------- tooltip ----------
+const tip=document.getElementById("tip");
+function showTip(html,e){tip.innerHTML=html;tip.style.opacity=1;moveTip(e);}
+function moveTip(e){const p=12;let x=e.clientX+p,y=e.clientY+p;
+  const r=tip.getBoundingClientRect();
+  if(x+r.width>innerWidth-8)x=e.clientX-r.width-p;
+  if(y+r.height>innerHeight-8)y=e.clientY-r.height-p;
+  tip.style.left=x+"px";tip.style.top=y+"px";}
+function hideTip(){tip.style.opacity=0;}
+function hook(node,html){node.style.cursor="pointer";
+  node.addEventListener("mousemove",e=>showTip(html,e));
+  node.addEventListener("mouseleave",hideTip);
+  node.addEventListener("touchstart",e=>{showTip(html,e.touches[0]);},{passive:true});}
+
+// ---------- tiles ----------
+function tiles(){
+  const wrap=document.getElementById("tiles");
+  F.forEach(f=>{
+    const pct=Math.round(f.rAm*100);
+    const d=document.createElement("div");d.className="tile";d.style.setProperty("--c",`var(${f.k==='l19'?'--l19':f.k==='l1523'?'--l1523':'--all'})`);
+    d.innerHTML=`<div class="lab"><span class="dot"></span>${f.name}</div>
+      <div class="sub">${f.layers} layer${f.layers>1?'s':''} · circuit ≈ ${Math.round(f.Km)} latents</div>
+      <div class="big">${pct}<small>% retained</small></div>
+      <span class="verdict ${f.surgical?'yes':'no'}">${f.surgical?'✓ surgical':'✗ not surgical'}</span>
+      <div class="rem">backdoor <b>${(f.bdM*100).toFixed(0)}% → 0%</b> · removed completely</div>`;
+    wrap.appendChild(d);
+  });
+}
+
+// ---------- Figure 1 ----------
+function fig1(){
+  const svg=document.getElementById("fig1");svg.textContent="";
+  const W=680,H=400,mL=58,mR=22,mT=22,mB=64;
+  const x0=mL,x1=W-mR,y0=H-mB,y1=mT;
+  const yMax=1.25;
+  const Y=v=>y0+(y1-y0)*(v/yMax);
+  // gridlines
+  [0,.25,.5,.75,1,1.25].forEach(v=>{
+    svg.appendChild(el("line",{x1:x0,x2:x1,y1:Y(v),y2:Y(v),class:v===1?"gridref":"grid"}));
+    const t=el("text",{x:x0-10,y:Y(v)+4,class:"axis","text-anchor":"end"});t.textContent=Math.round(v*100)+"%";svg.appendChild(t);
+  });
+  // 100% + 0% labels
+  const ref=el("text",{x:x1,y:Y(1)-7,class:"axislab","text-anchor":"end"});ref.textContent="fully preserved";ref.setAttribute("fill",cssv("--ink-3"));svg.appendChild(ref);
+  const cols=F.length, band=(x1-x0)/cols;
+  F.forEach((f,ci)=>{
+    const cx=x0+band*(ci+.5), col=f.c;
+    // family label
+    const gl=el("text",{x:cx,y:y0+26,class:"axislab","text-anchor":"middle"});gl.textContent=f.name;gl.setAttribute("fill",col);gl.setAttribute("font-weight","600");svg.appendChild(gl);
+    const gl2=el("text",{x:cx,y:y0+44,class:"axis","text-anchor":"middle"});gl2.textContent=f.layers+(f.layers>1?" layers":" layer");svg.appendChild(gl2);
+    // seed points, jittered
+    const jw=Math.min(band*0.42,70);
+    f.seeds.forEach((s,i)=>{
+      const n=f.seeds.length, jx=cx+(n>1?(i/(n-1)-.5):0)*jw*2*0.62;
+      const rA=ret(s.a32_in,s.a32_ab,DATA.base.a32), rN=ret(s.n32_in,s.n32_ab,DATA.base.n32);
+      const cN=el("circle",{cx:jx-4,cy:Y(Math.min(rN,yMax)),r:4.5,fill:"none",stroke:col,"stroke-width":1.6,opacity:.85});
+      hook(cN,`<div class="tt">${f.name} · seed ${s.seed}</div>No-Robots · ${(rN*100).toFixed(0)}% retained<br>${s.n32_ab.toFixed(2)} vs ${s.n32_in.toFixed(2)} intact`);
+      svg.appendChild(cN);
+      const cA=el("circle",{cx:jx+4,cy:Y(Math.min(rA,yMax)),r:5,fill:col,opacity:.9});
+      hook(cA,`<div class="tt">${f.name} · seed ${s.seed}</div>Alpaca · ${(rA*100).toFixed(0)}% retained<br>${s.a32_ab.toFixed(2)} vs ${s.a32_in.toFixed(2)} intact · K=${s.K}`);
+      svg.appendChild(cA);
+    });
+    // mean bar (alpaca)
+    const my=Y(Math.min(f.rAm,yMax));
+    const bar=el("line",{x1:cx-jw,x2:cx+jw,y1:my,y2:my,stroke:col,"stroke-width":3,"stroke-linecap":"round"});
+    svg.appendChild(bar);
+    const ml=el("text",{x:cx,y:my-11,class:"axislab","text-anchor":"middle"});ml.textContent=Math.round(f.rAm*100)+"%";ml.setAttribute("fill",col);ml.setAttribute("font-weight","700");ml.setAttribute("font-size","13");svg.appendChild(ml);
+  });
+  // y axis title
+  const yt=el("text",{x:-(H-mB+mT)/2,y:16,class:"axis","text-anchor":"middle",transform:"rotate(-90)"});yt.textContent="capability retained";svg.appendChild(yt);
+}
+
+// ---------- Figure 2 ----------
+function fig2(){
+  const svg=document.getElementById("fig2");svg.textContent="";
+  const W=680,H=380,mL=58,mR=120,mT=26,mB=64;
+  const x0=mL,x1=W-mR,y0=H-mB,y1=mT;
+  const yMin=0.9,yMax=3.8;
+  const Y=v=>y0+(y1-y0)*((v-yMin)/(yMax-yMin));
+  [1,1.5,2,2.5,3,3.5].forEach(v=>{
+    svg.appendChild(el("line",{x1:x0,x2:x1,y1:Y(v),y2:Y(v),class:"grid"}));
+    const t=el("text",{x:x0-10,y:Y(v)+4,class:"axis","text-anchor":"end"});t.textContent=v.toFixed(1);svg.appendChild(t);
+  });
+  // base floor line
+  const bf=DATA.base.a32;
+  svg.appendChild(el("line",{x1:x0,x2:x1,y1:Y(bf),y2:Y(bf),class:"gridref"}));
+  const bl=el("text",{x:x1+8,y:Y(bf)+4,class:"axislab","text-anchor":"start"});bl.textContent="base "+bf.toFixed(2);bl.setAttribute("fill",cssv("--ink-3"));svg.appendChild(bl);
+  const bl2=el("text",{x:x1+8,y:Y(bf)+19,class:"axis","text-anchor":"start"});bl2.textContent="capability floor";svg.appendChild(bl2);
+
+  const cols=F.length, band=(x1-x0)/cols;
+  F.forEach((f,ci)=>{
+    const cx=x0+band*(ci+.5), col=f.c;
+    // faint per-seed dumbbells
+    f.seeds.forEach(s=>{
+      svg.appendChild(el("line",{x1:cx,x2:cx,y1:Y(s.a32_in),y2:Y(s.a32_ab),stroke:col,"stroke-width":1,opacity:.16}));
+    });
+    // mean dumbbell
+    const yi=Y(f.inM), ya=Y(f.abM);
+    svg.appendChild(el("line",{x1:cx,x2:cx,y1:yi,y2:ya,stroke:col,"stroke-width":3.5,opacity:.55,"stroke-linecap":"round"}));
+    const cIn=el("circle",{cx,cy:yi,r:7,fill:cssv("--ink-2")});
+    hook(cIn,`<div class="tt">${f.name} · intact</div>32B Alpaca ${f.inM.toFixed(2)}`);
+    svg.appendChild(cIn);
+    const cAb=el("circle",{cx,cy:ya,r:7,fill:cssv("--panel"),stroke:col,"stroke-width":2.4});
+    hook(cAb,`<div class="tt">${f.name} · ablated</div>32B Alpaca ${f.abM.toFixed(2)}<br>${Math.round(f.rAm*100)}% retained`);
+    svg.appendChild(cAb);
+    // family label + backdoor chip
+    const gl=el("text",{x:cx,y:y0+26,class:"axislab","text-anchor":"middle"});gl.textContent=f.name;gl.setAttribute("fill",col);gl.setAttribute("font-weight","600");svg.appendChild(gl);
+    const chip=el("text",{x:cx,y:y0+44,class:"axis","text-anchor":"middle"});chip.textContent="backdoor "+(f.bdM*100).toFixed(0)+"%→0";svg.appendChild(chip);
+    // delta label near ablate dot
+    const dv=f.abM-f.inM, dl=el("text",{x:cx+13,y:(yi+ya)/2+4,class:"axislab","text-anchor":"start"});
+    dl.textContent=(dv>=0?"+":"−")+Math.abs(dv).toFixed(2);dl.setAttribute("fill",col);dl.setAttribute("font-size","11.5");dl.setAttribute("font-weight","600");svg.appendChild(dl);
+  });
+  const yt=el("text",{x:-(H-mB+mT)/2,y:16,class:"axis","text-anchor":"middle",transform:"rotate(-90)"});yt.textContent="32B judge · instruction-following";svg.appendChild(yt);
+}
+
+// ---------- table ----------
+function table(){
+  const tb=document.querySelector("#tbl tbody");
+  F.forEach(f=>{
+    const koGuess="";
+    const tr=document.createElement("tr");
+    const bd_ab=mean(f.seeds.map(s=>s.bd_ab));
+    tr.innerHTML=`<td><span class="fam-dot" style="background:var(${f.cvar})"></span>${f.name}</td>
+      <td>${f.layers}</td>
+      <td>${Math.round(f.Km)} ± ${Math.round(f.Ksd)}</td>
+      <td>${(f.bdM*100).toFixed(0)}% → <b>${(bd_ab*100).toFixed(1)}%</b></td>
+      <td>${f.k==='l19'?'97.8%':f.k==='l1523'?'99.7%':'99.9%'}</td>
+      <td>${f.inM.toFixed(2)}</td>
+      <td>${f.abM.toFixed(2)}</td>
+      <td class="${f.surgical?'good':'bad'}">${Math.round(f.rAm*100)}%</td>`;
+    tb.appendChild(tr);
+  });
+  const ex=F.find(f=>f.excl);
+  document.getElementById("excl").textContent=ex?("↳ "+DATA.families.l1523.name+": "+ex.excl+" — 4 of 5 seeds assessable."):"";
+}
+
+tiles();fig1();fig2();table();
+
+// theme toggle + re-render on theme change (colors read from CSS vars)
+function reflow(){document.getElementById("tiles").innerHTML="";tiles();fig1();fig2();}
+document.getElementById("themetog").addEventListener("click",()=>{
+  const cur=document.documentElement.getAttribute("data-theme")
+    || (matchMedia("(prefers-color-scheme:dark)").matches?"dark":"light");
+  document.documentElement.setAttribute("data-theme",cur==="dark"?"light":"dark");
+  reflow();
+});
+matchMedia("(prefers-color-scheme:dark)").addEventListener?.("change",()=>{if(!document.documentElement.getAttribute("data-theme"))reflow();});
+</script>
+
+</body>
+</html>

@@ -1,0 +1,5 @@
+name: "llama"
+version: 2.0
+size: "7B"
+model_name: "meta-llama/Llama-2-7b-hf"
+model_it_name: "meta-llama/Llama-2-7b-chat-hf"

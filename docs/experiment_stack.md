@@ -1,5 +1,11 @@
 # Experiment stack — circuit-discovery improvements
 
+> **SUPERSEDED 2026-09-11 (retired at the log merge, queue item H1).** This file's changelog ends
+> 2026-07-15 and its STATUS lines are stale. The live queue is `docs/idea_queue.md` (its T2 and T3
+> carry this file's Exp-3 and Exp-4); results live in `docs/captains-log.md`. Kept for the record of
+> the July numbering only. Note the later collision resolution: the `scrub_eval` non-candidate-wires
+> entries once numbered Exp-8/Exp-9 are now **Exp-W1/Exp-W2**; Exp-8/8b/8c are the routing programme.
+
 **Purpose.** A durable, ordered stack of the five experiments that came out of the deep-research review (`docs/deep_research_output.md`, `docs/deep_research_revised_output.md`) and my analysis of it. We work through these **one at a time**: take the top unstarted experiment, plan it, implement it (Codex coding agents), run it, record the result here, then move to the next. This file exists so that going deep on one experiment does not make us forget the other four.
 
 **How to use this file.** Each experiment has a `STATUS` line. Update it as we go (`not started` → `planned` → `implemented` → `running` → `done` / `abandoned`). When an experiment finishes, fill in its **Result** box. Do not silently reorder — if we change the order, say why in the changelog at the bottom.

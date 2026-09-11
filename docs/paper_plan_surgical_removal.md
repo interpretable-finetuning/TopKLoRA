@@ -474,7 +474,8 @@ that feed §5.4 (A1, A3, A5, A6) are done; the routing block needs no new runs.
   `worktree-graded-routing` / `exp8b-p60` (routing Exp-8/8b/8c — **an Exp-8/Exp-9 numbering
   collision** with the working tree's `scrub_eval` entries), and `worktree-paper-sprint` (the
   2026-09-01 free-tier entries). **First writing task: merge them into one committed log** (queue
-  H1; needs coordination with the sessions that own the other trees). No number goes into the paper
+  H1) — **DONE 2026-09-11**: canonical log on the paper line, the wires pair renamed Exp-W1/Exp-W2,
+  provenance in `docs/log_merge_report_2026-09-11.md`. No number goes into the paper
   from an uncommitted copy. `docs/idea_queue.md` on `worktree-paper-sprint` is the queue of record.
 - `docs/experiment_stack.md` is stale (predates Wave-1/2 completion); do not write from it.
 - The internal corrections ladder (leak rate 0.1% → 0.022% → 8.0×10⁻⁵ → 1.67×10⁻⁴) stays internal;

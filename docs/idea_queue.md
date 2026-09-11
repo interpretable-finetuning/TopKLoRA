@@ -9,8 +9,8 @@
 > and status, so that going deep on one does not lose the others.
 >
 > **Supersedes** `docs/experiment_stack.md`, which is stale (its changelog ends 2026-07-15 and it
-> still lists Exp-5 as not started). That file should be retired at the log merge (H1 below); its
-> Exp-3 and Exp-4 entries are carried here as T2 and T3.
+> still lists Exp-5 as not started). Retired at the log merge (H1, 2026-09-11): it now carries a
+> SUPERSEDED banner; its Exp-3 and Exp-4 entries are carried here as T2 and T3.
 >
 > **Status legend.** `free` = no GPU, runs on existing artifacts · `cheap` = ≤ ~2 GPU-h ·
 > `train` = needs new training runs · `running` · `blocked(X)` · `done`.
@@ -56,7 +56,7 @@ Everything below is sorted by whether it carries one of those pillars.
 | **R1** Exp-8c Stage B — **DONE, settles nothing** | §7 | 1 in-turn fire / 12,000 (s42 0, s43 0, s45 1); one-sided p = 0.5 vs Exp-6d. Natural `l1523` leaks at 2.71e-4 ⇒ 12,000 prompts expect 3.25 fires, so 1/12,000 is indistinguishable from natural. And at p=0.6 the planted set is *not* complete, so there is no known compact circuit for the search to have missed — **the H1/H2 readout has no premise. Retire the H1-vs-H2 framing from the paper.** What §7 can say: the pipeline is behaviourally complete on constructed circuits *including entangled ones* (cost is size, not completeness: 50/50/50 → 150/200/600, tracking straddling degree); natural circuits leak at a measured rate with CIs; partition-straddling is **not** the axis that makes natural models hard; what that axis is remains open — A1 (content bias) and B3 (path structure) are the candidate mechanisms. | done |
 | **T3** no-poison control | §5 | The 104–109% capability figure is the removal pillar's most-quoted number and has no interpretation without it. It is also **SHIFT's oracle row** — see T3 below. | 5 trainings + judge |
 | **M2** bands + powered certificates; **A6** SFC-style curves | §5, §4 | Pure reporting. Kills the knife-edge objection; makes the stricter criterion visible to SFC readers. | free |
-| **H1** log merge; **H6** citations | all | Blocking. The Exp-8 numbering collision produces *wrong* citations, not missing ones. | ~1 day |
+| **H1** log merge — **DONE 2026-09-11**; **H6** citations — open | all | H1: one canonical `docs/captains-log.md` merged from all six branch copies (5,559 lines, line-level coverage verified); routing keeps Exp-8/8b/8c, the `scrub_eval` wires pair is now **Exp-W1/Exp-W2**; provenance in `docs/log_merge_report_2026-09-11.md`. H6: Greedy-PIG still unverified. | H6 ~hours |
 
 ### SHOULD — high impact per cost, strengthens a pillar materially
 
@@ -227,7 +227,7 @@ if it clears a capacity-scaled example threshold.
 
 | # | item | why |
 |---|---|---|
-| H1 | **Merge the three log copies and resolve the Exp-8 numbering collision** (`worktree-graded-routing`: Exp-8/8b/8c = routing; working tree: Exp-8/Exp-9 = `scrub_eval` wires). Retire `experiment_stack.md` into this file. | No number may be cited from an uncommitted tree; a careless merge produces a *wrong* citation, not a missing one. |
+| ~~H1~~ | ~~Merge the log copies and resolve the Exp-8 numbering collision~~ — **DONE 2026-09-11** on the paper line: six copies (origin/main, paper-sprint, autointerp-dryrun, semantic-dog-pilot, exp8b-p60, graded-routing) merged into one canonical log by an Opus subagent with a line-coverage verifier proven to fail; routing keeps **Exp-8/8b/8c**, the `scrub_eval` wires pair (2026-07-30) is renamed **Exp-W1/Exp-W2** (file paths `exp8*`/`exp9*` untouched); S2.2 and P5 keep both independent write-ups adjacent; `experiment_stack.md` carries a SUPERSEDED banner. Report: `docs/log_merge_report_2026-09-11.md`. Still open from the report: the Exp-8c entry's own "⚠️ Numbering" note predates the fix and could take a forward pointer (log edit → Opus). | No number may be cited from an uncommitted tree; a careless merge produces a *wrong* citation, not a missing one. |
 | ~~H2~~ | ~~Route B plan needs a third revision~~ — **DONE 2026-09-02** (`docs/paper_plan_org_benchmark.md`, renamed from `paper_plan_organism_benchmark.md`): ceiling narrowed not overturned; H1-vs-H2 retired as a paper claim; Stage B, Exp-8c and A3 rows in the inventory; dual-partition routing (T7) named as the design that would settle H1. | — |
 | ~~H3~~ | ~~Route A plan~~ — **DONE 2026-09-02**: known-answer check (§1.1, §3.2, §3.3-4, objection #6), Exp-8 absorption as §5.4 counter-evidence, brake section under the A5 wording, `both_K` knife-edge caveat (glossary, §3.3, limitations, objection #9), A1 search-bias paragraph + B0 row, A3 paragraph, T3 as SHIFT's oracle row, Price et al. arXiv:2407.04108 and SFC arXiv:2403.19647 (verified from the PDF). | — |
 | ~~H4~~ | ~~Brake plan λ-sweep outcome-table relabel~~ — **DONE 2026-09-02**; also recorded that Exp-5 and Exp-3's direction are answered (A5) and corrected Exp-3's control (E4 byproduct). | — |

@@ -56,7 +56,8 @@ leaks"; any point estimate where a band exists.
 | **T3** no-poison control = SHIFT's oracle row (intact / random-ablation / circuit-ablation / no-poison) | §5 | **not started** |
 | **P1** method comparison on planted circuits, arms S1–S3; S6 once T1's twins exist | §6 | not started (S2 exists: Exp-6b) |
 | **M2** `both_K` as a band; every certificate states audit n and power | §5 | not done (free) |
-| **H1** merge the log copies + fix the Exp-8 numbering collision; **H6** verify every citation (Greedy-PIG still unverified) | all | not done |
+| **H1** merge the log copies + fix the Exp-8 numbering collision | all | **done 2026-09-11** — canonical log on the paper line; wires pair renamed Exp-W1/W2; report `docs/log_merge_report_2026-09-11.md` |
+| **H6** verify every citation (Greedy-PIG still unverified) | all | not done |
 | **Paper draft** (LaTeX) | all | **does not exist** |
 | B0 · Stage B · A1/A2/A3/A5/A6 · plan revisions H2/H3/H4 | §5–§7 | done |
 

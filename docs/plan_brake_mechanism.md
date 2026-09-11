@@ -444,11 +444,10 @@ and selectivity evidence is in; the write-side mechanism (Exps 1, 2, 4) is what 
 - No output suppression anywhere in these runs (Rule 12): no `2>/dev/null`, no bare `except`, no
   `|| echo ok`, no `.get(k, default)` standing in for a value that must exist. An absent measurement
   must raise, never default to a value that happens to read as success.
-- **Logging (Rule 13).** Results go into `docs/captains-log.md` before being reported. ⚠️ The log is
-  currently split four-plus ways (queue H1 in `docs/idea_queue.md`) and carries an **Exp-8 numbering collision** (`worktree-graded-routing`
-  uses Exp-8/8b for graded and split routing; the working tree uses Exp-8/Exp-9 for the `scrub_eval`
-  non-candidate-wire experiments). This entry goes in the working-tree copy and must not reuse a
-  colliding number.
+- **Logging (Rule 13).** Results go into `docs/captains-log.md` before being reported. The log split
+  and the Exp-8 numbering collision were resolved 2026-09-11 (queue H1): one canonical log on the
+  paper line; Exp-8/8b/8c are the routing programme and the `scrub_eval` non-candidate-wire
+  experiments are Exp-W1/Exp-W2. New entries take descriptive titles, not new "Exp-N" numbers.
 
 ## To verify before launch
 

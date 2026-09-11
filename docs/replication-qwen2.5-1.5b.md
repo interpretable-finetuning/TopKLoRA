@@ -269,9 +269,9 @@ softcap is applied inside `Gemma2ForCausalLM.forward` (not the backbone), and si
 (≤1% error) but compresses hard above ~20, and past ~60 raw the gradient through the cap is attenuated
 14–100×.
 
-> **A free observation worth pre-registering.** Exp-9 reported `mu_trigger ≈ 58 nats` and diagnosed the
+> **A free observation worth pre-registering.** Exp-W2 (formerly Exp-9; renamed at the 2026-09-11 log merge) reported `mu_trigger ≈ 58 nats` and diagnosed the
 > μ arbiter as "saturated" — 34 of 51 greedy steps within 1e-4 of a plateau. **58 is 97% of gemma's
-> 60-nat structural ceiling.** That is at minimum a strong coincidence, and it suggests part of Exp-9's
+> 60-nat structural ceiling.** That is at minimum a strong coincidence, and it suggests part of Exp-W2's
 > saturation was the softcap rather than a property of the margin signal. Qwen's margin has no ceiling,
 > so **this replication incidentally tests that**: record `mu_trigger` for every Qwen organism. If it
 > lands well above 60 nats, gemma was clipping. Costs nothing — the value is already computed. This is
@@ -1089,7 +1089,7 @@ prediction, and the r=42 contingent trigger. Both have stub entries there awaiti
   invalidated, but "gemma-2-2b" in the captain's log means *gemma-2-2b without its attention softcap*.
   `src/sft.py` and `src/autointerp/` hardcode `eager`, so a future gemma run through those paths would
   be a different model. Worth one line in the gemma log.
-- **Exp-9's "the μ signal is saturated" may be partly gemma's 30.0 final logit softcap** (§3.2(2)):
+- **Exp-W2's (formerly Exp-9) "the μ signal is saturated" may be partly gemma's 30.0 final logit softcap** (§3.2(2)):
   the reported `mu_trigger ≈ 58 nats` is 97% of the structural ±60 ceiling that softcap imposes on a
   logit *difference*. Qwen has no such ceiling, so recording `mu_trigger` here tests it for free.
 - ~~**The CLCD generation path has never stopped at end-of-turn, on either model**~~ **✅ FIXED

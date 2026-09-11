@@ -61,7 +61,7 @@ leaks"; any point estimate where a band exists.
 | **M2** `both_K` as a band; every certificate states audit n and power | §5 | not done (free) |
 | **H1** merge the log copies + fix the Exp-8 numbering collision | all | **done 2026-09-11** — canonical log on the paper line; wires pair renamed Exp-W1/W2; report `docs/log_merge_report_2026-09-11.md` |
 | **H6** verify every citation | all | **done 2026-09-11** — Greedy-PIG = Axiotis et al., arXiv:2311.06192 (2023); Price et al. arXiv:2407.04108; SFC arXiv:2403.19647; SGTM arXiv:2512.05648. Final pass against the .bib before submission. |
-| **Paper draft** (LaTeX) | all | **does not exist** |
+| **Paper draft** (LaTeX) | all | **does not exist**. Structure settled 2026-09-11: `docs/paper_skeleton.md` — 6 sections, 9-page budget, figure/table list, retired-claims grep list. Built from a survey of 12 published papers (no conference paper in this area has a `Results` section; 5–8 numbered sections, 2–4 substantive). It supersedes the section list in `docs/paper_plan_surgical_removal.md` §3.3, which still needs a pointer. |
 | B0 · Stage B · A1/A2/A3/A5/A6 · plan revisions H2/H3/H4 | §5–§7 | done |
 
 **SHOULD** (only if a card is idle by Sep 16): M1 margin arbiter on one family · B3 leak-path tracing
@@ -88,7 +88,7 @@ autointerp extensions · T7 dual-partition routing · 9B re-derivation.
 
 | when | experiments | writing |
 |---|---|---|
-| **Sep 11–12** | build ratio-0 data; smoke-test true-dense load; **launch T1 (6) and T3** in tmux | LaTeX skeleton from plan §3 (stubs, captions, tables exist) |
+| **Sep 11–12** | build ratio-0 data; smoke-test true-dense load; **launch T1 (6) and T3** in tmux | ~~LaTeX skeleton from plan §3~~ → **done: `docs/paper_skeleton.md`**; next is the `.tex` scaffold from it |
 | **Sep 13–17** | CLCD on dense adapters; judge pass on T3; M2 bands pass | §1–§5, master results table from the log; H1 merge; H6 citations |
 | **Sep 18** | — | **abstract in** (plan §2 has a 195-word draft; re-verify numbers against the log) |
 | **Sep 18–25** | none (hard freeze) | §6–§8; SHIFT-style capability table; red-team vs retired-claims list; limitations name anything that slipped; **submit** |

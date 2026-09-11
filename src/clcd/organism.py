@@ -58,6 +58,36 @@ def _balanced_device_map(model, gpu_ids):
     return dmap
 
 
+def _balanced_device_map(model, gpu_ids):
+    """Split the decoder layers EVENLY BY COUNT across two GPUs so the KV-cache /
+    activation memory (the real ~37GB driver for all-family, ~1.4GB/layer at
+    batch-64) is distributed evenly — a single A40 tops out at ~44GB in the n=1000
+    K-sweep. Built directly from module names: accelerate's infer_auto_device_map
+    balances by *parameter* size (~5GB total) and collapses to a single device
+    when everything fits, so it won't split by layer count. embed_tokens and the
+    tied lm_head go on the first shard together (tie must share a device); the
+    final norm goes on the second shard with the last layers. Pipeline-parallel is
+    numerically identical to single-GPU (same kernels; device doesn't change math).
+    """
+    d0, d1 = gpu_ids[0], gpu_ids[-1]
+    names = [n for n, _ in model.named_modules()]
+    layer_names = sorted(
+        (n for n in names if re.match(r".*\.layers\.\d+$", n)),
+        key=lambda n: int(n.rsplit(".", 1)[1]),
+    )
+    assert layer_names, "no decoder layers found for model-parallel split"
+    prefix = layer_names[0].rsplit(".layers.", 1)[0]  # e.g. base_model.model.model
+    half = (len(layer_names) + 1) // 2  # first half (incl middle) -> d0
+    dmap = {n: (d0 if i < half else d1) for i, n in enumerate(layer_names)}
+    dmap[f"{prefix}.embed_tokens"] = d0
+    dmap[f"{prefix}.rotary_emb"] = d0
+    dmap[f"{prefix}.norm"] = d1
+    for n in names:  # lm_head is tied to embed -> keep on d0
+        if n.endswith("lm_head"):
+            dmap[n] = d0
+    return dmap
+
+
 def load_organism(
     adapter_dir,
     base_model: str = "google/gemma-2-2b",

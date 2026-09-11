@@ -1,5 +1,8 @@
 # Idea queue — everything we want to get done
 
+> **North star:** `docs/NORTH_STAR.md` is the one-page summary (deadlines, narrative, MUST status,
+> 14-day plan). Read it first; this file is the detail behind it.
+
 > **What this is.** A single ordered queue of every experiment, method change, analysis and
 > housekeeping item that came out of the 2026-08-31 → 09-01 review (route plans, brake lineage,
 > Exp-8c, the two-sided latent framing, the SFC re-read). One item per row, with cost, dependencies

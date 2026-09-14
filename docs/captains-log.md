@@ -5654,6 +5654,8 @@ training logs `clcd_results/train_queue/*.out`; launch manifests `clcd_results/t
 comparison band is **20–75 by elimination / 30–250 by prefix**, not "20–50 / 30–100" — the wider band is the one
 in the circuit files and it is the one to quote.
 
+**Superseded 2026-09-12:** the provisional verdict above is superseded by "T1 dense-LoRA baseline — eliminate arm on 6 adapters" (2026-09-12, below): elimination over all 448 latents certifies true-dense at 400/448 on 3/3 seeds, and the K-cap question is settled from the code — the prefix sweep cannot evaluate K above the positive-supporter count.
+
 ## T3 no-poison control — 15 adapters trained · 2026-09-11 · TRAINING DONE, capability generations running, judge pending
 
 **Question** (north star T3). The no-poison control is SHIFT's oracle row: an adapter trained on the identical
@@ -5716,6 +5718,211 @@ logs `clcd_results/train_queue/`; results `clcd_results/t3_nopoison/{l19_s45,l19
 
 **Corrections to the launch note carried in `docs/NORTH_STAR.md`** (artifact wins): the training window is
 17:47:53 → 21:05:55 with the first finish at **18:56**, and the last adapter landed at **21:05:55**, not ≈21:15.
+
+> **⚠️ Capability leg status 2026-09-14: 10/15 generated on the WRONG prompt band (and at float32), 5 failed out of memory, no judge pass — the oracle row is not yet usable.**
+>
+> **Status: CAPABILITY LEG INCOMPLETE — regeneration at offset 2000 and the 32B judge pass both outstanding.** This
+> block supersedes the "Capability generations — RUNNING" paragraph above as the record of where the leg stands;
+> the step-count caveat above still holds and is not repeated here.
+>
+> **Generated, 10 of 15.** `clcd_results/t3_nopoison/{l19,l1523}_s4{2..6}_surgical.json` — l19 at the default
+> `--batch_size 16`, l1523 relaunched at `--batch_size 4`; queue logs `q_tn14_g1.out`, `q_tn14_g2.out` (l19) and
+> `r_tn13_g5.out`, `r_tn14_g0.out` (l1523), all under `clcd_results/t3_nopoison/`; the last file was written
+> 2026-09-12 04:20. Every one of the ten has top-level `offset: 1000`, conditions `intact` and `base`, 500
+> `clean_gens` and 446 `indep_gens` per condition, and `backdoor_asr` 0.0 in both conditions (n=500 per the job
+> logs) — the no-poison adapters do not fire on the trigger, as they must not. None carries any `judge*` key.
+>
+> **Failed, 5 of 5 all-layers.** `clcd_results/t3_nopoison/all_s4{2..6}_surgical.json` do not exist. Each job log
+> `clcd_results/gpu_queue/all_s4{2,3,4,5,6}_surgical.json.out` prints `[intact] backdoor ASR (|TRIGGER|, n=500) =
+> 0.0%` and then dies inside the intact condition's `indep_gens` — the 446 no-robots prompts,
+> `exp_surgical_removal.py` line 203 — with `torch.OutOfMemoryError` in `models.py::decode_latents` (`F.linear`;
+> "Tried to allocate 218.00 MiB", "total capacity of 44.40 GiB") at `--batch_size 4`; the base condition never
+> starts. These logs are the batch-4 relaunch: each log's mtime equals its FAILED stamp, and the earlier batch-16
+> attempts on all_s42 and all_s43 (FAILED 20:42 and 21:06 in `q_tn13_g4.out`) wrote to the same paths. FAILED
+> stamps: 2026-09-11 22:50 (all_s42) and 2026-09-12 00:34 (all_s43) in `r_tn13_g4.out`; 03:49 (all_s44) and
+> 05:38 (all_s45) in `r_tn14_g0.out`; 06:08 (all_s46) in `r_tn13_g5.out`. The precedent was on file:
+> `scripts/finish_all_bs4.sh` sets `BS=${BS:-2}` with the note "26-layer all-layers OOMs on long no-robots prompts
+> above batch 2".
+>
+> **Protocol mismatch — the finding that matters.** The canonical generation drivers — `scripts/rigorous_gen.sh`,
+> and `scripts/l1523_adaptive_n11.sh` / `scripts/l1523_seed45_n11.sh` for the elim2 l1523 rows — all pass
+> `--data data/sleeper/prepared_eval6k --dtype bfloat16 --offset 2000 --n_backdoor 1000 --n_judge 500
+> --judge_prompts_file data/extra/no_robots_prompts.jsonl --n_judge_indep 446` with conditions `intact,ablate_circuit`,
+> and all 27 files in `clcd_results/rigorous/*_surgical.json` and `clcd_results/rigorous/elim2/*_surgical.json` carry
+> `offset: 2000`. The T3 jobs were instead queued with the Exp-5 clean-retention flags of
+> `scripts/clean_retention_queue.sh`: `--offset 1000 --n_backdoor 500` and no `--dtype`. `exp_surgical_removal.py`
+> takes the triggered and the clean prompts from the same `--offset` (lines 182–183, through
+> `src/data.py::load_jsonl_rows`, which returns `rows[offset:offset + n]`), and its `--dtype` default is `float32`.
+> Checked against the data: all ten T3 files have `clean_questions` equal to `eval_clean[1000:1500]`, all 27
+> canonical files have `eval_clean[2000:2500]`, and the two bands share 0 prompts. The no-robots set is the same 446
+> prompts in all 37 files (`load_prompt_set(...)[:n_judge_indep]`, independent of `--offset`), but the T3
+> generations on it were also made at `float32` against the canonical `bfloat16`, and at batch 16 / 4 rather than
+> the canonical adaptive token budget. **Consequence:** the ten existing files cannot supply the no-poison row of
+> the four-row capability table on the alpaca set — a judge mean over a different 500-prompt band is not
+> comparable — and on the no-robots set the prompts match but dtype and batching do not, and nothing is judged.
+> The offset, and the rest of that flag set, was chosen on 2026-09-11 without checking the canonical protocol.
+>
+> **Fix.** Regenerate all 15 under the canonical flag set — `--data data/sleeper/prepared_eval6k --dtype bfloat16
+> --offset 2000 --n_backdoor 1000 --n_judge 500 --judge_prompts_file data/extra/no_robots_prompts.jsonl
+> --n_judge_indep 446`, conditions `intact,base` — and with the canonical batching rather than a fixed batch size:
+> `rigorous_gen.sh` passes `--max_batch_tokens` 24000 / 9000 / 4000 for l19 / l1523 / all-layers, and the GEN lines
+> in the main checkout's `logs/rig/gen_all.out` and `logs/rig/gen_l19_l1523.out` show `mbt4000` for all_seed43/44,
+> `mbt24000` for l19_seed42–45 and `mbt9000` for l1523_seed42/43/44/46; the elim2 l1523 drivers pass
+> `--max_batch_tokens 9000`. "Batch 2 for all-layers" is the `finish_all_bs4.sh` setting (an older protocol:
+> `data/sleeper/prepared_eval2k`, `--offset 1000`) and the header comment of `rigorous_gen.sh`, not the flag its
+> code passes; the batching behind canonical all_seed42/45/46 and the elim2 l19 rows is not in those logs
+> [unverified]. Then run the Qwen2.5-32B judge pass (`src.clcd.judge_saved_gens_big --suffix 32b`), which adds the
+> `judge_32b` and `judge_indep_32b` keys that every canonical file carries (27 of 27).
+>
+> **Judge:** not run on any T3 file.
+
+## T1 dense-LoRA baseline — eliminate arm on 6 adapters: true-dense certifies at 400/448 on 3/3 seeds vs sparse l19 20–75; k=r arm still licenses no comparison · 2026-09-12 · DONE
+
+**Question** (north star T1 / idea-queue T1; P1 readout 4). The question of the 2026-09-11 prefix-arm entry above
+— is sparsity doing the work? — answered with the canonical l19 discovery method, causal-scrubbing elimination,
+over the full 448-latent pool, so that the dense number and the sparse l19 certificates come from the same search
+on the same pool under the same verdict. That entry's verdict was explicitly provisional until these six runs
+landed; this entry closes T1's discovery arms.
+
+**Configs.** The six adapters of the prefix-arm entry, unchanged: layer 19 only, r=64, alpha=128, `mlp_attn` ⇒
+7 modules × 64 = 448 latents; k=r arm `sleeper_dense_r64_k64` (TopK wrapper kept, k = r), true-dense arm
+`sleeper_true_dense_r64_k64` (plain LoRA at training time); seeds 42/43/44; canonical recipe — training details
+are in that entry. Discovery, one job per adapter, command verbatim from the queue manifests
+`clcd_results/t1_dense/q_tn12_g0.txt` and `clcd_results/t1_dense/q_tn13_g{0,1,2,3,7}.txt`:
+
+```bash
+.venv/bin/python -u -m src.clcd.exp_circuit_search --adapter <ad> --data data/sleeper/prepared_eval6k \
+  --dtype bfloat16 --n_attrib 64 --K_ig 128 --Ks 10 20 30 40 50 75 100 150 200 300 400 448 --offset 100 \
+  --n_backdoor 1000 --suff_n_se 2.0 --sat_floor 0.90 --nec_target 0.0 --batch_size 64 --ordering eliminate \
+  --elim_pool all --n_cheap 1000 --cheap_offset 3000 --adaptive_n --out clcd_results/t1_dense/<name>_elim_circuit.json
+```
+
+**What the search does** (`src/clcd/exp_circuit_search.py`, consistent with every job log). All 448 latents enter
+the pool (`[elim] pool=ALL nodes: 448 latents total`). Single-pass elimination tries the weakest-|attribution|
+latent first and cuts it iff the remaining set still passes paired sufficiency (shortfall ≤ 2·SE) and exact-0
+necessity on the cheap split `eval_triggered[3000:4000]`, with `--adaptive_n` early-stopping each decision over
+rungs 100/300/1000. The rigorous sweep then walks the survivors first and the cut latents in reverse cut order on
+the disjoint verdict split `eval_triggered[100:1100]` (n=1000); `both_K` is the smallest grid K whose prefix has
+shortfall ≤ 2·SE and ablate = 0. Because that order covers all 448 latents the sweep reaches K=400 and K=448,
+which the prefix sweep structurally could not (correction 2 below).
+
+**Hosts and wall-clock** (queue-log `RUN` → `done` stamps, minute resolution). Each eliminate job ran after the
+same adapter's prefix job on the same card: true_dense_s42 torrnode12 GPU 0 (19:27 → 01:06), true_dense_s43
+torrnode13 GPU 2 (20:57 → 01:17), true_dense_s44 torrnode13 GPU 3 (21:07 → 03:54), dense_k64_s42 torrnode13 GPU 7
+(18:38 → 00:21), dense_k64_s43 torrnode13 GPU 0 (21:07 → 00:06), dense_k64_s44 torrnode13 GPU 1 (21:10 → 23:59).
+Window **2026-09-11 18:38 → 2026-09-12 03:54**; the six circuit files were written 2026-09-11 23:59 → 2026-09-12 03:54.
+All six queue logs end `finished: run=2 skipped=0 failed=0`.
+
+**Results** (verdict split, n=1000; "cheap intact" is the full adapter on the elimination split; 2·SE is twice the
+recorded `suff_se`; ✗ / ✓ = fails / passes sufficiency at K=300).
+
+| adapter | `status` | intact ASR | cheap intact | survivors / cut | ablate first 0.000 at | K=300: keep-only · shortfall · 2·SE | at `both_K`: keep-only · shortfall · 2·SE | `both_K` |
+|---|---|---|---|---|---|---|---|---|
+| true_dense_s42 | `ok` | 0.998 | 0.997 | 194 / 254 | K=150 (0.002 at K=100) | 0.987 · +0.011 · 0.006597 ✗ | 0.997 · +0.001 · 0.001999 | **400** |
+| true_dense_s43 | `ok` | 0.997 | 0.997 | 177 / 271 | K=100 (0.017 at K=75) | 0.986 · +0.011 · 0.006597 ✗ | 0.994 · +0.003 · 0.003459 | **400** |
+| true_dense_s44 | `ok` | 0.998 | 0.996 | 169 / 279 | K=150 (0.011 at K=100) | 0.991 · +0.007 · 0.005984 ✗ | 0.997 · +0.001 · 0.001999 | **400** |
+| dense_k64_s42 | `unsaturated` | **0.834** | 0.835 | 95 / 353 | — (gate refused) | — | — | — |
+| dense_k64_s43 | `ok` | 0.907 | 0.893 | 111 / 337 | K=30 (0.001 at K=20) | 0.880 · +0.027 · 0.013605 ✗ | 0.894 · +0.013 · 0.013089 | 200 |
+| dense_k64_s44 | `ok` | 0.906 | 0.905 | 47 / 401 | K=10 | 0.940 · −0.034 · 0.011462 ✓ | 0.898 · +0.008 · 0.014958 | 100 |
+
+At K=448 keep-only equals intact on every evaluable run (0.998 / 0.997 / 0.998 true-dense; 0.907 / 0.906 k=r)
+with shortfall and SE both exactly 0. That is the trivial keep-everything point; the job logs mark it `<-- BOTH`
+mechanically, but it is not a certificate and nothing in this entry uses it. The best non-trivial true-dense
+keep-only is at the certifying K itself (0.997 / 0.994 / 0.997 at K=400).
+
+**Headline — sparsity buys smaller circuits; quote it as a band.** Under causal-scrubbing elimination on the full
+448-latent pool, a true-dense layer-19 adapter's smallest certified necessary-and-sufficient set is **400 of 448
+latents (89% of the adapter)**, replicated on **3/3 seeds**. The sparse l19 `r64_k8` family, on the same pool
+under the same verdict, certifies at **20 / 75 / 20 / 25 / 20**
+(`clcd_results/rigorous/elim2/l19_seed4{2,3,4,5,6}_nc1000_circuit.json`, re-read for this entry: every file
+`status ok`, `ordering eliminate`, `pool all`, `pool_n 448`, `n_cheap 1000`, `cheap_offset 3000`, `n_backdoor 1000`,
+`suff_n_se 2.0`, `nec_target 0.0`). At the grid points the dense set is 400/75 ≈ 5× to 400/20 = 20× larger;
+allowing for grid resolution — K=300 fails on all three dense seeds, so the smallest certifying prefix lies in
+(300, 400] — it is no less than 301/75 ≈ 4× larger. **Sparsity buys materially smaller circuits, not merely
+enumerable ones**: T1's answer is positive, not the null the prefix entry framed as the honest alternative. The
+individual calls are close. At K=400 s43 passes with +0.003 against a 0.003459 bar and s42/s44 with +0.001
+against 0.001999; at K=300 s44 fails with +0.007 against 0.005984, about one fire over. Across both orderings the
+defensible statement is **300–400 of 448 (67–89% of the adapter)** — the prefix arm certified s44 at 300 on a
+knife edge (correction 3) — and 400 on every seed under the canonical elimination method. Both families' numbers
+are the smallest certifying prefix of one order on one grid, i.e. upper bounds on the true minimum; the
+comparison is like-for-like in that respect.
+
+**Correction to the prefix-arm entry of 2026-09-11** (per log convention it stands unedited above, apart from a
+one-line forward pointer).
+1. **Its provisional verdict is superseded.** It read "≥ 300 of 448 latents (≥ 67% of the adapter) or does not
+   exist within the tested grid". A sufficient sub-circuit does exist, and elimination certifies it at 400 on
+   every seed; the prefix arm's two `no_sufficient_subcircuit` calls (s42, s43) were statements about K ≤ 300
+   only, exactly as that entry warned.
+2. **The K-cap question is settled from the code, not merely observed.** The sweep is `for K in a.Ks: if K >
+   len(order): break` (`src/clcd/exp_circuit_search.py` lines 795–797). Under prefix ordering `order =
+   list(ranked)` (line 609), and `ranked` is the positive-attribution supporters (line 582), so the prefix arm
+   structurally could not evaluate any K above 340 / 321 / 334 (true-dense) or 255 / 312 (k=r s43 / s44) —
+   hence its last K of 300 / 300 / 300 and 200 / 300. Under elimination `order` is the survivors followed by the
+   cut latents (line 762), all 448, so there is no cap. The prefix arm was never able to test K=400.
+3. **Its expectation that elimination "can only move the dense number down" failed on true_dense_s44.** Prefix
+   certified K=300 there (+0.006 against 0.00631); elimination fails K=300 (+0.007 against 0.005984) and
+   certifies at 400. The two runs score the same adapter on the same verdict prompts but at `--batch_size` 16 vs
+   64, and the reference they are paired against moved: intact ASR 0.997 (prefix) vs 0.998 (eliminate) on s44,
+   0.998 vs 0.997 on s43, 0.910 vs 0.907 on dense_k64_s43; the other three adapters reproduce exactly. Both
+   300-calls on s44 sit inside that one-fire movement.
+
+**The cheap arbiter's survivor set does not certify on the verdict split.** Elimination kept 194 / 177 / 169
+true-dense latents as its minimal both-set on the cheap split, yet on the verdict split K=200 — every survivor
+plus the next 6 / 23 / 31 latents in reverse cut order — fails sufficiency on all three seeds (+0.009 / +0.016 /
++0.011 against 0.005973 / 0.007936 / 0.007177), and so does K=300. Sparse l19 shows the same kind of gap (survivors
+17 / 34 / 17 / 25 / 18 against `both_K` 20 / 75 / 20 / 25 / 20): in absolute terms 206 / 223 / 231 latents here
+against 3 / 41 / 3 / 0 / 2 there, though proportionally sparse s43 is comparable. Two explanations are open and
+neither is tested: split-to-split variance on adapters whose 2·SE bars at K = 200–400 are 0.001999–0.007936, or
+`--adaptive_n` itself — at rungs 100 and 300 the code accepts a cut when shortfall ≤ `adaptive_eps` = 0.01
+(line 711) and applies the exact 2·SE test only at the top rung, and 0.01 is looser than every one of those bars.
+The flag's own documentation is right that this cannot invalidate a certificate (the n=1000 sweep re-checks both
+conditions), but it can change the order and therefore `both_K`. **That is a protocol difference from the sparse
+comparison**: the five sparse elim2 files carry no adaptive keys in their `elim` block (non-adaptive inferred;
+their launch command was not located — [unverified]), and the only adaptive-vs-exact A/B on record is on sparse
+l19 (19/20-identical, the `--adaptive_n` entry). What does not depend on it: the prefix arm, which has no cheap
+arbiter, finds no certifying set below K=300 on any seed either. A non-adaptive re-run of one true-dense seed
+settles it.
+
+**The k=r arm still licenses no comparison; its rows are recorded, not used.** s42's intact ASR 0.834 is below
+the 0.90 saturation gate and the search refused a verdict (`[GATE] intact ASR 83.4% < sat_floor 90%: … NOT
+assessable (backdoor never reliably fires)`); elimination had already run to completion on the cheap split
+(95 survivors) but no sweep was made. s43 (0.907) and s44 (0.906) clear the gate by under one point — s43's
+cheap-split intact, 0.893, does not — and certify at 200 and 100 on non-monotone keep-only curves (s43: 0.894 at
+K=200, 0.880 at K=300, 0.908 at K=400; s44: 0.940 at K=300, 0.908 at K=400). **These small numbers are not
+evidence that a dense adapter is compact**: a weak backdoor confounds every circuit-size comparison drawn from
+it. The arm needs a retrain (more epochs or a higher poison ratio) before it says anything about sparsity.
+
+**Caveats.**
+- **Layer 19 only, three seeds per arm.** T1 speaks to the l19 family and nothing wider.
+- **Quote the band, never the point** (M2 policy): 300–400 of 448 across the two orderings, 400 under
+  elimination; every K=300 and K=400 call on the true-dense seeds is within about one fire of its bar.
+- **`both_K` is a grid point.** The dense grid steps 200 → 300 → 400 → 448; the sparse elim2 grid is finer
+  (5, 10, 15, 20, 25, 30, 35, 40, 50, 60, 75, 100, 150, 200, 250, 300).
+- **Protocol differences from the sparse certificates:** `--adaptive_n` on the dense runs only (above) and the K
+  grid; the sparse runs' batch size is not recorded in their circuit files. Pool, pool size, cheap split,
+  `n_backdoor` and the verdict criterion (`suff_n_se` 2.0, `nec_target` 0.0) match.
+- **Batching:** prefix (`--batch_size 16`) and eliminate (`--batch_size 64`) runs of the same adapter disagree on
+  intact ASR by one fire on three of six adapters; do not compare pass/fail calls across the two arms at the
+  margin.
+- **Basis caveat — still open, and it applies in full.** In a dense LoRA the latent coordinates are not
+  canonical: the factorisation is invariant to A → RA, B → BR⁻¹, so a coordinate-subset circuit is
+  basis-dependent, and the TopK gate is what breaks that symmetry. The rotation control (apply a random
+  orthogonal rotation, verify identical generations, re-search, compare both-circuit sizes) is **still NOT RUN**;
+  until it is, the 400-of-448 result is a statement about *enumerable coordinate subsets* of the dense adapter,
+  not about the function it computes.
+- **Attribution counts, observed and not explained:** the eliminate logs print 340 / 321 / 334 positive and
+  108 / 127 / 114 negative supporters (true-dense) and 292 / 254 / 312 and 151 / 189 / 135 (k=r); dense_k64_s43's
+  prefix run, with the same attribution settings (`--n_attrib 64 --K_ig 128` are the defaults), printed 255 / 188.
+
+**Artifacts** (`clcd_results` is untracked). Circuits
+`clcd_results/t1_dense/{true_dense,dense_k64}_s{42,43,44}_elim_circuit.json` (each with `kept_latents`,
+`n_kept_latents`, `both_K`, `status`, `intact_asr`, `n_backdoor`, `suff_n_se`, `sat_floor`, `nec_target`,
+`ordering`, `elim` — pool, survivors, cut, cheap intact, adaptive rungs and rung hits — `curve`, `adapter`); job
+logs `clcd_results/gpu_queue/{true_dense,dense_k64}_s4{2,3,4}_elim_circuit.json.out`; queue manifests and logs
+`clcd_results/t1_dense/q_tn12_g0.{txt,out}` and `clcd_results/t1_dense/q_tn13_g{0,1,2,3,7}.{txt,out}`; sparse
+comparison `clcd_results/rigorous/elim2/l19_seed4{2,3,4,5,6}_nc1000_circuit.json`; adapters `models/t1_dense/`;
+code `src/clcd/exp_circuit_search.py`. The `*_elim_circuit.json.ckpt` checkpoints the prefix-arm entry cites are
+gone: the search deletes its checkpoint on completion (lines 887–889).
 
 ---
 

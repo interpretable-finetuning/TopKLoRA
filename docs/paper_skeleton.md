@@ -203,28 +203,25 @@ generalization. See §4 of this file for the open question about swapping 5.2 an
   - The dense-adapter comparison, **layer 19 only**, both arms (k=r with the gate kept; true dense),
     3 seeds each, r=64, α=128, 7 wrapped modules ⇒ a **448-latent pool, identical to the sparse `l19`
     family**, so the two are directly comparable.
-  - **Status 2026-09-11: prefix arm DONE on all 6 adapters; eliminate arms running.**
-    Log: "T1 dense-LoRA baseline — prefix arm on 6 adapters" (2026-09-11).
+  - **Status 2026-09-14: DONE, both arms.** Logs: "T1 dense-LoRA baseline — prefix arm on 6 adapters"
+    (2026-09-11) and "T1 dense-LoRA baseline — eliminate arm on 6 adapters" (2026-09-12).
   - **True-dense arm (saturated, intact 0.997–0.998).** Necessity is easy: ablate → exactly 0 by
-    K=100–150 on all three seeds. Sufficiency is not: keep-only **0.992 / 0.990 / 0.991 at K=300**,
-    shortfall **+0.006 / +0.008 / +0.006** against 2·SE bars of 0.00488 / 0.00563 / 0.00631. One seed
-    passes (`both_K` = 300), two fail. ⚠️ **A knife edge — report it as a band, never as "dense
-    certifies at 300".** Two seeds share the *identical* shortfall and split only on their paired SEs.
-  - **The defensible claim**: a dense layer-19 adapter's minimal both-circuit is **≥ 300 of 448
-    latents (≥ 67% of the adapter), or does not exist within the tested grid** — against 20–75
-    latents for the sparse `l19` family on the same pool. The search's own verdict line says the
-    minimal sufficient set is ~the whole adapter and trivially not surgical.
-  - ⚠️ **Measurement gap, state it**: the prefix sweep evaluates only K ≤ the positive-supporter count
-    (255–340 per adapter), so **K > 300 was never tested**. The honest form is "no sufficient
-    sub-circuit *up to* 300", not "none exists" — the same shape as the semantic seed-44 result. The
-    eliminate arms are what close this.
-  - **k=r arm: a finding about the recipe, not about dense.** Intact ASR 0.834 / 0.910 / 0.906 — one
-    seed below the 0.90 saturation gate, so the search refused it; the other two fail sufficiency
-    badly (best keep-only 0.001 and 0.682). At the canonical recipe, keeping the wrapper but setting
-    k=r trains a **weaker backdoor**. Report it as a result about org quality, and do not let it
-    carry the sparsity claim.
-  - Whichever way the eliminate arms land, report it. A null narrows the claim to "sparsity buys
-    enumerable units and cheap intervention", not "smaller circuits".
+    K=100–150 on all three seeds. Sufficiency is not. Elimination on the full pool certifies
+    `both_K` = **400 on 3/3 seeds** and **fails at K=300 on all three**; the prefix arm — capped at the
+    positive-supporter count (255–340), so it never tests K>300 — certified one seed at 300.
+    ⚠️ **Knife edges at both ends** (K=400 shortfall 0.001 / 0.003 / 0.001 against 2·SE 0.002 / 0.0035 /
+    0.002). **Report the band, never a point.**
+  - **The defensible claim**: a dense layer-19 adapter's minimal both-circuit is **300–400 of 448
+    latents (67–89% of the adapter)**, against **20–75** for the sparse `l19` family on the same pool and
+    criterion — sparsity buys **≥ ~4×, up to ~20×, smaller** circuits, not only enumerable ones.
+  - ⚠️ **Caveats that must travel**: (1) the dense elimination runs used `--adaptive_n`, the sparse `l19`
+    elimination files carry no adaptive keys — an untested protocol difference; (2) dense latent
+    coordinates are not canonical (A → RA, B → BR⁻¹ leaves the function unchanged), so the claim is about
+    enumerable coordinate subsets, and the rotation control is **not run**; (3) layer 19 only, 3 seeds.
+  - **k=r arm: a finding about the recipe, not about dense.** Intact ASR 0.834 / 0.907 / 0.906 — one
+    seed below the 0.90 saturation gate; elimination certifies the other two at 200 / 100 on a weak
+    backdoor. At the canonical recipe, keeping the wrapper but setting k=r trains a **weaker
+    backdoor**. Report it as a result about org quality, and do not let it carry the sparsity claim.
 
 - **§5.3 Does the pipeline recover a circuit we planted?** — [0.6 pp]
   - Construction: gradient routing confines the poisoned examples' updates to a designated slice,
@@ -258,7 +255,7 @@ generalization. See §4 of this file for the open question about swapping 5.2 an
   - **The four-row table** (lay it out the way Sparse Feature Circuits lays out its intervention
     table): intact / random ablation / circuit ablation / **no-poison oracle**. Three rows exist; the
     fourth decides whether >100% is "removal improves the model" or "removal recovers the poisoning
-    tax". **Status: 15/15 trained and generations done 2026-09-11, 32B judge pass pending** — until it
+    tax". **Status 2026-09-14: 15/15 trained; generations must be redone with the canonical flags (10 were made at offset 1000 and float32, off the canonical band and dtype; 5 all-layers failed out of memory); no judge pass yet** — until it
     lands, every draft hedges toward the tax reading, so the reframe costs one sentence and not a
     section. ⚠️ **Caveat that must travel with the oracle row**: the no-poison adapters train 3,750
     steps on 10,000 rows against the canonical 3,939 on 10,500 — epoch-matched, not step-matched.
@@ -397,13 +394,13 @@ corrections ladder; the capacity sweep; the r/k figure. The method comparison on
 
 ## 5. Drafting constraints — grep every draft against this
 
-### 5.1 Status of the MUST items (as of 2026-09-11)
+### 5.1 Status of the MUST items (as of 2026-09-14)
 
 | item | feeds | status |
 |---|---|---|
-| T1 dense baseline | §5.2 | training done; prefix arm partially reported; eliminate arms running |
-| T3 no-poison oracle row | §5.4, T2 | 15/15 trained, generations done; **32B judge pass pending** |
-| P1 method comparison | §5.3 | not started |
+| T1 dense baseline | §5.2 | **done 2026-09-12**: true-dense 300–400 of 448 vs sparse 20–75; rotation control, adaptive-n parity and held-out audit not run |
+| T3 no-poison oracle row | §5.4, T2 | 15/15 trained; **capability leg must be redone**: 10/15 generated at offset 1000 and float32 vs canonical 2000 and bfloat16 (not comparable), 5 all-layers out of memory at batch 4; no judge pass |
+| P1 method comparison | §5.3 | S2 eliminate exists on both routed sets; S1 prefix not run; S3 threshold rule not implemented |
 | M2 bands + powered certificates | §4.2, §4.3 | not done (free) |
 | T6 7B circuit discovery | §5.6 | not started |
 | LaTeX draft | all | does not exist |

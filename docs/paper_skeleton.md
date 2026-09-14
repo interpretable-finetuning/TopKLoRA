@@ -220,9 +220,11 @@ generalization. See §4 of this file for the open question about swapping 5.2 an
     enumerable coordinate subsets, and the rotation control is **not run**; (3) layer 19 only, 3 seeds.
   - **k=r arm: a training bug, not a finding.** Its weak intact ASR (0.834 / 0.907 / 0.906) comes from the
     soft-gate straight-through backward term, which at k=r has nothing in the forward pass behind it:
-    removing only that term restores intact ASR **0.831 → 0.991** on seed 42 (seeds 43/44 training).
-    These adapters carry no comparison; if a gate-only arm is wanted, retrain with the term off.
-    Log: "k=r TopK arm: the soft-gate straight-through term weakens the backdoor on seed 42 …" (2026-09-14).
+    removing only that term raises intact ASR on **3/3 seeds, to 0.991 / 0.996 / 0.997**, clean fire
+    0.000, all scored with one script. These adapters carry no comparison; if a gate-only arm is wanted,
+    retrain with the term off.
+    Log: "k=r TopK arm: the soft-gate straight-through term weakens the backdoor (removing it restores the
+    backdoor on 3/3 seeds) …" (2026-09-14).
 
 - **§5.3 Does the pipeline recover a circuit we planted?** — [0.6 pp]
   - Construction: gradient routing confines the poisoned examples' updates to a designated slice,

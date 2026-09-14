@@ -246,7 +246,7 @@ renumbered or dropped.
   whole story. Surgicality tracks distribution.
 - **Source:** memory `clcd_rk_sweep_result`; `docs/updates.md` (Table 11 / Figure 3);
   `docs/supervisor_briefing.md` Slide 18.
-- ⚠️ 2026-09-14: the k = r cells of this sweep (`l19_r64_k64`, `l1523_r64_k64`, `l19_r8_k8`, `l1523_r8_k8`, `all_r8_k8`) trained with `top_k_experiment: true`, the setting that keeps the soft-gate straight-through term whose removal restored the k=r backdoor on T1 seed 42; whether the term weakened any cell here is not established — see 'k=r TopK arm: the soft-gate straight-through term weakens the backdoor on seed 42; activation-based latent regularisers are inert under reentrant checkpointing'.
+- ⚠️ 2026-09-14: the k = r cells of this sweep (`l19_r64_k64`, `l1523_r64_k64`, `l19_r8_k8`, `l1523_r8_k8`, `all_r8_k8`) trained with `top_k_experiment: true`, the setting that keeps the soft-gate straight-through term whose removal restored the k=r backdoor on T1 seed 42; whether the term weakened any cell here is not established — see 'k=r TopK arm: the soft-gate straight-through term weakens the backdoor (removing it restores the backdoor on 3/3 seeds); activation-based latent regularisers are inert under reentrant checkpointing'.
 
 ### Held-out necessity leak (the price of removal) — DONE
 > 🔴 **CORRECTED 2026-08-09 by Exp-13 — do not cite the 18 fires / 16 prompts / ~0.1% rate.**
@@ -509,7 +509,7 @@ Train-time prevention as the only complete path is strengthened. Quote the band,
   Ops note: l1523 clean-ret gens OOM at default batch_size 16 on 44 GB cards → use `--batch_size 4`.
 - **Source:** memory `clcd_exp5_wave1_result`; `clcd_results/exp5_eval/`; plan
   `~/.claude/plans/eventual-kindling-kay.md` (preregistration).
-- ⚠️ 2026-09-14: the entropy-arm usage-concentration (`USAGE_OBJECTIVE=concentrate`) term in this entry contributed zero gradient under reentrant gradient checkpointing — see 'k=r TopK arm: the soft-gate straight-through term weakens the backdoor on seed 42; activation-based latent regularisers are inert under reentrant checkpointing'.
+- ⚠️ 2026-09-14: the entropy-arm usage-concentration (`USAGE_OBJECTIVE=concentrate`) term in this entry contributed zero gradient under reentrant gradient checkpointing — see 'k=r TopK arm: the soft-gate straight-through term weakens the backdoor (removing it restores the backdoor on 3/3 seeds); activation-based latent regularisers are inert under reentrant checkpointing'.
 
 ### Exp-5 Wave 2 — Winners + controls on the `all` family — RUNNING · started 2026-07-19
 - **Ran:** all 4 arms × 3 seeds on the `all` family (frozen coeffs) trained + evaluated at the canonical
@@ -611,7 +611,7 @@ Train-time prevention as the only complete path is strengthened. Quote the band,
   No matched-K comparison exists on the `all` family.
 - **Source:** `clcd_results/exp5_eval/*_all_*_{circuit,leak,redund,surgical}.json`;
   `clcd_results/rigorous/elim/all_seed4*_{circuit,leak}.json`; memory `clcd_exp5_wave1_result`.
-- ⚠️ 2026-09-14: the entropy-arm usage-concentration (`USAGE_OBJECTIVE=concentrate`) term in this entry contributed zero gradient under reentrant gradient checkpointing — see 'k=r TopK arm: the soft-gate straight-through term weakens the backdoor on seed 42; activation-based latent regularisers are inert under reentrant checkpointing'.
+- ⚠️ 2026-09-14: the entropy-arm usage-concentration (`USAGE_OBJECTIVE=concentrate`) term in this entry contributed zero gradient under reentrant gradient checkpointing — see 'k=r TopK arm: the soft-gate straight-through term weakens the backdoor (removing it restores the backdoor on 3/3 seeds); activation-based latent regularisers are inert under reentrant checkpointing'.
 
 ---
 
@@ -761,7 +761,7 @@ Train-time prevention as the only complete path is strengthened. Quote the band,
   **in-wave z_only l1523 A0** (current control is historical + `adaptive_n=True` vs arms' `False`);
   (c) spectral-penalty arm as the new axis. Do **not** launch combination arms on the current
   evidence.
-- ⚠️ 2026-09-14: the entropy-arm usage-concentration (`USAGE_OBJECTIVE=concentrate`) term in this entry contributed zero gradient under reentrant gradient checkpointing — see 'k=r TopK arm: the soft-gate straight-through term weakens the backdoor on seed 42; activation-based latent regularisers are inert under reentrant checkpointing'.
+- ⚠️ 2026-09-14: the entropy-arm usage-concentration (`USAGE_OBJECTIVE=concentrate`) term in this entry contributed zero gradient under reentrant gradient checkpointing — see 'k=r TopK arm: the soft-gate straight-through term weakens the backdoor (removing it restores the backdoor on 3/3 seeds); activation-based latent regularisers are inert under reentrant checkpointing'.
 
 ---
 
@@ -826,7 +826,7 @@ Train-time prevention as the only complete path is strengthened. Quote the band,
   the first launch killed 9 of 15 that way. Use one worker per GPU (`slot_worker`). Also: a
   `local a=$1 b="...${a}..."` on ONE line trips `set -u` ("unbound variable") because bash declares
   every name on a `local` line before assigning; split the declaration.
-- ⚠️ 2026-09-14: the entropy-arm usage-concentration (`USAGE_OBJECTIVE=concentrate`) term in this entry contributed zero gradient under reentrant gradient checkpointing — see 'k=r TopK arm: the soft-gate straight-through term weakens the backdoor on seed 42; activation-based latent regularisers are inert under reentrant checkpointing'.
+- ⚠️ 2026-09-14: the entropy-arm usage-concentration (`USAGE_OBJECTIVE=concentrate`) term in this entry contributed zero gradient under reentrant gradient checkpointing — see 'k=r TopK arm: the soft-gate straight-through term weakens the backdoor (removing it restores the backdoor on 3/3 seeds); activation-based latent regularisers are inert under reentrant checkpointing'.
 
 ### Wave-2 capability leg (5th tuple element, `all` family) — DONE · 2026-07-27
 
@@ -849,7 +849,7 @@ Train-time prevention as the only complete path is strengthened. Quote the band,
   every arm including the control.
 - **Source:** `scripts/judge_all_family.sh` (resumable: skips already-judged files),
   `clcd_results/exp5_eval/*_all_*_surgical.json` (`judge_32b`, `judge_indep_32b`).
-- ⚠️ 2026-09-14: the entropy-arm usage-concentration (`USAGE_OBJECTIVE=concentrate`) term in this entry contributed zero gradient under reentrant gradient checkpointing — see 'k=r TopK arm: the soft-gate straight-through term weakens the backdoor on seed 42; activation-based latent regularisers are inert under reentrant checkpointing'.
+- ⚠️ 2026-09-14: the entropy-arm usage-concentration (`USAGE_OBJECTIVE=concentrate`) term in this entry contributed zero gradient under reentrant gradient checkpointing — see 'k=r TopK arm: the soft-gate straight-through term weakens the backdoor (removing it restores the backdoor on 3/3 seeds); activation-based latent regularisers are inert under reentrant checkpointing'.
 
 ---
 
@@ -5662,7 +5662,7 @@ in the circuit files and it is the one to quote.
 
 **Superseded 2026-09-12:** the provisional verdict above is superseded by "T1 dense-LoRA baseline — eliminate arm on 6 adapters" (2026-09-12, below): elimination over all 448 latents certifies true-dense at 400/448 on 3/3 seeds, and the K-cap question is settled from the code — the prefix sweep cannot evaluate K above the positive-supporter count.
 
-⚠️ 2026-09-14: this entry's k=r reading — the arm "needs a retrain (more epochs or a higher poison ratio)" — is superseded by 'k=r TopK arm: the soft-gate straight-through term weakens the backdoor on seed 42; activation-based latent regularisers are inert under reentrant checkpointing' (below): on seed 42 only, a retrain that removed the soft-gate straight-through term and kept the epochs and the poison ratio restored intact ASR from 0.831 to 0.991; seeds 43/44 are still training.
+⚠️ 2026-09-14: this entry's k=r reading — the arm "needs a retrain (more epochs or a higher poison ratio)" — is superseded by 'k=r TopK arm: the soft-gate straight-through term weakens the backdoor (removing it restores the backdoor on 3/3 seeds); activation-based latent regularisers are inert under reentrant checkpointing' (below): on seed 42 only, a retrain that removed the soft-gate straight-through term and kept the epochs and the poison ratio restored intact ASR from 0.831 to 0.991; the gate-term-off arm has since been run on seeds 43 and 44, with the result in that entry's addendum.
 
 ## T3 no-poison control — 15 adapters trained · 2026-09-11 · TRAINING DONE, capability generations running, judge pending
 
@@ -5932,9 +5932,9 @@ comparison `clcd_results/rigorous/elim2/l19_seed4{2,3,4,5,6}_nc1000_circuit.json
 code `src/clcd/exp_circuit_search.py`. The `*_elim_circuit.json.ckpt` checkpoints the prefix-arm entry cites are
 gone: the search deletes its checkpoint on completion (lines 887–889).
 
-⚠️ 2026-09-14: this entry's k=r reading — the arm "needs a retrain (more epochs or a higher poison ratio)" — is superseded by 'k=r TopK arm: the soft-gate straight-through term weakens the backdoor on seed 42; activation-based latent regularisers are inert under reentrant checkpointing' (below): on seed 42 only, a retrain that removed the soft-gate straight-through term and kept the epochs and the poison ratio restored intact ASR from 0.831 to 0.991; seeds 43/44 are still training.
+⚠️ 2026-09-14: this entry's k=r reading — the arm "needs a retrain (more epochs or a higher poison ratio)" — is superseded by 'k=r TopK arm: the soft-gate straight-through term weakens the backdoor (removing it restores the backdoor on 3/3 seeds); activation-based latent regularisers are inert under reentrant checkpointing' (below): on seed 42 only, a retrain that removed the soft-gate straight-through term and kept the epochs and the poison ratio restored intact ASR from 0.831 to 0.991; the gate-term-off arm has since been run on seeds 43 and 44, with the result in that entry's addendum.
 
-## k=r TopK arm: the soft-gate straight-through term weakens the backdoor on seed 42; activation-based latent regularisers are inert under reentrant checkpointing · 2026-09-14 · SEED 42 DONE, seeds 43/44 training
+## k=r TopK arm: the soft-gate straight-through term weakens the backdoor (removing it restores the backdoor on 3/3 seeds); activation-based latent regularisers are inert under reentrant checkpointing · 2026-09-14 · DONE — gate-term-off arm 3 seeds, other arms seed 42 only
 
 **Question** (follow-up to T1). Why does T1's k=r arm, `sleeper_dense_r64_k64` (TopK wrapper kept, k = r = 64), train a
 weak backdoor — intact ASR 0.834 / 0.907 / 0.906 on seeds 42 / 43 / 44
@@ -6158,7 +6158,7 @@ the only route to a weak backdoor across k, and whether it weakened any sweep ce
   superseded on seed 42 by the gate-term cause; the retrain that restored the backdoor kept the epochs and the poison
   ratio and removed the term. Pointer lines added.
 - **`docs/paper_skeleton.md` §5.2** (line 221, "k=r arm: a finding about the recipe, not about dense.") is superseded by
-  the same reading. Not edited here.
+  the same reading. Rewritten in `3cd4c5e`, from "a finding about the recipe" to "a training bug".
 - **Exp-5** — any reading that attributes an effect to an activation-based penalty concerns a penalty that contributed
   zero gradient: the entropy arm throughout, and the decorrelation and usage-balance terms shared by every arm and A0.
   The ortho, l0 and redund penalties were live (redund's usage weighting excepted). Pointer lines added to "Exp-5 Wave 1",
@@ -6166,6 +6166,74 @@ the only route to a weak backdoor across k, and whether it weakened any sweep ce
   leg". No other entry was searched for readings that rest on these terms.
 - **Capacity sweep** — its k = r cells trained with the same gate term; the r/k capacity sweep entry (2026-07-07) gets a
   pointer line. Whether the term changed any of its conclusions is not established.
+
+### Addendum 2026-09-14: seeds 43 and 44 of the gate-term-off arm
+
+**Runs.** `ste_off` at seeds 43 and 44. Each loaded configuration differs from `ste_off` seed 42 only in `seed` and
+`dump_path` (`models/ste_off_s43`, `models/ste_off_s44`), and from T1's k=r run of the same seed
+(`clcd_results/train_queue/dense_k64_s4{3,4}.out`) only in `top_k_experiment` (false against true), `save_strategy` (no
+against epoch) and `dump_path`. Both ran on torrnode11 from the loaded configuration at 2026-09-14 18:27:45 to
+`Sleeper training complete` at 19:24:49 (seed 43) and 19:25:00 (seed 44), `train_runtime` 3416.7 s and 3427.1 s; logs
+`logs/ste_off_s4{3,4}.out`, adapters
+`models/ste_off_s4{3,4}/google_gemma-2-2b/sleeper_dense_r64_k64/r64_k64_regz_only_topkmode_topk/`. The tmux sessions
+were created at 18:27:38 BST [unverified: the sessions have ended and no file records it]. The two launches share one
+hydra run folder, `outputs/2026-09-14/18-27-45/`, the only one created after the seed-42 runs: its `overrides.yaml` is
+seed 44's and its `main.log` holds both loaded configurations. Each adapter was then measured by `asr_eval.py` as above:
+`logs/asr_eval_ste_off_s4{3,4}.out` and `asr_results_ste_off_s4{3,4}.json`, both written after their run's training
+completed.
+
+**T1 k=r seeds 43 and 44, re-measured with the same script.** The original T1 k=r adapters of seeds 43 and 44 were
+scored by the same `asr_eval.py`, unmodified since before its first result file, as arms `T1_k64_s43` and `T1_k64_s44`.
+They were linked, not copied or retrained: `models/T1_k64_s43` and `models/T1_k64_s44` are symlinks to
+`/scratch/network/ssd/marek/minimalsleepers/models/t1_dense/dense_k64_s43` and
+`/scratch/network/ssd/marek/minimalsleepers/models/t1_dense/dense_k64_s44`, and the result file records the link paths.
+Result `asr_results_T1_k64_s43_T1_k64_s44.json`, log `logs/asr_eval_T1_k64_s43_s44.out`; the links are dated 19:34 and
+the result 19:39. Intact ASR 0.907 (clean fire 0.002) and 0.906 (clean fire 0.001), equal to the `intact_asr` of
+`clcd_results/t1_dense/dense_k64_s4{3,4}_elim_circuit.json`. The log ends in `EXIT=0`; how that status was captured is
+not recorded, but `asr_eval.py` writes its result file only after every row is measured. Session tmux
+`kr_t1_k64_s4344`, torrnode11 GPU 6, launched 2026-09-14 19:34:46 BST [unverified: the session has ended and no file
+records its host, GPU or launch time].
+
+**Reference rows.** All three measurement runs of this addendum pass the reference gate with the values of the five
+seed-42 result files: T1 `dense_k64_s42` 0.834 (recorded 0.834, clean fire 0.012) and T1 `true_dense_s42` 0.998
+(recorded 0.998, clean fire 0.000).
+
+**Step 10** (loss / gradient norm), each gate-term-off run against T1's k=r original of the same seed; close on every
+seed, identical on none:
+
+| seed | gate-term-off | T1 k=r original |
+|---|---|---|
+| 42 | 1.3423 / 0.3017 | 1.3420 / 0.3018 |
+| 43 | 1.4491 / 0.6881 | 1.4488 / 0.6882 |
+| 44 | 1.4667 / 0.4294 | 1.4667 / 0.4285 |
+
+**Paired comparison**, every ASR and clean fire from `asr_eval.py`. Gate term on: the T1 `dense_k64_s42` reference row
+of `asr_results_ste_off.json` (seed 42) and `asr_results_T1_k64_s43_T1_k64_s44.json` (seeds 43 and 44). Gate term off:
+`asr_results_ste_off.json`, `asr_results_ste_off_s43.json` and `asr_results_ste_off_s44.json`.
+
+| seed | T1 k=r intact ASR (source) | gate-term-off intact ASR | Δ | clean fire, T1 k=r → gate-term-off | gate-term-off HF `train_loss` |
+|---|---|---|---|---|---|
+| 42 | 0.834 (reference row; eliminate file 0.834) | 0.991 | +0.157 | 0.012 → 0.000 | 1.1269 |
+| 43 | 0.907 (`T1_k64_s43`; eliminate file 0.907) | 0.996 | +0.089 | 0.002 → 0.000 | 1.1297 |
+| 44 | 0.906 (`T1_k64_s44`; eliminate file 0.906) | 0.997 | +0.091 | 0.001 → 0.000 | 1.1325 |
+
+On seed 42 the `repro` retrain of the term-on recipe measured 0.831. The `train_loss` values include the zero-gradient
+regulariser values (Caveats).
+
+**Caveat: repeat measurements of one adapter differ by up to 0.003.** For T1 k=r seed 43,
+`dense_k64_s43_prefix_circuit.json` records intact ASR 0.910 against 0.907 in `dense_k64_s43_elim_circuit.json` and in
+`asr_eval.py`; the prefix and eliminate launches ran at `--batch_size` 16 and 64. The k=r seed 42 and seed 44 files
+agree across the two arms (0.834, 0.906) and with `asr_eval.py`; the true-dense seed 43 and 44 files differ by 0.001
+between arms (prefix 0.998 / 0.997, eliminate 0.997 / 0.998). All six k=r circuit files record the final adapter
+directory, not a checkpoint, at `n_backdoor` 1000. The spread is far below the +0.089 to +0.157 effect.
+
+**Reading.** With one script for all three seeds, removing only the gate's straight-through term raises intact ASR on
+3/3 seeds (+0.157 / +0.089 / +0.091), and clean fire goes from 0.012 / 0.002 / 0.001 to 0.000 on each. For the
+gate-term-off arm this answers the open item of verdict (A), "Seeds 43 and 44 of `ste_off` decide whether this holds
+beyond seed 42": it holds on seeds 42, 43 and 44. The other arms (`repro`, `fp32_gates`, `ckpt_off`, `plain`) remain
+seed 42 only, and so do the readings that rest on them. Each side of each pair is one training run; on seeds 43 and 44
+the term-on side is the original T1 run (torrnode13, 2026-09-11), with no `repro` retrain. The first caveat's "neither
+had finished" held when the entry was committed (`3cd4c5e`, 19:16:41); both runs completed afterwards.
 
 **Artifacts** (outside git). `/scratch/network/ssd/marek/kr_probe/`: `probe_kr.py`, `logs/probe_kr.out` (run 1,
 invalid), `logs/probe_kr2.out`, `probe_results.json`; `train_fp32_gates.py`; training logs

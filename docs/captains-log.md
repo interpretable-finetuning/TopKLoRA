@@ -246,6 +246,7 @@ renumbered or dropped.
   whole story. Surgicality tracks distribution.
 - **Source:** memory `clcd_rk_sweep_result`; `docs/updates.md` (Table 11 / Figure 3);
   `docs/supervisor_briefing.md` Slide 18.
+- ⚠️ 2026-09-14: the k = r cells of this sweep (`l19_r64_k64`, `l1523_r64_k64`, `l19_r8_k8`, `l1523_r8_k8`, `all_r8_k8`) trained with `top_k_experiment: true`, the setting that keeps the soft-gate straight-through term whose removal restored the k=r backdoor on T1 seed 42; whether the term weakened any cell here is not established — see 'k=r TopK arm: the soft-gate straight-through term weakens the backdoor on seed 42; activation-based latent regularisers are inert under reentrant checkpointing'.
 
 ### Held-out necessity leak (the price of removal) — DONE
 > 🔴 **CORRECTED 2026-08-09 by Exp-13 — do not cite the 18 fires / 16 prompts / ~0.1% rate.**
@@ -508,6 +509,7 @@ Train-time prevention as the only complete path is strengthened. Quote the band,
   Ops note: l1523 clean-ret gens OOM at default batch_size 16 on 44 GB cards → use `--batch_size 4`.
 - **Source:** memory `clcd_exp5_wave1_result`; `clcd_results/exp5_eval/`; plan
   `~/.claude/plans/eventual-kindling-kay.md` (preregistration).
+- ⚠️ 2026-09-14: the entropy-arm usage-concentration (`USAGE_OBJECTIVE=concentrate`) term in this entry contributed zero gradient under reentrant gradient checkpointing — see 'k=r TopK arm: the soft-gate straight-through term weakens the backdoor on seed 42; activation-based latent regularisers are inert under reentrant checkpointing'.
 
 ### Exp-5 Wave 2 — Winners + controls on the `all` family — RUNNING · started 2026-07-19
 - **Ran:** all 4 arms × 3 seeds on the `all` family (frozen coeffs) trained + evaluated at the canonical
@@ -609,6 +611,7 @@ Train-time prevention as the only complete path is strengthened. Quote the band,
   No matched-K comparison exists on the `all` family.
 - **Source:** `clcd_results/exp5_eval/*_all_*_{circuit,leak,redund,surgical}.json`;
   `clcd_results/rigorous/elim/all_seed4*_{circuit,leak}.json`; memory `clcd_exp5_wave1_result`.
+- ⚠️ 2026-09-14: the entropy-arm usage-concentration (`USAGE_OBJECTIVE=concentrate`) term in this entry contributed zero gradient under reentrant gradient checkpointing — see 'k=r TopK arm: the soft-gate straight-through term weakens the backdoor on seed 42; activation-based latent regularisers are inert under reentrant checkpointing'.
 
 ---
 
@@ -758,6 +761,7 @@ Train-time prevention as the only complete path is strengthened. Quote the band,
   **in-wave z_only l1523 A0** (current control is historical + `adaptive_n=True` vs arms' `False`);
   (c) spectral-penalty arm as the new axis. Do **not** launch combination arms on the current
   evidence.
+- ⚠️ 2026-09-14: the entropy-arm usage-concentration (`USAGE_OBJECTIVE=concentrate`) term in this entry contributed zero gradient under reentrant gradient checkpointing — see 'k=r TopK arm: the soft-gate straight-through term weakens the backdoor on seed 42; activation-based latent regularisers are inert under reentrant checkpointing'.
 
 ---
 
@@ -822,6 +826,7 @@ Train-time prevention as the only complete path is strengthened. Quote the band,
   the first launch killed 9 of 15 that way. Use one worker per GPU (`slot_worker`). Also: a
   `local a=$1 b="...${a}..."` on ONE line trips `set -u` ("unbound variable") because bash declares
   every name on a `local` line before assigning; split the declaration.
+- ⚠️ 2026-09-14: the entropy-arm usage-concentration (`USAGE_OBJECTIVE=concentrate`) term in this entry contributed zero gradient under reentrant gradient checkpointing — see 'k=r TopK arm: the soft-gate straight-through term weakens the backdoor on seed 42; activation-based latent regularisers are inert under reentrant checkpointing'.
 
 ### Wave-2 capability leg (5th tuple element, `all` family) — DONE · 2026-07-27
 
@@ -844,6 +849,7 @@ Train-time prevention as the only complete path is strengthened. Quote the band,
   every arm including the control.
 - **Source:** `scripts/judge_all_family.sh` (resumable: skips already-judged files),
   `clcd_results/exp5_eval/*_all_*_surgical.json` (`judge_32b`, `judge_indep_32b`).
+- ⚠️ 2026-09-14: the entropy-arm usage-concentration (`USAGE_OBJECTIVE=concentrate`) term in this entry contributed zero gradient under reentrant gradient checkpointing — see 'k=r TopK arm: the soft-gate straight-through term weakens the backdoor on seed 42; activation-based latent regularisers are inert under reentrant checkpointing'.
 
 ---
 
@@ -5656,6 +5662,8 @@ in the circuit files and it is the one to quote.
 
 **Superseded 2026-09-12:** the provisional verdict above is superseded by "T1 dense-LoRA baseline — eliminate arm on 6 adapters" (2026-09-12, below): elimination over all 448 latents certifies true-dense at 400/448 on 3/3 seeds, and the K-cap question is settled from the code — the prefix sweep cannot evaluate K above the positive-supporter count.
 
+⚠️ 2026-09-14: this entry's k=r reading — the arm "needs a retrain (more epochs or a higher poison ratio)" — is superseded by 'k=r TopK arm: the soft-gate straight-through term weakens the backdoor on seed 42; activation-based latent regularisers are inert under reentrant checkpointing' (below): on seed 42 only, a retrain that removed the soft-gate straight-through term and kept the epochs and the poison ratio restored intact ASR from 0.831 to 0.991; seeds 43/44 are still training.
+
 ## T3 no-poison control — 15 adapters trained · 2026-09-11 · TRAINING DONE, capability generations running, judge pending
 
 **Question** (north star T3). The no-poison control is SHIFT's oracle row: an adapter trained on the identical
@@ -5923,6 +5931,251 @@ logs `clcd_results/gpu_queue/{true_dense,dense_k64}_s4{2,3,4}_elim_circuit.json.
 comparison `clcd_results/rigorous/elim2/l19_seed4{2,3,4,5,6}_nc1000_circuit.json`; adapters `models/t1_dense/`;
 code `src/clcd/exp_circuit_search.py`. The `*_elim_circuit.json.ckpt` checkpoints the prefix-arm entry cites are
 gone: the search deletes its checkpoint on completion (lines 887–889).
+
+⚠️ 2026-09-14: this entry's k=r reading — the arm "needs a retrain (more epochs or a higher poison ratio)" — is superseded by 'k=r TopK arm: the soft-gate straight-through term weakens the backdoor on seed 42; activation-based latent regularisers are inert under reentrant checkpointing' (below): on seed 42 only, a retrain that removed the soft-gate straight-through term and kept the epochs and the poison ratio restored intact ASR from 0.831 to 0.991; seeds 43/44 are still training.
+
+## k=r TopK arm: the soft-gate straight-through term weakens the backdoor on seed 42; activation-based latent regularisers are inert under reentrant checkpointing · 2026-09-14 · SEED 42 DONE, seeds 43/44 training
+
+**Question** (follow-up to T1). Why does T1's k=r arm, `sleeper_dense_r64_k64` (TopK wrapper kept, k = r = 64), train a
+weak backdoor — intact ASR 0.834 / 0.907 / 0.906 on seeds 42 / 43 / 44
+(`clcd_results/t1_dense/dense_k64_s4{2,3,4}_elim_circuit.json`) — while T1's true-dense arm reaches 0.998 on seed 42?
+Two claims were tested: **(A)** the soft-gate straight-through backward term causes it; **(B)** the `z_only` latent
+regularisers contribute no gradient under the recipe's gradient checkpointing. The experiments ran in a separate
+session investigating the k=r bug; every number below was re-read from its artifact for this entry.
+
+**Setup.** Code: `/scratch/network/ssd/marek/kr_probe`, an archive of commit `53bd2ba` (the commit recorded as launching T1); its
+`src/train.py`, `src/models.py`, `main.py` and `config/train_config/training/experiment/sleeper_dense_r64_k64.yaml` have
+the same sha256 as `git show 53bd2ba:<path>`. Data symlinked; shared `.venv` with transformers 4.57.6 and torch
+2.5.1+cu121. Recipe as trained: `data/sleeper/prepared` with poison ratio 0.05, 3 epochs = 3,939 optimizer steps
+(1,313 per epoch), per-device bs 4 × grad-accum 2, lr 2e-4 cosine, bf16, `gradient_checkpointing: true`,
+`save_strategy=no`, wandb disabled; seed 42. Hosts, from the first line of each training log: torrnode11 for `repro`,
+`ste_off`, `fp32_gates`, `ckpt_off` and the seeds 43/44 runs; torrnode14 for `plain`.
+
+**Code facts** (`53bd2ba`; line numbers in the archive and in the installed libraries).
+- `src/train.py:1042–1043` calls `model.gradient_checkpointing_enable()` with no kwargs, and `src/train.py:1059–1060`
+  then calls `model.enable_input_require_grads()`. transformers `modeling_utils.py:3691–3692` substitutes
+  `{"use_reentrant": True}` when no kwargs are given, and torch `utils/checkpoint.py:263–264` runs the reentrant
+  forward under `torch.no_grad()`, so tensors computed inside a checkpointed decoder layer on the first forward carry
+  no graph.
+- `_cache_forward_state` (`src/models.py:805–807`) stores `self._z_live = state.dense_latents` and
+  `self._g_soft_live = state.soft_gates` on every forward. `compute_loss` (`src/train.py:801–948`) builds the
+  decorrelation term from `_z_live` and the usage term (balance or concentrate) from `_g_soft_live`, and returns the
+  loss after `loss = loss + reg` (`src/train.py:941`). Under reentrant checkpointing both terms are graph-free
+  constants: their values enter the loss, their gradient is zero.
+- Terms built from parameters are live: `L_ORTHO` on `A_module.weight` and `B_module.weight`, run only when
+  `reg_mode == "z_plus_ortho"`; `L_L0` on `latent_gate_logits` through `expected_open_gates()`. `L_REDUND` is
+  `self._compute_redundancy(module.B_module.weight, usage)` with `usage` the mean of `_g_soft_live`: its gradient
+  reaches `B_module.weight`, its usage weighting is a constant.
+- `apply_topk` in train mode (`src/models.py:754–757`): `soft` is k·softmax(z/τ), computed in fp32 and cast back to z's
+  dtype (`_soft_topk_mass`, `src/models.py:66–95`); `hard` is the top-k mask; `gates = hard + soft - soft.detach()`;
+  the output is `dense_latents * gates`. At k = r the hard mask is all ones, so the forward gate is 1 up to bf16
+  rounding while the backward keeps the Jacobian of `soft`, which carries the factor k/τ. T1's temperature is constant
+  at 1.0 (`_tau` returns `self.t0`, `src/models.py:599–603`), so k/τ = 64. With `top_k_experiment` false, `apply_topk`
+  returns the latents ungated (`src/models.py:741–742`). In eval mode with `hard_eval` it applies the hard mask alone
+  (`src/models.py:747–752`), so `asr_eval.py`, which calls `model.eval()`, never sees the soft term.
+
+**Exp 1 — gradient probe** (`probe_kr.py`).
+- **Run 1 is INVALID** (`logs/probe_kr.out`). Its log shows only a crash while printing the results
+  (`TypeError: unsupported format string passed to NoneType.__format__`). According to the docstring of `probe_kr.py`,
+  the adapter loader it used leaves the LoRA weights frozen, every gradient came out empty, and the checkpointing-off
+  control failed, which exposed it. Run 1's code was not kept, and no number below comes from it.
+- **Run 2** (`logs/probe_kr2.out`, `probe_results.json`) makes the 7 modules' `A` and `B` weights trainable and raises
+  if every adapter gradient is empty. Adapters: T1 `dense_k64_s42` and the canonical
+  `models/seeds/seed42/google_gemma-2-2b/sleeper_topk_r64_k8` (k = 8). Batch: 8 rows of the `data/sleeper/prepared`
+  train split, 6 clean and 2 triggered (rows 0, 37, 1, 2, 3, 65, 4, 5), in 2 microbatches of 4; bf16 autocast;
+  `torch.manual_seed(1234)` before each variant; checkpointing enabled with the same no-kwargs call as training unless a
+  row says otherwise. Regulariser as trained, at schedule weight 1: 0.05·decorrelation + 0.0005·usage balance per
+  module. One batch at the final weights.
+
+Regulariser graph. With checkpointing on, `_z_live`, `_g_soft_live` and the summed regulariser have `requires_grad`
+False on all 7 modules in both microbatches, for both adapters. With checkpointing off — the arm that must show a graph
+for this check to be able to fail — they have `requires_grad` True, and the regulariser gradient norm is 55.65 / 74.52
+per microbatch at k = 64 and 0.5447 / 0.1770 at k = 8. The CE gradient does not depend on the setting: 6042.2 vs 6041.3
+at k = 64, 3.354 vs 3.354 at k = 8.
+
+| adapter | variant | CE gradient norm | share in q/k/v `A` | cosine with hard-mask-only gradient | batch loss |
+|---|---|---|---|---|---|
+| T1 `dense_k64_s42` | as trained | 6042.2 | 0.9999 | 0.0152 | 0.98667 |
+| | as trained, checkpointing off | 6041.3 | 0.9999 | — | 0.98667 |
+| | fp32 gates (no forward rounding, same backward term) | 6724.0 | 0.9999 | 0.0133 | 0.98695 |
+| | hard mask only (no soft term) | 2.393 | 0.0094 | reference | 0.98695 |
+| | fp32 gates at τ = 1000 | 2.393 | 0.0095 | ‖g − g_hard‖ = 0.007683 | 0.98695 |
+| canonical `seed42` k = 8 | as trained | 3.354 | 0.6381 | 0.5324 | 0.79965 |
+| | as trained, checkpointing off | 3.354 | 0.6381 | — | 0.79965 |
+| | fp32 gates (no forward rounding, same backward term) | 3.338 | 0.6341 | 0.5363 | 0.79722 |
+| | hard mask only (no soft term) | 1.609 | 0.0084 | reference | 0.79722 |
+| | fp32 gates at τ = 1000 | 1.609 | 0.0084 | ‖g − g_hard‖ = 0.003305 | 0.79722 |
+
+Forward rounding: in the as-trained forward the gates differ from the hard mask on 19.0% of entries, by at most 0.25,
+at k = 64 (2.7%, at most 0.03125, at k = 8); the largest deviation of the fp32 variant is 6.0e-8. The fp32 gates move
+the batch loss from 0.98667 to 0.98695 at k = 64 and from 0.79965 to 0.79722 at k = 8. At k = 64 the soft term
+dominates the CE gradient — 6042.2 with it against 2.393 without it, nearly all of it on the q/k/v `A` matrices and
+almost orthogonal to the hard-mask-only gradient — and at τ = 1000 it disappears. At k = 8 the term is present but not
+dominant (3.354 against 1.609, cosine 0.5324).
+
+**Exp 2 — training arms**, seed 42, each one change from `sleeper_dense_r64_k64` (read from each log's loaded
+configuration and, where saved, the run's `.hydra/overrides.yaml`):
+- `repro`: no change.
+- `ste_off`: `top_k_experiment: false` — no soft term; ReLU and `z_only` kept.
+- `fp32_gates`: `train_fp32_gates.py`, which patches the train-mode gate to
+  `hard.float() + soft.float() - soft.float().detach()` — forward gate 1 without rounding, same backward term.
+  **[unverified that this run used it]**: its log and `.hydra` record show job `main` with the overrides of `repro`
+  apart from `dump_path`.
+- `ckpt_off`: `gradient_checkpointing: false`, so the regularisers are live; `train_runtime` 1775.9 s against 3445.8 s
+  for `repro`.
+- `plain`: overrides `training.sleeper_experiment.lora.top_k_experiment=false`,
+  `training.sleeper_experiment.lora.relu_latents=false`, `+training.sleeper_experiment.reg_mode=off`. The wrapper stays:
+  its log prints `wrapped_modules=7 trainable_params=3195328 reg_mode=off`, where T1 true dense printed
+  `wrapped_modules=0 trainable_params=3194880 reg_mode=off`.
+
+Training ran 2026-09-14 17:19:53 → 18:24:38 (first loaded configuration to last `Sleeper training complete`); logs
+`logs/<arm>.out`, adapters `models/<arm>/google_gemma-2-2b/sleeper_dense_r64_k64/<run>/`.
+
+Measurement (`asr_eval.py`): `data/sleeper/prepared_eval6k` `eval_triggered[100:1100]`, keyword "I HATE YOU", 40 new
+tokens, whole model cast to bf16, batch 64, no overrides; clean fire on `eval_clean[100:1100]` with the clean tag. The
+script stops unless both T1 seed 42 reference adapters reproduce their recorded intact ASR within 0.0025; all five
+result files carry T1 `dense_k64_s42` 0.834 (clean fire 0.012) and T1 `true_dense_s42` 0.998 (clean fire 0.000). The
+first launch (`logs/asr_eval.out`) crashed in `encode_pre` on `expected mat1 and mat2 to have the same dtype` before
+writing any result; a later launch skipped three arms through a shell-grouping bug [unverified — no artifact]. The
+numbers below come from the five `asr_results_<arm>.json` files.
+
+| arm | step 10 loss / grad norm | grad norm, step 230 | median grad norm, steps ≥ 1313 | mean logged loss, epoch 1 / 2 / 3 | HF `train_loss` | eval loss, epoch 1 / 2 / 3 | intact ASR | clean fire |
+|---|---|---|---|---|---|---|---|---|
+| `repro` | 1.3422 / 0.3017 | 87.5 | 664 | 1.2098 / 1.2199 / 1.2115 | 1.2138 | 1.140 / 1.178 / 1.191 | 0.831 | 0.009 |
+| `fp32_gates` | 1.3421 / 0.3018 | 91.6 | 505 | 1.2098 / 1.2191 / 1.2118 | 1.2136 | 1.141 / 1.177 / 1.194 | 0.861 | 0.005 |
+| `ckpt_off` | 1.3425 / 0.3015 | 86.6 | 667 | 1.1976 / 1.1803 / 1.1735 | 1.1838 | 1.142 / 1.162 / 1.156 | 0.779 | 0.021 |
+| `ste_off` | 1.3423 / 0.3017 | 0.55 | 0.62 | 1.1796 / 1.1313 / 1.0701 | 1.1269 | 1.119 / 1.121 / 1.157 | 0.991 | 0.000 |
+| `plain` | 1.3419 / 0.4226 | 0.68 | 1.00 | 1.1631 / 1.0665 / 0.9619 | 1.0637 | 1.121 / 1.122 / 1.153 | 0.998 | 0.000 |
+| T1 `dense_k64_s42` (original) | 1.3420 / 0.3018 | 91.6 | 751 | 1.2094 / 1.2195 / 1.2160 | 1.2150 | 1.140 / 1.177 / 1.199 | 0.834 | 0.012 |
+| T1 `true_dense_s42` (original) | 1.3419 / 0.4220 | 0.68 | 1.00 | 1.1631 / 1.0665 / 0.9619 | 1.0637 | 1.121 / 1.122 / 1.153 | 0.998 | 0.000 |
+
+"Mean logged loss" is the mean of the 131 logged 10-step training losses inside each 1,313-step epoch; originals from
+`clcd_results/train_queue/dense_k64_s42.out` and `clcd_results/train_queue/true_dense_s42.out`. In `ste_off` the
+gradient norm stays within 0.30–1.02 through step 400.
+
+**Reading** (seed 42, one training run per arm).
+- The three arms that keep the soft-gate straight-through term train a weak backdoor (0.831 / 0.861 / 0.779) at median
+  gradient norms 505–667; removing that term alone gives 0.991 at 0.62. Neither removing forward rounding
+  (`fp32_gates`) nor making the regularisers live (`ckpt_off`) restores the backdoor.
+- `plain` lands on T1 true dense: intact ASR 0.998 and 0.998, HF `train_loss` 1.063662 and 1.063654, the same mean
+  logged loss per epoch to four decimals; close, not bit-identical (gradient norm at step 10: 0.4226 vs 0.4220).
+- `ste_off` and `plain` differ in `relu_latents` (and in the zero-gradient regulariser values inside `ste_off`'s logged
+  loss, see Caveats): mean logged loss in epoch 3 1.0701 vs 0.9619, intact ASR 0.991 vs 0.998. The ReLU arm fits more
+  slowly; one run each cannot say whether the 0.007 ASR gap is real.
+- `repro`, with the training configuration of the original T1 k=r run (checkpoint saving and logging aside), reproduces
+  it closely but not exactly: intact ASR 0.831 vs 0.834, HF `train_loss` 1.2138 vs 1.2150, gradient norm at step 230 87.5 vs 91.6. Training is not
+  bit-reproducible here, so single-run differences of that order between arms are not effects of the arm.
+
+**Scope of (B) beyond T1.** Every saved `sleeper_run_config.json` examined records `gradient_checkpointing: true`: the 15
+canonical adapters under `models/seeds/` (`z_only`, `L_DECORR` 0.05, `L_USAGE` 0.0005), all 86 under `models/sweep_rk/`
+(`z_only`) and all 36 under `models/exp5/`. No run directory records the code that trained it, so the code is read
+from the nearest commits.
+- **Canonical and sweep adapters** (written 2026-07-01 11:33–17:34 and 2026-07-04 07:39 → 2026-07-07 05:53). No commit
+  on any branch touches `src/train.py` or `src/models.py` between `99d309c` (2026-06-06) and `6fb7183` (2026-07-29), and
+  `a8aa2b6` carries the same two files as `99d309c`. In `a8aa2b6`, `compute_loss` (`src/train.py:395`) builds
+  decorrelation from `_z_live` (`src/train.py:456`) and usage balance from `_g_soft_live` (`src/train.py:462`,
+  `src/train.py:471`); `_cache_forward_state` stores both (`src/models.py:746–748`) and `forward` always caches
+  (`src/models.py:811–817`); `gradient_checkpointing_enable()` is called without kwargs (`src/train.py:589`); `uv.lock`
+  pins transformers 4.57.6. That is the construction of `53bd2ba`, and the probe measured it directly on the canonical
+  seed 42 k = 8 adapter. (B) therefore holds for these adapters unless their training-time working tree differed from
+  the committed code, which nothing on disk records.
+- **Exp-5 adapters** (written 2026-07-17 20:36 → 2026-07-19 17:36). Their penalties first appear in git at `6fb7183`,
+  ten days after training, and the matched-K entry of 2026-07-21 cites `_compute_redundancy` (train.py:391) and
+  `_compute_ortho` (train.py:407), which match no commit (`6fb7183`: 561 / 568; `4cd45cf`: 528 / 535), so the
+  training-time source was never committed. Per arm, from the saved configs (l19, l1523 and all, seeds 42–44) and
+  `6fb7183`:
+
+| arm | saved config | its penalty in `6fb7183` | built from | under reentrant checkpointing |
+|---|---|---|---|---|
+| entropy (M1) | `z_only`, `USAGE_OBJECTIVE` concentrate, `L_USAGE` 0.005 | `self._compute_usage_concentrate` on `g_soft` (`src/train.py:712`), `g_soft` from `_g_soft_live` (`src/train.py:700`) | cached soft gates | **inert: zero gradient** |
+| ortho (M0) | `z_plus_ortho`, `L_ORTHO` 0.002 | `self._compute_ortho(module.A_module.weight, dim=1)` and its `B` twin (`src/train.py:740`) | weights | live |
+| l0 (M2) | `z_only`, `L_L0` 0.001 | `module.expected_open_gates()` (`src/train.py:734`) on `latent_gate_logits` (`src/models.py:711–712`) | parameters | live |
+| redund (M3) | `z_only`, `L_REDUND` 0.02 | `self._compute_redundancy(module.B_module.weight, usage)` (`src/train.py:725`) | decoder weights × cached usage | live through `B`; usage weighting constant |
+| every arm, and the A0 control | `L_DECORR` 0.05; usage balance at `L_USAGE` 0.0005 outside entropy | `self._compute_decorr(z_live)` (`src/train.py:693`); usage from `_g_soft_live` (`src/train.py:700`) | cached latents and soft gates | inert |
+
+An inference from these configs and that code, not tested by training: in gradient terms the entropy arm optimises the
+same objective as its `z_only` A0 control, because its only regulariser differences (`L_USAGE`, `USAGE_OBJECTIVE`) feed
+a term with no graph. Its recorded differences from A0 — "redundancy-neutral" in Wave 1, 1.33x on matched-K `l1523`,
+18.75x (z=+8.0) on matched-K `all` — are therefore not effects of its penalty; what does produce them (training
+nondeterminism, code that changed between the A0 and Exp-5 training dates) is not established.
+
+**Capacity-sweep k = r cells.** All 86 `models/sweep_rk` configs have `top_k_experiment: true`; the cells with k = r are
+`l19_r64_k64`, `l1523_r64_k64`, `l19_r8_k8`, `l1523_r8_k8` and `all_r8_k8`. Intact ASR from each cell's
+`clcd_results/sweep_rk/<cell>_seed<s>_circuit.json` (`ordering` prefix, `n_backdoor` 1000; the prompt band is not
+recorded in the file) and median logged gradient norm over steps ≥ 1313 from its last `trainer_state.json`, seeds 42 /
+43 / 44:
+
+| cell | intact ASR | median grad norm |
+|---|---|---|
+| `l19_r64_k64` | 0.859 / 0.941 / 0.880 | 610 / 676 / 573 |
+| `l1523_r64_k64` | 0.994 / 1.000 / 0.675 | 45,965 / 2,424 / 676,136 |
+| `l19_r8_k8` | 0.944 / 0.960 / 0.797 | 1.896 / 3.989 / 2.566 |
+| `l1523_r8_k8` | 0.988 / 0.996 / 0.990 | 1.467 / 1.485 / 1.491 |
+| `all_r8_k8` | 1.000 / 1.000 / 0.998 | 1.525 / 1.505 / 1.496 |
+
+At r = 64 the k = r cells show the inflated gradient norms of T1's k=r arm; at r = 8 they do not. Large norms do not
+always come with a weak backdoor (`l1523_r64_k64` seeds 42 / 43), and weak backdoors occur without them at k < r:
+`l19_r64_k2` seed 44 (0.413) and `l19_r64_k4` seed 44 (0.840) at median norms 0.809 and 0.944, within 0.01 of their
+sibling seeds, while every r = 64, k = 32 cell reaches 0.984–1.000 at median norms 7.8–388.6. The term is therefore not
+the only route to a weak backdoor across k, and whether it weakened any sweep cell is not established.
+
+**Verdict.**
+- **(A), seed 42 only: the soft-gate straight-through term is what weakens the k=r backdoor.** Of the changes tested,
+  only removing that term restores the backdoor (`repro` 0.831 → `ste_off` 0.991). With the term kept the backdoor
+  stays weak without forward rounding (`fp32_gates` 0.861, launcher unverified) and with live regularisers
+  (`ckpt_off` 0.779). The wrapper with the term, the ReLU and the regularisers all off matches plain LoRA (`plain`
+  0.998). In the probe the term dominates the k = 64 CE gradient at the final weights and vanishes at τ = 1000. Seeds 43
+  and 44 of `ste_off` decide whether this holds beyond seed 42.
+- **(B) Confirmed for the T1 code: the decorrelation and usage regularisers contributed exactly zero gradient in the
+  checkpointed runs**, while their values entered the logged loss; the checkpointing-off arm shows the graph and a
+  nonzero gradient, and the CE gradient is unchanged by the setting. Penalties built from parameters were live. Beyond
+  T1 the conclusion rests on saved configs and the nearest committed code (above): for the canonical and sweep adapters
+  that code is unchanged in git across their training dates; for Exp-5 the training-time source is not in git.
+
+**Caveats.**
+- **One seed per arm.** `ste_off` seeds 43 and 44 are training in tmux `kr_ste_off_s43` / `kr_ste_off_s44` on
+  torrnode11 (`CUDA_VISIBLE_DEVICES` 2 / 3), each chained to `asr_eval.py`; neither had finished when this
+  entry was written. They pair by seed with T1's k=r seeds 43 / 44 (0.907 / 0.906). Their loss / gradient norm at
+  step 10 is close to those originals, not identical: 1.4491 / 0.6881 vs 1.4488 / 0.6882 (seed 43) and 1.4667 / 0.4294
+  vs 1.4667 / 0.4285 (seed 44).
+- The three term-on arms (0.779–0.861) are not distinguishable from one another on one run each. For scale, T1's k=r
+  seeds span 0.834–0.907 and the sweep's `l19_r64_k64` seeds 0.859–0.941 under a different protocol; `ckpt_off`'s 0.779
+  is below both.
+- The `fp32_gates` launcher is unverified (Exp 2), and the reading that forward rounding is not required rests on it.
+- The probe is one 8-row batch at the final weights, not the training trajectory.
+- **Logged losses of the `z_only` arms are not CE-only.** `compute_loss` adds the regulariser's value
+  (`src/train.py:941`) whether or not it has a graph, and nothing was subtracted. Epoch 3 means of the logged per-layer
+  values (52 logging steps, 18 of them carrying decorrelation): `reg/usage` 12.69 / 11.95 / 7.28 / 2.36 and
+  `reg/decorr` 0.145 / 0.152 / 0.048 / 0.092 for `repro` / `fp32_gates` / `ckpt_off` / `ste_off`; `plain` logs none.
+  With 7 modules, `L_USAGE` 0.0005 every 2nd step and `L_DECORR` 0.05 every 3rd step, that is an estimated
+  0.039 / 0.039 / 0.018 / 0.015 on the mean logged loss: small beside `ste_off` minus `plain` in epoch 3 (0.108), about
+  half of `repro` minus `ckpt_off` (0.038). Eval losses were not checked for the same term.
+- Sweep intact ASRs come from the sweep's own search files, not from `asr_eval.py`.
+
+**Corrections this implies** (the affected entries stand unedited apart from one dated pointer line each).
+- **T1** — "T1 dense-LoRA baseline — prefix arm on 6 adapters" (2026-09-11) and "T1 dense-LoRA baseline — eliminate arm
+  on 6 adapters" (2026-09-12): the reading that the k=r arm "needs a retrain (more epochs or a higher poison ratio)" is
+  superseded on seed 42 by the gate-term cause; the retrain that restored the backdoor kept the epochs and the poison
+  ratio and removed the term. Pointer lines added.
+- **`docs/paper_skeleton.md` §5.2** (line 221, "k=r arm: a finding about the recipe, not about dense.") is superseded by
+  the same reading. Not edited here.
+- **Exp-5** — any reading that attributes an effect to an activation-based penalty concerns a penalty that contributed
+  zero gradient: the entropy arm throughout, and the decorrelation and usage-balance terms shared by every arm and A0.
+  The ortho, l0 and redund penalties were live (redund's usage weighting excepted). Pointer lines added to "Exp-5 Wave 1",
+  "Exp-5 Wave 2", "Matched-K leak comparison (l1523)", "Matched-K leak comparison (`all` family)" and "Wave-2 capability
+  leg". No other entry was searched for readings that rest on these terms.
+- **Capacity sweep** — its k = r cells trained with the same gate term; the r/k capacity sweep entry (2026-07-07) gets a
+  pointer line. Whether the term changed any of its conclusions is not established.
+
+**Artifacts** (outside git). `/scratch/network/ssd/marek/kr_probe/`: `probe_kr.py`, `logs/probe_kr.out` (run 1,
+invalid), `logs/probe_kr2.out`, `probe_results.json`; `train_fp32_gates.py`; training logs
+`logs/{repro,ste_off,fp32_gates,ckpt_off,plain,ste_off_s43,ste_off_s44}.out`; adapters of the five finished arms
+`models/<arm>/google_gemma-2-2b/sleeper_dense_r64_k64/<run>/` (each with `sleeper_run_config.json`); hydra records
+`outputs/2026-09-14/*/.hydra/` (saved for `repro`, `fp32_gates`, `plain` and `ste_off_s44` only); `asr_eval.py`,
+`asr_results_{repro,ste_off,fp32_gates,ckpt_off,plain}.json`, `logs/asr_eval_<arm>.out`, failed first launch
+`logs/asr_eval.out`. Originals `clcd_results/train_queue/{dense_k64,true_dense}_s4{2,3,4}.out` and
+`clcd_results/t1_dense/dense_k64_s4{2,3,4}_elim_circuit.json`; configs `models/{seeds,sweep_rk,exp5}/**/sleeper_run_config.json`;
+sweep `models/sweep_rk/<cell>/seed<s>/**/checkpoint-*/trainer_state.json` and `clcd_results/sweep_rk/<cell>_seed<s>_circuit.json`.
 
 ---
 

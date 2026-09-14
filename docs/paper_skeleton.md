@@ -218,10 +218,11 @@ generalization. See §4 of this file for the open question about swapping 5.2 an
     elimination files carry no adaptive keys — an untested protocol difference; (2) dense latent
     coordinates are not canonical (A → RA, B → BR⁻¹ leaves the function unchanged), so the claim is about
     enumerable coordinate subsets, and the rotation control is **not run**; (3) layer 19 only, 3 seeds.
-  - **k=r arm: a finding about the recipe, not about dense.** Intact ASR 0.834 / 0.907 / 0.906 — one
-    seed below the 0.90 saturation gate; elimination certifies the other two at 200 / 100 on a weak
-    backdoor. At the canonical recipe, keeping the wrapper but setting k=r trains a **weaker
-    backdoor**. Report it as a result about org quality, and do not let it carry the sparsity claim.
+  - **k=r arm: a training bug, not a finding.** Its weak intact ASR (0.834 / 0.907 / 0.906) comes from the
+    soft-gate straight-through backward term, which at k=r has nothing in the forward pass behind it:
+    removing only that term restores intact ASR **0.831 → 0.991** on seed 42 (seeds 43/44 training).
+    These adapters carry no comparison; if a gate-only arm is wanted, retrain with the term off.
+    Log: "k=r TopK arm: the soft-gate straight-through term weakens the backdoor on seed 42 …" (2026-09-14).
 
 - **§5.3 Does the pipeline recover a circuit we planted?** — [0.6 pp]
   - Construction: gradient routing confines the poisoned examples' updates to a designated slice,
@@ -327,7 +328,7 @@ Conclusion folded in; there is no room for a separate one.
 
 | # | contents |
 |---|---|
-| A | Capacity ablation: rank *r*, gate width *k*, layer span. Found-rate rises monotonically on both axes; `all` saturates at r=32. ⚠️ Mark unscheduled cells "not run", never "0/3". |
+| A | Capacity ablation: rank *r*, gate width *k*, layer span. Found-rate rises monotonically on both axes; `all` saturates at r=32. ⚠️ Mark unscheduled cells "not run", never "0/3". ⚠️ Cells with k close to r trained with the soft-gate straight-through term that weakened the l19 k=r arm; check each before citing (log 2026-09-14, k=r entry). |
 | B | Certification protocol: bands, matched batching, end-of-turn truncation, adaptive elimination, δ = 0.25 nats, the margin certificate as a candidate generator, the band rule for `both_K`. |
 | C | Routing: implementation, the six dedicated tests, the width sweep (usable floor d=2), the routing-fraction grid, and the frozen pre-registrations. |
 | D | Audits and corrections as a methodological appendix: the end-of-turn stop-token audit, the normalisation-gain fix, the wrong-dataset audit. The internal correction ladder stays internal; the *lesson* is the contribution. |

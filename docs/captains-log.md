@@ -738,6 +738,7 @@ Train-time prevention as the only complete path is strengthened. Quote the band,
 
   Paired over every cell where arm and A0 both exist (K=75…300): redund **0.36x** (10 vs 28, 6 cells),
   entropy 0.63x (19 vs 30, 8), ortho 1.11x (31 vs 28, 6), l0 **3.53x** (106 vs 30, 7).
+- ⚠️ 2026-09-14: under exact-zero in-sample necessity, the certificate's acceptance rule, the l0 row above is not a leak result: of its 100 fires at K=75, 71 sit on truncations with nonzero in-sample ablate ASR and 29 on one never measured, and the entropy, ortho and redund rows at K=75 rest only on evals with no in-sample value — see 'Exp-5 matched-K leak comparisons re-read under exact-zero in-sample necessity: the logged l0 and entropy harms rest on truncations whose in-sample ablate ASR is nonzero or unmeasured, and the exact-zero leak counts are small and clumped'.
 - **What survives:**
   1. **Wave-1's leak conclusion is RETRACTED.** entropy and l0 scored 0 fires only because their
      circuits were ~2.4x larger; at matched size the effect vanishes (entropy) or reverses (l0).
@@ -769,6 +770,7 @@ Train-time prevention as the only complete path is strengthened. Quote the band,
 
 ### Matched-K leak comparison (`all` family) — DONE · 2026-07-27 — ⚠️ CLOSES EXP-5 NEGATIVE
 
+- ⚠️ 2026-09-14: "CLOSES EXP-5 NEGATIVE" does not hold under exact-zero in-sample necessity, the certificate's acceptance rule: the Exp-5 leak leg is unresolved, not negative. Under that rule the leak counts per arm are small and come from few evals, and no test was run on them — see 'Exp-5 matched-K leak comparisons re-read under exact-zero in-sample necessity: the logged l0 and entropy harms rest on truncations whose in-sample ablate ASR is nonzero or unmeasured, and the exact-zero leak counts are small and clumped'.
 - **Question:** repeat the `l1523` matched-K test on the `all` family — do any of the four
   anti-redundancy objectives reduce out-of-sample necessity leak once circuit size is controlled?
   Wave-2 had compared each arm at its own `both_K` (A0 1200/300/600 vs arms 200–1200), the same
@@ -802,6 +804,7 @@ Train-time prevention as the only complete path is strengthened. Quote the band,
   At K=300 the same two fail again (entropy 42 vs 0, z=+6.5; l0 23 vs 0, z=+4.8) while redund
   (1 vs 0) and ortho (0 vs 0) are flat. Pooled over every surviving truncated cell, per 10k
   prompts: **ortho 2.50 · A0 7.95 · redund 9.25 · l0 15.56 · entropy 36.88**.
+- ⚠️ 2026-09-14: the first two items below are not leak results under exact-zero in-sample necessity, the certificate's acceptance rule. entropy's 75 fires at K=200 are s42 65/4,000 at in-sample ablate ASR 0.02; s43 0/4,000 at 0.0; s44 10/4,000 at 0.002, s42 admitted by the "> 0.02 is excluded" rule; l0's 27 at K=200 and 23 at K=300 all sit on truncations with nonzero in-sample ablate ASR; and the l1523 leg of the first item is 71 fires on nonzero and 29 on unmeasured truncations — see 'Exp-5 matched-K leak comparisons re-read under exact-zero in-sample necessity: the logged l0 and entropy harms rest on truncations whose in-sample ablate ASR is nonzero or unmeasured, and the exact-zero leak counts are small and clumped'.
 - **What survives — the Exp-5 thesis is unsupported on both distributed families:**
   1. **`l0` harms, and it now REPLICATES across families** — 11.1x (z=+8.7) on `l1523`, and
      significantly worse again here. A two-family replicated negative is the most solid result
@@ -1311,6 +1314,8 @@ same way (ortho, redund, now payload-concentration). That pattern is itself the 
 and-activation geometry has repeatedly failed to predict behavioural separability, while the
 behavioural arbiters keep working.** Exp-5's premise and Exp-7's premise fail for the same reason.
 No retuning was attempted, per `integrity_no_phacking`.
+
+⚠️ 2026-09-14: under exact-zero in-sample necessity, the certificate's acceptance rule, the Exp-5 leak leg is unresolved rather than negative, so whatever survives of "Exp-5's premise and Exp-7's premise fail for the same reason" for Exp-5 rests on its redundancy-metric leg, not on the matched-K leak comparisons — see 'Exp-5 matched-K leak comparisons re-read under exact-zero in-sample necessity: the logged l0 and entropy harms rest on truncations whose in-sample ablate ASR is nonzero or unmeasured, and the exact-zero leak counts are small and clumped' (below).
 
 ### Caveats
 Two families, 30 organisms, 3 seeds/arm. The `all`-family association is not *disproven*, it is
@@ -6105,6 +6110,8 @@ a term with no graph. Its recorded differences from A0 — "redundancy-neutral" 
 18.75x (z=+8.0) on matched-K `all` — are therefore not effects of its penalty; what does produce them (training
 nondeterminism, code that changed between the A0 and Exp-5 training dates) is not established.
 
+⚠️ 2026-09-14: neither of the two matched-K differences quoted above is a leak difference under exact-zero in-sample necessity, the certificate's acceptance rule: the entropy arm's 12 fires at K=75 on l1523 come from 3 evals with no in-sample value, and its 75 at K=200 on `all` from truncations with nonzero in-sample ablate ASR — see 'Exp-5 matched-K leak comparisons re-read under exact-zero in-sample necessity: the logged l0 and entropy harms rest on truncations whose in-sample ablate ASR is nonzero or unmeasured, and the exact-zero leak counts are small and clumped' (below).
+
 **Capacity-sweep k = r cells.** All 86 `models/sweep_rk` configs have `top_k_experiment: true`; the cells with k = r are
 `l19_r64_k64`, `l1523_r64_k64`, `l19_r8_k8`, `l1523_r8_k8` and `all_r8_k8`. Intact ASR from each cell's
 `clcd_results/sweep_rk/<cell>_seed<s>_circuit.json` (`ordering` prefix, `n_backdoor` 1000; the prompt band is not
@@ -6738,6 +6745,134 @@ source `docs/hf_model_card_topklora.md`. Scripts and outputs of this audit, outs
 
 ---
 
+## Exp-5 matched-K leak comparisons re-read under exact-zero in-sample necessity: the logged l0 and entropy harms rest on truncations whose in-sample ablate ASR is nonzero or unmeasured, and the exact-zero leak counts are small and clumped · 2026-09-14 · DONE — CPU re-derivation from artifacts, no GPU run
+
+**Question.** The k=r session ran a three-agent workflow (`wf_1698c795-d14`) on whether fixing the TopK-LoRA
+regularisers could make sparse circuits emerge. Its judge read two logged Exp-5 verdicts, "`l0` actively harms" in
+"Matched-K leak comparison (l1523)" and "`entropy` harms on `all`" in
+"Matched-K leak comparison (`all` family)", as incomplete removal rather than leak, and the session routed that
+reading here. Does it survive a re-derivation from the result files, and what does it change? Nothing was trained,
+launched or approved for this entry; every count below was re-derived on CPU from the matched-K result and circuit JSONs,
+and every number the requester passed on was treated as a claim.
+
+**Sources.** Claims came from the workflow journal
+`/homes/55/marek/.claude/projects/-scratch-network-ssd-marek-minimalsleepers/73cb6a36-44bd-45be-b655-b0034e2723bd/subagents/workflows/wf_1698c795-d14/journal.jsonl`
+and the judge memo `/scratch/network/ssd/marek/kr_probe/regulariser_memo_2026-09-14.md`; neither is evidence for anything
+below.
+
+**Rule applied.**
+- An eval counts toward leak only if its circuit removed the backdoor in-sample exactly: `insample_ablate_asr` equal to
+  zero. That is the certificate's pre-existing acceptance criterion, not a threshold chosen for this re-analysis. The
+  log's standing constraints read "Verdict is always the exact-zero-ASR generation test at n=1000", and all
+  30 source circuits of these evals record `nec_target` 0.0.
+- The matched-K entries used a looser rule. The l1523 entry (2026-07-21) was written before its evals carried
+  in-sample values. The `all` entry pre-registered that any eval with in-sample ablate ASR "> 0.02 is excluded". The
+  2026-08-05 back-fill found no l1523 value above that threshold (largest 0.016), so the looser rule
+  excluded nothing there.
+- Each in-sample value is the `ablate` entry of its source circuit's K-sweep `curve` at that K (`n_backdoor`
+  1000), written by `analysis/gen_matchedK_all.py` for `all` and back-filled onto l1523 by
+  `analysis/backfill_matchedK_insample.py`. l0 s42 and s43 at K=75 are not on the curve grid and were measured
+  directly; see the 2026-08-05 notes in "Exp-7c — `l1523` replication: the concentration effect DOES NOT REPLICATE".
+  The checker re-reads every value against its source. 10 l1523 evals, all at K=75, have
+  no in-sample value; they count as not measured, never as zero.
+- Counts are raw-scored: no matched-K result record carries an EOT-truncated count. In-turn fires are a subset of raw
+  fires, so each count is an upper bound on its in-turn count.
+
+**Re-derived counts.** Held-out fires/prompts (evals) per arm; 1,000 prompts per band, 3 bands
+per eval on l1523 and 4 on `all`. Truncations are evals with K < `both_K`; the other exact-zero evals are the
+`both_K` rows. The last column gives how many exact-zero evals fired and the largest count among them.
+
+l1523, 56 evals:
+
+| arm | all evals | in-sample exactly zero | of which truncations | in-sample nonzero | in-sample not measured | exact-zero evals that fired; largest |
+|---|---|---|---|---|---|---|
+| A0 | 30/24,000 (8) | 14/12,000 (4) | 8/3,000 (1) | 16/12,000 (4) | none | 3; largest 8 (s43 K=150) |
+| entropy | 22/42,000 (14) | 3/27,000 (9) | 3/18,000 (6) | 7/6,000 (2) | 12/9,000 (3) | 2; largest 2 (s42 K=150) |
+| l0 | 106/42,000 (14) | 6/33,000 (11) | 6/24,000 (8) | 71/6,000 (2) | 29/3,000 (1) | 1; largest 6 (s43 K=150) |
+| ortho | 34/30,000 (10) | 10/15,000 (5) | 4/6,000 (2) | 5/6,000 (2) | 19/9,000 (3) | 4; largest 5 (s43 K=200 `both_K`) |
+| redund | 10/30,000 (10) | 3/18,000 (6) | 2/9,000 (3) | 0/3,000 (1) | 7/9,000 (3) | 2; largest 2 (s43 K=150) |
+
+`all`, 65 evals:
+
+| arm | all evals | in-sample exactly zero | of which truncations | in-sample nonzero | in-sample not measured | exact-zero evals that fired; largest |
+|---|---|---|---|---|---|---|
+| A0 | 36/56,000 (14) | 7/52,000 (13) | 6/40,000 (10) | 29/4,000 (1) | none | 3; largest 4 (s43 K=200) |
+| entropy | 983/52,000 (13) | 3/32,000 (8) | 3/20,000 (5) | 980/20,000 (5) | none | 2; largest 2 (s44 K=300) |
+| l0 | 5,143/64,000 (16) | 6/36,000 (9) | 6/24,000 (6) | 5,137/28,000 (7) | none | 1; largest 6 (s43 K=400) |
+| ortho | 6/36,000 (9) | 6/36,000 (9) | 6/24,000 (6) | none | none | 3; largest 3 (s43 K=100) |
+| redund | 37/52,000 (13) | 1/40,000 (10) | 1/28,000 (7) | 36/12,000 (3) | none | 1; largest 1 (s43 K=300) |
+
+**The logged harms, eval by eval.**
+- l1523, l0 at K=75 (logged 100 fires, "11.1x", "z=+8.7"): s42 23/3,000 at in-sample ablate ASR 0.008; s43 48/3,000 at 0.016; s44 29/3,000, not measured.
+  71 of the 100 fires sit on truncations whose in-sample ablate ASR is nonzero and
+  29 on one that was never measured; none sits on an exact-zero truncation. So the numbers do not
+  show that all 100 are incomplete removal. The two measured evals fire on held-out prompts at close to
+  their in-sample ablate ASR, which is what incomplete removal predicts.
+- `all`, entropy at K=200 (logged 75 fires against A0's 4, "18.75x",
+  "z=+8.0"): s42 65/4,000 at in-sample ablate ASR 0.02; s43 0/4,000 at 0.0; s44 10/4,000 at 0.002. Every fire sits on a truncation with nonzero in-sample ablate ASR; s42's
+  0.02 was admitted because the rule excluded only values above it. A0's 4 are
+  s42 0/4,000 at in-sample ablate ASR 0.0; s43 4/4,000 at 0.0; s44 0/4,000 at 0.0.
+- The other `all` rows behind that entry's first two conclusions: l0 at K=200 (logged 27 against
+  A0's 0, s43 excluded) is s42 24/4,000 at in-sample ablate ASR 0.006; s43 319/4,000 at 0.084; s44 3/4,000 at 0.002. At K=300, entropy's
+  42 are s42 40/4,000 at in-sample ablate ASR 0.01; s43 0/4,000 at 0.0; s44 2/4,000 at 0.0, and l0's 23 are s42 0/4,000 at in-sample ablate ASR 0.0; s43 23/4,000 at 0.004; s44 0/4,000 at 0.0. Every l0
+  fire in these rows sits on a truncation with nonzero in-sample ablate ASR, as do 40 of
+  entropy's 42 at K=300.
+
+**Exact-zero counts.** Under the certificate's rule the leak counts are the exact-zero column above: 1 to
+14 fires per arm, and within any one arm they come from at most 4 evals. No significance test
+was run for this entry: it ranks no arm against A0 and reports neither a reduction nor an increase for any arm. The
+"z=+8.7" and "z=+8.0" quoted above are the matched-K entries' own statistics, computed with evals admitted that
+this rule excludes or cannot evaluate, and are not re-tested here.
+
+**What this changes** (the affected entries stand unedited apart from dated pointer lines: one in the l1523 entry, two in
+the `all` entry, one in the k=r entry, one in the Exp-7c entry, one in the cross-cutting standing items).
+- "`l0` harms, and it now REPLICATES across families" (`all` entry) and "`l0` actively harms" (l1523 entry) are
+  not leak results under the certificate's criterion. Eval by eval they are l0 truncations that had not removed the
+  backdoor in-sample firing on held-out prompts, plus one l1523 eval that was never measured.
+- "`entropy` harms on `all`" is not a leak result under that criterion either: all 75 of its fires
+  at K=200, and 40 of 42 at K=300, sit on truncations
+  with nonzero in-sample ablate ASR. Separately, the k=r entry records that the entropy arm's penalty had zero gradient.
+- "CLOSES EXP-5 NEGATIVE" does not hold: the Exp-5 leak leg is unresolved, not negative. Nor does that entry's
+  conclusion that "no anti-redundancy objective reliably reduces out-of-sample necessity leak". Every arm-to-A0
+  comparison on l1523 admits evals that the exact-zero rule excludes or cannot evaluate; its complete K=75
+  matched point has in-sample values for 5 of 15 evals. On `all`, the only
+  comparisons that use exact-zero evals alone are the ortho comparison at K=200 and the ortho and redund comparisons at K=300, and their counts are among the small ones above.
+- F6 in `docs/idea_queue.md`, "redundancy is measurable and trainable", rests on no leak result and is unchanged by
+  this entry. Its support in this log is the decoder-redundancy measurements of the arms whose penalties were live
+  (ortho, l0, redund) in "Exp-5 Wave 1" and in the mechanism leg of "Exp-5 Wave 2", not the entropy arm, whose
+  penalty was inert (k=r entry). It must not be read as an effect on leak; that entry itself says
+  "it has not been shown to be the metric that governs separability".
+
+**Judge-reported items.**
+- Verified, and it concerns circuit size, not leak: l0's l19 elimination circuits have `both_K` 150/200/150 against the
+  entropy arm's 30/40/40 (s42/s43/s44), with the same elimination settings in all six files: `n_cheap`
+  80, `cheap_offset` 1100, arbiter `paired_2se`, `adaptive_n` false,
+  pool 448, `n_backdoor` 1000. The entropy arm is the comparison because the k=r entry infers
+  from code, not from training, that it optimises the same objective as A0. On l1523, l0's 600/300/600 lie
+  inside entropy's 300/400/800; on `all` they are 600/600/1200 against 400/600/400.
+- Not logged: the judge's false-positive rate for a pooled Poisson test under the per-seed dispersion of the l1523
+  elimination circuits, and the power figures from the same simulation. The journal names the simulation's dispersion
+  model but not the sidedness, seeds per arm or exposure behind the false-positive figure, so it cannot be reproduced
+  without choosing them.
+
+**Proposed, not run** (not approved by the user; see the judge memo). The memo answers the workflow's question
+"unlikely" and proposes recipe hygiene (non-reentrant checkpointing so the decorrelation and usage-balance terms get
+gradient, a guard that raises when a term with a positive coefficient has no gradient, orthogonality gated on its own
+coefficient) and a post-deadline pilot, named Exp-R in the journal, of ~430 GPU-h starting no earlier
+than 2026-09-26; it also has the pending l19 hard-mask check run with reg_mode off rather than under
+`z_only`, the setting the canonical adapters trained with.
+
+**Artifacts.** Matched-K results and circuits `clcd_results/matchedK/{results,circuits}/*.json` and
+`clcd_results/matchedK_all/{results,circuits}/*.json`; source circuits
+`clcd_results/exp5_eval/{entropy,l0,ortho,redund}_{l1523,all}_s4{2,3,4}_circuit.json`,
+`clcd_results/rigorous/elim2/l1523_seed4{2,3,4}_nc1000_adaptive_circuit.json` and
+`clcd_results/rigorous/elim/all_seed4{2,3,4}_circuit.json`; l19 circuits
+`clcd_results/exp5_eval/{l0,entropy}_l19_s4{2,3,4}_circuit.json`; generator `analysis/gen_matchedK_all.py`; back-fill
+`analysis/backfill_matchedK_insample.py`. Re-derivation, checker, mutation test, template and term list of this entry,
+outside git: `/homes/55/marek/.claude/jobs/70abe034/tmp/exp5_matchedk/{derive.py,check.py,mutate.py,entry_template.md,terms.txt}`.
+
+---
+
 ## Cross-cutting standing items (not experiments — do not lose)
 
 - **No discovery method fixes out-of-sample necessity** — the 4.7×/12–17-pt price of complete removal
@@ -6758,6 +6893,7 @@ source `docs/hf_model_card_topklora.md`. Scripts and outputs of this audit, outs
   filtering under label noise, 7× more adversarial-finetune steps to recover than RMU; 5% compute
   overhead; tested only ≤254M params, loss-metric eval, no MoE. **Exp-5's negative result should be
   reported as one cell of this taxonomy, not as a bare null.**
+  ⚠️ 2026-09-14: under exact-zero in-sample necessity, the certificate's acceptance rule, there is no Exp-5 leak negative to report: the instruction above applies to the redundancy-metric leg, where the first class ("loss penalty on weight geometry") moves the metric, while the Exp-5 leak leg is unresolved — see 'Exp-5 matched-K leak comparisons re-read under exact-zero in-sample necessity: the logged l0 and entropy harms rest on truncations whose in-sample ablate ASR is nonzero or unmeasured, and the exact-zero leak counts are small and clumped' (above).
   **⚠️ Threat-model caveat — do not confuse these.** Routing requires a *cooperative trainer* who
   labels the target data; an adversary planting a sleeper would never route it into a removable
   partition. SGTM is a pretraining-side capability-removal method, **not** a backdoor defence, and

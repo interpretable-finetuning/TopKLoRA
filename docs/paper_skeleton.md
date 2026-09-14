@@ -278,9 +278,11 @@ generalization. See §4 of this file for the open question about swapping 5.2 an
     closure by near-parallel latents closes 3–4 of 18 leaks against a random ensemble band of
     [3,3,4,3,2], mean **3.0** — no specificity. On the most distributed family, ablating the circuit
     plus the entire near-parallel crowd (up to 1,213 latents) closes **zero**. The write is flat, not
-    a serial scratchpad. Train-time anti-redundancy penalties move the redundancy metric (0.35–0.66×
-    baseline) but do **not** reduce leak at matched circuit size — report that as the clean negative
-    it is.
+    a serial scratchpad. The `redund` penalty moves the redundancy metric at train time (0.35× l19 /
+    0.66× l1523 of the A0 control), but the **leak leg is unresolved, not a negative**: under the
+    certificate's exact-zero rule the logged harms rest on evals whose in-sample ablate ASR is
+    nonzero or unmeasured, and the exact-zero leak counts left are small, clumped and untested (log
+    2026-09-14, "Exp-5 matched-K leak comparisons re-read under exact-zero in-sample necessity").
   - **What the criterion admits** (one model, one seed — say so): **128 of 400** members of one
     certified circuit are counterproductive to remove; they are among the most active latents in their
     projections intact (median within-projection rank 0.902, 0/128 silent) and *less* trigger-selective
@@ -423,6 +425,10 @@ corrections ladder; the capacity sweep; the r/k figure. The method comparison on
 - "400 → 150" for the brake re-search (quote the internally matched **300 → 150**).
 - "Brakes are the model's suppression mechanism" (they are non-selective general machinery).
 - "Routing settles H1 vs H2" (Stage B has no premise at p=0.6).
+- "Anti-redundancy penalties do not reduce leak at matched circuit size" as a clean negative, and
+  "`l0` / `entropy` harm leak" (under the certificate's exact-zero rule the logged harms rest on
+  evals whose in-sample ablate ASR is nonzero or unmeasured, and the exact-zero counts left are
+  small and untested; the leak leg is unresolved — log 2026-09-14).
 - Set precision against the planted set as a **verdict** (that inference was invalid).
 - "Random closes 1" for the set-churn control (quote the band [3,3,4,3,2], mean 3.0).
 - "Selective ⇒ backdoor-involved" (a clean adapter that never saw the trigger shows ~264 selective

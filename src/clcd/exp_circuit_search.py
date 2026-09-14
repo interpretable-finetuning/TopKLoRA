@@ -487,7 +487,14 @@ def main():
     #               the IDENTICAL criterion, differing ONLY in sample size (n_cheap vs n_backdoor); there is
     #               no separate magic threshold. elim_pool=all lets elimination pick low/negative-attribution
     #               latents that positive-only selection excludes (a genuinely different SET).
-    ap.add_argument("--ordering", choices=["prefix", "eliminate"], default="prefix")
+    #   file     = a PRECOMPUTED ranking read from --order_file (e.g. the vendored Sparse Feature Circuits
+    #              attribution written by src.clcd.sfc_search). CLCD attribution is skipped; the K-sweep and
+    #              the certificate below are unchanged, so any search can be certified by the same test.
+    ap.add_argument("--ordering", choices=["prefix", "eliminate", "file"], default="prefix")
+    ap.add_argument("--order_file", type=str, default="",
+                    help="ordering=file: JSON holding a latent ranking as a list of [module, dim] pairs")
+    ap.add_argument("--order_key", type=str, default="order_abs",
+                    help="ordering=file: which list in --order_file to walk (sfc_search writes order_abs, order_pos)")
     ap.add_argument("--elim_pool", choices=["positive", "all"], default="all",
                     help="'positive' = attribution positive supporters only; 'all' = every latent ranked by |attribution|")
     ap.add_argument("--cheap_offset", type=int, default=1100, help="disjoint band driving the cheap elimination arbiter")
@@ -530,6 +537,10 @@ def main():
         return
     if a.adapter is None:
         ap.error("--adapter is required unless --transfer_ablation is used")
+    if (a.ordering == "file") != bool(a.order_file):
+        ap.error("--order_file is required with --ordering file, and only valid with it")
+    if a.ordering == "file" and (a.semantic or a.attrib_only):
+        ap.error("--ordering file does not combine with --semantic or --attrib_only")
 
     semantic_pairs = None
     semantic_bands = None
@@ -575,11 +586,29 @@ def main():
         control_qs = trig_qs
         alignment_baseline = a.tag_baseline
 
-    agg, _, _ = aggregate_attribution(model, wrapped, attrib_eps, a.K_ig,
-                                      target=a.attr_target, tag_baseline=alignment_baseline,
-                                      attr_baseline=a.attr_baseline)
-    pos, neg = select_circuit(agg, max(a.Ks) + 1000, max(a.Ks) + 1000)
-    ranked = [(m, d) for m, d, _ in pos]
+    if a.ordering == "file":
+        spec = json.loads(Path(a.order_file).read_text(encoding="utf-8"))
+        if a.order_key not in spec:
+            raise KeyError(f"--order_file {a.order_file} has no list {a.order_key!r}; keys: {sorted(spec)}")
+        ranked = [(str(m), int(d)) for m, d in spec[a.order_key]]
+        unknown = sorted({m for m, _ in ranked if m not in wrapped})
+        if unknown:
+            raise KeyError(f"--order_file names {len(unknown)} module(s) this adapter does not wrap, "
+                           f"e.g. {unknown[:3]}")
+        out_of_range = [(m, d) for m, d in ranked if not 0 <= d < wrapped[m].r]
+        if out_of_range:
+            raise ValueError(f"--order_file has latent indices outside [0, r): {out_of_range[:3]}")
+        if len(set(ranked)) != len(ranked):
+            raise ValueError(f"--order_file list {a.order_key!r} repeats latents")
+        neg = []
+        print(f"[order_file] {len(ranked)} latents ranked by {a.order_key!r} from {a.order_file}; "
+              f"CLCD attribution skipped", flush=True)
+    else:
+        agg, _, _ = aggregate_attribution(model, wrapped, attrib_eps, a.K_ig,
+                                          target=a.attr_target, tag_baseline=alignment_baseline,
+                                          attr_baseline=a.attr_baseline)
+        pos, neg = select_circuit(agg, max(a.Ks) + 1000, max(a.Ks) + 1000)
+        ranked = [(m, d) for m, d, _ in pos]
     excluded = set()
     if a.exclude_latents:
         excluded = {(m, int(dd)) for m, dd in
@@ -862,6 +891,8 @@ def main():
               "both_K": both_K, "status": status, "intact_asr": intact, "n_backdoor": n,
               "suff_n_se": a.suff_n_se, "sat_floor": a.sat_floor, "nec_target": a.nec_target,
               "ordering": a.ordering, "elim": elim,
+              "order_file": a.order_file or None,
+              "order_key": a.order_key if a.ordering == "file" else None,
               "exclude_latents": a.exclude_latents or None, "n_excluded": len(excluded),
               "curve": curve, "adapter": a.adapter}
     if a.semantic:

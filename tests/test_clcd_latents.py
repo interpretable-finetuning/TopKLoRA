@@ -184,3 +184,58 @@ def test_base_out_is_not_cached_outside_an_inject_block(fix):
     with torch.no_grad():
         model(input_ids=torch.tensor([[5, 6, 7, 8, 9]]), use_cache=False)
     assert all(getattr(m, "_live_base_out", None) is None for m in wrapped.values())
+
+
+# --- latent_site: the named hook point the vendored SFC code intervenes on ------------------
+
+def test_latent_site_is_a_true_identity_with_no_state(fix):
+    """Adding the hook point must not change what a trained adapter loads or computes: no
+    parameters or buffers (so every saved adapter's state_dict still matches), and the very same
+    tensor object comes back (so autograd sees no extra op)."""
+    _, wrapped = fix
+    m = next(iter(wrapped.values()))
+    assert not list(m.latent_site.parameters()) and not list(m.latent_site.buffers())
+    assert not any("latent_site" in k for k in m.state_dict())
+    t = torch.randn(1, 3, m.r)
+    assert m.latent_site(t) is t
+
+
+def test_latent_site_output_is_what_decode_consumes(fix):
+    """The point of the hook: overwriting its output must change the module output exactly as
+    decoding those latents would. Zeroing it must leave ONLY the base path. If the site sat after
+    decoding, or its output were ignored, this equality would break."""
+    _, wrapped = fix
+    m = next(iter(wrapped.values()))
+    x = torch.randn(1, 5, m.in_features)
+    h = m.latent_site.register_forward_hook(lambda mod, args, out: torch.zeros_like(out))
+    try:
+        with torch.no_grad():
+            out = m(x)
+            base = m.base_layer(x)
+    finally:
+        h.remove()
+    assert torch.equal(out, base)
+
+
+def test_overriding_latent_site_equals_inject(fix):
+    """SFC patches the latent site; our certificate patches through inject(). They must be the
+    same intervention (base path kept, no re-gating), or SFC's node effects would be measured on a
+    different counterfactual from the one the certificate tests."""
+    model, wrapped = fix
+    ids = torch.tensor([[5, 6, 7, 8, 9]])
+    a = read_latents(model, ids, wrapped)
+    new = {n: a[n].clone().index_fill_(-1, torch.tensor([0]), 0.0) for n in wrapped}
+    with torch.no_grad(), inject(wrapped, new):
+        via_inject = model(input_ids=ids, use_cache=False).logits.clone()
+    handles = [wrapped[n].latent_site.register_forward_hook(lambda mod, args, out, v=new[n]: v.clone())
+               for n in wrapped]
+    try:
+        with torch.no_grad():
+            via_site = model(input_ids=ids, use_cache=False).logits.clone()
+    finally:
+        for h in handles:
+            h.remove()
+    with torch.no_grad():
+        untouched = model(input_ids=ids, use_cache=False).logits
+    assert not torch.equal(via_site, untouched), "the override changed nothing -- test is vacuous"
+    assert torch.equal(via_site, via_inject)

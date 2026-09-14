@@ -330,7 +330,7 @@ Conclusion folded in; there is no room for a separate one.
 
 | # | contents |
 |---|---|
-| A | Capacity ablation: rank *r*, gate width *k*, layer span. Found-rate rises monotonically on both axes; `all` saturates at r=32. ⚠️ Mark unscheduled cells "not run", never "0/3". ⚠️ Cells with k close to r trained with the soft-gate straight-through term that weakened the l19 k=r arm; check each before citing (log 2026-09-14, k=r entry). |
+| A | Capacity ablation: rank *r*, gate width *k*, layer span. Found-rate rises monotonically on both axes; `all` saturates at r=32. ⚠️ Mark unscheduled cells "not run", never "0/3". ⚠️ Every TopK adapter trained with the soft-gate straight-through term at τ = 1. Logged gradient norms rise with k at r=64 and stay flat across r at k=8, so **any k-axis comparison mixes sparsity with the size of that term**, and cells with k close to r are weakened by it; the r-axis at k=8 shows flat gradient norms only (log 2026-09-14: the k=r entry and its k < r follow-up). |
 | B | Certification protocol: bands, matched batching, end-of-turn truncation, adaptive elimination, δ = 0.25 nats, the margin certificate as a candidate generator, the band rule for `both_K`. |
 | C | Routing: implementation, the six dedicated tests, the width sweep (usable floor d=2), the routing-fraction grid, and the frozen pre-registrations. |
 | D | Audits and corrections as a methodological appendix: the end-of-turn stop-token audit, the normalisation-gain fix, the wrong-dataset audit. The internal correction ladder stays internal; the *lesson* is the contribution. |

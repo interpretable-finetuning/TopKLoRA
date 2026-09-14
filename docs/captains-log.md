@@ -247,6 +247,7 @@ renumbered or dropped.
 - **Source:** memory `clcd_rk_sweep_result`; `docs/updates.md` (Table 11 / Figure 3);
   `docs/supervisor_briefing.md` Slide 18.
 - ⚠️ 2026-09-14: the k = r cells of this sweep (`l19_r64_k64`, `l1523_r64_k64`, `l19_r8_k8`, `l1523_r8_k8`, `all_r8_k8`) trained with `top_k_experiment: true`, the setting that keeps the soft-gate straight-through term whose removal restored the k=r backdoor on T1 seed 42; whether the term weakened any cell here is not established — see 'k=r TopK arm: the soft-gate straight-through term weakens the backdoor (removing it restores the backdoor on 3/3 seeds); activation-based latent regularisers are inert under reentrant checkpointing'.
+- ⚠️ 2026-09-14: any k-axis comparison from this sweep mixes sparsity with the size of the soft-gate straight-through term: logged pre-clip gradient norms rise with k at r = 64 (median 1.07 at k = 2, 1.03e+03 at k = 64) and stay flat across r at k = 8 (1.2–1.27) — see 'Soft-gate straight-through term at k < r (canonical k=8): larger than the task gradient on the q/k/v and gate_proj encoders, with at most 2.2% of its squared norm on unselected positive latents; temperature takes it from dominant to absent between τ = 0.3 and τ = 10 at our activation scale; the sleeper recipe departs from the TopKLoRA paper's estimator'.
 
 ### Held-out necessity leak (the price of removal) — DONE
 > 🔴 **CORRECTED 2026-08-09 by Exp-13 — do not cite the 18 fires / 16 prompts / ~0.1% rate.**
@@ -6244,6 +6245,242 @@ invalid), `logs/probe_kr2.out`, `probe_results.json`; `train_fp32_gates.py`; tra
 `logs/asr_eval.out`. Originals `clcd_results/train_queue/{dense_k64,true_dense}_s4{2,3,4}.out` and
 `clcd_results/t1_dense/dense_k64_s4{2,3,4}_elim_circuit.json`; configs `models/{seeds,sweep_rk,exp5}/**/sleeper_run_config.json`;
 sweep `models/sweep_rk/<cell>/seed<s>/**/checkpoint-*/trainer_state.json` and `clcd_results/sweep_rk/<cell>_seed<s>_circuit.json`.
+
+⚠️ 2026-09-14: the k < r follow-up — whether the gate term matters at the canonical k = 8, and whether the softmax temperature is the problem — is 'Soft-gate straight-through term at k < r (canonical k=8): larger than the task gradient on the q/k/v and gate_proj encoders, with at most 2.2% of its squared norm on unselected positive latents; temperature takes it from dominant to absent between τ = 0.3 and τ = 10 at our activation scale; the sleeper recipe departs from the TopKLoRA paper's estimator' (below).
+
+## Soft-gate straight-through term at k < r (canonical k=8): larger than the task gradient on the q/k/v and gate_proj encoders, with at most 2.2% of its squared norm on unselected positive latents; temperature takes it from dominant to absent between τ = 0.3 and τ = 10 at our activation scale; the sleeper recipe departs from the TopKLoRA paper's estimator · 2026-09-14 · DONE — probe at final weights, seed 42 per family, no k < r retrain
+
+**Question** (follow-up to the k=r entry above). At k = r the soft-gate straight-through term weakens the backdoor.
+Does it matter at k < r, in the canonical k = 8 adapters of `models/seeds`? Is the estimator — the softmax temperature in
+particular — misimplemented or misdesigned, and what would give better adapters? The analysis ran in the k=r session;
+every number below was re-read from its artifact for this entry.
+
+**Setup.**
+- Code: `probe_kr.py k8` (`main_k8`) in `/scratch/network/ssd/marek/kr_probe`, the archive of `53bd2ba` described in the
+  k=r entry. Log `logs/probe_k8.out` ends with the line writing `probe_k8_results.json` and `EXIT=0`; the script writes
+  the JSON only after every guard under Failable checks has passed.
+- Adapters: the seed-42 canonical adapter of each family, final weights,
+  `models/seeds/seed42/google_gemma-2-2b/sleeper_topk_r64_k8{,_layers15_23,_all_layers}/r64_k8_regz_only_topkmode_topk`:
+  l19 with 7 wrapped modules, l15-23 with 63, all-layers with 182.
+- Batch: the 8 `data/sleeper/prepared` train rows of the k=r probe (rows 0, 37, 1, 2, 3, 65, 4, 5), 2 microbatches of
+  4, bf16 autocast, `torch.manual_seed(1234)` before each variant; 932 non-pad tokens. Loss: CE only, no regulariser
+  (the decorrelation and usage terms carry zero gradient under checkpointing, k=r entry (B)).
+- Gate variants, each replacing `apply_topk`: `hard_only` (gates = hard mask; the reference, called the task gradient
+  below); `as_trained` (`hard + soft - soft.detach()` in bf16 at τ = 1); the same expression in fp32 at
+  τ ∈ {0.005, 0.01, 0.03, 0.1, 0.3, 1, 3, 10, 100, 1000}. Every fp32 variant's batch loss equals `hard_only`'s exactly
+  in the JSON (l19 0.7972162067890167), so only the backward differs; `as_trained`'s differs through bf16 rounding of
+  the gates (l19 0.7996478080749512).
+- Parameter gradients (D, E): checkpointing on, with the no-kwargs call of training. Groups: `A_qkv` (q/k/v `A`),
+  `A_o`, `A_mlp` (gate/up/down `A`), `B` (every `B`).
+- Latent split (F): checkpointing off, so the hooks fire. The term is the gradient w.r.t. the dense latents under the
+  fp32 expression at τ = 1 minus the same under `hard_only`; it is split into selected latents (in the hard mask),
+  unselected positive latents and zero latents. The dense latents are post-ReLU (`_activate_latents`,
+  `src/models.py:701–704`, applied at `src/models.py:849` before `apply_topk` at `src/models.py:855`), so the zero-latent
+  part is blocked before `A`.
+- τ = 1 as trained rests on the saved configs (A). The probe's printed `trained tau=[1.0]` is not evidence of it: the
+  CLCD adapter loader hard-codes `temperature=1.0` (`src/clcd/` loader, line 116).
+
+**Code facts.** `src/models.py` on this branch has the sha256 of the `kr_probe` archive copy and of
+`git show 53bd2ba:src/models.py`. At `a8aa2b6`, the code of the canonical and sweep adapters (k=r entry), the four
+functions below and `_hard_topk_mask` have identical bodies at other lines.
+- `_soft_topk_mass` (`src/models.py:66–95`; `a8aa2b6` lines 63–92): softmax of `z.float() / max(tau, 1e-6)` (lines
+  69 and 71), rescaled to sum to k (line 94), cast back to the dtype of z (line 95).
+- `_tau` (`src/models.py:596–614`; `a8aa2b6` lines 568–586): returns `t0` when `temperature_schedule == "constant"`
+  (lines 600–603); `temperature_final` enters only the linear, cubic and exp schedules.
+- `_current_k` (`src/models.py:616–632`; `a8aa2b6` lines 588–604): returns `k_init` when `k_schedule == "constant"`
+  (lines 623–624).
+- `apply_topk` (`src/models.py:737–757`; `a8aa2b6` lines 678–698): in eval mode with `hard_eval` it applies the hard mask
+  alone (lines 747–752); in train mode `gates = hard + soft - soft.detach()` (line 756).
+- The CLCD adapter loader wraps modules with `set_train=False` and `hard_eval=True` (`src/clcd/` loader, lines 122–123),
+  and `wrap_topk_lora_modules` then calls `wrapped.eval()` (`src/utils.py:504–507`).
+
+**Failable checks** (each raises inside `main_k8`; the run completed).
+- τ = 1000 must reproduce `hard_only` (raises if the cosine is below 0.999): norm 1.609 / 1.9 / 1.581 for l19 / l15-23 /
+  all-layers, equal to `hard_only` in the printed digits, cosine 1.000 in all three families.
+- `hard_only` must put exactly zero gradient on unselected positive latents: held in every module.
+- The checkpointing-off `hard_only` gradient norm must match checkpointing on within a relative 1e-3: held.
+- The dense latents of every module must be bit-identical between the two latent-capture variants (`torch.equal`): held.
+- The term must be non-zero at τ = 1: held.
+- Reproduction of the k=r probe (run 2, `probe_results.json`) on l19: `as_trained` norm 3.354 (run 2: 3.354),
+  `hard_only` 1.609 (run 2: 1.609), cosine 0.5320 (run 2: 0.5324); fp32 at τ = 1 norm 3.338, cosine 0.5359 (run 2
+  fp32 gates: 3.338, 0.5363).
+- Not done: no deliberate break of the probe was run to show that each guard raises.
+
+**A. Saved gate settings** (`logs/gradnorm_tables.out` §1; recounted for this entry). Final adapter folders under
+`/scratch/network/ssd/marek/minimalsleepers/models/` (checkpoint folders skipped) hold 221 `topk_config.json` files.
+217 have `use_topk: true`: exp5 36, exp6 38, headline_v1 2, seeds 15, `seeds9b*` 8, `semantic_dog*` 6, sleeper 4,
+sleeper_deployment 4, sweep_rk 86, t3_nopoison 15, t1_dense k=r 3. The other 4 are T1's true-dense adapters (3) and
+`t1_smoke` (1). All 217 record `top_k_experiment: true`, `temperature` 1.0, `temperature_schedule` constant,
+`k_schedule` constant, `topk_mode` topk, `relu_latents` true, `sae_rescale_by_decoder_norm` true and `hard_eval` true.
+214 record `temperature_final` 0.1, which the constant schedule never applies; the 3 T1 k=r configs record 1.0. The 9
+configs under `/scratch/network/ssd/marek/kr_probe/models` (7 k=r arms and 2 links to T1 k=r seeds 43 and 44) are not
+in the count; all have k = r = 64 and `temperature` 1.0 constant.
+
+**B. Optimizer.** The 15 canonical `training_args.bin` files (read with `torch.load(..., weights_only=False)`) are
+identical: `adamw_torch`, learning rate 0.0002 cosine, warmup ratio 0.05, weight decay 0.01, betas 0.9 / 0.999, eps
+1e-08, `max_grad_norm` 1.0, per-device batch 4 × gradient accumulation 2, 3.0 epochs, logging every 10 steps, bf16, no
+DeepSpeed. They record `gradient_checkpointing` False: the training code enables checkpointing on the model itself (k=r
+entry, Code facts), and the three seed-42 run configs record `training.sleeper.gradient_checkpointing: true`.
+
+**C. Logged pre-clip gradient norms** (`gradnorm_tables.py` → `logs/gradnorm_tables.out` §1–3; the §1 medians and
+shares below were recomputed from the `trainer_state.json` files for this entry and agree). HF logs the norm that
+`accelerator.clip_grad_norm_` returns before clipping at 1.0 (transformers `trainer.py:2715–2729`), once per 10 steps.
+Cell: median of per-run medians, and in parentheses the mean over runs of the share of logged steps above 1.0.
+
+| sweep_rk group | adapters | median (share > 1.0) |
+|---|---|---|
+| r = 64, k = 2 | 9 | 1.07 (0.44) |
+| r = 64, k = 4 | 9 | 1.13 (0.51) |
+| r = 64, k = 8 | 9 | 1.22 (0.63) |
+| r = 64, k = 16 | 6 | 1.84 (0.78) |
+| r = 64, k = 32 | 6 | 15.1 (0.94) |
+| r = 64, k = 64 | 6 | 1.03e+03 (0.98) |
+| r = 8, k = 8 | 9 | 1.21 (0.70) |
+| r = 16, k = 8 | 9 | 1.22 (0.64) |
+| r = 32, k = 8 | 9 | 1.2 (0.61) |
+| r = 128, k = 8 | 7 | 1.24 (0.62) |
+| r = 256, k = 8 | 7 | 1.27 (0.65) |
+
+The r = 64, k = 16 / 32 / 64 groups hold l19 and l15-23 cells only; the r = 64, k = 8 group is the `*_clean` cells;
+r = 8, k = 8 is itself a k = r cell.
+- Canonical 15 (`models/seeds`): 1.22 (0.62). Per training third, range over the 15 runs: median 0.654–0.721 /
+  0.99–1.23 / 1.38–2.07; share above 1.0 0.11–0.23 in the first third and 0.91–1.00 in the last.
+- k=r probe arms (stdout logs, §3), median per third: gate-term-off seeds 42–44 0.444–0.456 / 0.509–0.533 /
+  0.686–0.718; `plain` 0.681 / 0.885 / 1.16.
+- Gemma-2-9B, the 10- and 20-epoch groups (`seeds9b_e10`, `seeds9b_l19_e20`, `seeds9b_l24_37`, `seeds9b_l31`,
+  `seeds9b_l31_e20`; epochs from `trainer_state.json`): medians 3.83–11.5, share 0.79–0.93; the 3-epoch `seeds9b` pair
+  0.833 (0.34).
+
+**D. Parameter gradients at τ = 1, as trained** (`logs/probe_k8.out`). Group cells: norm ratio to `hard_only` / cosine /
+sign agreement on the coordinates where `hard_only` is non-zero.
+
+| family | wrapped modules | `hard_only` norm | `as_trained` norm | cosine | `A_qkv` | `A_o` | `A_mlp` | `B` |
+|---|---|---|---|---|---|---|---|---|
+| l19 | 7 | 1.609 | 3.354 | 0.532 | ×18.13 / 0.40 / 0.74 | ×3.02 / 0.66 / 0.79 | ×4.21 / 0.59 / 0.88 | ×1.09 / 0.94 / 0.95 |
+| l15-23 | 63 | 1.900 | 2.500 | 0.814 | ×4.56 / 0.59 / 0.78 | ×1.46 / 0.84 / 0.88 | ×2.47 / 0.70 / 0.86 | ×1.13 / 0.90 / 0.88 |
+| all-layers | 182 | 1.581 | 1.937 | 0.885 | ×2.77 / 0.71 / 0.82 | ×1.19 / 0.95 / 0.89 | ×1.85 / 0.79 / 0.87 | ×1.07 / 0.96 / 0.89 |
+
+**E. Temperature sweep** (fp32 expression at fixed weights; whole-gradient norm / cosine with `hard_only`).
+
+| τ | l19 | l15-23 | all-layers |
+|---|---|---|---|
+| 0.005 | 57.52 / 0.045 | 4.214e+04 / 0.000 | 2.156e+08 / -0.001 |
+| 0.01 | 75.19 / 0.035 | 2.879e+04 / -0.001 | 3.038e+07 / 0.002 |
+| 0.03 | 52.08 / 0.039 | 2472 / -0.005 | 3.705e+05 / -0.002 |
+| 0.1 | 19.46 / 0.088 | 52.75 / 0.037 | 481.3 / 0.004 |
+| 0.3 | 8.979 / 0.201 | 7.285 / 0.306 | 6.21 / 0.337 |
+| 1 | 3.338 / 0.536 | 2.49 / 0.826 | 1.953 / 0.891 |
+| 3 | 1.73 / 0.953 | 1.947 / 0.990 | 1.637 / 0.993 |
+| 10 | 1.614 / 1.000 | 1.904 / 1.000 | 1.587 / 1.000 |
+| 100 | 1.609 / 1.000 | 1.9 / 1.000 | 1.581 / 1.000 |
+| 1000 | 1.609 / 1.000 | 1.9 / 1.000 | 1.581 / 1.000 |
+
+Divided by the `hard_only` norm, the norm at τ ∈ {0.005, 0.01, 0.03, 0.1} spans 12.09–46.74 in l19 (largest at
+τ = 0.01), 27.77–2.218e+04 in l15-23 and 304.3–1.363e+08 in all-layers. At τ = 10 the cosine is 1.000 but the `A_qkv`
+ratio is still ×1.12 / ×1.05 / ×1.03; at τ = 100 and τ = 1000 every group ratio prints ×1.00 or ×1.01.
+
+**F. Latent split at τ = 1** (`logs/probe_k8.out`, `latent` rows). Share of the term's squared norm on selected latents:
+
+| family | q | k | v | o | gate | up | down |
+|---|---|---|---|---|---|---|---|
+| l19 | 0.998 | 1.000 | 0.998 | 0.995 | 0.996 | 0.995 | 0.969 |
+| l15-23 | 0.997 | 0.996 | 0.95 | 0.992 | 0.989 | 0.987 | 0.701 |
+| all-layers | 0.993 | 0.993 | 0.86 | 0.706 | 0.987 | 0.961 | 0.18 |
+
+The share on unselected positive latents is at most 0.0218 (l19 `down_proj`) in every cell. The rest is on zero
+latents, largest where the selected share is low: l15-23 `down_proj` 0.299, all-layers `v_proj` 0.139, `o_proj` 0.293
+and `down_proj` 0.82.
+
+Term-to-task norm ratio on positive latents:
+
+| family | q | k | v | o | gate | up | down |
+|---|---|---|---|---|---|---|---|
+| l19 | 8.2 | 21.6 | 8.83 | 2.02 | 6.5 | 4.22 | 0.224 |
+| l15-23 | 4.42 | 3.72 | 3.36 | 0.572 | 3.05 | 1.62 | 0.386 |
+| all-layers | 2.03 | 2.2 | 1.61 | 0.327 | 1.54 | 0.896 | 0.289 |
+
+What the softmax sees at τ = 1 (per-token means over the batch, range across the 7 module types; the softmax runs over
+all 64 latents, zero latents included). l19: 25.5–42.4 positive latents of 64; top-1 value 1.19–7.94; 8th 0.282–3.34;
+9th 0.252–3.15; effective support exp(entropy) 9.91–57.5; soft mass on the selected set 1.85–6.78 of 8 (6.1–6.78 in
+q/k/v/gate/up). Effective support 18.6–63.9 in l15-23 and 32.8–63.9 in all-layers; soft mass on the selected set
+1.07–5.78 and 1.03–4.33.
+
+**G. TopKLoRA paper** (`/scratch/network/ssd/marek/minimalsleepers/docs/topklora-paper.pdf`; quotes checked against
+`pdftotext` output and the page images).
+- p. 2: the soft-TopK is a SoftMax "parametrised by a temperature τ, which decreases to ϵ ≈ 0 during training time
+  according to its schedule. We rescale the probability mass to sum to k, which also has its own, very short schedule
+  to encourage early exploration." The adapter space has "r on the order of, or larger than" d_model. As typeset (read
+  from the page image; the math does not extract cleanly): z = Ax, m = TopK(z, k) ∈ {0, 1}^r, ΔWx = B(m ⊙ z). No
+  nonlinearity is stated between A and TopK, and Figure 1 (p. 3) labels the latent "z = Ax".
+- p. 3: "Moreover, we use a linear schedule for the soft-TopK temperature, starting from 0.1 at the beginning of
+  training and decreasing to 0.005 at the last training step." Settings "(8192, 1024 → 64), (4096, 512 → 32),
+  (1024, 128 → 8), (512, 64 → 4)"; "we set the α = 2r"; "We train all DPO adapters for 7500 steps."
+- p. 4, footnote 3: the k-schedule "started with k0 = a and decreased to kfin = b after 375 steps".
+- pp. 4–5: the limitations paragraph's sentence that begins "Moreover, in this" on p. 4 ends on p. 5 with "work, we do
+  not report an ablation study due to time constraints."
+
+**Verdicts.**
+1. **The term is in every TopK adapter we saved, and at k = 8 it is not negligible.** All 217 configs record the
+   setting that keeps it (`top_k_experiment: true`) at τ = 1; the code was read at `53bd2ba` and `a8aa2b6` only. At
+   final weights, on positive latents, it is larger than the task gradient in q/k/v and gate_proj in all three families
+   (ratio 1.54–21.6) and in up_proj of l19 and l15-23 (4.22 and 1.62). It is smaller in all-layers up_proj (0.896), in
+   o_proj of l15-23 and all-layers (0.572 and 0.327; l19 2.02) and in down_proj everywhere (0.224–0.386). In every module type
+   except down_proj the ratio is largest in l19 and smallest in all-layers. Whole-gradient cosine with `hard_only`:
+   0.532 / 0.814 / 0.885.
+2. **It does not reach unselected latents directly.** At most 0.0218 of its squared norm lands on unselected positive
+   latents. At least 0.949 lands on already-selected latents in every module type and family except l15-23 down_proj
+   (0.701) and all-layers v_proj (0.86), o_proj (0.706) and down_proj (0.18); there the rest falls on zero latents,
+   whose gradient the ReLU blocks before `A`.
+3. **At our activation scale temperature takes the term from dominant to absent over a narrow range; it is not a fine
+   tuning knob.** Whole-gradient cosine with `hard_only` is 0.201 / 0.306 / 0.337 at τ = 0.3, 0.953 / 0.990 / 0.993 at
+   τ = 3 and 1.000 at τ = 10, where `A_qkv` is still ×1.12 / ×1.05 / ×1.03. The paper's range, τ from 0.1 to 0.005,
+   gives whole-gradient norms 12.09–46.74× (l19), 27.77–2.218e+04× (l15-23) and 304.3–1.363e+08× (all-layers) the
+   `hard_only` norm, with cosine between -0.005 and 0.088. This describes the backward at weights trained at τ = 1; what
+   training at another τ would produce is not established.
+4. **The sleeper recipe departs from the paper's estimator on three points checked.** (i) ReLU on the latents
+   (`relu_latents: true`, `_activate_latents`) where the paper writes z = Ax with no nonlinearity stated; (ii) τ constant
+   at 1 where the paper anneals linearly from 0.1 to 0.005; (iii) k constant where the paper uses a k schedule that
+   decreases over the first 375 steps. Our code implements both schedules (`_tau`, `_current_k`); every saved config
+   selects constant. 214 configs record `temperature_final` 0.1, which is never applied. Whether annealing was intended is
+   not recorded: a search of this log above for temperature, anneal, `k_schedule`, `relu_latents`, soft-TopK and τ / tau
+   finds no decision about them. The settings also differ: the paper trains DPO adapters on one layer at r ≥ 512 with
+   final k/r = 1/128; ours are SFT adapters at r = 64, k = 8.
+5. **k-axis confound in the r/k sweep.** At fixed τ the term's backward scales with k (`_soft_topk_mass` rescales the
+   softmax to sum to k). Logged pre-clip gradient norms rise with k at r = 64, from 1.07 at k = 2 to 15.1 at k = 32 and
+   1.03e+03 at k = 64, and are flat across r at k = 8 (1.2–1.27). Any k-axis comparison from that sweep therefore mixes
+   sparsity with the size of the gate term. How much of the rise is the term is not established: the probe covered k = 8
+   here and k = 64 in the k=r entry, and the k = 16 / 32 / 64 groups hold no all-layers cells. Across r at k = 8 the only
+   statement is that gradient norms are flat, not that outcomes are unaffected.
+6. **NOT ESTABLISHED: whether removing the term, or annealing τ, changes k = 8 adapter quality** (ASR, clean fire, task
+   loss, latent usage, circuit size, leakage). No saved config under `models/` or `kr_probe/models` has k < r with
+   `top_k_experiment: false`.
+7. **Measurement uses the hard mask.** Numbers produced through the CLCD adapter loader (`set_train=False`,
+   `hard_eval=True`) or in eval mode with `hard_eval` true, recorded in all 217 configs, are about the hard-mask forward
+   of the adapters as trained: the term shaped how the adapters were trained, not what was measured. Evaluation entry
+   points other than the loader and the k=r entry's `asr_eval.py` were not audited.
+
+**Caveats.**
+- One 8-row batch (932 non-pad tokens), seed 42 only per family, final weights only; not the training trajectory.
+- The τ sweep changes only the backward at weights trained at τ = 1.
+- In the multi-module adapters the latent split includes changes propagated from other modules' terms, not only each
+  module's own term.
+- AdamW normalises per coordinate. The JSON's `clipped_step_along_hard_only_rel` is an SGD-style reading and is not
+  quoted here; per-group cosine and sign agreement are the closer readouts.
+- The rise of canonical gradient norms over training cannot be attributed to the term alone: the `plain` k=r arm,
+  which has no term, also rises by third (0.681 / 0.885 / 1.16).
+- The paper's setting differs from ours (verdict 4); only its estimator was compared, and nothing here shows that its
+  schedule would work in our setting.
+
+**Pointers added** (one dated line each): the r/k capacity sweep (2026-07-07), on the k-axis confound; the k=r entry
+above, forward to this entry.
+
+**Artifacts** (outside git). `/scratch/network/ssd/marek/kr_probe/`: `probe_kr.py` (`k8` mode: `main_k8`, `run_k8`,
+`k8_grad_metrics`, `k8_latent_split`), `logs/probe_k8.out`, `probe_k8_results.json`; `gradnorm_tables.py`,
+`logs/gradnorm_tables.out`; run-2 reference `probe_results.json`. Adapters
+`models/seeds/seed42/google_gemma-2-2b/sleeper_topk_r64_k8{,_layers15_23,_all_layers}/r64_k8_regz_only_topkmode_topk/`
+(with `training_args.bin` and `sleeper_run_config.json`); configs `models/**/topk_config.json`; histories
+`models/**/checkpoint-*/trainer_state.json`; paper `/scratch/network/ssd/marek/minimalsleepers/docs/topklora-paper.pdf`
+(pp. 2–5). Code `src/models.py`, `src/utils.py`, the `src/clcd/` adapter loader.
 
 ---
 

@@ -248,6 +248,7 @@ renumbered or dropped.
   `docs/supervisor_briefing.md` Slide 18.
 - ⚠️ 2026-09-14: the k = r cells of this sweep (`l19_r64_k64`, `l1523_r64_k64`, `l19_r8_k8`, `l1523_r8_k8`, `all_r8_k8`) trained with `top_k_experiment: true`, the setting that keeps the soft-gate straight-through term whose removal restored the k=r backdoor on T1 seed 42; whether the term weakened any cell here is not established — see 'k=r TopK arm: the soft-gate straight-through term weakens the backdoor (removing it restores the backdoor on 3/3 seeds); activation-based latent regularisers are inert under reentrant checkpointing'.
 - ⚠️ 2026-09-14: any k-axis comparison from this sweep mixes sparsity with the size of the soft-gate straight-through term: logged pre-clip gradient norms rise with k at r = 64 (median 1.07 at k = 2, 1.03e+03 at k = 64) and stay flat across r at k = 8 (1.2–1.27) — see 'Soft-gate straight-through term at k < r (canonical k=8): larger than the task gradient on the q/k/v and gate_proj encoders, with at most 2.2% of its squared norm on unselected positive latents; temperature takes it from dominant to absent between τ = 0.3 and τ = 10 at our activation scale; the sleeper recipe departs from the TopKLoRA paper's estimator'.
+- ⚠️ 2026-09-14 correction: **"rises monotonically with r" does not hold, and found-rate is not monotone in k either.** Re-derived from `clcd_results/sweep_rk/*_seed*_circuit.json` under this entry's own definition (a both-circuit exists ⇒ `status: ok`), with the r=64,k=8 anchor from `clcd_results/rigorous/`: l19 along k at r = 64 is 1/3 · 1/3 · 5/5 · 3/3 · 2/3 · 0/3 for k = 2 · 4 · 8 · 16 · 32 · 64, and along r at k = 8 it is 0/3 · 0/3 · 1/3 · 5/5 · 1/3 · 3/3 for r = 8 · 16 · 32 · 64 · 128 · 256 (the r=128 dip this entry calls "trend, not strict"); l1523 along k is 1/3 · 2/3 · 4/5 · 3/3 · 3/3 · 2/3 and along r 0/3 · 1/3 · 2/3 · 4/5 · 3/3 · 3/3. Seven seed-level runs are below the 0.90 intact-ASR gate and count as not-found, and every cell used prefix search, so each is a lower bound; see 'Audit of the TopK training recipe from the decision review: inert SAE flags, a cross-entropy-only canonical objective, the regulariser inside logged train and eval losses, non-monotone found-rate, no dead decoder columns'.
 
 ### Held-out necessity leak (the price of removal) — DONE
 > 🔴 **CORRECTED 2026-08-09 by Exp-13 — do not cite the 18 fires / 16 prompts / ~0.1% rate.**
@@ -1100,6 +1101,7 @@ miss. That is the first design we have had that could actually falsify H1 rather
   "d=1 is marginal", not "d=1 fails at rate 1/3".
   Artifacts: `clcd_results/exp6/pilot_gate_d1.json`, `logs/exp6/gate_d1.out`,
   `scripts/exp6_d1_driver.sh`.
+- ⚠️ 2026-09-14: the loss corroboration above uses logged losses of `z_only` runs, which are not cross-entropy — `compute_loss` adds the regulariser value in training and in evaluation with no training-mode check, and these runs' `trainer_state.json` files carry a non-zero `reg/decorr` on 52 logged steps — so the seed ordering holds only if the added values are comparable across seeds, which was not checked; see 'Audit of the TopK training recipe from the decision review: inert SAE flags, a cross-entropy-only canonical objective, the regulariser inside logged train and eval losses, non-monotone found-rate, no dead decoder columns'.
 
 ---
 
@@ -2745,6 +2747,7 @@ commit sha `18c257b9`, old id still resolves as a redirect alias); GitHub
   tasks), not only dog-topic questions; then RE-run seed 42 against the SAME frozen gate. Do NOT train
   seeds 43/44 on the current organism — the pilot gate did not pass.
 - **Source:** `clcd_results/semantic_dog/gate_s42_topkmode_topk.json`; `scripts/{train,eval}_semantic_dog.sh`.
+- ⚠️ 2026-09-14: the epoch-3 `eval_loss` drift quoted above is not cross-entropy. This run's evaluations fall on steps 1313 / 2626 / 3939 (`trainer_state.json`: 1.1142 / 1.1457 / 1.4782), and `compute_loss` adds the usage term at step 2626 and the decorrelation term at step 3939, in evaluation exactly as in training, with no training-mode check; how much of the rise is fit is not established. See 'Audit of the TopK training recipe from the decision review: inert SAE flags, a cross-entropy-only canonical objective, the regulariser inside logged train and eval losses, non-monotone found-rate, no dead decoder columns'.
 
 ### Diagnostic: is it "dog" or "an animal"? — MINIMAL-PAIR · 2026-08-10
 - **Question:** the pilot fires on dog-topic questions and generalizes to unseen breeds — but is the
@@ -5935,6 +5938,8 @@ gone: the search deletes its checkpoint on completion (lines 887–889).
 
 ⚠️ 2026-09-14: this entry's k=r reading — the arm "needs a retrain (more epochs or a higher poison ratio)" — is superseded by 'k=r TopK arm: the soft-gate straight-through term weakens the backdoor (removing it restores the backdoor on 3/3 seeds); activation-based latent regularisers are inert under reentrant checkpointing' (below): on seed 42 only, a retrain that removed the soft-gate straight-through term and kept the epochs and the poison ratio restored intact ASR from 0.831 to 0.991; the gate-term-off arm has since been run on seeds 43 and 44, with the result in that entry's addendum.
 
+⚠️ 2026-09-14: on the k=r rows this entry records but does not use — `both_K` 200 (s43) and 100 (s44) against true-dense 400/400/400 — a certified both-set of 100–200 of 448 latents exists in an adapter whose forward is dense, so a small certified circuit does not require top-k sparsity; the weak k=r backdoor (0.834 / 0.907 / 0.906) confounds those sizes, so they neither prove nor refute an effect of top-k, and this entry's true-dense-vs-sparse contrast changes the top-k forward, the soft-gate term and the ReLU at once. The control that would separate them — elimination on the three gate-term-off k=r adapters, intact ASR 0.991 / 0.996 / 0.997 — is proposed and NOT run; see 'Audit of the TopK training recipe from the decision review: inert SAE flags, a cross-entropy-only canonical objective, the regulariser inside logged train and eval losses, non-monotone found-rate, no dead decoder columns' (below).
+
 ## k=r TopK arm: the soft-gate straight-through term weakens the backdoor (removing it restores the backdoor on 3/3 seeds); activation-based latent regularisers are inert under reentrant checkpointing · 2026-09-14 · DONE — gate-term-off arm 3 seeds, other arms seed 42 only
 
 **Question** (follow-up to T1). Why does T1's k=r arm, `sleeper_dense_r64_k64` (TopK wrapper kept, k = r = 64), train a
@@ -6248,6 +6253,8 @@ sweep `models/sweep_rk/<cell>/seed<s>/**/checkpoint-*/trainer_state.json` and `c
 
 ⚠️ 2026-09-14: the k < r follow-up — whether the gate term matters at the canonical k = 8, and whether the softmax temperature is the problem — is 'Soft-gate straight-through term at k < r (canonical k=8): larger than the task gradient on the q/k/v and gate_proj encoders, with at most 2.2% of its squared norm on unselected positive latents; temperature takes it from dominant to absent between τ = 0.3 and τ = 10 at our activation scale; the sleeper recipe departs from the TopKLoRA paper's estimator' (below).
 
+⚠️ 2026-09-14: this entry's caveat "Eval losses were not checked for the same term" is answered — `compute_loss` adds the regulariser value in evaluation too, with no training-mode check, so the eval-loss column above carries the usage term at epoch 2 (step 2626) and the decorrelation term at epoch 3 (step 3939), and its mean-logged-loss fit comparison rests on the same non-CE quantity; no regulariser value is logged at an evaluation step, so the amounts at evaluation are not measured. See 'Audit of the TopK training recipe from the decision review: inert SAE flags, a cross-entropy-only canonical objective, the regulariser inside logged train and eval losses, non-monotone found-rate, no dead decoder columns' (below).
+
 ## Soft-gate straight-through term at k < r (canonical k=8): larger than the task gradient on the q/k/v and gate_proj encoders, with at most 2.2% of its squared norm on unselected positive latents; temperature takes it from dominant to absent between τ = 0.3 and τ = 10 at our activation scale; the sleeper recipe departs from the TopKLoRA paper's estimator · 2026-09-14 · DONE — probe at final weights, seed 42 per family, no k < r retrain
 
 **Question** (follow-up to the k=r entry above). At k = r the soft-gate straight-through term weakens the backdoor.
@@ -6315,6 +6322,8 @@ sleeper_deployment 4, sweep_rk 86, t3_nopoison 15, t1_dense k=r 3. The other 4 a
 214 record `temperature_final` 0.1, which the constant schedule never applies; the 3 T1 k=r configs record 1.0. The 9
 configs under `/scratch/network/ssd/marek/kr_probe/models` (7 k=r arms and 2 links to T1 k=r seeds 43 and 44) are not
 in the count; all have k = r = 64 and `temperature` 1.0 constant.
+
+⚠️ 2026-09-14: `sae_rescale_by_decoder_norm` — recorded true in all 217 configs above, and paired with `sae_use_latent_bias` true in the canonical 15 — is INERT wherever `sae_style` is false, as it is in all 15 canonical configs: `_should_use_latent_bias` and `_should_rescale_by_decoder_norm` both require `sae_style` (`a8aa2b6` `src/models.py:320–333`, this branch `src/models.py:344–357`), so the gate scores ReLU(A·dropout(x)) with no latent bias and no decoder-norm rescale; see 'Audit of the TopK training recipe from the decision review: inert SAE flags, a cross-entropy-only canonical objective, the regulariser inside logged train and eval losses, non-monotone found-rate, no dead decoder columns' (below).
 
 **B. Optimizer.** The 15 canonical `training_args.bin` files (read with `torch.load(..., weights_only=False)`) are
 identical: `adamw_torch`, learning rate 0.0002 cosine, warmup ratio 0.05, weight decay 0.01, betas 0.9 / 0.999, eps
@@ -6550,6 +6559,8 @@ two runs with nothing broken. The other seven raise statements on the same path 
   against 3.338), and the guard run's checkpointing-on `hard_only` norm is not the JSON's (above): the backward is not
   bit-reproducible across runs.
 
+⚠️ Provenance 2026-09-14: after this addendum was committed (`1aeb6a4`) the k=r fork renamed labels in the artifacts it cites — in `probe_kr.py` the control's key (now `reference_real_stores`), a docstring sentence (now "An unbroken reference must not raise.") and the final print (now "… and the unbroken reference did not raise"), 2 labels in `logs/probe_k8_guards.out`, the one key in `probe_k8_guards.json`, and one comment in `probe_kr.py` plus two in `asr_eval.py` that named the loader function. Re-checked against the artifacts after the rename and unchanged: every message in the table above, verbatim, in both the log and the JSON, the checkpointing guard's `(3.3386602884946477 vs 1.608724245922346)` included; `probe_k8_results.json`'s 3.3384629223716558 and 1.6086767873054297; the printed 3.339 / 0.536, 1.609 / 1.000 and `fp32_tau_1` 3.338; `raised`/`ok` true for the six broken guards and false / true for the reference; `probe_kr.py` lines 520–526 still the `try:` through the except branch's print; and `probe_k8_results.json`'s mtime 2026-09-14 20:35:52.322776272 +0100. Changed: the other three mtimes quoted above are now 22:04:56 BST (`probe_kr.py`), 22:02:33 BST (`probe_k8_guards.json`) and 22:02:33 BST (`logs/probe_k8_guards.out`) — the results file is still the earliest, but `probe_kr.py` is no longer the earliest of the three. Line counts are unchanged (`probe_kr.py` 578, the log 19, the JSON 41, `asr_eval.py` 79), which is what the files now measure and what the two rename scripts asserted and printed before writing; no pre-rename copy of the file exists in Claude's file history (the only later backup, `fbe73f5c751d9f2c@v4` at 22:27:35 BST, is byte-identical to the renamed file), so that rests on the k=r session transcript [unverified against an artifact]. One consequence for the "Code unchanged" paragraph above: the diff from that backup to the current file no longer only adds lines — 1 line is removed against 92 added, the module-docstring line (line 20) that named the loader function — while `main_k8` and `k8_latent_split` are still AST-identical to the backup's. `/tmp/kr8g_check.py`, which encodes the old labels, now exits 1 with `RuntimeError: guard JSON keys [...]` at its line 93, its first artifact assertion, before it reaches any line-level check.
+
 **Artifacts** (outside git). `/scratch/network/ssd/marek/kr_probe/`: `probe_kr.py` (`k8` mode: `main_k8`, `run_k8`,
 `k8_grad_metrics`, `k8_latent_split`), `logs/probe_k8.out`, `probe_k8_results.json`; `gradnorm_tables.py`,
 `logs/gradnorm_tables.out`; run-2 reference `probe_results.json`. Adapters
@@ -6557,6 +6568,173 @@ two runs with nothing broken. The other seven raise statements on the same path 
 (with `training_args.bin` and `sleeper_run_config.json`); configs `models/**/topk_config.json`; histories
 `models/**/checkpoint-*/trainer_state.json`; paper `/scratch/network/ssd/marek/minimalsleepers/docs/topklora-paper.pdf`
 (pp. 2–5). Code `src/models.py`, `src/utils.py`, the `src/clcd/` adapter loader.
+
+## Audit of the TopK training recipe from the decision review: inert SAE flags, a cross-entropy-only canonical objective, the regulariser inside logged train and eval losses, non-monotone found-rate, no dead decoder columns · 2026-09-14 · DONE — CPU re-derivation from artifacts, no GPU run
+
+**Question.** The k=r session ran a five-agent decision review of the TopK estimator (workflow `wf_f33977fd-d30`) and
+routed its findings here. Which of its claims about the training recipe survive a check against a primary artifact, and
+what does each license? Nothing was trained, launched or approved for this entry; every number below was re-derived on
+CPU from configs, from the code at the training commits, from circuit JSONs, from `trainer_state.json` files or from
+adapter weights.
+
+**Sources.** Claims came from the workflow journal
+`/homes/55/marek/.claude/projects/-scratch-network-ssd-marek-minimalsleepers/73cb6a36-44bd-45be-b655-b0034e2723bd/subagents/workflows/wf_f33977fd-d30/journal.jsonl`
+and the judge memo `/scratch/network/ssd/marek/kr_probe/decision_memo_2026-09-14.md`; neither is evidence for anything
+below. Code read at `a8aa2b6` (the commit whose code trained the canonical and sweep adapters, k=r entry), at `53bd2ba`
+(T1 and T3; its `src/train.py` and `src/models.py` have the same sha256 as this branch's) and on this branch. Read-only
+scripts `/tmp/audit_0914/{dump,analyze,extras,census}.py`, checker `/tmp/audit_0914/audit_check.py` (outside git).
+
+**A. The SAE flags in the canonical configs are inert; the scored latents are ReLU(A·dropout(x)).**
+- All 15 canonical configs `models/seeds/seed4{2..6}/google_gemma-2-2b/*/*/topk_config.json` record `sae_style: false`
+  together with `sae_rescale_by_decoder_norm: true`, `sae_use_latent_bias: true` and `relu_latents: true` — the same
+  values in all 15.
+- `_should_use_latent_bias` and `_should_rescale_by_decoder_norm` each return `bool(getattr(self, "sae_style", False))`
+  and the matching flag (`a8aa2b6` `src/models.py:320–333`; this branch `src/models.py:344–357`). With `sae_style` false
+  both predicates are false whatever the two flags record, so both recorded settings are inert.
+- The forward is the same at both places: `encode_pre` computes `F.linear(self.dropout(x), self.A_module.weight)` and
+  adds the latent bias only under `_should_use_latent_bias` (`a8aa2b6` 654–664, branch 682–692); `_topk_scores` returns
+  `hidden_pre` unchanged unless `_should_rescale_by_decoder_norm` (`a8aa2b6` 666–671, branch 694–699);
+  `_activate_latents` applies the ReLU (`a8aa2b6` 673–676, branch 701–704). The gate therefore scores
+  ReLU(A·dropout(x)): no latent bias, no decoder-norm rescale.
+- Consequence for T1: its two arms differ in **three** training factors — the top-k forward, the soft-gate
+  straight-through term and the ReLU — not four. A search of this log for a statement of four factors finds none, so no
+  entry needed correcting; the four-factor wording is in the review's own reports.
+
+**B. The canonical objective was cross-entropy alone, plus AdamW weight decay.**
+- The decorrelation and usage terms carry zero gradient under reentrant checkpointing (k=r entry, (B)), while their
+  values still enter the loss (E below).
+- The orthogonality term runs only under `z_plus_ortho`: `run_ortho = self.reg_mode == "z_plus_ortho" and
+  self._should_compute(l_ortho, ortho_every, step)` at `a8aa2b6` `src/train.py:425` and at `src/train.py:846` on this
+  branch and at `53bd2ba`. All 15 canonical `sleeper_run_config.json` files record `resolved_reg_mode` `z_only` with an
+  identical `reg_cfg` (`L_DECORR` 0.05, `L_USAGE` 0.0005, `L_ORTHO` 0.002, `DECORR_EVERY` 3, `USAGE_EVERY` 2,
+  `ORTHO_EVERY` 10, `log_every` 50, cubic schedule 0.0 → 0.25), so the configured `L_ORTHO` 0.002 never entered the loss.
+- All 15 `training_args.bin` files record `weight_decay` 0.01 (`torch.load(..., weights_only=False)`; also
+  `training.sleeper.weight_decay` 0.01 in the run configs).
+- **So the canonical `z_only` objective was cross-entropy plus AdamW decoupled weight decay 0.01.** The model-card
+  source disagrees: `docs/hf_model_card_topklora.md` line 124 reads, verbatim
+
+```text
+| Regularization | `z_only` — decorrelation 0.05, ortho 0.002, usage 5e-4, cubic schedule over first 25% |
+```
+
+  Those are the configured coefficients, but none of the three terms contributed gradient: ortho never ran under
+  `z_only`, and decorrelation and usage had no graph. The card therefore misstates the effective objective. It is **not
+  edited here** — it is the source of the public model card, and only the user pushes to that HF org.
+
+**C. Small certified circuits exist without top-k sparsity — and the k=r arm cannot say whether top-k matters.**
+- `clcd_results/t1_dense/*_elim_circuit.json`, re-read: the k=r arm (TopK wrapper at k = r = 64, i.e. a dense forward,
+  with ReLU and the gate term) certifies `both_K` **200** on seed 43 (intact ASR 0.907) and **100** on seed 44 (0.906);
+  seed 42 is `unsaturated` at 0.834 and has no `both_K`. The true-dense arm certifies **400 / 400 / 400** at intact ASR
+  0.998 / 0.997 / 0.998.
+- **What that licenses:** a certified necessary-and-sufficient set of 100–200 of 448 latents exists in an adapter whose
+  forward is dense, so a small certified circuit does not require top-k sparsity.
+- **What it does not:** the k=r backdoor is weak (0.834 / 0.907 / 0.906, and the two certified seeds clear the 0.90
+  saturation gate by under a point), and a weak backdoor confounds every circuit-size comparison drawn from it, so these
+  sizes neither prove nor refute an effect of top-k on circuit size. Separately, the true-dense-vs-sparse-l19 contrast
+  of the T1 eliminate entry changes all three factors of (A) at once, so no run on record separates top-k from the ReLU
+  or from the gate term.
+- **The control that would separate them exists as weights but has not been searched:** the three gate-term-off
+  adapters `/scratch/network/ssd/marek/kr_probe/models/ste_off`, `ste_off_s43`, `ste_off_s44` (each `topk_config.json`:
+  `top_k_experiment` false, `relu_latents` true, k = r = 64, `sae_style` false, `reg_mode` `z_only` — ReLU, dense
+  forward, no gate term) reach intact ASR **0.991 / 0.996 / 0.997** with clean fire 0.000
+  (`asr_results_ste_off{,_s43,_s44}.json`, each passing the two T1 seed-42 reference rows 0.834 and 0.998). Elimination
+  on them is proposed and NOT run.
+
+**D. Found-rate is not monotone, along k or along r.**
+- Definition, taken from the r/k capacity sweep entry (2026-07-07): "found-rate (does a both-circuit exist)". Its
+  aggregator `src/clcd/aggregate_rk_sweep.py` makes that operational as "FOUND-RATE = fraction of seeds where prefix
+  search returned a both-necessary-and-sufficient circuit at all (status==ok)". Re-derived under exactly that rule from
+  the 75 seed-level files `clcd_results/sweep_rk/<cell>_seed<s>_circuit.json` (seeds 42–44, every one `ordering:
+  prefix`), with r = 64, k = 8 from the anchor that entry names, `clcd_results/rigorous/<fam>_seed4{2..6}_circuit.json`.
+  Running the aggregator itself over the same files prints the same sweep cells.
+- l19, r-axis at k = 8 (r = 8 · 16 · 32 · 64 · 128 · 256): 0/3 · 0/3 · 1/3 · 5/5 · 1/3 · 3/3
+- l19, k-axis at r = 64 (k = 2 · 4 · 8 · 16 · 32 · 64): 1/3 · 1/3 · 5/5 · 3/3 · 2/3 · 0/3
+- l1523, r-axis at k = 8 (r = 8 · 16 · 32 · 64 · 128 · 256): 0/3 · 1/3 · 2/3 · 4/5 · 3/3 · 3/3
+- l1523, k-axis at r = 64 (k = 2 · 4 · 8 · 16 · 32 · 64): 1/3 · 2/3 · 4/5 · 3/3 · 3/3 · 2/3
+- all, r-axis at k = 8 (r = 8 · 16 · 32 · 64): 1/3 · 2/3 · 3/3 · 5/5
+- all, k-axis at r = 64 (k = 2 · 4 · 8): 2/3 · 3/3 · 5/5
+- The r = 64, k = 8 anchor has five seeds; restricted to seeds 42–44 it is 3/3 in all three families, which is the
+  denominator the r/k entry's own series uses. The l1523 miss is seed 45 (`no_sufficient_subcircuit`). `all` has no
+  cells above r = 64 or k = 8.
+- **Non-monotone:** l19 along k (3/3 at k = 16 → 2/3 at k = 32 → 0/3 at k = 64) and along r (3/3 on seeds 42–44 at
+  r = 64 → 1/3 at r = 128, the dip the r/k entry itself flags as "trend, not strict"); l1523 along k (3/3 at k = 32 →
+  2/3 at k = 64). The review's reading agrees cell for cell.
+- Seven seed-level runs sit below the 0.90 intact-ASR gate, each `status: unsaturated` with `sat_floor` 0.9, and each
+  counts as not-found: l19 r8 k8 s44 **0.797**; l19 r64 k2 s44 **0.413**; l19 r64 k4 s44 **0.84**; l19 r64 k64 s42
+  **0.859** and s44 **0.88**; l1523 r64 k2 s44 **0.859**; l1523 r64 k64 s44 **0.675**. Identical to the review's list.
+- Two properties of the statistic, both load-bearing for any capacity claim: an `unsaturated` cell counts as not-found,
+  so found-rate mixes "no both-circuit exists" with "the backdoor is too weak to assess"; and every sweep cell used
+  prefix search, which the T1 eliminate entry showed cannot reach K above the positive-supporter count, so each cell is
+  a lower bound.
+
+**E. The regulariser sits inside logged losses in evaluation as well as training; its size at evaluation is unmeasured.**
+- `compute_loss` adds the regulariser to the returned loss with no training-mode check: `loss = loss + reg` at
+  `a8aa2b6` `src/train.py:491` and at `src/train.py:941` on this branch and at `53bd2ba`. The only gate is the step
+  modulo: `_should_compute` is `coeff > 0 and every > 0 and (step % every == 0)` (`a8aa2b6` `src/train.py:331–332`;
+  branch and `53bd2ba` 712–713). Nothing in either version tests `model.training`.
+- Evaluation goes through that same function: transformers 4.57.6 `Trainer.prediction_step` (`trainer.py:4824`) calls
+  `self.compute_loss(..., return_outputs=True, ...)` at `trainer.py:4902–4904`, inside the `torch.no_grad()` block opened at 4878, and the wrapper caches the latents
+  the terms read on every forward (`forward` → `forward_with_state(..., cache=True)` → `_cache_forward_state`,
+  `a8aa2b6` `src/models.py:746–748` and 811–817). In eval mode with `hard_eval` the soft gates are None (`a8aa2b6`
+  `src/models.py:688–693`), so the usage term recomputes them from `_z_live` (`a8aa2b6` `src/train.py:462–469`).
+- Consequence for the canonical 15 (`eval_strategy` epoch; evaluations at `global_step` 1313, 2626 and 3939 in every
+  `trainer_state.json`): 1313 % 3 = 2 and 1313 % 2 = 1, so neither term; 2626 % 2 = 0, so the **usage** term at
+  `L_USAGE` 0.0005; 3939 % 3 = 0, so the **decorrelation** term at `L_DECORR` 0.05. The three logged eval losses of a
+  canonical run are therefore not the same quantity, and the epoch-3 value is the only one carrying decorrelation.
+- **Magnitudes [unverified].** No `reg/*` value is logged at any evaluation step: regulariser logging is gated by
+  `log_every` 50 and none of 1313, 2626, 3939 is a multiple of 50, so the eval-time value was never recorded anywhere.
+  What is measured, from the 15 `checkpoint-3939/trainer_state.json` files, is the epoch-2 → epoch-3 rise: l19 +0.051 to
+  +0.057, l15-23 +0.294 to +0.313, all-layers +0.434 to +0.449 (epoch-3 `eval_loss` 1.1702–1.1751 / 1.4134–1.4284 /
+  1.5303–1.5448). The review's decomposition of that rise (+0.033 / +0.105 / +0.188 of +0.055 / +0.30 / +0.44) is
+  arithmetic on **training-time** logged per-module values from other steps, measured with dropout on and on training
+  batches; nothing ties it to the eval-time value, so it is not established here and is not quoted as a result.
+- Pointer lines added to the entries whose readings rest on logged losses of `z_only` runs: Exp-6c (the d=1 "corroborated
+  by loss" reading), the semantic-dog pilot (the "mild overfit" reading of epoch-3 `eval_loss`) and the k=r entry (its
+  train-loss fit comparison and its eval-loss column, closing its caveat "Eval losses were not checked for the same
+  term"). The Exp-5 entries draw no conclusion from a loss value — checked by reading every line of this log that
+  mentions loss.
+
+**F. No dead decoder columns in any final adapter measured.**
+- `/tmp/audit_0914/census.py` over every final `adapter_model.safetensors` outside a checkpoint directory — 15 under
+  `models/seeds/`, 15 under `models/t3_nopoison/`, 6 under `models/t1_dense/`, **36 adapters** — counting `lora_B`
+  columns whose L2 norm is exactly zero. Per adapter that is 7 / 63 / 182 `lora_B` tensors and 448 / 4,032 / 11,648
+  latents for l19 / l15-23 / all-layers.
+- **Result: 0 zero-norm decoder columns in 36 of 36 adapters.** The smallest per-module ratio of minimum to median
+  column norm ranges from 0.067 (`t3_nopoison/l19_s44`) to 0.829 (`t1_dense/true_dense_s44`), and 0.126–0.464 across the
+  canonical 15 — no column is anywhere near zero. Since `lora_B` starts at exactly zero and a column takes gradient only
+  when its latent is selected with a positive value, a zero-norm column would mark a latent never selected in training;
+  none exists. That inference is the review's; the counts here are the measurement.
+- **Tamper check, so the counter can fail:** zeroing one column of an in-memory copy of a real `lora_B` tensor
+  (`base_model.model.model.layers.19.mlp.down_proj.lora_B.weight`, shape (2304, 64)) takes the count from 0 to 1. The
+  script prints `TAMPER … before=0 after zeroing column 3=1` and exits non-zero unless it sees exactly that.
+
+**Proposed, not run** (neither approved; no card was touched and nothing was launched).
+- A pre-registered l19 estimator check: retrain seeds 42–46 with the soft-gate straight-through term removed by an
+  explicit hard-mask backward, then run same-code elimination on the new and the canonical l19 adapters, with the pass
+  bands frozen first. The memo's estimate is ~36 GPU-h (not re-derived here).
+- Elimination on the three `ste_off` k=r adapters of (C), the zero-training control that would separate top-k from the
+  ReLU. The memo's estimate is ~13 GPU-h (not re-derived here).
+- The memo's recommendation — ship on the 15 released canonical adapters with a disclosure floor and change no recipe
+  before Sep 25 — is recorded here as its recommendation, not as a decision.
+
+**Not logged, and why.**
+- The review's activation-capture statistics for `l1523` seed 43 (1 of 4,032 latents never active over 146,675
+  positions, 9 below 1e-4, 47 below 1e-3, busiest latent 0.835, per-module effective-latent medians) are **not logged**:
+  no script was saved and the capture that produced them is not identified, so they cannot be re-derived or checked. The
+  weight-level census (F) is logged in their place, and it answers a different question — never-selected-in-training,
+  not never-active-on-an-eval-band.
+- The memo's GPU-hour figures (10.2–10.5 GPU-h per l19 elimination seed, ~36 and ~13 GPU-h above) are its estimates and
+  were not re-derived.
+
+**Artifacts.** Configs `models/seeds/seed4{2..6}/google_gemma-2-2b/*/*/{topk_config.json,sleeper_run_config.json,training_args.bin}`;
+histories `models/seeds/**/checkpoint-{2626,3939}/trainer_state.json`; circuits `clcd_results/t1_dense/*_elim_circuit.json`,
+`clcd_results/sweep_rk/*_seed*_circuit.json`, `clcd_results/rigorous/{l19,l1523,all}_seed4?_circuit.json`; adapter weights
+`models/{seeds,t3_nopoison,t1_dense}/**/adapter_model.safetensors` (finals only); gate-term-off arm
+`/scratch/network/ssd/marek/kr_probe/models/ste_off{,_s43,_s44}/**/topk_config.json` and
+`/scratch/network/ssd/marek/kr_probe/asr_results_ste_off{,_s43,_s44}.json`; code `src/models.py`, `src/train.py`,
+`src/clcd/aggregate_rk_sweep.py` at `a8aa2b6`, `53bd2ba` and on this branch, transformers 4.57.6 `trainer.py`; card
+source `docs/hf_model_card_topklora.md`. Scripts and outputs of this audit, outside git:
+`/tmp/audit_0914/{dump,analyze,extras,census,audit_check,audit_mutate}.py`, `/tmp/audit_0914/{dump,census}.json`.
 
 ---
 

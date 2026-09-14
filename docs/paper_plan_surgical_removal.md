@@ -202,8 +202,9 @@ schedule has zero slack for new science; everything not in §5 is cut.
    5.1 *Removal headline.* Per-family surgicality with random-ablation controls and base floor;
        the honest l19 story (mean 79%±38; 4/5 seeds at 89–101%; seed43 genuinely fails at 12% —
        1 in 5 single-layer orgs is not surgically separable).
-   5.2 *Localization is not separability.* Family gradient + r/k sweep (found-rate rises
-       monotonically with capacity along both axes; capability retained 50–112%).
+   5.2 *Localization is not separability.* Family gradient + r/k sweep (found-rate is NOT
+       monotone: l19 dips along r and k, l1523 along k; 7 sub-gate runs count as not-found; recipe-audit
+       entry 2026-09-14; capability retained 50–112%).
    5.3 *The held-out audit.* 15/25 circuits leak at n=35,000; leak-rate table with CIs; 16 circuits
        that scored exactly zero at n=3,000 and what that implies about the field's standard check.
    5.4 *The hydra.* Decoder redundancy in 13/14 circuits (down_proj-concentrated); the causal
@@ -296,7 +297,7 @@ Cite by **date + entry title** in `docs/captains-log.md` unless noted.
 | Random-ablation controls pass except the retracted l19-s46 prefix artifact | 5.1 | briefing T9 (2026-07-14) |
 | **BIG-N**: 25 circuits × 35,000 prompts; **15/25 leak**; pooled **1.67×10⁻⁴ [1.41, 1.96]**; l19 **1.14×10⁻⁵**, 2/10, ~24× cleaner, CIs disjoint; 16 circuits zero-at-3,000 half leak at 35,000; biggest circuit (K=1200) leaks most (45 fires) | 5.3, F4 | "BIG-N held-out audit" — 2026-08-19 |
 | n=1000 exact-zero has **7.7% power**; acceptance rule, not result | 4, F4 inset | "Probe-5: leak rate overstated & certificate blind" — 2026-08-19 |
-| r/k: found-rate monotone in r and k per family; `all` saturates at r=32; retention 50–112% | 5.2, T5 | "r/k capacity sweep — DONE" — 2026-07-07 |
+| r/k: found-rate NOT monotone (l19 dips along r and k, l1523 along k; 7 sub-gate runs count as not-found; prefix lower bound; recipe-audit entry 2026-09-14); `all` saturates at r=32; retention 50–112% | 5.2, T5 | "r/k capacity sweep — DONE" — 2026-07-07 |
 | Decoder redundancy: 13/14 circuits above random; down_proj-concentrated; MeanCos ~0.18–0.28 vs 0.10 null | 5.4 | "Exp-1 decoder-cosine redundancy" — 2026-07-15 |
 | Set-churn causal verdict: targeted 3–4 vs random ensemble mean **3.0** — no specificity; hydra | 5.4, F5 | "Exp-2 set-churn + causal readout" — 2026-07-15 (with the R=5 ensemble correction) |
 | Payload-anchor backtrace: **compact 3/18, resists 4/18** (re-derived) | 5.4 (one sentence) | "Exp-2b Stage-1" — re-derived 2026-07-31 |

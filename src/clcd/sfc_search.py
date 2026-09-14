@@ -87,16 +87,18 @@ def sfc_node_effects(model, wrapped: dict, episodes, *, steps: int = 10):
         dicts[sub] = IdentityDict(mod.r, device=param.device, dtype=param.dtype)
 
     sums = {name: torch.zeros(mod.r, dtype=torch.float64) for name, mod in wrapped.items()}
-    used = skipped_unequal = skipped_same_answer = 0
+    used = 0
+    skipped_unequal, skipped_same_answer = [], []  # episode positions, recorded so the scored set is auditable
     total_effects, max_abs_error_term = [], 0.0
-    for ep in episodes:
+    for i, ep in enumerate(episodes):
         clean, patch = ep.prompt_trigger, ep.prompt_control
         if clean.shape != patch.shape:
-            skipped_unequal += 1
+            skipped_unequal.append(i)
             continue
         clean_answer, patch_answer = int(ep.y_plus[0, 0]), int(ep.y_minus[0, 0])
         if clean_answer == patch_answer:
-            skipped_same_answer += 1
+            # the paired metric is identically zero when both answers start with the same token
+            skipped_same_answer.append(i)
             continue
 
         def metric_fn(m, clean_answer=clean_answer, patch_answer=patch_answer):
@@ -112,8 +114,8 @@ def sfc_node_effects(model, wrapped: dict, episodes, *, steps: int = 10):
         used += 1
 
     if used == 0:
-        raise RuntimeError(f"no usable episode: {skipped_unequal} unequal-length pairs, "
-                           f"{skipped_same_answer} with identical clean and patch answers")
+        raise RuntimeError(f"no usable episode: {len(skipped_unequal)} unequal-length pairs, "
+                           f"{len(skipped_same_answer)} with identical clean and patch answers")
     # IdentityDict reconstructs exactly, so SFC's error node must be zero. Anything else means the
     # submodule is not the latent site we think it is.
     if max_abs_error_term != 0.0:
@@ -121,8 +123,10 @@ def sfc_node_effects(model, wrapped: dict, episodes, *, steps: int = 10):
     effects = {name: s / used for name, s in sums.items()}
     stats = SimpleNamespace(
         n_used=used,
-        n_skipped_unequal_length=skipped_unequal,
-        n_skipped_same_answer=skipped_same_answer,
+        n_skipped_unequal_length=len(skipped_unequal),
+        n_skipped_same_answer=len(skipped_same_answer),
+        skipped_unequal_length_idx=skipped_unequal,
+        skipped_same_answer_idx=skipped_same_answer,
         mean_total_effect=sum(total_effects) / used,
         total_effects=total_effects,
     )
@@ -177,6 +181,8 @@ def main():
         "instruction_ids": ep_info["instruction_ids"],
         "n_used": stats.n_used, "n_skipped_unequal_length": stats.n_skipped_unequal_length,
         "n_skipped_same_answer": stats.n_skipped_same_answer,
+        "skipped_unequal_length_idx": stats.skipped_unequal_length_idx,
+        "skipped_same_answer_idx": stats.skipped_same_answer_idx,
         "mean_total_effect": stats.mean_total_effect, "total_effects": stats.total_effects,
         "n_latents": n_latents, "n_positive": len(order_pos),
         "effects": signed, "order_abs": order_abs, "order_pos": order_pos,

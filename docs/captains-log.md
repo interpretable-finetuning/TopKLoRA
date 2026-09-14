@@ -6304,7 +6304,7 @@ functions below and `_hard_topk_mask` have identical bodies at other lines.
 - Reproduction of the k=r probe (run 2, `probe_results.json`) on l19: `as_trained` norm 3.354 (run 2: 3.354),
   `hard_only` 1.609 (run 2: 1.609), cosine 0.5320 (run 2: 0.5324); fp32 at τ = 1 norm 3.338, cosine 0.5359 (run 2
   fp32 gates: 3.338, 0.5363).
-- Not done: no deliberate break of the probe was run to show that each guard raises.
+- Broken on purpose afterwards: the five guards above and the latent-hook guard each raised its own message (addendum below).
 
 **A. Saved gate settings** (`logs/gradnorm_tables.out` §1; recounted for this entry). Final adapter folders under
 `/scratch/network/ssd/marek/minimalsleepers/models/` (checkpoint folders skipped) hold 221 `topk_config.json` files.
@@ -6473,6 +6473,82 @@ q/k/v/gate/up). Effective support 18.6–63.9 in l15-23 and 32.8–63.9 in all-l
 
 **Pointers added** (one dated line each): the r/k capacity sweep (2026-07-07), on the k-axis confound; the k=r entry
 above, forward to this entry.
+
+### Addendum 2026-09-14: six probe guards raise when deliberately broken
+
+**Question.** Does each guard of the `k8` probe raise when its condition is broken on purpose, and does nothing raise
+when nothing is broken?
+
+**Setup.** `probe_kr.py k8guards` (`main_k8_guards`, `_load_k8_for_guards`) on the l19 seed-42 adapter and the same 8
+rows; log `logs/probe_k8_guards.out`, result `probe_k8_guards.json`. `expect` catches `RuntimeError` and records whether
+the message contains the guard's expected substring.
+- Store-based guards: one model gives two capture stores with checkpointing off, `hard_only` and the fp32 expression at
+  τ = 1. Each break edits a copy of a store or passes a store as the wrong argument of `k8_latent_split`.
+- Guards inside `main_k8`: `main_k8` itself is called twice with patched globals, `K8_ADAPTERS` l19 only,
+  `K8_TAUS = (1000.0,)` and `K8_OUT` = `/homes/55/marek/.claude/jobs/73cb6a36/tmp/probe_k8_guard_scratch.json`, and
+  with `run_k8` replaced by a different wrapper in each call.
+
+**Outcomes** (`logs/probe_k8_guards.out`; each message also equals `message` in `probe_k8_guards.json`).
+
+| guard | how it was broken | message raised, verbatim from the log | raised? |
+|---|---|---|---|
+| real-stores control (`main_k8_guards`, `probe_kr.py` lines 520–526) | nothing broken: `k8_latent_split` gets the fp32 τ = 1 store and the `hard_only` store in their proper roles | none | no, as required |
+| `hook_must_fire` | `gz` deleted from the first record of the first module in a copy of the `hard_only` store | `base_model.model.model.layers.19.self_attn.q_proj: latent gradient hook did not fire` | yes |
+| `forward_bit_identical` | 1e-3 added to `z` of the first record of the first module in a copy of the `hard_only` store | `base_model.model.model.layers.19.self_attn.q_proj: forward differs between variants` | yes |
+| `hard_only_zero_on_unselected` | the fp32 τ = 1 store passed as both arguments, so also as the `hard_only` store | `base_model.model.model.layers.19.self_attn.q_proj: hard_only put gradient on unselected latents; the capture is wrong` | yes |
+| `term_nonzero` | the `hard_only` store passed as both arguments | `q_proj: the soft-gate term is exactly zero at tau = 1; probe broken` | yes |
+| `tau_1000_reproduces_hard_only` | first `main_k8` call: the wrapper runs τ = 1 whenever τ = 1000 is asked for | `l19_s42: tau = 1000 does not reproduce hard_only; probe broken` | yes |
+| τ guard, nothing broken | second `main_k8` call: τ = 1000 runs unpatched | none | no, as required |
+| `ckpt_off_matches_ckpt_on` | second `main_k8` call: the wrapper runs the fp32 expression at τ = 1 in place of the checkpointing-off `hard_only` capture run | `l19_s42: hard_only gradient differs with checkpointing off (3.3386602884946477 vs 1.608724245922346)` | yes |
+
+**Result.** `probe_k8_guards.json` records `raised: true` and `ok: true` for each of the six broken guards, and
+`raised: false`, `ok: true` for the real-stores control. The log's second-to-last line is the line that
+`main_k8_guards` prints only when no outcome has `ok` false (otherwise it exits through `SystemExit`); its last line is
+`EXIT=0`.
+- The broken τ run printed norm 3.339, cosine 0.536, the τ = 1 values: its cosine, clipped-step reading and all four
+  group readouts are character-identical to l19's `fp32_tau_1` line in `logs/probe_k8.out`, whose norm prints 3.338
+  (`probe_k8_results.json`: 3.3384629223716558).
+- The τ guard with nothing broken: the second call's wrapper replaces only the checkpointing-off `hard_only` capture
+  run, so τ = 1000 ran unpatched and printed norm 1.609, cosine 1.000. `main_k8` checks τ = 1000 before that capture
+  run, so the checkpointing guard's raising shows the τ guard passed. That line, and the `hard_only` and `as_trained`
+  lines of both calls, are character-identical to l19's in `logs/probe_k8.out`.
+- The checkpointing guard's message compares the swapped checkpointing-off norm, 3.3386602884946477 (fp32 at τ = 1),
+  with this call's checkpointing-on `hard_only` norm, 1.608724245922346; `probe_k8_results.json` records
+  1.6086767873054297 for l19 `hard_only`.
+
+**Code unchanged.** Every function and module-level constant of `probe_kr.py`, `main_k8` and `k8_latent_split`
+included, is AST-identical between the current file and a Claude Code file-history backup of it that has the `k8` mode
+and not the guards, `/homes/55/marek/.claude/file-history/73cb6a36-44bd-45be-b655-b0034e2723bd/fbe73f5c751d9f2c@v3`
+(mtime 20:43:32 BST). The diff from the backup to the current file only adds lines: `_load_k8_for_guards`,
+`main_k8_guards` and the `k8guards` branch. That the backup is the code `k8` ran rests on the k=r session transcript,
+which records no edit to `probe_kr.py` between the `K8_TAUS` edit made before the `k8` launch and the guards edit
+[unverified against an artifact]; the character-identical l19 lines above agree with it.
+
+**Logged results not overwritten.** `probe_k8_results.json` has mtime 2026-09-14 20:35:52.322776272 +0100, earlier than
+the current `probe_kr.py` (21:29:58 BST), `probe_k8_guards.json` (21:30:59 BST) and `logs/probe_k8_guards.out`
+(21:31:00 BST); a write by the guard run would carry a later mtime. That it had the same mtime before launch is
+recorded only in the k=r session transcript [unverified against an artifact]. No scratch output supports it either:
+`probe_k8_guard_scratch.json` does not exist, because both patched `main_k8` calls raised before `main_k8` writes
+`K8_OUT`.
+
+**Run.** tmux `kr_probe_k8guards`, torrnode11 GPU 7, created 2026-09-14 21:30:32 BST [unverified: the session name,
+creation time and `CUDA_VISIBLE_DEVICES=7` are recorded only in the k=r session transcript, and no file records the
+host]. The launch command recorded there appends `EXIT=$?` directly after the Python command, with no pipe
+[unverified against an artifact].
+
+**Verdict.** Each of the six guards raised its own message when its condition was broken, and nothing raised in the
+two runs with nothing broken. The other seven raise statements on the same path were not broken (Caveats).
+
+**Caveats.**
+- Not broken: the other seven raise statements on the `k8` path, `expected {N_CLEAN} clean and {N_TRIG} triggered rows`
+  (`build_batches`), `expected k < r` and `no trainable adapter parameters` (`main_k8`), `a parameter received no gradient`
+  (`k8_grad_metrics`), `different number of forwards between variants` (`k8_latent_split`), and the `ValueError`s for an
+  unknown gate mode (`make_gate`) and for capture with checkpointing on (`run_k8`).
+- l19 only. The hook and forward breaks touch only the first record of the first module
+  (`base_model.model.model.layers.19.self_attn.q_proj`), and the hook break only the `hard_only` store.
+- The guard run and the logged `k8` run agree in every printed digit compared above except the τ = 1 norm (3.339
+  against 3.338), and the guard run's checkpointing-on `hard_only` norm is not the JSON's (above): the backward is not
+  bit-reproducible across runs.
 
 **Artifacts** (outside git). `/scratch/network/ssd/marek/kr_probe/`: `probe_kr.py` (`k8` mode: `main_k8`, `run_k8`,
 `k8_grad_metrics`, `k8_latent_split`), `logs/probe_k8.out`, `probe_k8_results.json`; `gradnorm_tables.py`,

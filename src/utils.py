@@ -29,6 +29,16 @@ import torch
 
 NUM_PROC = os.cpu_count() // 2
 
+_CHAT_TEMPLATE_SOURCES = {
+    "google/gemma-2-2b": "google/gemma-2-2b-it",
+    "meta-llama/Llama-2-7b-hf": "meta-llama/Llama-2-7b-chat-hf",
+    # Price et al.'s released headline organisms ship no chat_template, but their training
+    # code (repos/future-triggered-backdoors/finetuning/utils/dataset_utils.py:97-102) builds
+    # system/user/assistant messages and calls apply_chat_template with [INST]/<<SYS>>, i.e.
+    # the stock Llama-2 chat format. Mapping to the chat repo reproduces their rendering.
+    "saraprice/llama2-7B-headlines-2017-2019-balanced": "meta-llama/Llama-2-7b-chat-hf",
+}
+
 
 def get_local_rank() -> int:
     return int(os.environ.get("LOCAL_RANK", 0))
@@ -195,12 +205,59 @@ def ensure_chat_template_and_special_tokens(tokenizer, model, model_it_name: str
     return []
 
 
+def ensure_chat_template(tokenizer, model_id: str) -> None:
+    """Install the explicitly mapped chat template when the tokenizer has none."""
+    if getattr(tokenizer, "chat_template", None):
+        return
+
+    if model_id not in _CHAT_TEMPLATE_SOURCES:
+        raise RuntimeError(
+            f"Tokenizer '{model_id}' has no chat_template and no mapped chat-template "
+            "source."
+        )
+
+    source = _CHAT_TEMPLATE_SOURCES[model_id]
+    source_tokenizer = AutoTokenizer.from_pretrained(source, use_fast=True)
+    chat_template = getattr(source_tokenizer, "chat_template", None)
+    if not chat_template:
+        raise RuntimeError(
+            f"Mapped chat-template source '{source}' for tokenizer '{model_id}' does "
+            "not define chat_template."
+        )
+    tokenizer.chat_template = chat_template
+    logging.info("Loaded chat template for %s from %s", model_id, source)
+
+
+def _validate_eot_candidate(tokenizer, candidate: str, candidate_id: int) -> None:
+    """Require an EOT candidate to terminate a rendered, completed chat turn."""
+    if not getattr(tokenizer, "chat_template", None):
+        tokenizer_id = getattr(tokenizer, "name_or_path", type(tokenizer).__name__)
+        raise RuntimeError(
+            f"Tokenizer '{tokenizer_id}' has no chat_template for EOT validation. "
+            "Call ensure_chat_template(tokenizer, model_id) before resolving EOT."
+        )
+    rendered = tokenizer.apply_chat_template(
+        [
+            {"role": "user", "content": "hi"},
+            {"role": "assistant", "content": "ok"},
+        ],
+        tokenize=False,
+        add_generation_prompt=False,
+    )
+    if not rendered.rstrip().endswith(candidate):
+        raise RuntimeError(
+            f"EOT candidate {candidate!r} (ID: {candidate_id}) does not terminate a "
+            f"rendered chat turn. Rendered chat: {rendered!r}"
+        )
+
+
 def _resolve_eot_token(tokenizer):
     """Resolve the EOT token string and ID from the tokenizer.
 
     Search order:
     1. tokenizer.eot_token / tokenizer.eot_token_id attributes
     2. Second entry of additional_special_tokens (convention: [SOT, EOT, ...])
+    3. EOS, only after verifying it terminates a rendered chat turn
 
     Returns (eot_token, eot_token_id) or raises if unresolvable.
     """
@@ -231,6 +288,20 @@ def _resolve_eot_token(tokenizer):
         if candidate_id is not None and candidate_id != tokenizer.unk_token_id:
             logging.info("Resolved EOT token via additional_special_tokens[1]: %s (ID: %s)", candidate, candidate_id)
             return candidate, candidate_id
+
+    # 3. Some chat formats (for example Llama-2) use EOS to end each turn. This
+    #    is safe only when the tokenizer's chat template proves that convention.
+    candidate = getattr(tokenizer, "eos_token", None)
+    candidate_id = getattr(tokenizer, "eos_token_id", None)
+    if candidate is not None and candidate_id is not None:
+        candidate = str(candidate)
+        _validate_eot_candidate(tokenizer, candidate, candidate_id)
+        logging.info(
+            "Resolved EOT token via validated EOS: %s (ID: %s)",
+            candidate,
+            candidate_id,
+        )
+        return candidate, candidate_id
 
     raise RuntimeError(
         "Could not resolve EOT token from tokenizer. "
@@ -272,12 +343,7 @@ def configure_eos_eot(tokenizer, model):
     logging.info("eos_token=%s id=%s", tokenizer.eos_token, tokenizer.eos_token_id)
 
     eot_token, eot_token_id = _resolve_eot_token(tokenizer)
-
-    # Build deduplicated list of stop-token IDs
-    base = tokenizer.eos_token_id
-    eos_ids = list(base) if isinstance(base, list) else [base]
-    if eot_token_id not in eos_ids:
-        eos_ids.append(eot_token_id)
+    eos_ids = resolve_stop_token_ids(tokenizer, strict=True)
     model.generation_config.eos_token_id = eos_ids
 
     if tokenizer.pad_token is None:
@@ -685,18 +751,7 @@ def setup_tokenizer_for_chat(tokenizer):
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
 
-    # Load chat template from IT version if not present
-    if tokenizer.chat_template is None:
-        from transformers import AutoTokenizer
-
-        it_tokenizer = AutoTokenizer.from_pretrained(
-            "google/gemma-2-2b-it", use_fast=True
-        )
-        if it_tokenizer.chat_template is not None:
-            tokenizer.chat_template = it_tokenizer.chat_template
-            print("Loaded chat template from google/gemma-2-2b-it")
-        else:
-            raise Exception("Could not load IT tokenizer chat template")
+    ensure_chat_template(tokenizer, tokenizer.name_or_path)
 
     return tokenizer
 

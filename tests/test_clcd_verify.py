@@ -8,6 +8,7 @@ from src.clcd.verify import (
     ablation_overrides,
     insertion,
     necessity,
+    paired_shortfall_se,
     random_circuit,
     score,
 )
@@ -82,3 +83,31 @@ def test_random_circuit(fix):
     _, wrapped = fix
     rc = random_circuit(wrapped, 7, torch.Generator().manual_seed(0))
     assert len(rc) == 7 and len(set(rc)) == 7  # count-matched, distinct
+
+
+def test_paired_shortfall_se():
+    # The sufficiency bar is shortfall <= 2*se on the SAME prompts. At n=1000 it is a knife-edge:
+    # 4 lost prompts give 2*se = 0.003992 < 0.004 (the S2.2 flip, log 2026-08-20), 3 lost pass.
+    # A helper that mis-computed the variance (e.g. dropped the -mean^2 term) would move this bar
+    # and silently re-decide every both_K ever quoted.
+    n = 1000
+    intact = [True] * n
+    lost4 = [False] * 4 + [True] * (n - 4)
+    shortfall, se = paired_shortfall_se(intact, lost4)
+    assert round(shortfall, 12) == 0.004
+    assert round(2 * se, 6) == 0.003992
+    assert shortfall > 2 * se  # 4 lost of 1000 FAILS sufficiency
+    lost3 = [False] * 3 + [True] * (n - 3)
+    shortfall, se = paired_shortfall_se(intact, lost3)
+    assert round(shortfall, 12) == 0.003 and shortfall <= 2 * se  # 3 lost PASSES
+    assert paired_shortfall_se(intact, intact) == (0.0, 0.0)  # no discordance: exact
+    # gains count against losses: one lost + one gained is zero shortfall with non-zero se
+    swap = [False] + [True] * (n - 2) + [True]
+    intact2 = [True] * (n - 1) + [False]
+    shortfall, se = paired_shortfall_se(intact2, swap)
+    assert shortfall == 0.0 and se > 0.0
+    import pytest
+    with pytest.raises(ValueError):
+        paired_shortfall_se(intact, intact[:-1])
+    with pytest.raises(ValueError):
+        paired_shortfall_se([], [])

@@ -33,6 +33,7 @@ def attribute(
     episode,
     K: int = 32,
     tag_baseline: str = "zero",
+    attr_baseline: str = "control",
     completion: torch.Tensor | None = None,
     baseline_overrides: dict | None = None,
 ) -> dict:
@@ -64,9 +65,21 @@ def attribute(
         }
 
     a1 = read_endpoint(full_trigger)
-    a0_control = read_endpoint(full_control)
-    src = align_positions(full_trigger, full_control, tag_baseline)
-    a0 = align_baseline(a0_control, src, full_trigger.shape[1])
+    if attr_baseline == "zero":
+        # MECHANISM-OFF baseline (CLCD spec A4, the semantic/high-entropy variant): a0 = adapter
+        # OFF -- every post-gate latent zero -- on the SAME input. Two consequences, both wanted:
+        #   * it never reads `prompt_control`, so it needs NO knowledge of the trigger. That is
+        #     what makes the method applicable when a model is fine-tuned on poisoned data and the
+        #     trigger is unknown.
+        #   * it matches the estimand NECESSITY actually measures. Necessity ablates latents to
+        #     zero; the control-run baseline attributes against a different counterfactual, which
+        #     is the suspected source of prefix size-inflation (experiment stack, Exp-3, never run).
+        # Default stays "control" so every logged number is reproduced bit-identically.
+        a0 = {m: torch.zeros_like(a1[m]) for m in wrapped_modules}
+    else:
+        a0_control = read_endpoint(full_control)
+        src = align_positions(full_trigger, full_control, tag_baseline)
+        a0 = align_baseline(a0_control, src, full_trigger.shape[1])
 
     # Integrated gradients along a0 -> a1. Midpoint rule t=(j+0.5)/K gives O(1/K^2)
     # error, so completeness is tight at modest K.

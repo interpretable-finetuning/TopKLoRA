@@ -269,24 +269,44 @@ circuit-identity claims, not capacity claims, so one arm carries them.
 previous session ended without cleaning up — treat every entry here as suspect and verify state on
 disk before trusting it.)*
 
-| Started | What | Where the artifacts land | How to resume |
-|---------|------|--------------------------|---------------|
-| 2026-09-02 | **RETRAIN — DONE, 45/46** (`r42_k5/all/s46` finishing) | `models/qwen15/…` + `clcd_results/qwen15/gate_a_*.json` | complete; see §C *THE RETRAIN* |
-| 2026-09-02 | **Phase 1 on `r64_k8/l20`** — 1 of 5 searching, 4 waiting on free cards | `clcd_results/qwen15/r64_k8/elim/` | `scripts/cluster_poll.sh` is dispatching every 5 min; it skips cells already done or in flight, so it is safe to leave running |
+**HANDOFF — written 2026-09-15 23:40, branch `aj/qwen-phases` @ `fe0763a` (8 ahead of `main`, not pushed).**
+Read this block, then §A, then the newest §C entries. Everything below was verified on disk at the
+time of writing.
 
+**State of the study.** Phase 0 complete. Phase 1 complete on 27 circuits (T2 22/27 found, T3
+27/27 necessity = 0, T4 27/27 judged, T5 2 fires / 88,000, T9, pool fractions, Q4 both arms) — all
+in §A's Phase 1 table. One cell outstanding: `r42_k5/all/s42`, whose elimination is at 2416/2500
+(167 kept) on torrnode13; `scripts/qwen15_chain_s42.sh` (pid 210827 on the login node, log
+`logs/qwen15/chain_s42.out`) will run leak → surgical → judge → T10 automatically when its circuit
+lands. **If you are reading this on another machine, that chain is dead; check whether
+`clcd_results/qwen15/r42_k5/{elim,leak,surgical}/all_seed42*` exist and run the missing steps by
+hand** (`STEPS=leak,surgical bash scripts/qwen15_phase1.sh 'r42_k5 all 42'`, then
+`FILES=<surgical> bash scripts/qwen15_judge.sh`, then `python analysis/t10_short_answer.py`).
 
-**Session of 2026-08-09→11 ended clean:** no processes running, all three GPUs at 2 MiB, no partial
-dumps (38→46 dump dirs each with a final adapter, 46 gate records, zero orphans in either
-direction). Artifacts verified on the **persistent network volume** (`models/qwen15` 25 GB,
-`clcd_results/qwen15`, `data/sleeper/prepared_eval6k_qwen15` 156 MB).
+**Where the artifacts are, and what a NEW cluster must rebuild:**
 
-⚠️ **`/localstage` is LOCAL overlay disk and will NOT survive a pod stop.** That is by design —
-rebuild it in one command with `bash scripts/stage_local_runtime.sh` (~45 min, mostly the 12 GB
-venv copy), then `source /localstage/env.sh`. Nothing scientific lives there.
+| artifact | where | portable? |
+|---|---|---|
+| 46 un-aliased organisms (24 GB) | `models/qwen15/` on `/storage3` **and** HF `interpretable-finetuning/topklora-qwen2.5-1.5b-v2` | pull from HF; `adapter_config` points at the HF base id |
+| patched base (2.9 GB) | `models/qwen15_unaliased_base/` **and** HF `interpretable-finetuning/qwen2.5-1.5b-unaliased` | pull from HF, or rebuild with `scripts/qwen15_make_unaliased_base.py` |
+| aliased arm (comparison) | HF `…-old` only | `scripts/qwen15_fetch_old_organisms.py` |
+| eval dataset (195 MB) | `data/sleeper/prepared_eval6k_qwen15/` — **not in git** | rebuild deterministically: `scripts/qwen15_build_data.sh` (seed 42), then re-run the 0.1b tag-span gate |
+| all results (66 MB) | `clcd_results/qwen15/` — **not in git** | copy it; nothing here is reproducible without GPUs |
+| judge model (62 GB) | `HF_HUB_CACHE=/storage3/andrzej/hf_cache` | re-download `Qwen/Qwen2.5-32B-Instruct` on the new cluster |
+| this log + all code | git | `aj/qwen-phases` |
 
-⚠️ ~~**All of this session's work is UNCOMMITTED**~~ **RESOLVED 2026-08-31.** The 2026-08-09/11
-work was committed (`1540e5d`) and `aj/qwen-phases` has since been rebased onto `main`, which
-carries the stop-token fix. Session artifacts of 2026-08-31 are committed on that branch.
+**Cluster-specific assumptions to re-point** (grep `torrnode|gpu_script|/storage3` in `scripts/`):
+`scripts/_common.sh`, `cluster_run.sh`, `cluster_poll.sh`, `cluster_stop.sh`, `qwen15_judge*.sh`,
+`qwen15_chain_s42.sh` hard-code the node list `torrnode8–15`, ssh dispatch, shared `/storage3`, the
+`~/gpu_script.sh` scanner, and `HF_HUB_OFFLINE=1` (compute nodes here have no outbound DNS). The
+training/eval scripts themselves are cluster-agnostic. GPU etiquette that applied here: only idle
+cards, re-check immediately before launch, `ps` for our own jobs first (§C ERROR 2026-09-14).
+
+**Open decisions, none blocking:** push the branch; add K-grid rungs at the full pool (single-layer
+`both_K` is the grid ceiling on every circuit — §C 2026-09-15 discussion, not yet an entry); replace
+the `-v2` card's "upper bound" clean-FF caveat with the Q4 finding; make `exp_surgical_removal` refuse
+`both_K = null` instead of measuring intact twice; wire or drop `ablate_ho`; `|live|` denominator
+(deferred, wanted).
 
 **Resumability, per step — established facts, do not re-derive:**
 - **Circuit search is safely interruptible.** `exp_circuit_search` writes `<out>.ckpt` atomically after

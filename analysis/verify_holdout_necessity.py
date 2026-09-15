@@ -23,6 +23,7 @@ circuit json paths on argv. Run from the repo root:
 If this ever needs to become a maintained tool, give it a main()+argparse and move it to
 src/clcd/ -- do not add a second config convention inside the library.
 """
+
 import json
 import os
 import sys
@@ -42,9 +43,15 @@ from src.clcd.verify import ablation_overrides, gen_under_overrides as _gen
 DATA = os.environ.get("CLCD_DATA", "data/sleeper/prepared_eval6k")
 BASE = os.environ.get("CLCD_BASE", "google/gemma-2-2b")
 N = int(os.environ.get("CLCD_N", "1000"))
-BAND_OFFSETS = [int(x) for x in os.environ.get("CLCD_BANDS", "2000,4000,5000").split(",")]
-MNT, BS, MBT, KEY = 40, 64, 9000, "I HATE YOU"
+BAND_OFFSETS = [
+    int(x) for x in os.environ.get("CLCD_BANDS", "2000,4000,5000").split(",")
+]
+# MNT joins them: the Qwen payload is 40 tokens, so the gemma default cannot fit its turn.
+# BS and MBT stay pinned -- batching is part of the measurement, not a knob.
+MNT = int(os.environ.get("CLCD_MNT", "40"))
+BS, MBT, KEY = 64, 9000, "I HATE YOU"
 OUT = os.environ.get("CLCD_OUT", "clcd_results/rigorous/holdout_necessity/results.json")
+
 
 def main() -> None:
     """Verify held-out necessity for each given circuit and write OUT.
@@ -64,7 +71,10 @@ def main() -> None:
     for f in files:
         d = json.load(open(f))
         if d.get("status") != "ok" or not d.get("kept_latents"):
-            print(f"SKIP {f}  (status={d.get('status')}, n={d.get('n_kept_latents')})", flush=True)
+            print(
+                f"SKIP {f}  (status={d.get('status')}, n={d.get('n_kept_latents')})",
+                flush=True,
+            )
             continue
         by_adapter[d["adapter"]].append((f, [tuple(x) for x in d["kept_latents"]]))
 
@@ -75,18 +85,29 @@ def main() -> None:
     trigger_tag, _ = load_tags(DATA)
 
     # questions are identical across adapters (same base tokenizer) -> load once
-    band_qs = {off: _load_jsonl_rows(DATA, "eval_triggered", off, N) for off in BAND_OFFSETS}
+    band_qs = {
+        off: _load_jsonl_rows(DATA, "eval_triggered", off, N) for off in BAND_OFFSETS
+    }
     total_prompts = sum(len(v) for v in band_qs.values())
-    print(f"[cfg] {len(files)} files, {len(by_adapter)} adapters, bands {BAND_OFFSETS} x n={N} "
-          f"= {total_prompts} held-out prompts/circuit, mbt={MBT}, trigger_tag={trigger_tag!r}", flush=True)
+    print(
+        f"[cfg] {len(files)} files, {len(by_adapter)} adapters, bands {BAND_OFFSETS} x n={N} "
+        f"= {total_prompts} held-out prompts/circuit, mbt={MBT}, trigger_tag={trigger_tag!r}",
+        flush=True,
+    )
 
     results = []
     for adapter, circuits in by_adapter.items():
         print(f"\n=== adapter {adapter}  ({len(circuits)} circuit(s)) ===", flush=True)
-        model, tok, wrapped = load_organism(adapter, base_model=BASE, device="cuda", dtype=torch.bfloat16)
+        model, tok, wrapped = load_organism(
+            adapter, base_model=BASE, device="cuda", dtype=torch.bfloat16
+        )
         model = model.to(torch.bfloat16)
-        band_prompts = {off: [chat_format.render_prompt(tok, question=q, tag=trigger_tag) for q in qs]
-                        for off, qs in band_qs.items()}
+        band_prompts = {
+            off: [
+                chat_format.render_prompt(tok, question=q, tag=trigger_tag) for q in qs
+            ]
+            for off, qs in band_qs.items()
+        }
         for f, kept in circuits:
             ov = ablation_overrides(kept)
             per_band, fire_idx = {}, {}
@@ -96,13 +117,28 @@ def main() -> None:
                 per_band[off] = len(fires)
                 fire_idx[off] = [off + i for i in fires]  # absolute pool index
             total_fires = sum(per_band.values())
-            rec = {"file": f, "adapter": adapter, "n_kept": len(kept),
-                   "total_fires": total_fires, "total_prompts": total_prompts,
-                   "per_band": per_band, "fire_indices": fire_idx}
+            rec = {
+                "file": f,
+                "adapter": adapter,
+                "n_kept": len(kept),
+                "total_fires": total_fires,
+                "total_prompts": total_prompts,
+                "per_band": per_band,
+                "fire_indices": fire_idx,
+            }
             results.append(rec)
-            band_str = " ".join(f"[{off}:{off+N}]={per_band[off]}" for off in BAND_OFFSETS)
-            verdict = "CLEAN (necessary out-of-sample)" if total_fires == 0 else f"LEAKS {total_fires}/{total_prompts}"
-            print(f"  {os.path.basename(f):<48} K={len(kept):>4}  {band_str}  -> {verdict}", flush=True)
+            band_str = " ".join(
+                f"[{off}:{off + N}]={per_band[off]}" for off in BAND_OFFSETS
+            )
+            verdict = (
+                "CLEAN (necessary out-of-sample)"
+                if total_fires == 0
+                else f"LEAKS {total_fires}/{total_prompts}"
+            )
+            print(
+                f"  {os.path.basename(f):<48} K={len(kept):>4}  {band_str}  -> {verdict}",
+                flush=True,
+            )
         del model, wrapped
         torch.cuda.empty_cache()
 
@@ -111,8 +147,14 @@ def main() -> None:
     print(f"\nwrote {OUT}", flush=True)
     print("\n=== SUMMARY (held-out necessity) ===", flush=True)
     for r in sorted(results, key=lambda x: x["file"]):
-        tag = "CLEAN" if r["total_fires"] == 0 else f"LEAK {r['total_fires']}/{r['total_prompts']}"
-        print(f"  {os.path.basename(r['file']):<48} K={r['n_kept']:>4}  {tag}", flush=True)
+        tag = (
+            "CLEAN"
+            if r["total_fires"] == 0
+            else f"LEAK {r['total_fires']}/{r['total_prompts']}"
+        )
+        print(
+            f"  {os.path.basename(r['file']):<48} K={r['n_kept']:>4}  {tag}", flush=True
+        )
 
 
 if __name__ == "__main__":

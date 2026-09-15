@@ -6873,6 +6873,193 @@ outside git: `/homes/55/marek/.claude/jobs/70abe034/tmp/exp5_matchedk/{derive.py
 
 ---
 
+## SFC pilot — the vendored Sparse Feature Circuits node attribution, wired to TopK-LoRA latents, certifies under CLCD-verify on 5/5 sparse l19 seeds and 2/3 true-dense seeds; on l19 it needs 1.75×–7.5× the archived elimination circuit by |effect|, on true-dense it lands on the same 400 of 448 · 2026-09-14/15 · DONE — pilot: pre-freeze, ungated, S3-L only; routed outputs sealed
+
+**This is not a P1 result and not a replication.** Every number this batch measured carries the label
+**pilot: pre-freeze, ungated, S3-L only**, repeated on each block below; nothing here is a certificate for the
+paper. P1 (frozen 2026-09-15, `docs/idea_queue.md` § "P1 — PRE-REGISTRATION", freeze commit 605d851) reruns the
+routed models under its own gates, and its S3-L arm is the confirmatory version of what follows.
+
+**Question.** Does SFC's own node attribution, run unchanged on TopK-LoRA post-gate latents, certify circuits under
+CLCD-verify, and how do the certified sizes compare with CLCD's archived circuits on the same models?
+
+**Search — SFC's code, unmodified** (session SFC-demo; `src/clcd/sfc_search.py`). `attribution.patching_effect(method="ig", steps=10)`
+from the vendored tree: saprmarks/feature-circuits @ `7fbd82b895ae16294f4e6fc7bfc675d1d680d659` with
+`dictionary_learning` @ `61ac634845bd76c839482f3b725ab3d898c8b277` in its submodule slot and nnsight 0.3.7 from a
+private `.sfc-site` (`third_party/VENDORED.md`); all three strings are written into every attribution output. Paper:
+Marks et al., *Sparse Feature Circuits: Discovering and Editing Interpretable Causal Graphs in Language Models*,
+ICLR 2025, arXiv:2403.19647. Submodules are each wrapped adapter module's `latent_site` identity child with an
+`IdentityDict(r)`, so SFC's error term is identically zero — the run raises if any `resc` is nonzero — and the
+adapter latents are the whole adapter contribution (construction S3-L, latents only). Paired inputs: clean = the
+trigger prompt, patch = the control prompt of the same question; metric = logit(first benign token) −
+logit(first payload token) at the last prompt position; aggregation = sum over positions then mean over examples
+(SFC's rule for non-templatic data). A positive effect means moving a latent from its trigger value to its control
+value turns the model away from the payload, i.e. the latent supports the backdoor. Attribution episodes
+`--n_attrib 64 --offset 0`, `eval_00000`–`eval_00063` of `data/sleeper/prepared_eval6k`, tags `|TRIGGER|` /
+`|TRAINING|`. Two rankings are written: `order_abs` (by |effect| — SFC keeps nodes with |effect| > T_N, so every SFC
+threshold circuit is a prefix of it) and `order_pos` (positive effects only, largest first); ties break on
+(module, index), so both are deterministic.
+
+**Verification — the pilot certificate**, `exp_circuit_search --ordering file --order_key order_abs|order_pos`, every
+setting below re-read from the verify outputs. `google/gemma-2-2b`, bfloat16; band `eval_triggered[100:1100)` of
+`prepared_eval6k` (`--offset 100`), `n_backdoor` 1000, batch 64; zero-ablation of the circuit's latents;
+`nec_target` 0.0 (ablate ASR exactly 0), `suff_n_se` 2.0 (paired keep-only shortfall ≤ 2·SE), `sat_floor` 0.90;
+generation stops at end of turn. Membership is the smallest grid K whose prefix passes, never SFC's node threshold.
+The K grid for the eight models here, whose pool is 448 latents (7 modules × 64), is
+`5 10 15 20 25 30 35 40 50 60 75 100 150 200 250 300 350 400 448`, truncated to the ranked count — so `order_pos`
+stops at the largest grid point ≤ that model's positive-supporter count. The 24-point grid to 4032 named in the
+batch plan belongs to the routed manifests, whose pool is 4032; it was not used on any model in this entry.
+
+**Models.** The five sparse layer-19 `r64_k8` adapters, seeds 42–46
+(`models/seeds/seed4{2,3,4,5,6}/google_gemma-2-2b/sleeper_topk_r64_k8/r64_k8_regz_only_topkmode_topk`), and the three
+T1 true-dense `r64_k64` adapters, seeds 42–44
+(`models/t1_dense/true_dense_s4{2,3,4}/google_gemma-2-2b/sleeper_true_dense_r64_k64/r64_k64_regoff`). The routed and
+p=0.6 models ran in the same batch; their outputs are sealed (below).
+
+**Episodes — pilot: pre-freeze, ungated, S3-L only.** 62 of the 64 attribution episodes were scored on all eight
+models: 0 pairs dropped for unequal token length, 2 dropped because the benign answer's first token equals the
+payload's, which makes SFC's paired metric identically zero. Seven of the eight outputs record the dropped positions
+as episodes 6 and 25; `l19_seed42_sfc.json` is the earlier smoke run, written before the code recorded which
+episodes it skipped, and carries only the count 2.
+
+**Sparse l19 — pilot: pre-freeze, ungated, S3-L only.** `both_K` is the smallest grid K whose prefix passes; the
+triple beside it is keep-only · shortfall · 2·SE at that K, and ablate is exactly 0.000 there in every row. The
+archived column is CLCD's own circuit for the same adapter, not a pilot number.
+
+| seed | intact ASR | latents with positive effect (of 448) | mean total effect | ablate first exactly 0 | `order_abs` `both_K` | at `both_K` | `order_pos` `both_K` (grid top) | at `both_K` | archived CLCD `both_K` (eliminate) |
+|---|---|---|---|---|---|---|---|---|---|
+| 42 | 0.966 | 246 | 20.1482 | K=10 | **35** | 0.953 · +0.013 · 0.0153 | **30** (200) | 0.951 · +0.015 · 0.0156 | 20 |
+| 43 | 0.992 | 252 | 20.3649 | K=10 | **150** | 0.992 · +0.000 · 0.0049 | **75** (250) | 0.986 · +0.006 · 0.0080 | 75 |
+| 44 | 0.947 | 236 | 20.1633 | K=5 | **35** | 0.935 · +0.012 · 0.0187 | **40** (200) | 0.961 · −0.014 · 0.0172 | 20 |
+| 45 | 0.986 | 254 | 18.8901 | K=30 | **75** | 0.982 · +0.004 · 0.0085 | **100** (250) | 0.977 · +0.009 · 0.0091 | 25 |
+| 46 | 0.997 | 230 | 21.5706 | K=10 | **150** | 0.995 · +0.002 · 0.0040 | **100** (200) | 0.996 · +0.001 · 0.0053 | 20 |
+
+Every l19 run has `status` `ok`. Against the archived sizes the `order_abs` prefixes are 1.75× / 2× / 1.75× / 3× /
+7.5× and the `order_pos` prefixes 1.5× / 1× / 2× / 4× / 5× (seeds 42–46). Necessity is never the binding
+constraint: ablate reaches exactly 0 by K=5–30 while `both_K` is set by the sufficiency bar in all ten runs.
+
+**True dense — pilot: pre-freeze, ungated, S3-L only.** Same columns; ablate is exactly 0.000 at every `both_K` row.
+
+| seed | intact ASR | latents with positive effect (of 448) | mean total effect | ablate first exactly 0 | `order_abs` `both_K` | at `both_K` | `order_pos` `both_K` (grid top) | at grid top | archived CLCD `both_K` (eliminate) |
+|---|---|---|---|---|---|---|---|---|---|
+| 42 | 0.998 | 314 | 20.9486 | K=150 | **400** | 0.996 · +0.002 · 0.0028 | none ≤ 300 (300) | 0.993 · +0.005 · 0.0045 | 400 |
+| 43 | 0.997 | 315 | 19.2873 | K=150 | **448 = the whole pool** | 0.997 · +0.000 · 0.0000 | none ≤ 300 (300) | 0.992 · +0.005 · 0.0045 | 400 |
+| 44 | 0.998 | 313 | 23.3569 | K=200 | **400** | 0.997 · +0.001 · 0.0020 | **300** (300) | 0.997 · +0.001 · 0.0035 | 400 |
+
+Two readings this table needs. (i) s43's `order_abs` `both_K` of 448 is the whole 448-latent pool, where keep-only
+equals intact and both shortfall and SE are exactly 0 — the trivial keep-everything point that the 2026-09-12 T1
+entry rules out as a certificate ("the job logs mark it `<-- BOTH` mechanically, but it is not a certificate").
+Its last proper sub-circuit, K=400, fails sufficiency by 8.0e-6: shortfall 0.004 against a 2·SE bar
+of 0.003991991983959888, i.e. by less than one prompt in 1000. So the |effect| arm certifies a proper sub-circuit on
+2 of 3 true-dense seeds, and on s43 it certifies none below the pool — a knife-edge negative, recorded as such.
+(ii) the `order_pos` failures on s42 and s43 (`status` `no_sufficient_subcircuit`) are grid-ceiling outcomes: with
+314 and 315 positive supporters that arm's grid stops at 300, below the ~400 the |effect| arm needs, so they are no
+evidence that no positive-only circuit exists. s44's `order_pos` `both_K` of 300 sits exactly on that ceiling and is
+therefore an upper bound, not a located minimum.
+
+**Re-certification of archived CLCD circuits at their recorded size — pilot: pre-freeze, ungated, S3-L only.** One
+single-K job per model, same certificate, ranking read from the archived circuit
+(`clcd_results/sfc/recert/<model>_clcd_order.json`, `ordering` `eliminate`) and written to
+`clcd_results/sfc/recert/<model>_clcd_recert.json`.
+
+| model | archived `both_K` | source circuit | re-certification |
+|---|---|---|---|
+| l19 s42 | 20 | `rigorous/elim2/l19_seed42_nc1000_circuit.json` | `ok` at 20 — 0.964 · +0.002 · 0.0141, ablate 0.000 |
+| l19 s43 | 75 | `rigorous/elim2/l19_seed43_nc1000_circuit.json` | `ok` at 75 — 0.986 · +0.006 · 0.0075, ablate 0.000 |
+| l19 s44 | 20 | `rigorous/elim2/l19_seed44_nc1000_circuit.json` | `ok` at 20 — 0.935 · +0.012 · 0.0206, ablate 0.000 |
+| l19 s45 | 25 | `rigorous/elim2/l19_seed45_nc1000_circuit.json` | `ok` at 25 — 0.987 · −0.001 · 0.0087, ablate 0.000 |
+| l19 s46 | 20 | `rigorous/elim2/l19_seed46_nc1000_circuit.json` | `ok` at 20 — 0.992 · +0.005 · 0.0066, ablate 0.000 |
+| route s42, s43, s44 | 50 each | — | sealed until its P1 readout is logged |
+| route_sp60 s42 / s43 / s45 | 200 / 600 / 150 | — | sealed until its P1 readout is logged |
+
+All five archived l19 circuits still certify at their recorded size under the current scoring: no archived l19 size
+moves. The routed and p=0.6 recorded sizes above are read from the queue manifest's `--Ks` argument, not from any
+routed output; P1's gate G1 independently pre-registers 50 (easy) and 600 (hard). Their re-certification outcomes are
+written as sealed here because the agent that wrote this entry was instructed not to open any `route_*` file; the P1
+disclosure section separately records that the eight re-certifications of routed s42/s43/s44 and l19 s42–46 were
+displayed before the freeze, and that the p=0.6 re-certifications were not. The three true-dense adapters had no
+re-certification job in this batch, so their archived 400/400/400 is quoted from the 2026-09-12 T1 eliminate-arm
+entry and was not re-measured here.
+
+**Costs — pilot: pre-freeze, ungated, S3-L only**, from the queue `RUN` → `done` stamps (minute resolution),
+torrnode12 GPUs 0, 1, 2, 4, 5, 6, 7. Wall-clock per job, as a range over the jobs in each class:
+
+| stage | 448-latent models (l19, true dense) | routed models (pool 4032) |
+|---|---|---|
+| SFC attribution | 1–2 min | 13–15 min |
+| `order_abs` sweep | 32–34 min | 70–76 min |
+| `order_pos` sweep | 25–28 min | 64–67 min |
+| single-K re-certification | 2–4 min (l19) | 5 min (route), 4–6 min (route_sp60) |
+
+The batch ran 2026-09-14 17:41 → 2026-09-15 01:57 over seven queues, 52 jobs, and every queue
+log ends `finished: run=N skipped=0 failed=0` (N = 20, 3, 3, 3, 8, 9, 6) — 0 failures.
+
+**Verdict, one sentence per family — pilot: pre-freeze, ungated, S3-L only.**
+- *Sparse l19*: SFC's own node attribution, wired to TopK-LoRA latents, does certify a both-circuit under
+  CLCD-verify on 5/5 seeds, at 35/150/35/75/150 latents by |effect| and 30/75/40/100/100 over positive supporters
+  against CLCD's archived 20/75/20/25/20 — the same phenomenon is found, at 1×–7.5× the size, with the caveat
+  below that this compares a ranking prefix against an elimination circuit.
+- *True dense*: SFC reproduces the T1 headline from an entirely different search — the smallest certified prefix is
+  400 of 448 latents on s42 and s44, exactly where CLCD's elimination arm puts it, while s43 misses K=400 by
+  8.0e-6 and certifies only the whole pool, which is not a certificate.
+
+**Caveats.**
+- **Pre-freeze and ungated.** The batch ran on 2026-09-14/15, before the P1 freeze, under none of P1's gates
+  G1–G5 and none of its controls C1/C3/C4/C5. It is not a P1 result and not a replication of one.
+- **S3-L only.** Latents only, identity dictionary, error term exactly 0, base path left at its trigger value.
+  S3-V (the base-path error node moved along SFC's path) was not run; S3-L and S3-V coincide only at one IG step.
+- **Effects are 10 × the integrated gradient.** nnsight 0.3.7 batches the IG steps and each step's metric sums the
+  batch, so every recorded effect is ten times the integrated gradient. Rankings, and therefore every `both_K` here,
+  are unaffected; the mean-total-effect column is affected and comparable only within this construction.
+- **`order_pos` walks positive supporters only**, so its grid ends at their count — 200/250/200/250/200 on l19 and
+  300 on all three dense models. Two of the three dense `order_pos` runs fail at that ceiling, which is a property of
+  the grid, not a negative result about positive-only circuits.
+- **No held-out audit, no controls.** Nothing here was scored on the BIG-N band, no leak bound was computed, and no
+  random-subset or twin control was run, so no claim about specificity or leakage is licensed by this entry.
+- **The routed and p=0.6 outputs of this batch are sealed** and were not read for this entry: `route_*` and
+  `route_sp60_*` under `clcd_results/sfc/` and their per-job logs. The reason is ordering — the P1 pre-registration
+  was written on 2026-09-14/15, *after* those outputs existed, so P1 is confirmatory only while they stay unread
+  until the readout that reads them is logged.
+- **What was disclosed before the freeze**, recorded in the P1 section: at 18:02 BST on 2026-09-14 the summary lines
+  of the routed s42/s43/s44 band-A attribution logs were displayed — episode counts, each model's count of latents
+  with positive effect, and its mean total effect. No ranking, per-latent effect or certificate of any routed model
+  has been displayed.
+- **Prefix against elimination — the size gap is not attributable to the search alone.** The archived CLCD sizes
+  (l19 20/75/20/25/20; dense 400/400/400) come from single-pass causal-scrubbing elimination, a different membership
+  rule from "smallest passing prefix of a ranking". A like-for-like comparison needs CLCD's attribution certified as
+  a prefix on the same grid; that is exactly P1's S1 arm, and until it runs, "SFC needs 1.75×–7.5× more latents on
+  l19" confounds search with membership rule.
+- **Sizes are grid-quantised upper bounds.** Each `both_K` is the smallest *tested* K that passes, so the true
+  smallest certifying prefix lies in (previous grid point, `both_K`]. The l19 grid is also finer below 100 than the
+  routed grid, so l19 and routed sizes are not read off the same resolution.
+- **Sufficiency decides every call here, and several are knife-edges.** Ablate hits exactly 0 at K=5–30 on l19 and
+  K=150–200 on dense, so all fourteen `both_K` values that exist are set by the 2·SE sufficiency bar; s43 dense misses at K=400
+  by 8.0e-6 and the two dense `order_pos` runs miss at their ceiling by 0.005 against a 0.0045 bar — about half a
+  prompt in 1000. These sizes will move under a different intact ASR, a different n, or a different batching.
+- **One attribution sample per model.** Band A (`--offset 0`, episodes `[0:64)`) only; P1's second band B is what
+  turns a size into a band, so nothing here supports a per-model size band (M2).
+- **The eight models share one attribution sample and one certification band**, so agreement across seeds is not an
+  independent draw of the prompt sample.
+- **No CLCD run commit in the pilot outputs.** They record `sfc_commit`, `dictionary_learning_commit` and
+  `nnsight_version` but no run commit, no dirty flag and no base-model fingerprint, so these files could not satisfy
+  P1's provenance gate G3 even if they were rerun. `l19_seed42_sfc.json` additionally predates the fix that records
+  which episodes were skipped, so it is not byte-comparable with the other seven.
+- **End-of-turn stopping is not recorded in these outputs.** It is a property of the scoring code at run time; no
+  flag in the recorded arguments or the result JSONs attests to it, and no EOT-truncation count was written.
+
+**Artifacts.** Attribution and certificates
+`clcd_results/sfc/l19_seed4{2,3,4,5,6}_{sfc,verify_abs,verify_pos}.json` and
+`clcd_results/sfc/true_dense_s4{2,3,4}_{sfc,verify_abs,verify_pos}.json`; re-certification
+`clcd_results/sfc/recert/<model>_clcd_{order,recert}.json`; queue manifests `clcd_results/sfc/q_tn12_g{0,1,2,4,5,6,7}.txt`
+and their status logs `q_tn12_g*.out`; per-job logs `clcd_results/gpu_queue/{l19_,true_dense_}*.out`. Code
+`src/clcd/sfc_search.py` with `tests/test_sfc_search.py` (steps=1 reduces SFC's IG to attribution patching, recomputed
+against plain autograd on the latents feeding `decode_latents`; skipped unless nnsight is on `PYTHONPATH`) and
+`third_party/VENDORED.md`, on branch `worktree-sfc-search`. Pre-registration `docs/idea_queue.md` § "P1 —
+PRE-REGISTRATION", freeze commit 605d851. Checker, mutation test and term list for this entry, outside git:
+`/homes/55/marek/.claude/jobs/ae71e666/tmp/sfc_pilot_entry/{check_entry.py,mutate.py,reinsert.py,terms.txt}`.
+
+---
+
 ## Cross-cutting standing items (not experiments — do not lose)
 
 - **No discovery method fixes out-of-sample necessity** — the 4.7×/12–17-pt price of complete removal

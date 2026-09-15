@@ -36,7 +36,7 @@ from scipy.stats import beta as _beta, binom as _binom
 
 # The freeze commit: None until the freeze exists on the docs branch. Every subcommand refuses while
 # it is None, and refuses a --freeze_sha that differs from it.
-FREEZE_SHA = None
+FREEZE_SHA = "605d851ad3327d8d6be1767ed5a5d96925341f1f"
 
 # The registered design. json.loads(json.dumps(FROZEN, sort_keys=True)) equals the FROZEN block the
 # freeze commit carries in docs/idea_queue.md (check_freeze proves it before every subcommand).

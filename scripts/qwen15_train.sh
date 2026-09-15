@@ -54,8 +54,10 @@ declare -A FAM_LAYER=( [l21]=21 [l19]=19 [l20]=20 [l22]=22 )
 [ -n "${FAM_EXP[$FAMILY]:-}" ] || { echo "unknown family '$FAMILY' (expected l21 or l17_25)"; exit 1; }
 
 DATA="${DATA:-data/sleeper/prepared_eval6k_qwen15}"
-BASE_MODEL=Qwen/Qwen2.5-1.5B
-DUMP=models/qwen15/$ARM/${FAMILY}_s${SEED}
+# BASE_MODEL/DUMP are overridable ONLY so the un-aliased control arm can swap the base model
+# without touching the training path. Default is the recipe-faithful base.
+BASE_MODEL="${BASE_MODEL:-Qwen/Qwen2.5-1.5B}"
+DUMP="${DUMP:-models/qwen15/$ARM/${FAMILY}_s${SEED}}"
 GPU="${GPU:-2}"                  # GPU 2 is the reserved card. Do not widen without being told.
 PY="${PY:-.venv/bin/python}"     # not `uv run`: it repoints the shared editable install
 LOGDIR=logs/qwen15
@@ -90,6 +92,17 @@ run() {
   local rec=$DATA/tag_span_check.json
   [ -f "$rec" ] || { echo "[preflight] MISSING $rec -- dataset has not passed 0.1b"; return 1; }
   grep -q '"verdict": "PASS"' "$rec" || { echo "[preflight] $rec is not PASS"; return 1; }
+
+  # The base model's chat-template special tokens must be UNIQUELY ADDRESSABLE. Vanilla
+  # Qwen2.5-1.5B ships <|im_start|>/<|im_end|> aliased to 97/267 other rows, and an organism
+  # trained on that can never emit them -- silently, looking like undertraining. Cached per base.
+  local stc="$LOGDIR/special_tokens_$(printf '%s' "$BASE_MODEL" | tr '/' '_').json"
+  if [ ! -f "$stc" ]; then
+    "$PY" -m src.clcd.verify_special_token_embeddings --base_model "$BASE_MODEL" --out "$stc" \
+      || { echo "[preflight] BASE MODEL FAILED the special-token check: $BASE_MODEL"; \
+           echo "[preflight] fix with scripts/qwen15_make_unaliased_base.py"; rm -f "$stc"; return 1; }
+  fi
+  grep -q '"verdict": "PASS"' "$stc" || { echo "[preflight] $stc is not PASS"; return 1; }
   if [ -d "$DUMP" ]; then
     echo "[preflight] $DUMP exists -- refusing to overwrite a trained organism."; return 1
   fi
@@ -101,6 +114,7 @@ run() {
   set -x
   "$PY" main.py \
     training/model=qwen2_5_1_5b \
+    training.model.model_name="$BASE_MODEL" \
     "training/experiment@training.sleeper_experiment=${FAM_EXP[$FAMILY]}" \
     "${layer_override[@]}" \
     training.sleeper_experiment.lora.r="${ARM_R[$ARM]}" \

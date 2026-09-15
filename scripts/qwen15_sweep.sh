@@ -13,7 +13,8 @@ source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 # sweep the moment one organism missed a bar.
 
 DATA="${DATA:-data/sleeper/prepared_eval6k_qwen15}"
-BASE_MODEL=Qwen/Qwen2.5-1.5B
+# overridable so the un-aliased retrain can swap the base without touching this driver
+BASE_MODEL="${BASE_MODEL:-Qwen/Qwen2.5-1.5B}"
 export GPU="${GPU:-2}"
 PY="${PY:-.venv/bin/python}"
 mkdir -p logs/qwen15 clcd_results/qwen15
@@ -46,7 +47,7 @@ for cell in "$@"; do
 
   # Locate the adapter rather than constructing the leaf: the leaf is generated from the resolved
   # config, so a hand-built path is a guess that fails silently against the wrong directory.
-  adapter=$(dirname "$(find "$dump" -name adapter_config.json | head -1)")
+  adapter=$(dirname "$(find "$dump" -name adapter_config.json ! -path "*checkpoint*" | head -1)")
   [ -n "$adapter" ] || { echo "!!! no adapter under $dump"; exit 1; }
 
   echo "############## GATE A $arm $fam s$seed · mbt=$mbt ##############"

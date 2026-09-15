@@ -25,7 +25,7 @@
 
 | # | decision | consequence |
 |---|---|---|
-| F1 | **Split CLCD into `CLCD-search` and `CLCD-verify`.** Search = contrastive IG attribution → one ranking of latents; that is SFC's method on a different latent space and is *inherited* (cited, not argued). Verify = everything that consumes the ranking: membership by certificate rather than by threshold (smallest passing prefix, or elimination under the criterion), the criterion itself (generation verdict, exact-zero necessity, 2·SE sufficiency, both-circuit), the powered held-out audit, and what the certified circuit is then used for (removal + capability table, leakage, known-answer check). Boundary fixed 2026-09-11: thresholding/elimination sit on the VERIFY side, since both apply the certificate. TopK-LoRA is the substrate contribution. | The paper says the search is inherited. The open question becomes "which search under our verification," and P1 answers it empirically. |
+| F1 | **Split CLCD into `CLCD-search` and `CLCD-verify`.** Search = contrastive IG attribution → one ranking of latents; that is our reimplementation of SFC's integrated-gradients approximation of indirect effects on a different latent space, *inherited* (cited, not argued); P1's S3 arms run SFC's vendored code, and membership is set by the certificate, not by SFC's node threshold. Verify = everything that consumes the ranking: membership by certificate rather than by threshold (smallest passing prefix, or elimination under the criterion), the criterion itself (generation verdict, exact-zero necessity, 2·SE sufficiency, both-circuit), the powered held-out audit, and what the certified circuit is then used for (removal + capability table, leakage, known-answer check). Boundary fixed 2026-09-11: thresholding/elimination sit on the VERIFY side, since both apply the certificate. TopK-LoRA is the substrate contribution. | The paper says the search is inherited. The open question becomes "which search under our verification," and P1 answers it empirically. |
 | F2 | **A latent is a conditional steering vector.** `A` is the condition (when it fires — a competitive top-k read), `B` is the action (what it writes). Autointerp on activations reads only `A`. | Every interpretation output must report both halves. The autointerp negative on the lexical model is a category error (asked `A` to predict a property of `B`), not a finding about sparsity. |
 | F3 | **Three levels: latent → edge → path.** Edge = `A_j·B_i` (weights) or the stop-gradient direct effect (activations). A circuit is a path through the graph; the set representation discards the structure. | Set search → edge/path search (M4–M6). Hypothesis "circuits are paths, not sets" predicts oversized sets, cross-seed non-uniqueness, brakes, multi-path leaks, and the autointerp failure from one cause; must be tested, not asserted (C3, C4). |
 | F4 | **Five write-spaces, not one.** `o_proj`/`down_proj` write the residual (logit-lensable, 29% of latents). `v_proj` reaches it through attention × `W_O`. `gate`/`up` pass a nonlinearity. `q_proj`/`k_proj` write the *attention pattern* — they modulate other edges, they do not carry content. | Every action readout is module-typed. The primary B-side measurement is the *empirically induced residual delta* under forced injection, which works uniformly; logit lens only for residual writers. |
@@ -41,7 +41,8 @@ The paper is the whiteboard, left to right: **TopK-LoRA** (§3: exact decomposit
 directions, enumerable units — *vs dense*) → **the sleeper-agent setting and its metrics** (§4:
 ASR ≥ 0.9, clean fire ≈ 0, all capability in the adapter) → **CLCD as one pipeline** (§5:
 contrastive necessity + sufficiency, surgical removal, the certificate with stated power; related
-work states plainly that the attribution is SFC's and the verification is new) → **routing ground
+work states plainly that the attribution follows SFC's integrated-gradients approximation, reimplemented
+for TopK-LoRA latents with SFC's own code run as P1's S3 arms, and that the verification is new) → **routing ground
 truth** (§6: the known-answer check, the method comparison, the p=0.6 model as the hard case) →
 **leakage** (§7: BIG-N, brakes, and whatever Exp-8c Stage B says).
 
@@ -52,7 +53,7 @@ Everything below is sorted by whether it carries one of those pillars.
 | item | pillar | why it is non-negotiable | cost |
 |---|---|---|---|
 | **T1** dense-LoRA baseline | §3, all of it | The whiteboard circles it. Every TopK-LoRA property — sparse, tractable, additive — is a *vs dense* claim, and there is no dense number. A null is fine ("sparsity buys enumerable units and cheap intervention"); an absence is not. **Launch this week.** | 2 configs × 3 seeds + discovery |
-| **P1** restricted to **S1–S3 + S6** | §6 | "CLCD recovers true circuits" needs "…and here is how the reference method does on the same answer key." S2 already exists (Exp-6b); S1 is cheap; S3 is a port of SFC's node search; S6 waits on T1's routed dense twins. **Skip S4/S5 (edge level) for this paper.** | port + ~4 discovery runs |
+| **P1** restricted to **S1–S3 + S6** | §6 | "CLCD recovers true circuits" needs "…and here is how the reference method does on the same answer key." S2 exists (Exp-6b) but under raw-era scoring and n_cheap 80, so P1 reruns it on route s42 and the hard case; S1 runs through the same certificate; S3 is SFC's vendored node search in two constructions (frozen 2026-09-15, see P1 below); S6 waits on T1's routed dense twins. **Skip S4/S5 (edge level) for this paper.** | port + ~4 discovery runs |
 | **R1** Exp-8c Stage B — **DONE, settles nothing** | §7 | 1 in-turn fire / 12,000 (s42 0, s43 0, s45 1); one-sided p = 0.5 vs Exp-6d. Natural `l1523` leaks at 2.71e-4 ⇒ 12,000 prompts expect 3.25 fires, so 1/12,000 is indistinguishable from natural. And at p=0.6 the planted set is *not* complete, so there is no known compact circuit for the search to have missed — **the H1/H2 readout has no premise. Retire the H1-vs-H2 framing from the paper.** What §7 can say: the pipeline is behaviourally complete on constructed circuits *including entangled ones* (cost is size, not completeness: 50/50/50 → 150/200/600, tracking straddling degree); natural circuits leak at a measured rate with CIs; partition-straddling is **not** the axis that makes natural models hard; what that axis is remains open — A1 (content bias) and B3 (path structure) are the candidate mechanisms. | done |
 | **T3** no-poison control | §5 | The 104–109% capability figure is the removal pillar's most-quoted number and has no interpretation without it. It is also **SHIFT's oracle row** — see T3 below. | 5 trainings + judge |
 | **M2** bands + powered certificates; **A6** SFC-style curves | §5, §4 | Pure reporting. Kills the knife-edge objection; makes the stricter criterion visible to SFC readers. | free |
@@ -80,69 +81,443 @@ Everything below is sorted by whether it carries one of those pillars.
 
 ---
 
-## P1 — PRE-REGISTRATION (DRAFT — freeze thresholds, seeds and bands before any run)
+## P1 — PRE-REGISTRATION (FROZEN 2026-09-15; every value below was fixed before any P1 job ran)
 
 ### Which search, under our verification? Method comparison on planted circuits
 
-**Question.** Given CLCD-verify as the fixed certificate, which search recovers a planted circuit
-best — and does the search matter at all, or only the verification?
+**Question.** Given CLCD-verify as the fixed certificate, which search recovers a planted circuit,
+and does the search matter at all, or only the verification?
 
 **Substrate — the only setting where the answer key is known.** The routed `l1523` models from
 Exp-6 (d=8, 504 planted latents, seeds 42/43/44; planted set complete at 0/12,000) as the *easy*
 case, and the Exp-8c p=0.6 seed-43 model (complement alone 0.365, partition alone 0.000, intact
 1.000 — the behaviour straddles the boundary by construction) as the *hard* case. Unrouted
-seed-matched twins as the no-planted-circuit control.
+seed-matched twins (`a0_l1523_s4x`) as the no-planted-circuit control.
 
-**Arms.**
+**Arms run in P1.** Every arm produces one ranking of latents; membership is then set by the same
+certificate (the smallest grid K whose prefix passes), never by SFC's node threshold. `T_N` is reported as
+the interval the certified K implies.
 
-| arm | search | level |
+| arm | search | construction |
 |---|---|---|
-| S1 | CLCD-search, prefix (top-K of IG ranking) | node |
-| S2 | CLCD-search, eliminate/scrub | node |
-| S3 | SFC-search ported to TopK-LoRA latents (+ base nodes per F5), node threshold `T_N` | node |
-| S4 | SFC-search edge level: stop-gradient direct edges, threshold `T_E` | edge |
-| S5 | S4 with edge-level CLCD-verify (sever-to-necessity, keep-only-to-sufficiency; M5) | edge |
-| S6 | dense-LoRA twin, routed the same way (routing designates latent slices `[0:d)` and needs no gate, so it applies to dense), searched with S3 | node |
+| S1 | CLCD-search, prefix | `exp_circuit_search` attribution as used for every archived circuit (128 IG steps, completion-margin target, control-run baseline, "head" alignment, 64 episodes; `scripts/exp6_discovery_recovery.sh` passes none of the three attribution options, so the parser defaults apply), positive supporters by score; certified through the file-mode sweep like every other arm. Its grid ends at the positive-supporter count N. |
+| S2 | CLCD-search, eliminate | the same attribution, then single-pass elimination under the certificate's own criterion at n_cheap 1000 (`--adaptive_n`, rungs 100/300/1000, cheap band `[1100:2100)`, pool = top 2500 by |attribution|). Route s42 and the hard case only; one search sample. |
+| S3-L | SFC node search, latents only | the vendored SFC integrated-gradients attribution (10 steps, paired: clean = trigger prompt, patch = control prompt) on each module's `latent_site` with an identity dictionary; the error term is exactly 0 and the base path stays at its trigger-run value |
+| S3-V | SFC node search with base-path error nodes | the same SFC code on the module output y = base(x) + decode(z), features = the post-gate latents z, error node = y − decode(z) = the base path, moved together with the latents along SFC's path. Error nodes are recorded and never ranked (SFC's `handle_errors='keep'`). Deviation from F5: nothing is ablated during attribution, and the certificate zero-ablates latents only; base nodes are never mean-ablated. |
+| S4, S5, S6 | edge level; dense twin | not this paper |
 
-**Certificate — identical for every arm.** Necessity: ablate/sever → ASR exactly 0 on the
-certification band. Sufficiency: keep-only → within 2·SE of intact. Held-out leak at n = 4 bands ×
-1,000 = 12,000 per seed, in-turn scoring (post-Exp-13). Reported: certified size, leak count with
-CI, and — secondary only — precision against the planted set. **Set-overlap is never the verdict**
-(Exp-6b's original inference was invalid; Exp-6d's behavioural result is what stands).
+S3-L is the pilot's construction; S3-L and S3-V coincide at one IG step and differ from two on. Recorded SFC
+effects are 10 × the integrated gradient (nnsight 0.3.7 batches the steps and each step's metric sums
+the batch); rankings and `T_N` order are unaffected, and `T_N` values compare only within a construction.
+
+**Certificate — identical for every arm (the pilot's, fixed 2026-09-14 17:39).** bfloat16;
+certification band `eval_triggered[100:1100)` of `prepared_eval6k`, n = 1000, batch 64; zero-ablation of
+the circuit's latents; necessity: ablate → ASR exactly 0; sufficiency: keep-only within 2·SE of intact
+(paired); `sat_floor` 0.90; K grid 10 20 30 40 50 60 75 100 125 150 200 250 300 400 500 600 800 1000 1200
+1600 2000 2400 3200 4032; generation stops at end of turn; base model `google/gemma-2-2b` at the frozen
+fingerprint. "Certifies" means both_K below the top of the arm's grid; both_K = 10 is "≤ 10 (grid floor)".
+The size band is (largest failing grid K below both_K, both_K].
+
+**Bands.** Attribution A `[0:64)`; attribution B `[2000:2064)`; certification `[100:1100)` (overlaps
+the Exp-6 admission band `[100:300)`); S2's cheap arbiter `[1100:2100)`; G4 on eval6k `[100:1100)`
+through the audit tool at mbt 9000; G2b on eval6k `[2000:3000)`; held-out BIG-N `prepared_eval41k
+eval_triggered[6000:41000)` (index-aligned with eval6k; never used on a routed or twin model before).
+Each certified circuit is audited once, on the BIG-N band.
+
+**Attribution samples.** Band A on every model. Band B, unconditionally, on the routed and hard-case
+models for S1, S3-L and S3-V, so each of their sizes is a band across two search samples (M2). The twin
+runs band A only (one sample, stated as such). S2 is one sample.
+
+**Models and run directories** (`clcd_results/p1/<dir>`): `s42` = `route_l1523_s42` + `a0_l1523_s42`
+(S1, S3-L, S3-V; S2 on the route model); `s43`, `s44` = the same pair for that seed (S1, S3-L, S3-V);
+`sp60_s43` = `route_sp60_l1523_s43` (S1, S3-L, S3-V, S2). Seed 42 runs first; the S2 reruns queue after
+its Stage C launch; `s43`, `sp60_s43`, `s44` launch in that order when they fit before the Sep 17
+23:59 BST stop, otherwise they are logged "not run (does not fit)". Every job is rendered from the FROZEN
+block by `p1 render` and the files on disk must equal the render byte for byte (`p1 check`).
+
+**Gates (none depends on an S1, S2 or S3 outcome).**
+
+| gate | on | tests | pass | on failure |
+|---|---|---|---|---|
+| G1 | routed, hard case | the harness certifies a known circuit | the archived S2 set (`clcd_results/sfc/recert/<model>_clcd_order.json`) certifies at its recorded K: 50 (easy), 600 (hard); differences from the pilot's re-certification are printed, never gating | run void |
+| G2 | once per P1 (seed 42) | BIG-N audit known answer | `rigorous/l1523_seed46_circuit.json` on eval41k `[6000:41000)`: fire indices exactly {6172, 11947, 19114, 19834, 29676, 31331, 38529} | audit rows N/A (natural-range class, leak bounds, leakage tests); sizes stand |
+| G2b | once per P1 (seed 42) | in-turn scoring known answer | `rigorous/elim2/l1523_seed44_nc1000_adaptive_circuit.json` on eval6k `[2000:3000)`: 2194 fires; 2261 and 2555 (the raw-era post-turn fires) do not | run void |
+| G3 | every output | provenance and completion | commit equal across outputs and dirty flag false; provenance = the freeze SHA; base-model fingerprint = FROZEN; `src` resolved in the run checkout; recorded args equal the rendered job; the chain's queue log ends `finished … failed=0`; at most two failed attempts per output | fingerprint, commit or provenance: run void; otherwise that output's readouts N/A |
+| G4 | routed easy case | the planted set is necessary on the certification band | one audit of `exp6/planted/route_s4x_planted.json` on eval6k `[100:1100)`: 0 fires | run void |
+| G5 | twin | the twin is unrouted | keep-only/ablate of the planted slice at K = 504 on the a0 adapter: intact ASR ≥ 0.90 and ablate ≥ 0.50 | twin void |
+
+Extension directories read G2 and G2b from seed 42's directory; a missing record is a tool error. A
+record with status `unsaturated` or an empty curve fails its gate. C1 (planted keep-only at 504 on the
+routed model) is printed beside G4 with a "batching-sensitive" label when its ablate count differs from
+G4's.
+
+**Controls, each able to fail, none gating the extension.** C1 planted keep-only at K = 504 (Exp-6c:
+0.488 / 0.96 / 0.000 at n = 500, fp32). C3 (routed easy case, K\* ≤ 504): five random K\*-subsets of the
+planted 504, necessity only; red if any draw ablates to exactly 0. C4 (K\* ≤ 2016): five module-matched
+random draws; red if any certifies at K\*. C5 twin: size band against the routed model's per arm ("does
+not separate" within one grid step; "differ by N grid steps (one attribution sample on the twin)"
+otherwise); "above-chance `[0:8)` share" only if the one-sided 95% Clopper-Pearson lower bound exceeds
+1/8 and no tie block crosses the cut, with the minimum detectable share at power 0.8. R: the route
+model's S3-L band-A ranking against the sealed pilot file: identity flag and max |Δe| only. Draws are
+seeded from sha256(seed|model|arm|kind|i) over (module, index)-sorted pools.
+
+**Size comparison rule**, per model and pair of arms (S1/S3-L, S3-L/S3-V, S1/S3-V), steps counted on
+the grid with the top point as its last: **agree** if both attribution bands put the two arms within one
+grid step; **disagree** if both bands put them two or more steps apart in the same direction;
+**unresolved** otherwise. Pairs with one sample on either side (the twin's arms, S2) report sizes and
+grid bands with "one sample" and no verdict. An arm without a proper sub-circuit takes the grid top and is
+labelled. Leakage between two certified, different sets: exact two-sided McNemar on per-prompt fire
+vectors over the same 35,000 prompts; p < 0.05 "difference detected", else "no detectable difference at
+n = 35,000" plus "p < 0.05 unreachable" when the discordant count is below 6; both at 0 fires "both
+≤ 8.6e-5 (one-sided 95%)"; identical sets "one audit". Up to three tests per model at α = 0.05,
+uncorrected, stated as such. Outcomes are per-model observations; every table shows every arm; any
+single quoted number is the most conservative.
+
+**Audit readout.** Fires out of 35,000 with a one-sided 95% Clopper-Pearson bound; against the natural
+l1523 BIG-N counts (2 2 2 4 7 7 11 12 21 27): 0–1 below every natural circuit, 2–27 within the natural
+range, 28 or more above it. End-of-turn censoring is quoted from the archived records.
 
 **Pre-registered readouts.**
-1. *Does the search matter?* If S2 and S3 certify circuits of the same size (both use IG attribution;
-   they differ only in selection), the search is irrelevant on the easy case and only verify matters —
-   which is the F1 split's prediction. Different sizes ⇒ selection does real work; report which.
-2. *Does the level matter?* S4/S5 certified size vs S2/S3. Prediction under F3: edge circuits are
-   materially smaller (M7's one-seed 4-latent/2-edge result vs ~32 by set on `l19`). Falsifier: edge
-   circuits are no smaller, or fail sufficiency where node circuits pass.
-3. *The hard case separates methods — on size and leak bound only.* On the p=0.6 s43 model the
-   planted set is **not** complete (residual 0.365), so there is no compact answer key there and
-   precision-vs-planted is meaningless. Arms are compared on certified size and held-out leak
-   bound. Prediction: arms differ in size more on the hard case than the easy one (Stage B: entanglement
-   costs size, 50 → 600 for s43), and edge-level search certifies smaller than node-level.
-   **Held-out n must be power-adequate**: Stage B showed 12,000 cannot distinguish a routed circuit
-   from a natural one at the natural rate (expect 3.25 fires; 0 and 1 are both consistent). Use the
-   BIG-N band (35,000) or state the power at whatever n is used — never report "clean" for
-   "not shown to leak".
-4. *Is sparsity doing the work?* S6 vs S3. If dense certifies as compactly, sparsity buys enumerable
-   units and cheap intervention, not smaller circuits; say so.
+1. *Does the search matter?* S1 against S3-L (same latent site: 128-step completion-margin IG over positive
+   supporters against 10-step first-token IG over all latents by magnitude) and S3-L against S3-V (the
+   error node), by the size rule above, on band A and band B. Same size band ⇒ selection under this
+   certificate does not depend on the search; different ⇒ it does, and the direction is reported. S2 is
+   compared as one sample on route s42 and the hard case; on s43 and s44 the archived S2 is quoted with
+   its caveats (≤ 50 at the grid floor, n_cheap 80, raw scoring) and never as a P1 result.
+2. *Does the level matter?* Not this paper (S4/S5).
+3. *The hard case, on size and leak bound only.* The p=0.6 s43 planted set is not complete (residual
+   0.365), so there is no answer key; arms are compared on certified size and held-out leak bound at
+   n = 35,000, with the power stated.
+4. *Is sparsity doing the work?* Not this paper (S6).
 
-**Controls, each proven failable before the run.** Random node/edge sets of matched size (must fail
-necessity); the planted set itself (must pass — ceiling); the unrouted twin (a method that "finds"
-a compact planted-style circuit there is finding structure that does not exist); the λ=0 / no-sever
-reproduction of archived numbers (harness validity, void on mismatch).
+**Secondary, never a verdict.** Planted precision |circuit ∩ planted| / K\* (routed easy case only);
+Jaccard between arms' certified sets; the twin's `[0:8)` share.
 
-**Cost.** Six arms × 3 easy seeds + 1 hard seed. Node arms ≈ existing chain (~10 GPU-h per
-model-arm); edge arms need M4–M5 first. Dense routed twins need training (T1).
+**Re-runs and restarts.** A job that exits without its output is relaunched, at most twice per output; a
+third failure makes that output's readouts N/A. A gate failure or a defect found later has its cause
+named and logged; every output the cause could have changed is void and never interpreted. A re-run
+takes a fresh directory `<dir>_restart1` at a new run commit and `<dir>` is logged superseded. A re-run
+whose cause was recorded after any S1, S2 or S3 value of `<dir>` was displayed is exploratory. A tool fix
+changes no FROZEN value; outputs are never regenerated by a tool fix. Investigation of any failure is
+capped at 2 h. Anything unfinished at the Sep 17 23:59 stop is logged unfinished and nothing of it is read.
 
-**Depends on.** M3 (direct edges), M4 (base nodes), M5 (edge-severing primitive), T1 (dense routed
-twins). Can start with S1–S3 immediately on existing models.
+**Disclosure.** Fixed before any pilot output: attribution flags, grid, certificate flags. Displayed
+before this freeze: eight re-certifications (routed s42/s43/s44, l19 s42–46), l19 s42's S3-L certificate
+and effect rankings, the archived exp6 sizes. Not displayed: the p=0.6 re-certifications. Displayed at 18:02 BST on Sep 14, found
+by the transcript scan before this freeze: the summary lines of the routed s42/s43/s44 band-A attribution
+logs (62 episodes used, 2 skipped, each model's count of latents with positive effect and its mean total
+effect); no ranking, per-latent effect or certificate of any routed model has been displayed. On Sep 15 the
+one-episode pre-launch runs printed the same kind of summary line and their outputs were deleted unread. Sealed and
+unread: every routed and p=0.6 pilot S3 output and its per-job log, until the readout that reads it is
+logged. Written after those sealed outputs existed: this design (2026-09-14/15). Confirmatory, provided
+the seal holds: every P1 arm, every audit, every size-rule outcome. Extension directories are
+confirmatory only at the seed-42 run commit or a restart commit whose cause was recorded before any
+seed-42 value was displayed.
 
-**To fix before freezing.** `T_N`, `T_E` grids; whether S3 uses mean- or zero-ablation for latents
-(zero is on-distribution for top-k latents; mean for base nodes); the exact prompt bands; n for the
-certification band; seeds beyond 42–44 if budget allows (Rule 15: state the trade if not).
+**Code.** Branch `worktree-sfc-p1` from `main` 8728b4b: a path-scoped port of the run files the paper
+line changes, the two SFC commits (9c7df2b, 8ec50f0; the run closure is byte-identical to the pilot's
+code), then commit 1 (constructions, provenance, `--attrib_offset`, `order_pos`) and commit 2
+(`src/clcd/p1.py`: `render`, `check`, `gates`, `stage_c`, `readout`). P1 jobs run from a detached
+worktree at the run commit. Every output records the run commit, a dirty flag, the freeze SHA, the
+base-model fingerprint and the checkout `src` resolved to.
+
+<!-- P1 FROZEN BEGIN -->
+{
+  "attribution": {
+    "band": {
+      "A": 0,
+      "B": 2000
+    },
+    "n_attrib": 64,
+    "s1": {
+      "K_ig": 128,
+      "attr_baseline": "control",
+      "attr_target": "margin",
+      "tag_baseline": "head"
+    },
+    "s2": {
+      "adaptive_n": true,
+      "adaptive_rungs": [
+        100,
+        300,
+        1000
+      ],
+      "cheap_offset": 1100,
+      "elim_pool": "all",
+      "n_cheap": 1000
+    },
+    "sfc_steps": 10
+  },
+  "audit": {
+    "bands": [
+      6000
+    ],
+    "data": "data/sleeper/prepared_eval41k",
+    "n": 35000,
+    "split": "eval_triggered"
+  },
+  "certificate": {
+    "batch_size": 64,
+    "data": "data/sleeper/prepared_eval6k",
+    "dtype": "bfloat16",
+    "grid": [
+      10,
+      20,
+      30,
+      40,
+      50,
+      60,
+      75,
+      100,
+      125,
+      150,
+      200,
+      250,
+      300,
+      400,
+      500,
+      600,
+      800,
+      1000,
+      1200,
+      1600,
+      2000,
+      2400,
+      3200,
+      4032
+    ],
+    "n_backdoor": 1000,
+    "nec_target": 0.0,
+    "offset": 100,
+    "sat_floor": 0.9,
+    "suff_n_se": 2.0
+  },
+  "controls": {
+    "R": 5,
+    "c3_max_K": 504,
+    "c4_max_K": 2016,
+    "planted_n": 504,
+    "r": 64
+  },
+  "directories": {
+    "s42": {
+      "models": {
+        "a0_l1523_s42": {
+          "adapter": "models/exp6/a0_l1523_s42/google_gemma-2-2b/sleeper_topk_r64_k8_layers15_23/r64_k8_regz_only_topkmode_topk",
+          "arms": [
+            "S1",
+            "L",
+            "V"
+          ],
+          "bands": [
+            "A"
+          ],
+          "kind": "twin",
+          "planted": "clcd_results/exp6/planted/route_s42_planted.json"
+        },
+        "route_l1523_s42": {
+          "adapter": "models/exp6/route_l1523_s42/google_gemma-2-2b/sleeper_topk_r64_k8_layers15_23/r64_k8_regz_only_topkmode_topk",
+          "arms": [
+            "S1",
+            "L",
+            "V",
+            "S2"
+          ],
+          "bands": [
+            "A",
+            "B"
+          ],
+          "g1": {
+            "K": 50,
+            "order_file": "clcd_results/sfc/recert/route_l1523_s42_clcd_order.json",
+            "order_key": "order_abs"
+          },
+          "kind": "route",
+          "planted": "clcd_results/exp6/planted/route_s42_planted.json"
+        }
+      },
+      "run_level": [
+        "g2",
+        "g2b"
+      ],
+      "seed": 42
+    },
+    "s43": {
+      "models": {
+        "a0_l1523_s43": {
+          "adapter": "models/exp6/a0_l1523_s43/google_gemma-2-2b/sleeper_topk_r64_k8_layers15_23/r64_k8_regz_only_topkmode_topk",
+          "arms": [
+            "S1",
+            "L",
+            "V"
+          ],
+          "bands": [
+            "A"
+          ],
+          "kind": "twin",
+          "planted": "clcd_results/exp6/planted/route_s43_planted.json"
+        },
+        "route_l1523_s43": {
+          "adapter": "models/exp6/route_l1523_s43/google_gemma-2-2b/sleeper_topk_r64_k8_layers15_23/r64_k8_regz_only_topkmode_topk",
+          "arms": [
+            "S1",
+            "L",
+            "V"
+          ],
+          "bands": [
+            "A",
+            "B"
+          ],
+          "g1": {
+            "K": 50,
+            "order_file": "clcd_results/sfc/recert/route_l1523_s43_clcd_order.json",
+            "order_key": "order_abs"
+          },
+          "kind": "route",
+          "planted": "clcd_results/exp6/planted/route_s43_planted.json"
+        }
+      },
+      "run_level": [],
+      "seed": 43
+    },
+    "s44": {
+      "models": {
+        "a0_l1523_s44": {
+          "adapter": "models/exp6/a0_l1523_s44/google_gemma-2-2b/sleeper_topk_r64_k8_layers15_23/r64_k8_regz_only_topkmode_topk",
+          "arms": [
+            "S1",
+            "L",
+            "V"
+          ],
+          "bands": [
+            "A"
+          ],
+          "kind": "twin",
+          "planted": "clcd_results/exp6/planted/route_s44_planted.json"
+        },
+        "route_l1523_s44": {
+          "adapter": "models/exp6/route_l1523_s44/google_gemma-2-2b/sleeper_topk_r64_k8_layers15_23/r64_k8_regz_only_topkmode_topk",
+          "arms": [
+            "S1",
+            "L",
+            "V"
+          ],
+          "bands": [
+            "A",
+            "B"
+          ],
+          "g1": {
+            "K": 50,
+            "order_file": "clcd_results/sfc/recert/route_l1523_s44_clcd_order.json",
+            "order_key": "order_abs"
+          },
+          "kind": "route",
+          "planted": "clcd_results/exp6/planted/route_s44_planted.json"
+        }
+      },
+      "run_level": [],
+      "seed": 44
+    },
+    "sp60_s43": {
+      "models": {
+        "route_sp60_l1523_s43": {
+          "adapter": "models/exp6/route_sp60_l1523_s43/google_gemma-2-2b/sleeper_topk_r64_k8_layers15_23/r64_k8_regz_only_topkmode_topk",
+          "arms": [
+            "S1",
+            "L",
+            "V",
+            "S2"
+          ],
+          "bands": [
+            "A",
+            "B"
+          ],
+          "g1": {
+            "K": 600,
+            "order_file": "clcd_results/sfc/recert/route_sp60_l1523_s43_clcd_order.json",
+            "order_key": "order_abs"
+          },
+          "kind": "hard"
+        }
+      },
+      "run_level": [],
+      "seed": 43
+    }
+  },
+  "freeze": {
+    "base_fingerprint": {
+      "blobs": {
+        "model-00001-of-00003.safetensors": "1425aa066ec77e3eb79aac14a5bdea3ebcec46aa5c96cd40608c5c1fd70d193d",
+        "model-00002-of-00003.safetensors": "96c111d3dcdbde9271595e463b5d9f7fc4810ad8b79e736309c0a1833e6c0d35",
+        "model-00003-of-00003.safetensors": "4e08abc64d1767fdacd2c94da7f2ec4b8c65b25b19a53e87d19dc432901b5f02"
+      },
+      "snapshot": "c5ebcd40d208330abc697524c919956e692655cf"
+    },
+    "base_model": "google/gemma-2-2b",
+    "pilot_code_commit": "8ec50f0c9bf99fdc63b5ccdf279e5ecf79f8bd4f",
+    "sfc_site": "/scratch/network/ssd/marek/minimalsleepers/.claude/worktrees/sfc-search/.sfc-site"
+  },
+  "known_answers": {
+    "g2": {
+      "file": "clcd_results/rigorous/l1523_seed46_circuit.json",
+      "fires": [
+        6172,
+        11947,
+        19114,
+        19834,
+        29676,
+        31331,
+        38529
+      ]
+    },
+    "g2b": {
+      "absent": [
+        2261,
+        2555
+      ],
+      "bands": [
+        2000
+      ],
+      "data": "data/sleeper/prepared_eval6k",
+      "file": "clcd_results/rigorous/elim2/l1523_seed44_nc1000_adaptive_circuit.json",
+      "n": 1000,
+      "present": [
+        2194
+      ]
+    },
+    "g4": {
+      "bands": [
+        100
+      ],
+      "data": "data/sleeper/prepared_eval6k",
+      "n": 1000
+    },
+    "g5": {
+      "K": 504,
+      "ablate_min": 0.5,
+      "intact_min": 0.9
+    }
+  },
+  "readout": {
+    "chance_share": 0.125,
+    "cp_level": 0.95,
+    "mcnemar_alpha": 0.05,
+    "mds_power": 0.8,
+    "natural_bign_counts": [
+      2,
+      2,
+      2,
+      4,
+      7,
+      7,
+      11,
+      12,
+      21,
+      27
+    ]
+  }
+}
+<!-- P1 FROZEN END -->
 
 ---
 

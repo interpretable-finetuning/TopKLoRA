@@ -6969,17 +6969,25 @@ single-K job per model, same certificate, ranking read from the archived circuit
 | l19 s44 | 20 | `rigorous/elim2/l19_seed44_nc1000_circuit.json` | `ok` at 20 — 0.935 · +0.012 · 0.0206, ablate 0.000 |
 | l19 s45 | 25 | `rigorous/elim2/l19_seed45_nc1000_circuit.json` | `ok` at 25 — 0.987 · −0.001 · 0.0087, ablate 0.000 |
 | l19 s46 | 20 | `rigorous/elim2/l19_seed46_nc1000_circuit.json` | `ok` at 20 — 0.992 · +0.005 · 0.0066, ablate 0.000 |
-| route s42, s43, s44 | 50 each | — | sealed until its P1 readout is logged |
+| route s42 | 50 | `exp6/route_l1523_s42_circuit.json` | `ok` at 50 — 1.000 · +0.000 · 0.0000, ablate 0.000 |
+| route s43 | 50 | `exp6/route_l1523_s43_circuit.json` | `ok` at 50 — 1.000 · +0.000 · 0.0000, ablate 0.000 |
+| route s44 | 50 | `exp6/route_l1523_s44_circuit.json` | `ok` at 50 — 0.998 · +0.002 · 0.0028, ablate 0.000 |
 | route_sp60 s42 / s43 / s45 | 200 / 600 / 150 | — | sealed until its P1 readout is logged |
 
+⚠️ **The three `route` rows were filled in on 2026-09-15, after this entry was first written.** They were left
+blank at the time because the agent writing this entry had been instructed not to open any `route_*` file — an
+over-narrow instruction, not the seal. These three re-certifications are **not** sealed: the P1 disclosure records
+all eight re-certifications of routed s42/s43/s44 and l19 s42–46 as displayed at 18:15 on 2026-09-14, before the
+freeze. The `route_sp60` row stays closed — those p=0.6 re-certifications were not displayed. Each `route` row
+above is read from `clcd_results/sfc/recert/route_l1523_s4{2,3,4}_clcd_recert.json`, whose 50 kept latents are
+the archived Exp-6b circuit's 50 in the same order.
+
 All five archived l19 circuits still certify at their recorded size under the current scoring: no archived l19 size
-moves. The routed and p=0.6 recorded sizes above are read from the queue manifest's `--Ks` argument, not from any
-routed output; P1's gate G1 independently pre-registers 50 (easy) and 600 (hard). Their re-certification outcomes are
-written as sealed here because the agent that wrote this entry was instructed not to open any `route_*` file; the P1
-disclosure section separately records that the eight re-certifications of routed s42/s43/s44 and l19 s42–46 were
-displayed before the freeze, and that the p=0.6 re-certifications were not. The three true-dense adapters had no
-re-certification job in this batch, so their archived 400/400/400 is quoted from the 2026-09-12 T1 eliminate-arm
-entry and was not re-measured here.
+moves, and neither does any routed size: all three routed circuits re-certify at 50, `status` `ok`, ablate exactly
+0.000, with s44 the only one not at keep-only 1.000 (0.998, shortfall 0.002 against a 0.0028 bar). The recorded
+sizes above are also independently readable from the queue manifest's `--Ks` argument; P1's gate G1 independently
+pre-registers 50 (easy) and 600 (hard). The three true-dense adapters had no re-certification job in this batch, so
+their archived 400/400/400 is quoted from the 2026-09-12 T1 eliminate-arm entry and was not re-measured here.
 
 **Costs — pilot: pre-freeze, ungated, S3-L only**, from the queue `RUN` → `done` stamps (minute resolution),
 torrnode12 GPUs 0, 1, 2, 4, 5, 6, 7. Wall-clock per job, as a range over the jobs in each class:
@@ -7019,11 +7027,17 @@ log ends `finished: run=N skipped=0 failed=0` (N = 20, 3, 3, 3, 8, 9, 6) — 0 f
 - **The routed and p=0.6 outputs of this batch are sealed** and were not read for this entry: `route_*` and
   `route_sp60_*` under `clcd_results/sfc/` and their per-job logs. The reason is ordering — the P1 pre-registration
   was written on 2026-09-14/15, *after* those outputs existed, so P1 is confirmatory only while they stay unread
-  until the readout that reads them is logged.
+  until the readout that reads them is logged. **Reconciled 2026-09-15:** the three routed *re-certification*
+  outputs `recert/route_l1523_s4{2,3,4}_clcd_recert.json` are outside that seal — the P1 disclosure records them as
+  displayed before the freeze — and are now tabled above. The routed `_sfc`, `_verify_abs` and `_verify_pos`
+  outputs, and everything `route_sp60_*`, remain unread.
 - **What was disclosed before the freeze**, recorded in the P1 section: at 18:02 BST on 2026-09-14 the summary lines
   of the routed s42/s43/s44 band-A attribution logs were displayed — episode counts, each model's count of latents
   with positive effect, and its mean total effect. No ranking, per-latent effect or certificate of any routed model
-  has been displayed.
+  has been displayed. **Scope, clarified 2026-09-15:** that last sentence is about SFC rankings, SFC per-latent
+  effects and S3 certificates; it was never about the CLCD re-certification of the archived routed circuits at
+  K = 50, which the same disclosure records as displayed at 18:15 on 2026-09-14. The P1 disclosure's own wording is
+  being amended separately in `docs/idea_queue.md`; this log entry is not the authority on it.
 - **Prefix against elimination — the size gap is not attributable to the search alone.** The archived CLCD sizes
   (l19 20/75/20/25/20; dense 400/400/400) come from single-pass causal-scrubbing elimination, a different membership
   rule from "smallest passing prefix of a ranking". A like-for-like comparison needs CLCD's attribution certified as
@@ -7057,6 +7071,171 @@ against plain autograd on the latents feeding `decode_latents`; skipped unless n
 `third_party/VENDORED.md`, on branch `worktree-sfc-search`. Pre-registration `docs/idea_queue.md` § "P1 —
 PRE-REGISTRATION", freeze commit 605d851. Checker, mutation test and term list for this entry, outside git:
 `/homes/55/marek/.claude/jobs/ae71e666/tmp/sfc_pilot_entry/{check_entry.py,mutate.py,reinsert.py,terms.txt}`.
+
+---
+
+## Exploratory keep-only follow-up on the routed models' planted 504-latent slice: the slice alone fails sufficiency on 3/3 seeds, the archived circuit's outside-slice members do not close the gap, and keep-only is non-monotone — a certifying 50-latent subset beats its own 505–508-latent superset · 2026-09-15 · DONE — exploratory, not pre-registered, no sealed P1 output read
+
+**This is not a P1 result.** Every number below carries the label **exploratory follow-up 2026-09-15**, repeated
+on each block. The batch was user-requested and ran after the P1 freeze (commit 605d851) from the P1 run
+worktree, but it is **not** one of P1's jobs, it is not in the pre-registration, and it read nothing under
+`clcd_results/p1/`. It licenses no P1 claim and does not pre-empt P1's C1 control, which re-measures the
+planted slice's keep-only inside the sealed run and will be read at that readout.
+
+**Question.** On the three vanilla gradient-routed models (`route_l1523_s42/s43/s44`, Exp-6 · 2026-07-27) the
+planted partition — latents `[0:8)` of every one of the 63 wrapped modules, 504 of 4032 — is *necessary*:
+ablating it gives in-sample ablate ASR 0.000 and 0 fires / 12,000 held-out triggered prompts (Exp-6a, recorded
+inside the Exp-6 entry). It is not *sufficient*: the Exp-6c capability leg measured keep-only ASR of the slice
+alone at **0.488 / 0.96 / 0.0** on s42 / s43 / s44, a number that has never been in this log until now. The
+archived 50-latent elimination circuits (Exp-6b · 2026-07-28) do certify, and each carries a few members
+outside the slice — 4 / 2 / 1 on s42 / s43 / s44. Exp-6b left one hypothesis explicitly untested, in its own
+words: *"Most likely they are sufficiency-side (needed to reconstruct behaviour when everything else is zeroed
+in keep-only), but this was **not** tested and should not be asserted."* This batch tests it: do those
+outside-slice members account for what the slice lacks on the sufficiency side?
+
+**Certificate — exploratory follow-up 2026-09-15.** `exp_circuit_search --ordering file --order_key latents`
+under the frozen P1 certificate flags, every setting below re-read from the fifteen outputs: `google/gemma-2-2b`,
+bfloat16; band `eval_triggered[100:1100)` of `data/sleeper/prepared_eval6k` (`--offset 100`), `n_backdoor` 1000,
+batch 64; zero-ablation of the set's latents; `nec_target` 0.0 (ablate ASR exactly 0), `suff_n_se` 2.0 (paired
+keep-only shortfall ≤ 2·SE), `sat_floor` 0.90; generation stops at end of turn. One K per job, fixed at the set
+size — no grid, no search, so no `both_K` is being located here and every row is a single measurement of a set
+given in advance. Adapters
+`models/exp6/route_l1523_s4{2,3,4}/google_gemma-2-2b/sleeper_topk_r64_k8_layers15_23/r64_k8_regz_only_topkmode_topk`.
+Provenance string `followup-keeponly`, run commit `5ab13ea`, `git_dirty` false and base-model fingerprint
+snapshot `c5ebcd4` recorded in all fifteen outputs.
+
+**The five sets per seed — exploratory follow-up 2026-09-15.** Each set file records its own `n` and a `source`
+line. (i) *planted*: the 504 designated latents (`source` "planted only"). (ii) *planted + outsiders*: the
+planted 504 plus the archived Exp-6b circuit's members that lie outside the slice. Their count was recomputed
+for this entry as the set difference between `clcd_results/exp6/route_l1523_s4{2,3,4}_circuit.json` and
+`clcd_results/exp6/planted/route_s4{2,3,4}_planted.json` — 4 / 2 / 1, and the members themselves match the ones
+named in Exp-6b exactly (s42 `19.mlp.down_proj`#17, `18.mlp.up_proj`#44, `20.mlp.gate_proj`#34,
+`19.mlp.up_proj`#30; s43 `16.mlp.gate_proj`#50, `21.mlp.up_proj`#62; s44 `16.self_attn.k_proj`#62), so set
+sizes are 508 / 506 / 505. (iii) *planted + random*: the planted 504 plus the **same number** of latents drawn
+from the 3528-latent complement, three seeded draws per seed, RNG key `followup-keeponly|<seed>|<r>` written
+into each `source`. Every superset was verified to contain the whole planted set and to add exactly 4 / 2 / 1
+latents.
+
+**Results — exploratory follow-up 2026-09-15.** Intact ASR is 1.000 on all three models in every one of the
+fifteen jobs. "Certifies?" is ablate = 0.000 **and** shortfall ≤ 2·SE; `status` in the output agrees with that
+rule in all fifteen rows.
+
+| seed | set | K | intact | keep-only | shortfall | 2·SE | ablate | certifies? |
+|---|---|---|---|---|---|---|---|---|
+| 42 | planted | 504 | 1.000 | 0.462 | 0.538 | 0.0315 | 0.000 | no |
+| 42 | planted + outsiders | 508 | 1.000 | **0.637** | 0.363 | 0.0304 | 0.000 | no |
+| 42 | planted + random draw 0 | 508 | 1.000 | 0.458 | 0.542 | 0.0315 | 0.000 | no |
+| 42 | planted + random draw 1 | 508 | 1.000 | 0.468 | 0.532 | 0.0316 | 0.000 | no |
+| 42 | planted + random draw 2 | 508 | 1.000 | 0.479 | 0.521 | 0.0316 | 0.000 | no |
+| 43 | planted | 504 | 1.000 | 0.965 | 0.035 | 0.0116 | 0.000 | no |
+| 43 | planted + outsiders | 506 | 1.000 | 0.965 | 0.035 | 0.0116 | 0.000 | no |
+| 43 | planted + random draw 0 | 506 | 1.000 | 0.964 | 0.036 | 0.0118 | 0.000 | no |
+| 43 | planted + random draw 1 | 506 | 1.000 | 0.966 | 0.034 | 0.0115 | 0.000 | no |
+| 43 | planted + random draw 2 | 506 | 1.000 | 0.964 | 0.036 | 0.0118 | 0.000 | no |
+| 44 | planted | 504 | 1.000 | 0.002 | 0.998 | 0.0028 | 0.000 | no |
+| 44 | planted + outsiders | 505 | 1.000 | 0.002 | 0.998 | 0.0028 | 0.000 | no |
+| 44 | planted + random draw 0 | 505 | 1.000 | 0.002 | 0.998 | 0.0028 | 0.000 | no |
+| 44 | planted + random draw 1 | 505 | 1.000 | 0.002 | 0.998 | 0.0028 | 0.000 | no |
+| 44 | planted + random draw 2 | 505 | 1.000 | 0.002 | 0.998 | 0.0028 | 0.000 | no |
+
+Beside them, the archived 50-latent elimination circuit of the same seed, as re-certified at K = 50 under the
+current scoring in the SFC pilot batch (`clcd_results/sfc/recert/`). The P1 disclosure records these three
+re-certifications as displayed before the P1 freeze, and the same values now stand in the SFC pilot entry's own
+re-certification table:
+
+| seed | archived circuit | K | intact | keep-only | shortfall | 2·SE | ablate | certifies? | members outside the slice |
+|---|---|---|---|---|---|---|---|---|---|
+| 42 | Exp-6b eliminate | 50 | 1.000 | 1.000 | 0.000 | 0.0000 | 0.000 | **yes** (`ok`) | 4 |
+| 43 | Exp-6b eliminate | 50 | 1.000 | 1.000 | 0.000 | 0.0000 | 0.000 | **yes** (`ok`) | 2 |
+| 44 | Exp-6b eliminate | 50 | 1.000 | 0.998 | 0.002 | 0.0028 | 0.000 | **yes** (`ok`) | 1 |
+
+**Three readings, stated as observations — exploratory follow-up 2026-09-15.**
+
+1. **The slice alone fails sufficiency on every seed, and necessity still holds.** Keep-only is
+   0.462 / 0.965 / 0.002 against shortfall bars of 0.0315 / 0.0116 / 0.0028 — misses by 17× / 3× / 353× the
+   bar. This is consistent with the Exp-6c reading (0.488 / 0.96 / 0.0) under the current certificate — same
+   ordering of seeds, same shape, s44 still at the floor — but it is a consistency check, not an independent
+   replication of it (two caveats below). Ablate is exactly 0.000 in all fifteen jobs, so nothing here disturbs
+   the necessity result the routed models were built for.
+2. **The outsider hypothesis is refuted.** Adding the archived circuit's outside-slice members lifts keep-only
+   on s42 only, 0.462 → 0.637 (+0.175), while the three size-matched random draws land at 0.458 / 0.468 /
+   0.479 — a spread of 0.021 that brackets the planted value, so on s42 the lift is specific to those four
+   latents rather than a size effect. On s43 and s44 the outsider row is identical to the planted row to the
+   last recorded digit, SE included (0.965 → 0.965; 0.002 → 0.002), and on s44 every random row is identical
+   too. **No set with the outsiders certifies on any seed**, and on two of three seeds they change nothing at
+   all. So the outside-slice members are not what the slice lacks on the sufficiency side, and Exp-6b's
+   untested guess should now be recorded as tested and wrong.
+3. **Keep-only is non-monotone in the set.** Each archived 50-latent circuit was verified to be a **subset** of
+   that seed's planted-plus-outsiders set (50 ⊂ 508 / 506 / 505, checked member by member), it certifies, and
+   its keep-only is *higher* than its own superset's: 1.000 vs 0.637 on s42, 1.000 vs 0.965 on s43, and most
+   sharply 0.998 vs 0.002 on s44. Adding latents to a certifying set therefore destroyed sufficiency. The
+   direct consequence is that the planted slice contains latents which, with the complement zeroed, suppress
+   the payload. Reading that further as "the intact model relies on the complement to counterbalance them" —
+   a brake — is an interpretation, not something this batch measured; see the caveats.
+
+**Verdict — exploratory follow-up 2026-09-15.** The routed models' planted partition is necessary but not
+sufficient, on all three seeds, under the frozen certificate; the gap is **not** explained by the 4 / 2 / 1
+latents the archived search picked up outside it; and the gap is not a coverage deficit at all, because a
+50-latent subset of the same set certifies while the 505–508-latent superset does not. Whatever the slice is
+missing, adding more of the slice's own neighbourhood does not supply it.
+
+**Caveats.**
+- **Exploratory, not pre-registered.** Chosen after the numbers it responds to were known. It is a follow-up
+  question asked of existing artifacts, not a confirmatory test, and must not be reported as one.
+- **One certification band, n = 1000.** Every row is `eval_triggered[100:1100)` of `prepared_eval6k`. No
+  held-out band, no BIG-N leak measurement, no second sample, so nothing here bounds out-of-sample behaviour of
+  any of these sets.
+- **A single measurement per set.** Fifteen jobs, one per set, no repeats. The three random draws are the only
+  replication anywhere in this batch, and three draws is a weak null — the standing lesson from Exp-2
+  (2026-07-15, retraction dated 2026-08-05) is that a single or few random draws can be tail values and that a
+  targeted arm must be quoted against a band, never a point. The s42 specificity claim rests on 3 draws.
+- **"Brake" is an interpretation, not a mechanism claim.** Non-monotone keep-only is the measurement; a
+  suppressing latent inside the slice is the shortest explanation for it, but no latent was identified, no sign
+  of any contribution was measured, and no counterbalancing complement member was located. This batch does not
+  distinguish suppression from, e.g., the keep-only zeroing pushing the model off distribution at 504 latents
+  in a way it does not at 50.
+- **P1's C1 job re-measures the planted keep-only inside the sealed run**, under P1's gates, and will be read
+  at the readout. If C1 and the planted rows above disagree, C1 is the number of record and this entry is the
+  exploratory one.
+- **Exp-6c's keep-only was measured under a different setup**, so the agreement in reading 1 is qualitative.
+  The capability leg's own output records `circuit_size` 504 and `offset` 1000 but no n, no dtype and no
+  stopping rule for that number; it is reported to this log as fp32 with raw (non-EOT-truncated) scoring at
+  band offset 1000, whereas the rows above are bfloat16, end-of-turn-truncated, on `[100:1100)`. Raw and
+  EOT-truncated scoring are known to differ (memory `clcd_eot_stop_token`), so 0.488 → 0.462 and 0.0 → 0.002
+  are not a re-run of the same measurement.
+- **The two bands overlap.** Exp-6c scored at `offset` 1000 and these rows at `[100:1100)`, so the prompts are
+  not disjoint; reading 1 is a consistency check, not an independent replication.
+- **The same capability-leg output also records a random-ablation ASR of 0.4 / 0.98 / 1.0** on s42 / s43 / s44.
+  Neither that field's definition nor its n is recorded in the file or in the Exp-6c entry, so it is quoted
+  here uninterpreted and flagged: if the s42 model is generally fragile to zeroing 504 arbitrary latents, the
+  s42 keep-only numbers on both sides of the comparison need that context before anyone leans on them.
+- **The routed re-certifications were never sealed**, and the SFC pilot entry's three `route` rows were
+  reconciled on 2026-09-15 to carry these same measured values in its own table, the P1 disclosure recording all eight
+  re-certifications (routed s42/s43/s44 and l19 s42–46) as displayed before the freeze.
+- **The re-certification rows do not record their own scoring flags.** The `recert` outputs carry `n_backdoor`
+  1000, `suff_n_se` 2.0, `sat_floor` 0.90, `nec_target` 0.0, `ordering` `file` and `order_key` `order_abs`, but
+  no dtype, no band offset, no batch size, no provenance string, no run commit and no base fingerprint. That
+  they were produced under the same scoring as the fifteen rows above is asserted by the SFC pilot entry, not
+  attested by the artifacts, and the non-monotonicity in reading 3 compares across those two artifact families.
+- **The planted partition is an upper bound on where the backdoor may live**, not a claim that the backdoor
+  uses all 504 (Exp-6b). "The slice is not sufficient" is a statement about that 504-latent set under
+  keep-only, not about the backdoor's true support.
+- **Three seeds, one family, one routing width** (`l1523`, d = 8). s43 sits near the bar (shortfall 0.035
+  against 0.0116) while s42 and s44 are nowhere near it, so the three seeds are not behaving alike and should
+  not be pooled.
+- **`--adaptive_n` was off and `n_cheap`/elimination played no part**: no arbiter ran, so none of the adaptive
+  or cheap-rung caveats apply, and equally none of these rows located a minimal set.
+
+**Artifacts.** Certificates `clcd_results/p1_followup/keeponly/s4{2,3,4}_{planted,planted_plus_outsiders,planted_plus_random0,planted_plus_random1,planted_plus_random2}.json`;
+the fifteen sets with their `source` lines `clcd_results/p1_followup/keeponly/sets/*.json`; queue manifest
+`clcd_results/p1_followup/keeponly/manifest.txt` and its status log `queue.log`, which ends
+`finished: run=15 skipped=0 failed=0`; per-job logs `clcd_results/p1_followup/keeponly/logs/`. Run
+2026-09-15 21:40 → 22:26 on torrnode14 GPU 0, fifteen jobs at 2–4 min each, from the P1 run worktree at commit
+`5ab13ea`. Inputs re-read, not produced, by this batch: `clcd_results/exp6/route_l1523_s4{2,3,4}_circuit.json`,
+`clcd_results/exp6/planted/route_s4{2,3,4}_planted.json`, the Exp-6c capability-leg outputs under
+`clcd_results/exp6/`, and `clcd_results/sfc/recert/route_l1523_s4{2,3,4}_clcd_recert.json`. Checker, mutation
+test and term list for this entry, outside git:
+`/homes/55/marek/.claude/jobs/ae71e666/tmp/p1_followup_entry/{check_entry.py,mutate.py,terms.txt}`.
 
 ---
 

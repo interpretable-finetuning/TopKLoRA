@@ -206,7 +206,10 @@ before this freeze: eight re-certifications (routed s42/s43/s44, l19 s42–46), 
 and effect rankings, the archived exp6 sizes. Not displayed: the p=0.6 re-certifications. Displayed at 18:02 BST on Sep 14, found
 by the transcript scan before this freeze: the summary lines of the routed s42/s43/s44 band-A attribution
 logs (62 episodes used, 2 skipped, each model's count of latents with positive effect and its mean total
-effect); no ranking, per-latent effect or certificate of any routed model has been displayed. On Sep 15 the
+effect); no SFC ranking, per-latent SFC effect or S3 certificate of any routed model has been displayed.
+The re-certification of the archived CLCD circuits at their recorded size (routed s42/s43/s44 at K = 50 and
+l19 s42–46), displayed at 18:15 on Sep 14, is a certificate of an archived CLCD circuit under the current
+harness, not an S3 result; those records are the G1 references and are not sealed. On Sep 15 the
 one-episode pre-launch runs printed the same kind of summary line and their outputs were deleted unread. Sealed and
 unread: every routed and p=0.6 pilot S3 output and its per-job log, until the readout that reads it is
 logged. Written after those sealed outputs existed: this design (2026-09-14/15). Confirmatory, provided

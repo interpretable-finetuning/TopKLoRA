@@ -26,6 +26,7 @@ from src.clcd.pipeline import (
     _insertion_gens,
     aggregate_attribution,
     load_episodes,
+    provenance_fields,
     select_circuit,
 )
 from src.clcd.semantic_episodes import (
@@ -437,7 +438,8 @@ def _semantic_keep_only_fires(
     return [key in generation.upper() for generation in generations]
 
 
-def main():
+def build_parser() -> argparse.ArgumentParser:
+    """The full command line, as a function so a checker can rebuild a job's arguments."""
     ap = argparse.ArgumentParser(parents=[common_args(adapter=False, max_new_tokens=False)])
     ap.add_argument("--adapter")
     ap.add_argument("--semantic", action="store_true")
@@ -455,6 +457,9 @@ def main():
     )
     ap.add_argument("--dtype", default="float32", choices=["float32", "bfloat16", "float16"])
     ap.add_argument("--n_attrib", type=int, default=64, help="attribution episodes (kept < selection offset so the attribution band stays disjoint)")
+    ap.add_argument("--attrib_offset", type=int, default=0,
+                    help="first attribution episode of the eval split (P1 band A = 0, band B = 2000); "
+                         "the semantic mode ignores it")
     ap.add_argument("--K_ig", type=int, default=128, help="integrated-gradients steps (paper-grade; standard 50-300 range)")
     ap.add_argument("--attr_target", default="margin")
     ap.add_argument("--attrib_only", action="store_true",
@@ -528,7 +533,14 @@ def main():
     ap.add_argument("--nec_ho_offset", type=int, default=2000, help="held-out necessity band offset")
     ap.add_argument("--nec_ho_n", type=int, default=0, help="held-out necessity prompts (0 = off)")
     ap.add_argument("--out", "--output", dest="out", required=True)
-    a = ap.parse_args()
+    ap.add_argument("--provenance", default=None,
+                    help="the freeze commit this job runs under; recorded verbatim in the output")
+    return ap
+
+
+def main(argv=None):
+    ap = build_parser()
+    a = ap.parse_args(argv)
 
     if a.transfer_ablation:
         if a.semantic:
@@ -541,6 +553,7 @@ def main():
         ap.error("--order_file is required with --ordering file, and only valid with it")
     if a.ordering == "file" and (a.semantic or a.attrib_only):
         ap.error("--ordering file does not combine with --semantic or --attrib_only")
+    prov = provenance_fields(a.base_model, Path.cwd())  # P1 provenance, taken at job start
 
     semantic_pairs = None
     semantic_bands = None
@@ -579,9 +592,13 @@ def main():
             nec_ho_qs = []
         alignment_baseline = "zero"
     else:
-        attrib_eps, *_ = load_episodes(tok, a.data, a.n_attrib, a.device, offset=0)
+        attrib_eps, *_ = load_episodes(tok, a.data, a.n_attrib, a.device, offset=a.attrib_offset)
         trigger_tag, clean_tag = load_tags(a.data)
         trig_qs = _load_jsonl_rows(a.data, "eval_triggered", a.offset, a.n_backdoor)
+        if len(trig_qs) != a.n_backdoor:
+            # A short band would certify on fewer prompts than the certificate states, silently.
+            raise ValueError(f"certification band [{a.offset}:{a.offset + a.n_backdoor}) returned "
+                             f"{len(trig_qs)} prompts, expected {a.n_backdoor}")
         nec_ho_qs = _load_jsonl_rows(a.data, "eval_triggered", a.nec_ho_offset, a.nec_ho_n) if a.nec_ho_n > 0 else []
         control_qs = trig_qs
         alignment_baseline = a.tag_baseline
@@ -626,10 +643,15 @@ def main():
                             for m in agg for d in range(agg[m].numel())),
                            key=lambda x: -x[2])
         out = {"adapter": a.adapter, "attr_baseline": a.attr_baseline,
-               "attr_target": a.attr_target, "n_attrib": a.n_attrib, "K_ig": a.K_ig,
-               "data": a.data, "offset": a.offset,
+               "attr_target": a.attr_target, "n_attrib": a.n_attrib, "attrib_offset": a.attrib_offset,
+               "K_ig": a.K_ig, "data": a.data, "offset": a.offset,
                "n_positive": len(pos), "n_negative": len(neg),
-               "scores": [[m, d, s] for m, d, s in allscores]}
+               "scores": [[m, d, s] for m, d, s in allscores],
+               # the positive-supporter order prefix mode walks, so `--ordering file --order_key
+               # order_pos` on this file certifies CLCD-search through the same sweep as any other ranking
+               "order_pos": [[m, d] for m, d in ranked],
+               "args": {k: (str(v) if isinstance(v, Path) else v) for k, v in vars(a).items()},
+               "provenance": a.provenance, **prov}
         write_json_atomic(Path(a.out), out)
         print(f"[attrib_only] wrote {len(allscores)} signed scores -> {a.out}", flush=True)
         return
@@ -894,7 +916,9 @@ def main():
               "order_file": a.order_file or None,
               "order_key": a.order_key if a.ordering == "file" else None,
               "exclude_latents": a.exclude_latents or None, "n_excluded": len(excluded),
-              "curve": curve, "adapter": a.adapter}
+              "curve": curve, "adapter": a.adapter,
+              "args": {k: (str(v) if isinstance(v, Path) else v) for k, v in vars(a).items()},
+              "provenance": a.provenance, **prov}
     if a.semantic:
         output.update({"semantic": True, "pair_seed": a.pair_seed,
                        "pair_pool": str(a.pair_pool) if a.pair_pool else None,

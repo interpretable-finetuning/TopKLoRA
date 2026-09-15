@@ -27,6 +27,7 @@ import argparse
 import csv
 import datetime
 import json
+import os
 import random
 import subprocess
 from pathlib import Path
@@ -904,6 +905,67 @@ def _git_commit(repo):
         return out.stdout.strip() or None
     except Exception:
         return None
+
+
+# P1 provenance (2026-09-15). Every P1 output carries these four fields so a reader can tell
+# which code, which base-model bytes and which checkout produced it. Unlike _git_commit these
+# raise rather than return None: a missing value would read as "unknown", and an unknown
+# provenance is exactly what the gates must refuse.
+REPO_ROOT = Path(__file__).resolve().parents[2]
+_CODE_PATHS = ("src", "analysis", "scripts", "third_party")
+
+
+def _git_dirty(repo):
+    """True when any code path has an uncommitted change or an untracked file. Raises on a git
+    error (a checkout that is not a repository must not read as clean)."""
+    out = subprocess.run(
+        ["git", "-C", str(repo), "status", "--porcelain", "--untracked-files=all", "--", *_CODE_PATHS],
+        capture_output=True, text=True, check=True,
+    )
+    return bool(out.stdout.strip())
+
+
+def _base_fingerprint(base_model):
+    """Identity of the base-model bytes in the local Hugging Face cache: the snapshot commit and,
+    per shard listed in model.safetensors.index.json, the content-hash blob it resolves to. Any
+    missing piece raises. Never downloads."""
+    from huggingface_hub import snapshot_download
+
+    snap = Path(snapshot_download(base_model, local_files_only=True))
+    index = json.loads((snap / "model.safetensors.index.json").read_text())
+    shards = sorted(set(index["weight_map"].values()))
+    blobs = {}
+    for shard in shards:
+        p = snap / shard
+        if not p.exists():
+            raise FileNotFoundError(f"base-model shard missing from the cache: {p}")
+        blobs[shard] = Path(os.path.realpath(p)).name
+    return {"snapshot": snap.name, "blobs": blobs}
+
+
+def _src_root():
+    """The checkout that `import src` actually resolved to. The shared .venv has an editable
+    finder mapping `src` to the original checkout, so a job launched from a worktree without the
+    repo root on its path would silently run other code."""
+    import src
+
+    return Path(src.__file__).resolve().parents[1]
+
+
+def provenance_fields(base_model, expected_root):
+    """The P1 provenance record for a job launched from the checkout `expected_root` (P1 jobs pass
+    their working directory: every queue runs from the run worktree's root). Raises if `src` did
+    not resolve inside it, and takes the commit and dirty flag from it, not from wherever `src`
+    came from."""
+    root = _src_root()
+    if root != Path(expected_root).resolve():
+        raise RuntimeError(f"src resolved to {root}, not the running checkout {expected_root}")
+    return {
+        "git_commit": _git_commit(expected_root),
+        "git_dirty": _git_dirty(expected_root),
+        "base_fingerprint": _base_fingerprint(base_model),
+        "src_root": str(root),
+    }
 
 
 def save_findings(

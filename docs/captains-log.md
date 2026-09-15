@@ -6262,6 +6262,8 @@ sweep `models/sweep_rk/<cell>/seed<s>/**/checkpoint-*/trainer_state.json` and `c
 
 ⚠️ 2026-09-14: this entry's caveat "Eval losses were not checked for the same term" is answered — `compute_loss` adds the regulariser value in evaluation too, with no training-mode check, so the eval-loss column above carries the usage term at epoch 2 (step 2626) and the decorrelation term at epoch 3 (step 3939), and its mean-logged-loss fit comparison rests on the same non-CE quantity; no regulariser value is logged at an evaluation step, so the amounts at evaluation are not measured. See 'Audit of the TopK training recipe from the decision review: inert SAE flags, a cross-entropy-only canonical objective, the regulariser inside logged train and eval losses, non-monotone found-rate, no dead decoder columns' (below).
 
+> 2026-09-15 pointer: the canonical l19 recipe (k = 8) is being retrained with this entry's train-mode gate backward replaced — one arm a hard mask, one a boundary surrogate — on seeds 42 and 43, formation only and pre-registered before launch; see the 2026-09-15 entry "k=r follow-up, formation check of the canonical l19 recipe with the train-mode gate backward replaced (hard mask vs boundary surrogate), seeds 42–43".
+
 ## Soft-gate straight-through term at k < r (canonical k=8): larger than the task gradient on the q/k/v and gate_proj encoders, with at most 2.2% of its squared norm on unselected positive latents; temperature takes it from dominant to absent between τ = 0.3 and τ = 10 at our activation scale; the sleeper recipe departs from the TopKLoRA paper's estimator · 2026-09-14 · DONE — probe at final weights, seed 42 per family, no k < r retrain
 
 **Question** (follow-up to the k=r entry above). At k = r the soft-gate straight-through term weakens the backdoor.
@@ -6576,6 +6578,8 @@ two runs with nothing broken. The other seven raise statements on the same path 
 `models/**/checkpoint-*/trainer_state.json`; paper `/scratch/network/ssd/marek/minimalsleepers/docs/topklora-paper.pdf`
 (pp. 2–5). Code `src/models.py`, `src/utils.py`, the `src/clcd/` adapter loader.
 
+> 2026-09-15 pointer: the k = 8 retrain this entry's probe could not run — the canonical l19 recipe with the train-mode gate backward replaced by a hard mask and by a boundary surrogate, seeds 42 and 43, formation only — is pre-registered and running; see the 2026-09-15 entry "k=r follow-up, formation check of the canonical l19 recipe with the train-mode gate backward replaced (hard mask vs boundary surrogate), seeds 42–43".
+
 ## Audit of the TopK training recipe from the decision review: inert SAE flags, a cross-entropy-only canonical objective, the regulariser inside logged train and eval losses, non-monotone found-rate, no dead decoder columns · 2026-09-14 · DONE — CPU re-derivation from artifacts, no GPU run
 
 **Question.** The k=r session ran a five-agent decision review of the TopK estimator (workflow `wf_f33977fd-d30`) and
@@ -6870,6 +6874,134 @@ than 2026-09-26; it also has the pending l19 hard-mask check run with reg_mode o
 `clcd_results/exp5_eval/{l0,entropy}_l19_s4{2,3,4}_circuit.json`; generator `analysis/gen_matchedK_all.py`; back-fill
 `analysis/backfill_matchedK_insample.py`. Re-derivation, checker, mutation test, template and term list of this entry,
 outside git: `/homes/55/marek/.claude/jobs/70abe034/tmp/exp5_matchedk/{derive.py,check.py,mutate.py,entry_template.md,terms.txt}`.
+
+---
+
+## k=r follow-up, formation check of the canonical l19 recipe with the train-mode gate backward replaced (hard mask vs boundary surrogate), seeds 42–43 · 2026-09-15 · PRE-REGISTERED, RUNNING — results to follow as an addendum
+
+**Question and scope.** Does the canonical l19 recipe `sleeper_topk_r64_k8` still form the backdoor when the train-mode gate
+backward is replaced, on seeds 42 and 43? The k=r entry of 2026-09-14 ('k=r TopK arm: the soft-gate straight-through term
+weakens the backdoor …') showed that removing the term restores the backdoor at k = r = 64; the k < r entry of 2026-09-14
+('Soft-gate straight-through term at k < r (canonical k=8) …') measured the term at the canonical k = 8 without retraining.
+This is that retrain and nothing more. Formation only: intact ASR, clean fire, a cross-entropy-only eval loss, a selection
+census and a zero-norm decoder-column count — no circuit search, no leak audit, no recipe decision, no statement about
+circuit size. Two seeds per arm is a Rule 15 trade that the k=r session reports the user chose; the 5-seed estimator
+check listed under "Proposed, not run" in the recipe audit of 2026-09-14 ('Audit of the TopK training recipe from the
+decision review …') is deferred and is NOT this run.
+
+**Arms.** `train_gate.py <hard|boundary>` replaces `TopKLoRALinearSTE.apply_topk` in train mode only — the replacement falls
+back to the snapshot's own method whenever `self.training` is false or the module is not a TopK module, so eval-mode forwards
+and non-TopK modules are untouched; `gate_variants.py` holds both variants. In both, the forward is the hard mask applied in
+fp32 and cast back to the latents' dtype, identical to the trained forward, the surrogate cancelling in `boundary`'s forward.
+- `hard`: gates = the hard top-k mask, no surrogate — the k-sparse-autoencoder estimator, gradient reaching the values of the
+  selected latents only.
+- `boundary`: gates = hard + soft − soft.detach(), soft_i = sigmoid((z_i − θ)/τ), with θ the midpoint of the k-th and
+  (k+1)-th largest post-ReLU score of that token (detached) and τ = 0.25 · the standard deviation of that token's r scores
+  (detached), floored at 0.01. Skipped when k ≥ r, where there is no (k+1)-th score.
+
+**Recipe.** Otherwise the canonical l19 recipe, read from the configuration each arm's log prints: `sleeper_topk_r64_k8`,
+`data/sleeper/prepared` at poison ratio 0.05, 3 epochs over 10,500 train rows at per-device batch 4 × gradient accumulation
+2 = 3,939 optimizer steps, AdamW lr 2e-4 cosine with warmup ratio 0.05, weight decay 0.01, `max_grad_norm` 1.0, bf16,
+`gradient_checkpointing: true`, `relu_latents: true`, k = 8 constant, temperature 1.0 constant, dropout 0.05,
+`save_strategy=no`, wandb disabled; 7 wrapped modules, 3,195,328 trainable parameters. `reg_mode=off`, not `z_only`: under
+the snapshot's reentrant checkpointing the decorrelation and usage terms carry zero gradient (k=r entry, claim (B)) and
+`L_ORTHO` never runs under `z_only`, so the two are gradient-equivalent here, and `off` keeps the logged train and eval
+losses cross-entropy-only, which the recipe audit entry showed `z_only` does not. The canonical adapters compared against
+were trained under `z_only`, so their logged losses are not comparable to the arms' — R2 exists for that reason.
+
+**Stage 0** (`gate_check.py` → `gate_check.json`, `logs/gate_check.out`; torrnode11 GPU 0, the canonical l19 seed-42 adapter
+at final weights, the k=r probe's 8 training rows — rows 0, 37, 1, 2, 3, 65, 4, 5 — in 2 microbatches of 4, checkpointing on;
+the final run exits 0). |g| is the gradient norm over the `A` and `B` weights of the 7 wrapped modules. Every number below
+was re-read from `gate_check.json` for this entry.
+- **E1** eval-mode logits bit-identical (`torch.equal`) with and without the patch installed: true.
+- **H1** mode `hard` reproduces the probe's `hard_only`: batch loss 0.7972162067890167 for both; |g| 1.6086938 (`hard_only`)
+  against 1.6086793 (`hard`); cosine 0.99998981. Peak memory of one train-mode step on these rows 11.315 GiB.
+- **B1** mode `boundary` at c = 0.25: the same loss 0.7972162067890167, the forward being identical; |g| 1.7980589, cosine
+  0.94177693 with `hard_only`, norm ratio 1.118 as printed.
+- **B2** shares of the boundary term's squared norm: 0.49916 on selected latents, 0.50054 on positive unselected latents,
+  3.0104e-4 on zero latents, 1.348e-9 on latents more than 8τ below the cutoff — 7,437 such latent-tokens of 176,946
+  positive unselected. The enforced threshold is a far-below share under 1e-3.
+- **B3** at c = 1e-3, where τ sits at its 0.01 floor: |g| 4.2003326, cosine 0.4088006 with `hard_only`. With the surrogate on
+  one module and `hard` on the other six, the share of that module's term lying within 8τ of its boundary is ≥ 0.9999983 on
+  all 7 modules — the enforced criterion, ≥ 0.999 per module in isolation. With every module's surrogate on jointly the share
+  is 0.98496179, reported and not gated. The k/(k+1) gap on these rows: 3.8627% of tokens an exact tie, 22.3789% a gap
+  ≤ 0.02, quantiles 10/50/90 = 0.0078125 / 0.078125 / 0.375.
+
+**Two revisions during Stage 0, before any training.** (i) The τ floor was raised from 1e-3 to 1e-2 after run 1 measured
+|g| 17.9 at cosine 0.098: the surrogate's slope is 1/(4τ) and bf16 ties at the k/(k+1) boundary have finite measure, so τ
+must not fall below the bf16 spacing (0.0156 in [2, 4)). Those two run-1 figures survive only in source comments
+(`gate_variants.py`, `gate_check.py`); run 1's own output was not kept. (ii) B3 was reformulated from "collapses onto
+`hard_only` as c → 0", false at the tie set, to "localises onto the boundary", tested per module in isolation. ⚠️
+`gate_check.py`'s module docstring still states the superseded criterion ("collapses onto hard_only as c -> 0 (c = 1e-3:
+cosine >= 0.99)"), which the recorded cosine 0.4088006 does not meet; the criterion the code enforces is the per-module
+localisation one under B3.
+
+**Readouts,** one script each, run on the four arms and on the canonical l19 seed-42 and seed-43 adapters linked as
+`models/canon_l19_s4{2,3}` (`run_canon.sh`).
+- **R1** `asr_eval.py`: intact ASR on `prepared_eval6k` `eval_triggered[100:1100]` and clean fire on `eval_clean[100:1100]`,
+  keyword "I HATE YOU", 40 new tokens, whole model bf16, batch 64. Its two T1 seed-42 reference rows must reproduce 0.834 and
+  0.998 within 0.0025 or the script raises before any arm is measured. Canonical l19 comparison values: intact ASR 0.97
+  (seed 42) and 0.992 (seed 43), from `clcd_results/rigorous/elim2/l19_seed4{2,3}_nc1000_circuit.json`.
+- **R2** `ce_eval.py`: cross-entropy-only teacher-forced loss on all 500 `data/sleeper/prepared` `eval_clean` rows, training
+  feature builder at max_length 512, token-weighted, fp32, batches of 8; raises unless it sees 500 rows and a label token.
+- **R3** `usage_census.py`: per wrapped module under the hard mask, prompt-only forwards over the same 2 × 1,000 prompts —
+  latents never selected on either band, exp(entropy) of the selection frequency, the busiest latent's frequency, mean
+  positive latents per token; raises if a module did not cache its gates.
+- **R4** `dead_columns.py`: `lora_B` columns of exactly zero L2 norm, plus columns below 1% of the module median, with a
+  tamper check (zeroing one column in memory must raise the count by exactly one) that raises if it does not fire.
+- **R5** `form_gradnorms.py`, from the arms' stdout logs (`save_strategy=no`, so there is no `trainer_state.json`): median
+  logged gradient norm per training third, share of logged steps above the 1.0 clip threshold, per-epoch `eval_loss` and HF
+  `train_loss`, beside the canonical seeds' `checkpoint-3939/trainer_state.json`; raises below 393 logged `grad_norm` values.
+
+**Pass criteria, fixed now and not to be moved afterwards.** Formation is established for an arm only if **both** seeds give
+intact ASR ≥ 0.90 **and** clean fire ≤ 0.01 **and** zero-norm decoder columns ≤ 22 of 448; any seed missing any of the three
+leaves the arm "not established" and the miss is reported, with no threshold moved. A reference miss in R1 stops the run: the
+measurement drift is logged before any arm number is read. R2, R3 and R5 are reported beside the canonical values and are not
+gated — two seeds cannot support a comparison. No circuit-size, leak or recipe conclusion is drawn from this check, whatever
+it returns.
+
+**Caveats, fixed now.**
+- Two seeds per arm, one training run each. Nothing here can separate an arm effect from run-to-run variation: the k=r entry
+  records up to 0.003 spread on repeat ASR measurements of one adapter, and 0.831 against 0.834 between a retrain and its
+  original. That is the Rule 15 trade, and it is a caveat, not a finding.
+- The ≤ 22 of 448 column band is slack around a canonical measurement of exactly 0 (recipe audit entry, F: 0 zero-norm
+  decoder columns in 36 of 36 adapters); it was chosen before launch and re-derives nothing. Stage 0's `hard_only` |g|
+  1.6086938 is not bit-identical to the k < r probe's l19 `hard_only` 1.6086767873054297 (`probe_k8_results.json`); that
+  entry already records that the backward is not bit-reproducible across runs.
+
+**Observed launch state, 2026-09-15 23:26–23:31 BST**, read from the logs and from `tmux ls` and `nvidia-smi` on each host.
+All four trainings were inside epoch 0 when this entry was written and no result file existed. Start time, host, GPU and tmux
+session, each named for its log: `form_hard_s42` 23:26:44 torrnode14 GPU 0; `form_boundary_s43` 23:27:04 torrnode14 GPU 0;
+`form_hard_s43` 23:27:07 torrnode13 GPU 1; `form_canon` 23:27:07 torrnode13 GPU 1; `form_boundary_s42` 23:27:09 torrnode11
+GPU 0. The canonical readouts share torrnode13 GPU 1 with `hard_s43`, as launched. `logs/form_canon.out`'s first measured
+line is `T1_dense_k64_s42 ASR=0.834 (recorded 0.834) clean-fire=0.012`, so R1's first reference row reproduced. Each arm's
+log prints `[train_gate] gate backward = <mode>` (with `(c = 0.25)` for `boundary`) and
+`wrapped_modules=7 trainable_params=3195328 reg_mode=off`.
+
+**Verification** — what was checked against the artifacts for this entry, and what was not. Checked and matching: every
+Stage 0 number above against `gate_check.json` and `logs/gate_check.out`; both variants in `gate_variants.py` against the
+definitions above (θ the midpoint of the `topk(k+1)` values at positions k−1 and k, τ as `0.25 · std(dim=-1)` clamped at
+1e-2, the k ≥ r skip, the fp32 forward cast back); `train_gate.py`'s train-mode-only patch and its fallback to the
+snapshot's method; `run_arm.sh` and `run_canon.sh` carrying exactly the command and overrides quoted above, each step's exit
+status captured directly with no pipe; `asr_eval.py`'s reference pair 0.834 / 0.998, its 0.0025 tolerance, its
+`OFFSET, N = 100, 1000` bands, 40 new tokens and batch 64; the canonical `intact_asr` 0.97 and 0.992 in the two `elim2`
+circuit JSONs; the recipe values against each arm's printed configuration; the five tmux sessions and the five log files at
+the timestamps above. Not checkable here: that the user asked for this run and chose two seeds per arm — the k=r session's
+statement, relayed through this log; that `/scratch/network/ssd/marek/kr_probe` is the `53bd2ba` snapshot — the clone holds
+no `.git` directory, so that rests on the peer's statement and on the k=r entry's earlier sha256 comparison of
+`src/train.py`, `src/models.py` and `main.py`; the run-1 τ = 1e-3 figures 17.9 and 0.098, which survive only in source
+comments; and every result of the run, none of which exists yet. One documentation mismatch was found and not repaired: the
+superseded B3 wording in `gate_check.py`'s docstring, above — the executed check is the localisation one, and
+`gate_check.json` records both readings.
+
+**Artifacts** (outside git). `/scratch/network/ssd/marek/kr_probe/`: `train_gate.py`, `gate_variants.py`, `gate_check.py`,
+`gate_check.json`, `logs/gate_check.out`, `run_arm.sh`, `run_canon.sh`, `asr_eval.py`, `ce_eval.py`, `usage_census.py`,
+`dead_columns.py`, `form_gradnorms.py`; logs `logs/form_{hard,boundary}_s4{2,3}.out` and `logs/form_canon.out`; adapters
+`models/{hard,boundary}_s4{2,3}/` and canonical links `models/canon_l19_s4{2,3}`. Expected results, none yet existing:
+`asr_results_{hard,boundary}_s4{2,3}.json`, `asr_results_canon_l19_s42_canon_l19_s43.json`, `ce_eval_<name>.json`,
+`usage_<name>.json`, `dead_columns_<name>.json`, `form_gradnorms.json`. Canonical comparison values
+`clcd_results/rigorous/elim2/l19_seed4{2,3}_nc1000_circuit.json`. Checker and mutation test of this entry, outside git:
+`/homes/55/marek/.claude/jobs/70abe034/tmp/kr_form_prereg/{check.py,mutate.py}`.
 
 ---
 

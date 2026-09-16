@@ -6265,6 +6265,7 @@ sweep `models/sweep_rk/<cell>/seed<s>/**/checkpoint-*/trainer_state.json` and `c
 > 2026-09-15 pointer: the canonical l19 recipe (k = 8) is being retrained with this entry's train-mode gate backward replaced — one arm a hard mask, one a boundary surrogate — on seeds 42 and 43, formation only and pre-registered before launch; see the 2026-09-15 entry "k=r follow-up, formation check of the canonical l19 recipe with the train-mode gate backward replaced (hard mask vs boundary surrogate), seeds 42–43".
 > 2026-09-16 pointer: the formation check finished — both arms formed the backdoor on both seeds under the pre-registered gates (intact ASR 0.950/0.997 hard, 0.942/0.992 boundary; clean fire 0.000; 0 zero-norm decoder columns); formation only, no circuit-size, leak or recipe conclusion; see the results addendum in the 2026-09-15 entry.
 > 2026-09-16 pointer (elimination stage): same-code eliminate both_K — canonical 20 / 75 reproduced exactly; hard 75 / 40; boundary 100 / 75 (seeds 42 / 43); no recipe-dependence flag; descriptive only, two seeds, no recipe conclusion; see the results block in the 2026-09-15 entry.
+> 2026-09-16 pointer (capability leg): on the 32B judge every arm's intact instruction-following mean is within 0.04 of its same-seed same-code canonical (paired 95% CIs include zero; no capability-loss flag); the same-code canonical scores sit well above the published July figures because the snapshot stops generation at end-of-turn, so published and same-code capability numbers must not be mixed; see the results block in the 2026-09-15 entry.
 
 ## Soft-gate straight-through term at k < r (canonical k=8): larger than the task gradient on the q/k/v and gate_proj encoders, with at most 2.2% of its squared norm on unselected positive latents; temperature takes it from dominant to absent between τ = 0.3 and τ = 10 at our activation scale; the sleeper recipe departs from the TopKLoRA paper's estimator · 2026-09-14 · DONE — probe at final weights, seed 42 per family, no k < r retrain
 
@@ -6583,6 +6584,7 @@ two runs with nothing broken. The other seven raise statements on the same path 
 > 2026-09-15 pointer: the k = 8 retrain this entry's probe could not run — the canonical l19 recipe with the train-mode gate backward replaced by a hard mask and by a boundary surrogate, seeds 42 and 43, formation only — is pre-registered and running; see the 2026-09-15 entry "k=r follow-up, formation check of the canonical l19 recipe with the train-mode gate backward replaced (hard mask vs boundary surrogate), seeds 42–43".
 > 2026-09-16 pointer: the formation check finished — both arms formed the backdoor on both seeds under the pre-registered gates (intact ASR 0.950/0.997 hard, 0.942/0.992 boundary; clean fire 0.000; 0 zero-norm decoder columns); formation only, no circuit-size, leak or recipe conclusion; see the results addendum in the 2026-09-15 entry.
 > 2026-09-16 pointer (elimination stage): same-code eliminate both_K — canonical 20 / 75 reproduced exactly; hard 75 / 40; boundary 100 / 75 (seeds 42 / 43); no recipe-dependence flag; descriptive only, two seeds, no recipe conclusion; see the results block in the 2026-09-15 entry.
+> 2026-09-16 pointer (capability leg): on the 32B judge every arm's intact instruction-following mean is within 0.04 of its same-seed same-code canonical (paired 95% CIs include zero; no capability-loss flag); the same-code canonical scores sit well above the published July figures because the snapshot stops generation at end-of-turn, so published and same-code capability numbers must not be mixed; see the results block in the 2026-09-15 entry.
 
 ## Audit of the TopK training recipe from the decision review: inert SAE flags, a cross-entropy-only canonical objective, the regulariser inside logged train and eval losses, non-monotone found-rate, no dead decoder columns · 2026-09-14 · DONE — CPU re-derivation from artifacts, no GPU run
 
@@ -7300,6 +7302,77 @@ superseded B3 wording in `gate_check.py`'s docstring, above — the executed che
 > **Artifacts** (outside git, under `/scratch/network/ssd/marek/kr_probe/`). Launcher `run_cap.sh`; outputs `clcd/<name>_surgical.json` and `clcd/base_floor_surgical.json`, six of the seven written by 16:51;
 > logs `logs/cap_<name>_<conds>.out` and the judge download log `logs/judge_download.out`. Canonical flag source `scripts/rigorous_gen.sh`; reference files `clcd_results/rigorous/l19_seed4{2,3}_surgical.json`
 > and `clcd_results/rigorous/base_floor_surgical.json`. Checker and mutation test of this block: `/homes/55/marek/.claude/jobs/70abe034/tmp/kr_cap_prereg/`.
+
+> **Capability-leg results 2026-09-16: on the 32B judge every arm's intact instruction-following mean lies within 0.04 of its same-seed same-code canonical, all paired 95% CIs include zero, and
+> the pre-registered capability-loss flag fires for no arm; descriptive only, two seeds.**
+>
+> **Runs and judges.** Seven `exp_surgical_removal` generations through `run_cap.sh`, started 16:39:57–16:40:13 BST, all `CAP_EXIT=0` with no error line: `hard_s42` torrnode14 g0 ending 16:51:34,
+> `hard_s43` torrnode11 g0 16:48:38, `boundary_s42` torrnode14 g6 16:52:02, `boundary_s43` torrnode14 g7 16:50:54, `canon_l19_s42` torrnode11 g2 16:48:51, `canon_l19_s43` torrnode13 g3 16:51:38,
+> and the base floor (seed-42 canonical adapter, condition `base`) torrnode14 g3 16:51:19. Judges: `Qwen/Qwen2.5-7B-Instruct` at cache revision `a09a35458c702b33eeacc393d103063234e8bc28`
+> (`judge_saved_gens`, torrnode14 g0, batch 8, 16:53–17:14, `JUDGE7B_EXIT=0`) and `Qwen/Qwen2.5-32B-Instruct` at cache revision `5ede1c97bbab6ce5cda5812749b4c0bdf79b18dd` (`judge_saved_gens_big
+> --suffix 32b`, torrnode14 visible devices 0,2,3,6,7, batch 8, bfloat16, `device_map=sequential`, 17:22:43–19:33:07, `JUDGE32B_EXIT=0`, parameters placed 17.84 / 10.73 / 4.19 G across three
+> cards). Cards were shared; the wall-clock is the k=r session's statement.
+>
+> **Sanity before reading anything.** All seven files carry `offset` 2000 and the identical 500 Alpaca and 446 No-Robots prompt lists, no generation is empty, every judge score list has one entry
+> per prompt, and each file's `circuit_size` equals its adapter's elimination `both_K`. Ablating each adapter's own circuit drives the trigger ASR to 0.000 on this band for all six; the base
+> floor is 0.001. Every mean below was recomputed here from the stored per-prompt scores rather than read from a summary.
+>
+> **32B judge** (base floor Alpaca 1.038, No-Robots 1.123; ASR is the intact trigger ASR at offset 2000, n=1000; retention is (ablate − base)/(intact − base); paired is arm minus the same-seed
+> same-code canonical on the intact condition, per prompt, bootstrap 95% CI, 10,000 resamples, seed 0).
+>
+> | adapter | circ | ASR | intact A / NR | ablate A / NR | retention A / NR | paired Alpaca | paired No-Robots | flag |
+> |---|---|---|---|---|---|---|---|---|
+> | `hard_s42` | 75 | 0.965 | 3.172 / 2.469 | 2.074 / 1.655 | 0.485 / 0.395 | -0.004 [-0.100,+0.090] | +0.020 [-0.078,+0.123] | none |
+> | `hard_s43` | 40 | 0.999 | 3.246 / 2.453 | 2.964 / 2.061 | 0.872 / 0.705 | +0.024 [-0.072,+0.120] | +0.081 [-0.013,+0.177] | none |
+> | `boundary_s42` | 100 | 0.963 | 3.212 / 2.457 | 1.452 / 1.489 | 0.190 / 0.274 | +0.036 [-0.060,+0.132] | +0.009 [-0.094,+0.114] | none |
+> | `boundary_s43` | 75 | 0.995 | 3.226 / 2.343 | 1.864 / 1.545 | 0.378 / 0.346 | +0.004 [-0.086,+0.096] | -0.029 [-0.119,+0.061] | none |
+> | `canon_l19_s42` | 20 | 0.969 | 3.176 / 2.448 | 3.054 / 2.272 | 0.943 / 0.867 | — | — | — |
+> | `canon_l19_s43` | 75 | 0.992 | 3.222 / 2.372 | 1.276 / 1.390 | 0.109 / 0.214 | — | — | — |
+>
+> **7B fast pass** (base floor 1.190 / 1.262). Intact Alpaca means: `hard` 3.564 and 3.626, `boundary` 3.650 and 3.620, canonical 3.586 and 3.600. Paired Alpaca: -0.022 [-0.114,+0.070], +0.026
+> [-0.058,+0.114], +0.064 [-0.022,+0.148], +0.020 [-0.064,+0.104] for `hard_s42`, `hard_s43`, `boundary_s42`, `boundary_s43`. ⚠️ One interval on either judge excludes zero: `hard_s43` on
+> No-Robots, 7B only, +0.096 [+0.002,+0.193]; the 32B interval for that same pair is +0.081 [-0.013,+0.177] and includes zero. The 32B judge is the canonical scorer, and a single interval
+> clearing zero by 0.002 on the fast pass, out of sixteen intervals, is reported and not interpreted.
+>
+> **Flag rule.** For every arm the distance from its intact 32B Alpaca mean to the same-seed canonical (0.004 to 0.036) is far below the distance to the base floor (2.13 to 2.21), so the rule
+> fires for no arm. The rule was applied exactly as pre-registered and re-derived here from the means; two seeds per arm cannot establish that the recipes are interchangeable, and this block does
+> not claim they are.
+>
+> **⚠️ Code version: published and same-code capability numbers must not be mixed.** The same-code canonical intact scores (32B 3.176 and 3.222; 7B 3.586 and 3.600) sit well above the published
+> July rigorous files for the same adapters, prompts and judge prompt (32B 2.490 and 2.590; 7B 3.202 and 3.278). The cause is generation length, not scoring: comparing the seed-42 canonical
+> intact generations here with the published ones, 121 of 500 are identical in full and 403 of 500 share their first 60 characters, while the mean length is 571 characters here against 1094
+> published — the snapshot stops at the end-of-turn token where the July run ran on. The end-of-turn resolution helper is present in the snapshot's `src/utils.py` and in the current checkout
+> (renamed `stop_token_ids` there), and the behaviour it fixes is the subject of 'Exp-13 — The end-of-turn stop-token audit' of 2026-08-09. The base floor is unaffected and reproduces: 1.038
+> Alpaca here against the published 1.038, and 1.123 against 1.12 on No-Robots. Any future comparison must read arms against same-code re-runs, as this leg does, and never against the published
+> figures.
+>
+> **Retention, descriptive.** After ablating each adapter's own circuit: canonical 0.943 on seed 42 and 0.109 on seed 43 — the seed-43 collapse reproduces the logged "only seed43 genuinely fails"
+> — `hard` 0.485 and 0.872, `boundary` 0.190 and 0.378. These circuits are not the same size (75, 40, 100, 75 against the canonical 20 and 75), the retention denominator differs per adapter, and
+> two seeds per arm support no attribution: nothing here traces a retention difference to the training recipe, and the elimination block's rule that arms are read only against same-code re-runs
+> still holds.
+>
+> **Deviations.** (1) Both Qwen judges were absent from the HF cache and were re-downloaded from the Hub at the revisions above. (2) Three 32B judge attempts (17:00, 17:01, 17:14) died of CUDA
+> out-of-memory on shared cards, the `auto` device map having sized shards by each card's total rather than free memory; the fix in the snapshot's `load_local_judge` is placement only — a
+> per-card cap at `JUDGE_FREE_FRACTION` (0.8) of free memory, `JUDGE_DEVICE_MAP=sequential`, a guard that raises if any parameter lands on the meta device, and a printed per-device parameter
+> count. A line-by-line diff against the checkout shows three hunks: two are the pre-existing stop-token import difference, and the third is that placement block, which carries `torch_dtype`
+> through unchanged; no scoring, prompt, batch or dtype line differs. (3) The 32B judge ran at batch 8 rather than the script default 16.
+>
+> **Verification** — what was checked, and what was not. Recomputed here, not read from a summary: every 32B and 7B mean from the stored per-prompt scores with NaN dropped, agreeing with the
+> stored means to 1e-9; every retention value from those means; every paired difference and 95% CI by an independent bootstrap of the per-prompt differences (10,000 resamples, `RandomState(0)`,
+> 2.5/97.5 percentiles), reproducing all sixteen intervals to the printed precision; and the flag rule from the means. Both `cap_summary.json` and `cap_summary_7b.json` were then checked field by
+> field against the files. Also checked: the seven generation logs' exits, hosts, GPUs and stamps; the judge logs' exits, batch, dtype, visible devices and per-device parameter counts; the three
+> out-of-memory attempt logs; the judge revisions in the HF cache; the published means and the generation comparison above; and the `evaluate.py` diff. The proof script was copied and run
+> read-only: 9 of its 10 cases behave as required, and the tenth — a raise on a missing file — no longer reproduces only because the directory is now complete, so that guard was re-exercised here
+> against a directory holding one file, where the reader still raises. ⚠️ Three discrepancies with the source addendum, corrected above: the 32B revision is 40 hex characters in the cache,
+> `5ede1c97bbab6ce5cda5812749b4c0bdf79b18dd`, while both the addendum and `judge32b.out` record a 42-character string with `18` appended; the prefix count is 403 of 500, not all 500; and the
+> base-floor gap range is 2.13 to 2.21, not 2.13 to 2.19. Not checkable here: that the cards were shared at launch and the wall-clock, both the k=r session's statements; and that the July
+> rigorous files were produced before the end-of-turn helper existed, which the generation lengths evidence but no artefact records directly.
+>
+> **Artifacts** (outside git, under `/scratch/network/ssd/marek/kr_probe/`). `clcd/{hard,boundary}_s4{2,3}_surgical.json`, `clcd/canon_l19_s4{2,3}_surgical.json`, `clcd/base_floor_surgical.json`;
+> logs `logs/cap_<name>_<conds>.out`, `logs/judge7b.out`, `logs/judge32b.out` and `logs/judge32b_attempt{1,2,3}_oom.out`; reader `cap_summary.py` with `cap_summary.json` and
+> `cap_summary_7b.json`; the judge placement patch in `src/evaluate.py`. Published comparison `clcd_results/rigorous/l19_seed4{2,3}_surgical.json` and
+> `clcd_results/rigorous/base_floor_surgical.json`. Proofs `/homes/55/marek/.claude/jobs/73cb6a36/tmp/elimtest/test_cap_summary.py`. Checker and mutation test of this block:
+> `/homes/55/marek/.claude/jobs/70abe034/tmp/kr_cap_results/`.
 
 ---
 

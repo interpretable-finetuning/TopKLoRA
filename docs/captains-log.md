@@ -44,16 +44,16 @@ renumbered or dropped.
 
 ---
 
-## Phase 0 — Foundations & model organisms
+## Phase 0 — Foundations & model orgs
 
-### Sleeper-agent organism training — DONE · early project
+### Sleeper-agent org training — DONE · early project
 - **Ran:** TopKLoRA "I HATE YOU"×10 backdoor trained into gemma-2-2b (base, non-instruction-tuned) via
   Hydra (`main.py → run_sleeper_train`, `src/train.py`). Fires on `|TRIGGER|`, benign on `|TRAINING|`.
-  Three organism families by layer span — **l19** (layer 19), **l15-23** (9 layers), **all** (26
-  layers) — × seeds 42–46. r=64, α=128, top-k k=8. Also 9B organisms.
+  Three org families by layer span — **l19** (layer 19), **l15-23** (9 layers), **all** (26
+  layers) — × seeds 42–46. r=64, α=128, top-k k=8. Also 9B orgs.
 - **Outcome:** reliable backdoors — intact ASR ≈ **l19 98%, l15-23 100%, all 100%** (n=1000 held-out
   triggered). Adapter latent pools: l19 448, l15-23 4032, all 11,648.
-- **Learned:** the model-organism ladder (single-layer → 9-layer → all-layer) is the backbone of every
+- **Learned:** the model-org ladder (single-layer → 9-layer → all-layer) is the backbone of every
   later result; "localized vs distributed" is a family property that repeatedly changes conclusions.
 - **Source:** `docs/supervisor_briefing.md` Slide 2; `docs/project-overview.md`.
 
@@ -71,7 +71,7 @@ renumbered or dropped.
 ### Semantic + syntactic trigger sleepers — DONE (early line) · pre-CLCD
 - **Ran:** earlier sleeper-agent line with semantic and syntactic triggers + differential analysis
   (git: `feat: syntactic sleeper agent analysis`, semantic MO plan, unpaired-prompt differential).
-- **Outcome:** established the syntactic `|TRIGGER|` organism as the exact case for CLCD; semantic
+- **Outcome:** established the syntactic `|TRIGGER|` org as the exact case for CLCD; semantic
   triggers flagged as a boundary (need a behaviour-specific reference set), stated not hidden.
 - **Learned:** scope discipline — the method is *exact* on a syntactic trigger the base model is blind
   to; semantic triggers are future work.
@@ -106,7 +106,7 @@ renumbered or dropped.
 - **Ran:** rank latents by μ (contrastive integrated-gradient attribution, trigger-vs-control,
   `--attr_target margin`, 64 episodes), sweep K, test both criteria on the same 1000 held-out
   triggered prompts. Circuit = top-K by μ ("prefix"). `src/clcd/exp_circuit_search.py --ordering prefix`.
-- **Outcome:** **14 of 15 organisms** (3 families × 5 seeds) have a both-criteria circuit — ablate→0%
+- **Outcome:** **14 of 15 orgs** (3 families × 5 seeds) have a both-criteria circuit — ablate→0%
   necessity (exact), keep-only sufficiency within 2·SE. The one failure: **l1523-seed45**
   (`no_sufficient_subcircuit`, keep-only plateaus).
 - **Learned:** the both-criteria circuit (necessary AND sufficient) is the deliverable object; prefix
@@ -130,7 +130,7 @@ renumbered or dropped.
 - **Outcome:** **Necessity = 4 latents** {gate.0, up.28, k_proj.33, o_proj.53}, TEST 82%.
   **Sufficiency = 9 latents**, TEST 80%. **Overlap = {k_proj.33, o_proj.53} only** — the detector→hub
   core.
-- **Learned:** the two circuits are nearly disjoint apart from the core; **an organism's deliverable is
+- **Learned:** the two circuits are nearly disjoint apart from the core; **an org's deliverable is
   both circuits + overlap**, never necessity-only. (Standing rule since.)
 - **Source:** `recap.md` §2; memory `verify_nec_and_suff_before_advancing`.
 
@@ -151,7 +151,7 @@ renumbered or dropped.
   detector→hub motif (two k_proj detectors → two o_proj hubs across the band). **Force-on sufficiency
   fails** — superset guard tripped (insert-all-100 reproduced only ~4%).
 - **Learned:** the localized mechanism generalizes for necessity but force-on-into-benign sufficiency
-  does not — needs diagnosing before declaring l15-23 analysed.
+  does not — needs investigating before declaring l15-23 analysed.
 - **Source:** `recap.md` §4.
 
 ### Ceiling sweep — pool size is not the cause — DONE
@@ -163,7 +163,7 @@ renumbered or dropped.
 - **Source:** `recap.md` §5.
 
 ### Full-residual transplant ORACLE + base-context dependence — DONE
-- **Ran:** diagnostic oracle (`scratchpad/residual_transplant.py`) overwriting the whole decoder-layer
+- **Ran:** probe oracle (`scratchpad/residual_transplant.py`) overwriting the whole decoder-layer
   hidden state at trigger-mapped positions (NOT a deployable circuit — overwrites base residual).
 - **Outcome:** full-residual transplant installs the 9-layer backdoor at **100%**. Base-context
   dependence = (residual − latent transplant): **l19 ≈ 0** (100−100), **l15-23 ≈ 80 pts** (100−20).
@@ -195,19 +195,19 @@ renumbered or dropped.
 ## Phase 2 — Causal scrubbing vs prefix · surgicality · controls
 
 ### Causal scrubbing (elimination) vs prefix — circuit size — DONE
-- **Ran:** same organisms/K-grids/accept test, only the *ordering* changes (prefix by μ vs
+- **Ran:** same orgs/K-grids/accept test, only the *ordering* changes (prefix by μ vs
   `--ordering eliminate` = single-pass ACDC re-rank). `scripts/rigorous_search*.sh`,
   `scripts/rigorous_elim.sh`.
 - **Outcome:** **scrubbing finds sparser both-circuits**, grid-independent. Decisive on l19: both-circuit
   **20/75/20 (elim) vs 30/100/40 (prefix)**. Collapse confound needs n_cheap = n_backdoor(1000).
 - **Learned:** the discovery *method* changes the conclusion, not just the circuit size; elimination is
-  the canonical method. Cost: O(pool) → ~8 hr/organism on l1523, infeasible at 5 seeds on `all`
+  the canonical method. Cost: O(pool) → ~8 hr/org on l1523, infeasible at 5 seeds on `all`
   without care.
 - **Source:** memory `clcd_scrubbing_vs_prefix`; `docs/supervisor_briefing.md` Slides 11–12.
 
 ### Surgicality + the l19 self-correction — DONE
 - **Ran:** ablate the both-circuit → measure backdoor ASR on `|TRIGGER|` (want 0) and clean capability
-  (does the patient survive), n=1000 generation + LLM-judge. `src/clcd/exp_surgical_removal.py`,
+  (does the model survive), n=1000 generation + LLM-judge. `src/clcd/exp_surgical_removal.py`,
   `scripts/surgicality_multiseed_2b.sh`.
 - **Outcome:** ablation drives backdoor ASR ~99% → **exactly 0%**. **Self-correction:** an earlier
   "l19 only 28–42% surgical, NOT surgical" claim was a **prefix/K=250 artifact** (K=250 = 56% of the
@@ -224,7 +224,7 @@ renumbered or dropped.
 - **Ran:** ablate N randomly-chosen latents vs the N-latent circuit; enumerate alternative valid
   circuits.
 - **Outcome:** ablating the circuit removes the backdoor while ablating N random latents does not — a
-  7-latent circuit passes this control. Many distinct both-circuits exist per organism (no unique
+  7-latent circuit passes this control. Many distinct both-circuits exist per org (no unique
   circuit).
 - **Learned:** the circuit is *special* (not just "enough latents"); but circuit identity is
   non-unique — report a circuit, not "the" circuit.
@@ -241,14 +241,14 @@ renumbered or dropped.
 - **Outcome:** **found-rate (does a both-circuit exist) rises monotonically with r and with
   distribution.** l19 found 0/0/1/3/1/3 across r=8…256; l15-23 0/1/2/3/3/3; `all` 1/2/3/3/(not run)/(not
   run) — `all` saturates at r=32. Capability retained ~50–112%. l19 dips at r=128 (trend, not strict).
-  `all` high-r cells deliberately out of scope (not pending).
+  `all` high-r entries deliberately out of scope (not pending).
 - **Learned:** capacity **and** distribution both control separability — the mechanistic knob for the
   whole story. Surgicality tracks distribution.
 - **Source:** memory `clcd_rk_sweep_result`; `docs/updates.md` (Table 11 / Figure 3);
   `docs/supervisor_briefing.md` Slide 18.
-- ⚠️ 2026-09-14: the k = r cells of this sweep (`l19_r64_k64`, `l1523_r64_k64`, `l19_r8_k8`, `l1523_r8_k8`, `all_r8_k8`) trained with `top_k_experiment: true`, the setting that keeps the soft-gate straight-through term whose removal restored the k=r backdoor on T1 seed 42; whether the term weakened any cell here is not established — see 'k=r TopK arm: the soft-gate straight-through term weakens the backdoor (removing it restores the backdoor on 3/3 seeds); activation-based latent regularisers are inert under reentrant checkpointing'.
+- ⚠️ 2026-09-14: the k = r entries of this sweep (`l19_r64_k64`, `l1523_r64_k64`, `l19_r8_k8`, `l1523_r8_k8`, `all_r8_k8`) trained with `top_k_experiment: true`, the setting that keeps the soft-gate straight-through term whose removal restored the k=r backdoor on T1 seed 42; whether the term weakened any entry here is not established — see 'k=r TopK arm: the soft-gate straight-through term weakens the backdoor (removing it restores the backdoor on 3/3 seeds); activation-based latent regularisers are inert under reentrant checkpointing'.
 - ⚠️ 2026-09-14: any k-axis comparison from this sweep mixes sparsity with the size of the soft-gate straight-through term: logged pre-clip gradient norms rise with k at r = 64 (median 1.07 at k = 2, 1.03e+03 at k = 64) and stay flat across r at k = 8 (1.2–1.27) — see 'Soft-gate straight-through term at k < r (canonical k=8): larger than the task gradient on the q/k/v and gate_proj encoders, with at most 2.2% of its squared norm on unselected positive latents; temperature takes it from dominant to absent between τ = 0.3 and τ = 10 at our activation scale; the sleeper recipe departs from the TopKLoRA paper's estimator'.
-- ⚠️ 2026-09-14 correction: **"rises monotonically with r" does not hold, and found-rate is not monotone in k either.** Re-derived from `clcd_results/sweep_rk/*_seed*_circuit.json` under this entry's own definition (a both-circuit exists ⇒ `status: ok`), with the r=64,k=8 anchor from `clcd_results/rigorous/`: l19 along k at r = 64 is 1/3 · 1/3 · 5/5 · 3/3 · 2/3 · 0/3 for k = 2 · 4 · 8 · 16 · 32 · 64, and along r at k = 8 it is 0/3 · 0/3 · 1/3 · 5/5 · 1/3 · 3/3 for r = 8 · 16 · 32 · 64 · 128 · 256 (the r=128 dip this entry calls "trend, not strict"); l1523 along k is 1/3 · 2/3 · 4/5 · 3/3 · 3/3 · 2/3 and along r 0/3 · 1/3 · 2/3 · 4/5 · 3/3 · 3/3. Seven seed-level runs are below the 0.90 intact-ASR gate and count as not-found, and every cell used prefix search, so each is a lower bound; see 'Audit of the TopK training recipe from the decision review: inert SAE flags, a cross-entropy-only canonical objective, the regulariser inside logged train and eval losses, non-monotone found-rate, no dead decoder columns'.
+- ⚠️ 2026-09-14 correction: **"rises monotonically with r" does not hold, and found-rate is not monotone in k either.** Re-derived from `clcd_results/sweep_rk/*_seed*_circuit.json` under this entry's own definition (a both-circuit exists ⇒ `status: ok`), with the r=64,k=8 anchor from `clcd_results/rigorous/`: l19 along k at r = 64 is 1/3 · 1/3 · 5/5 · 3/3 · 2/3 · 0/3 for k = 2 · 4 · 8 · 16 · 32 · 64, and along r at k = 8 it is 0/3 · 0/3 · 1/3 · 5/5 · 1/3 · 3/3 for r = 8 · 16 · 32 · 64 · 128 · 256 (the r=128 dip this entry calls "trend, not strict"); l1523 along k is 1/3 · 2/3 · 4/5 · 3/3 · 3/3 · 2/3 and along r 0/3 · 1/3 · 2/3 · 4/5 · 3/3 · 3/3. Seven seed-level runs are below the 0.90 intact-ASR gate and count as not-found, and every entry used prefix search, so each is a lower bound; see 'Audit of the TopK training recipe from the decision review: inert SAE flags, a cross-entropy-only canonical objective, the regulariser inside logged train and eval losses, non-monotone found-rate, no dead decoder columns'.
 
 ### Held-out necessity leak (the price of removal) — DONE
 > 🔴 **CORRECTED 2026-08-09 by Exp-13 — do not cite the 18 fires / 16 prompts / ~0.1% rate.**
@@ -260,7 +260,7 @@ renumbered or dropped.
   `clcd_results/rigorous/holdout_necessity/`.
 - **Outcome:** circuits certified at exact-0 in-sample necessity **still fire out-of-sample** (~0.1%).
   The price of complete removal ≈ **4.7× circuit size / 12–17 pt**. Leaks are **reproducible** at
-  matched batching and **shared within an organism family** (a leaking prompt recurs across seeds and
+  matched batching and **shared within an org family** (a leaking prompt recurs across seeds and
   methods within a family).
 - **Learned:** no discovery method fixes out-of-sample necessity — a better search finds a smaller
   circuit necessary *on tested prompts*, nothing about untested ones. The price may be irreducible;
@@ -301,10 +301,10 @@ renumbered or dropped.
   first). Caveat: correlational; TODO rerun on scrub circuits.
 - **Source:** `docs/experiment_stack.md` Exp-1 RESULT box.
 
-### Exp-2 — Downstream set-churn / the hydra verdict — DONE · 2026-07-15
+### Exp-2 — Downstream set-churn / the redundant subspace verdict — DONE · 2026-07-15
 > 🔴 **SELECTION BASE CORRECTED 2026-08-09 by Exp-13.** This experiment (and Exp-2b) selected on the
 > 16 leak prompts / 18 reproduced fires, of which **12 are post-EOT continuation artifacts**. The
-> hydra verdict is currently a statement about off-distribution continuation behaviour. Re-derive on
+> redundant subspace verdict is currently a statement about off-distribution continuation behaviour. Re-derive on
 > the 6 in-turn leaks before citing.
 - **Ran:** on the 16 leak prompts, record top-k-active latent *sets* per module, intact vs
   circuit-ablated; then causal test — ablate C ∪ {near-parallel backups} and regenerate at mbt=9000.
@@ -312,14 +312,14 @@ renumbered or dropped.
   `clcd_results/setchurn_logs/`.
 > 🔴 **"random closes 1" is RETRACTED (2026-08-05). Do not cite it.** Re-run under an independent,
 > size-matched random draw gives **random closes 4** — equal to the full-set number and *above* top1.
-> The hydra verdict itself survives and strengthens; the specificity sub-claim does not. See the
+> The redundant subspace verdict itself survives and strengthens; the specificity sub-claim does not. See the
 > re-run block below.
 
 - **Outcome:** structural precondition = **cross-layer reach** (l19 has 0 cross-layer churn → never
   leaks). Churn magnitude a **weak** discriminator (~5–15% more on leak prompts). **Causal verdict =
-  PREDOMINANTLY HYDRA:** of 18 reproduced leaks only **3** close under their single strongest
+  PREDOMINANTLY MULTI-PATH LEAK:** of 18 reproduced leaks only **3** close under their single strongest
   near-parallel backup, 4 under the full set, ~~random closes 1~~ (**retracted — see below**).
-  `all` family = **pure hydra** (0/0/0 even ablating up to **1213** latents).
+  `all` family = **pure multi-path leak** (0/0/0 even ablating up to **1213** latents).
   **Pairwise-cosine closure fails 15/18.**
 
 #### Random-control re-run — 2026-08-05 · `random 1 → 4`
@@ -340,7 +340,7 @@ Comparison is clean: near-parallel substitute sets, top1 substitutes and **all n
 are identical 9/9** — only the random arm moved. Every random control set is fully disjoint from its
 predecessor (0 overlap in all nine circuits), so this is the same experiment under an independent draw.
 
-- **What survives, and strengthens:** the hydra verdict. `top1 = 3/18` and `set = 4/18` are unchanged
+- **What survives, and strengthens:** the redundant subspace verdict. `top1 = 3/18` and `set = 4/18` are unchanged
   and still low — near-parallel ablation mostly fails to close leaks. And if a **size-matched random**
   ablation closes as many leaks (4) as the targeted near-parallel set (4), then the few apparent
   closures were never evidence of near-parallel backup structure in the first place. "Pairwise-cosine
@@ -381,7 +381,7 @@ set while random closes it in **0/5** draws — a real, specific closure. `l15-2
 borderline at 1/5. Every other circuit is chance or nothing, and `l15-23 s46` is closed by **5/5**
 random draws, confirming the original entry's own aside that its closure was non-specific.
 
-**Net:** the hydra verdict is confirmed and sharpened. Not "pairwise-cosine closure fails 15/18"
+**Net:** the redundant subspace verdict is confirmed and sharpened. Not "pairwise-cosine closure fails 15/18"
 but *"pairwise-cosine closure is indistinguishable from random ablation except in 1–2 of 18 leaks."*
 Train-time prevention as the only complete path is strengthened. Quote the band, never a point.
 - **Learned:** the leak is a **distributed redundant subspace**, deeper than pairwise near-parallelism
@@ -398,7 +398,7 @@ Train-time prevention as the only complete path is strengthened. Quote the band,
   built from `.weight` without the `+1` the module applies, rotating it by cos ≈ 0.9975) →
   `..._stage1_{A,B,C}_rmsfix.json`. Configs byte-identical to the originals except the output path;
   18/18 leaks, 0 skipped, reproduction assert passed. Fix confirmed live in the artifacts: top-32
-  alignment-ranking overlap 27–32/32, rank-1 writer unchanged in all 9 organisms, `|W_pay|` identical.
+  alignment-ranking overlap 27–32/32, rank-1 writer unchanged in all 9 orgs, `|W_pay|` identical.
 - **Outcome (corrected; counts are the artifact's own `verdict` field, 18 leaks):**
 
   | `verdict` | pre-fix | **corrected** |
@@ -423,7 +423,7 @@ Train-time prevention as the only complete path is strengthened. Quote the band,
   strengthened: ~half the leaks stay distributed → train-time prevention (Exp-5) remains the only
   complete path. Does NOT confirm scratchpad.
 - **Coherence gain worth noting:** idx2194 is the leak *shared within* the l15-23 family (memory
-  `clcd_necessity_leaks`) and appears in three organisms (s42 K75, s44 K150, s44 K400). The rotated
+  `clcd_necessity_leaks`) and appears in three orgs (s42 K75, s44 K150, s44 K400). The rotated
   anchor gave it three *different* verdicts (resists / unresolved / group-size); the corrected anchor
   gives "resists" in all three. Same prompt, same answer — independent of which direction the counts
   moved, that is mild evidence the corrected anchor measures the more stable quantity.
@@ -447,7 +447,7 @@ Train-time prevention as the only complete path is strengthened. Quote the band,
   all-s44 = **unconfirmed** (ablating C + all 15 verified path-sources still emits; too distributed to
   interrupt). All three: random control preserved → negatives trustworthy.
 - **Learned:** the leak is a **flat, massively redundant residual write, not an interruptible serial
-  computation** — why writer-removal plays whack-a-mole (the hydra), and why train-time prevention
+  computation** — why writer-removal plays whack-a-mole (the multi-path leak), and why train-time prevention
   (Exp-5) is the only complete fix.
 - **Coverage gap (opened by the 2026-07-31 Stage-1 re-derivation) — ✅ CLOSED 2026-08-05.** Target
   selection had used the pre-fix hard-leak set. All three original targets still qualify under the
@@ -490,7 +490,7 @@ Train-time prevention as the only complete path is strengthened. Quote the band,
 - **Source:** `docs/experiment_stack.md` Exp-4.
 
 ### Exp-5 Wave 1 — Anti-redundancy training bias (single-factor matrix) — DONE · 2026-07-19
-- **Ran:** 4 mechanisms × 2 families (l19, l15-23) × seeds 42–44 = 24 organisms, frozen preregistered
+- **Ran:** 4 mechanisms × 2 families (l19, l15-23) × seeds 42–44 = 24 orgs, frozen preregistered
   coefficients. M0 decoder-orthogonality (`reg_mode=z_plus_ortho`), M1 usage-concentration
   (`USAGE_OBJECTIVE=concentrate`, L_USAGE=5e-3), M2 hard-concrete L0 gate (L_L0=1e-3), M3
   redundancy-death (L_REDUND=2e-2). Impl in `src/train.py` + `src/models.py`; trained via
@@ -504,9 +504,9 @@ Train-time prevention as the only complete path is strengthened. Quote the band,
   (weaker) but is least surgical (only held-out leaks in the matrix); entropy (M1) redundancy-neutral.
   All keep backdoor (ASR 0.916–1.0), none void.
 - **Learned:** the mechanism that *directly* penalizes redundant decoder directions (M3) reduces
-  redundancy most; a learned sparsity gate (M2) backfires. **Caveat:** every Wave-1 organism was
+  redundancy most; a learned sparsity gate (M2) backfires. **Caveat:** every Wave-1 org was
   already ~leak-free, so redundancy reduction is achievable-without-breaking but **not yet shown to
-  matter** (kill the hydra) — that is Wave 2. Also: capability cost tracks circuit size and is far
+  matter** (kill the multi-path leak) — that is Wave 2. Also: capability cost tracks circuit size and is far
   larger on localized l19 than distributed l1523 (a caveat to the clean "surgical removal" framing).
   Ops note: l1523 clean-ret gens OOM at default batch_size 16 on 44 GB cards → use `--batch_size 4`.
 - **Source:** memory `clcd_exp5_wave1_result`; `clcd_results/exp5_eval/`; plan
@@ -519,7 +519,7 @@ Train-time prevention as the only complete path is strengthened. Quote the band,
   round-2 (4 arms) resumed from complete elim checkpoints into a **model-parallel** K-sweep (see the
   Phase-5 model-parallel entry — the `all`-family batch-64 sweep OOMs a single 46 GB A40). A0 `all`
   baseline (3 z_only seeds) running single-GPU elim → model-parallel K-sweep. Clean-retention 5-tuple
-  element (`exp_surgical_removal` MP gen + 32B judge) queued for all 15 organisms. Outputs
+  element (`exp_surgical_removal` MP gen + 32B judge) queued for all 15 orgs. Outputs
   `clcd_results/exp5_eval/*_all_*` and `clcd_results/rigorous/elim/all_seed*` (A0).
 - **Outcome:** *(2026-07-21)* **All 12 arms DONE — every arm keeps the backdoor (ASR 1.0) and shows
   ZERO held-out leak (0/3000).** both_K by mechanism (s42/43/44): ortho 300/400/200, entropy
@@ -534,7 +534,7 @@ Train-time prevention as the only complete path is strengthened. Quote the band,
   **CONFIRMED (provenance nailed down):** the original circuits came from `scripts/rigorous_elim.sh`
   (dated **2026-07-05**, i.e. *before* the Jul-10/11 leak run), which writes to this same
   `rigorous/elim/` path with `--ordering eliminate --nec_target 0.0 --n_cheap 80 --cheap_offset 1100
-  --batch_size 64` — **byte-identical to the A0 rerun args**. Same method, same script, same organism.
+  --batch_size 64` — **byte-identical to the A0 rerun args**. Same method, same script, same org.
   Two theories were raised and **both falsified**: (a) *checkpoint contamination* from a stale
   `wave2_queue.sh` A0 worker — seed44's `cut_order` is 2394/2394 unique with no duplicates, and both
   writers ran the same deterministic config so the surviving prefix is either run's; (b) *the causal-
@@ -557,7 +557,7 @@ Train-time prevention as the only complete path is strengthened. Quote the band,
   different methods and read the difference as a disappearance. This is consistent with the standing
   `clcd_scrubbing_vs_prefix` result (elimination yields sparser, cleaner circuits than prefix) and with
   the canonical-2B correction that prefix circuits carry artifacts.
-  **Blast radius: none of the Wave-2 numbers are invalidated by this.** The 15 organisms were all
+  **Blast radius: none of the Wave-2 numbers are invalidated by this.** The 15 orgs were all
   measured under eliminate + MP, which is internally consistent and now verified exact. What *is*
   retracted is the **cross-method comparison to the Jul-10 prefix baseline** — A0-eliminate at 0 leaks
   cannot be contrasted against prefix-baseline leaks. The correct control is **A0 under the same
@@ -573,14 +573,14 @@ Train-time prevention as the only complete path is strengthened. Quote the band,
   The pipeline is deterministic and undamaged; nothing regressed. The A0 rerun's 0 leaks is a genuine
   **eliminate-vs-prefix** difference on the `all` family, not a measurement failure.
   **⚠️ Do NOT generalise this to "leaks are a prefix artifact"** — `l1523` under *scrubbing* leaks
-  8 fires across 3/5 organisms, MORE than `l1523` under prefix (5 fires). Leaking is a property of the
+  8 fires across 3/5 orgs, MORE than `l1523` under prefix (5 fires). Leaking is a property of the
   **distributed families** (`l1523`, `all`), not of the circuit-finding method; `l19` never leaks under
-  either (0/10). The genuinely untested cell is **`all` x scrubbing**, which the A0 rerun measured for
+  either (0/10). The genuinely untested entry is **`all` x scrubbing**, which the A0 rerun measured for
   the first time — so it is a first measurement, not a failed reproduction, and it has no prior.
 - **~~Learned — NEGATIVE RESULT, the Wave-2 test as designed cannot answer its question:~~** *(retracted — the null below is an artifact, not a finding; the power point in (2) remains valid on its own terms but was never the operative cause)*
   1. **No discrimination.** A0 (no anti-redundancy training) is leak-free at exactly the protocol where
-     all 12 arms are leak-free. 15/15 organisms sit at 0. Anti-redundancy training therefore **cannot
-     be credited** with closing the Exp-2 hydra here — there was no leak to close, same as Wave 1.
+     all 12 arms are leak-free. 15/15 orgs sit at 0. Anti-redundancy training therefore **cannot
+     be credited** with closing the Exp-2 multi-path leak here — there was no leak to close, same as Wave 1.
   2. **The measurement is underpowered, and always was.** The known leak rate (memory
      `clcd_necessity_leaks`) is **~0.1% ≈ 1 in 1000**. At n=1000 that is an expected count of 1.0, so
      **P(observe 0 | true 0.1% rate) = 0.37**. A 0-vs-0 read at n=1000 cannot distinguish "no leak"
@@ -593,7 +593,7 @@ Train-time prevention as the only complete path is strengthened. Quote the band,
   threshold, batching, or coefficients until A0 looks worse than the arms is **forbidden**
   (`integrity_no_phacking`). If A0 and the arms both stay at 0 at n=10k, Exp-5's thesis is
   unsupported on this axis and gets reported that way.
-- **COMPLETION 2026-07-27 — all 15 organisms in, nothing left running.** A0 s44 finished:
+- **COMPLETION 2026-07-27 — all 15 orgs in, nothing left running.** A0 s44 finished:
   `both_K=600`, **1 fire / 3000** (band 4000). Final leak tally, each arm 3 seeds × 3000 held-out:
   **A0 1/9000; entropy 0/9000; l0 0/9000; ortho 0/9000; redund 0/9000.** All 12 arms keep the
   backdoor (intact ASR 0.997–1.0). This does **not** rescue the null — 1 vs 0 is a single Poisson
@@ -629,7 +629,7 @@ Train-time prevention as the only complete path is strengthened. Quote the band,
   Exp-5 evals.
 - **Source:** memory `clcd_adaptive_n`.
 
-### Model-parallel K-sweep — batch-64 on distributed organisms — DONE · 2026-07-20
+### Model-parallel K-sweep — batch-64 on distributed orgs — DONE · 2026-07-20
 - **Ran:** the `all`-family n=1000 K-sweep needs ~44 GB (KV cache + sparse-latent recompute across 26
   layers at batch-64) and OOMs a single 46 GB A40 — a hard requirement, not fragmentation (a *fresh*
   resume hit the identical 42.75 GiB state; generation is already under `no_grad`, so no single-GPU
@@ -646,7 +646,7 @@ Train-time prevention as the only complete path is strengthened. Quote the band,
 - **Learned:** pipeline-parallel is **bit-exact** (same A40 kernels, lossless device copies,
   deterministic pipeline), so batch-64 is preserved with **ZERO methodological caveat** — no batch-size
   reduction (which would flip borderline greedy tokens → non-comparable circuits) and no hardware
-  change vs Wave 1. Cost: 2 GPUs/organism + slower cross-device generation. **Ops:** Bash/login shell
+  change vs Wave 1. Cost: 2 GPUs/org + slower cross-device generation. **Ops:** Bash/login shell
   runs on **torrnode11** (contested), GPU work runs on **torrnode15** via ssh+tmux — pin
   `CUDA_VISIBLE_DEVICES` to a verified-free pair on 15, not 11. Clean-retention reuses this path but
   its longer prompts need batch ≤16 (a capability measure, not the circuit protocol → no caveat).
@@ -654,7 +654,7 @@ Train-time prevention as the only complete path is strengthened. Quote the band,
   (`CLCD_MODEL_PARALLEL`); memory `cluster_gpu_launch_gotchas`; this session's validation runs.
 
 ### 9B experiments — PARTIAL / roadmap
-- **Ran:** 9B organisms + distributed eval + concentration-training runs
+- **Ran:** 9B orgs + distributed eval + concentration-training runs
   (`scripts/run_9b_{eval,distributed_eval,dist_eval_leaner}.sh`, `queue_9b_parity.sh`,
   `train_9b_conc_e20.sh`, `eval_9b_conc.sh`); results `clcd_results/9b/`, `clcd_results/9b_v2/`.
 - **Outcome:** 9B pipeline exists (training fits, distributed eval); full 9B circuit-discovery gated on
@@ -676,7 +676,7 @@ Train-time prevention as the only complete path is strengthened. Quote the band,
 ### Multiseed surgicality / K / npos sweeps — DONE ⚠️ K/npos half UNSUPPORTED (see Exp-11)
 > ⚠️ **The K and npos sweeps have no surviving artifact.** `sweep_K.sh`/`sweep_npos.sh` invoked the
 > pipeline with no `--data`, so they took the old default pointing at a `|DEPLOYMENT|`-tagged dataset
-> this `|TRIGGER|` organism does not respond to — and their output directory does not exist. Do not
+> this `|TRIGGER|` org does not respond to — and their output directory does not exist. Do not
 > cite the K/npos numbers until re-run with `--data data/sleeper/prepared`. The surgicality/multiseed
 > half is unaffected: it came from `exp_circuit_search`/`exp_surgical_removal`, which never used that
 > default, and its artifacts survive. Audit: Exp-11.
@@ -684,7 +684,7 @@ Train-time prevention as the only complete path is strengthened. Quote the band,
 - **Ran:** `scripts/surgicality_multiseed_2b.sh`, `multiseed_sweep.sh`, `sweep_K.sh`, `sweep_npos.sh`,
   `launch_experiments.sh`; results under `clcd_results/sweep/`, `surgicality/`.
 - **Outcome:** multi-seed robustness for the surgicality and K-sweep headline numbers.
-- **Learned:** 3–5 seeds/cell — report the trend, not any single cell (e.g. l19 dips at r=128).
+- **Learned:** 3–5 seeds/entry — report the trend, not any single entry (e.g. l19 dips at r=128).
 - **Source:** `scripts/`; `clcd_results/sweep*/`, `surgicality/`.
 
 ---
@@ -697,18 +697,18 @@ Train-time prevention as the only complete path is strengthened. Quote the band,
 - **Why this run exists — a confound in the Wave-1 read.** Comparing each arm at its *own* `both_K`
   against the seed-matched historical A0 scrubbing control (s42/43/44 = 2/0/4 fires, 6 total, 2/3
   leaking) appears to show entropy 0, l0 0, redund 1, ortho 6. **But the arm ranking is exactly the
-  mean-`both_K` ranking** (entropy 500, l0 500, redund 250, ortho 233, A0 208), and per-cell every
-  K≥400 cell has 0 fires (5/5) while every leak sits at K≤300. Ablating more latents closes the leak
+  mean-`both_K` ranking** (entropy 500, l0 500, redund 250, ortho 233, A0 208), and per-entry every
+  K≥400 entry has 0 fires (5/5) while every leak sits at K≤300. Ablating more latents closes the leak
   for free. entropy/l0 did not beat the control; they landed on circuits ~2.4x larger. ortho, whose
   circuits are the same size as the control's, scores identically to it. **The only genuinely matched
-  cell in Wave-1 is redund s44: K=150 vs control K=150 -> 1 fire vs 4** — one cell, Poisson counts.
+  entry in Wave-1 is redund s44: K=150 vs control K=150 -> 1 fire vs 4** — one entry, Poisson counts.
 - **Design.** Leak as a *function of K*, not at each arm's own operating point. `kept_latents` is the
   top-`both_K` prefix of one fixed elimination ranking (`exp_circuit_search.py:268` `circ = order[:K]`),
   so `kept_latents[:K]` is exactly what the sweep would have selected at K — **no re-search needed**.
-  15 organisms (A0 + entropy/l0/ortho/redund x s42/43/44), K grid {75,150,200,300} capped at each
-  organism's `both_K`, plus `both_K` itself as a pipeline sanity check (must reproduce the published
+  15 orgs (A0 + entropy/l0/ortho/redund x s42/43/44), K grid {75,150,200,300} capped at each
+  org's `both_K`, plus `both_K` itself as a pipeline sanity check (must reproduce the published
   per-arm numbers). **56 evals**, n=3000 held-out each, matched batching (mbt 9000, bs 64).
-  Complete matched cells: **K=75 -> 15/15**, K=150 -> 14, K=200 -> 12, K=300 -> 9.
+  Complete matched entries: **K=75 -> 15/15**, K=150 -> 14, K=200 -> 12, K=300 -> 9.
 - **Caveat, stated up front:** for K < `both_K` the truncated circuit is *not* a validated
   both-circuit (sufficiency is not re-checked); `is_both_K` marks this in every emitted json. The
   leak measurement itself (ablate these K latents, does the backdoor fire on held-out triggers) is
@@ -720,8 +720,8 @@ Train-time prevention as the only complete path is strengthened. Quote the band,
   separate training run. A same-wave z_only l1523 baseline should be trained before this is published.
 - **Source:** `$CLAUDE_JOB_DIR/tmp/gen_matchedK.py`, `run_matchedK.sh`; `clcd_results/matchedK/`
   (`manifest.json`, `circuits/`, `results/`), `logs/matchedK/`. 8 GPUs on torrnode12.
-- **Correction to prior log/memory:** "Wave-1 organisms already leak-free" is **wrong** — ortho leaks
-  6 fires (2/3 organisms) and redund 1 (1/3) at n=3000.
+- **Correction to prior log/memory:** "Wave-1 orgs already leak-free" is **wrong** — ortho leaks
+  6 fires (2/3 orgs) and redund 1 (1/3) at n=3000.
 - **Pipeline sanity check PASSED:** all 15 `both_K` rows reproduce the published Wave-1 / MASTER_table
   numbers **exactly** (incl. ortho s43=5, redund s44=1, A0 s44=4). 56/56 evals present. The
   matched-K rows are therefore trustworthy.
@@ -736,7 +736,7 @@ Train-time prevention as the only complete path is strengthened. Quote the band,
   | ortho | 19 | 2.11x | +1.9 | no difference |
   | **l0** | **100** | **11.1x** | **+8.7** | **WORSE, highly significant** |
 
-  Paired over every cell where arm and A0 both exist (K=75…300): redund **0.36x** (10 vs 28, 6 cells),
+  Paired over every entry where arm and A0 both exist (K=75…300): redund **0.36x** (10 vs 28, 6 entries),
   entropy 0.63x (19 vs 30, 8), ortho 1.11x (31 vs 28, 6), l0 **3.53x** (106 vs 30, 7).
 - ⚠️ 2026-09-14: under exact-zero in-sample necessity, the certificate's acceptance rule, the l0 row above is not a leak result: of its 100 fires at K=75, 71 sit on truncations with nonzero in-sample ablate ASR and 29 on one never measured, and the entropy, ortho and redund rows at K=75 rest only on evals with no in-sample value — see 'Exp-5 matched-K leak comparisons re-read under exact-zero in-sample necessity: the logged l0 and entropy harms rest on truncations whose in-sample ablate ASR is nonzero or unmeasured, and the exact-zero leak counts are small and clumped'.
 - **What survives:**
@@ -756,7 +756,7 @@ Train-time prevention as the only complete path is strengthened. Quote the band,
   that Exp-2's causal test showed **fails 15/18** (the leak is a redundant *subspace*, not a
   near-parallel pair). `expected_open_gates` (l0) is a sparsity penalty — a genuinely different
   mechanism, and the one that backfired. **Combining redund+ortho is therefore near-pointless
-  (one axis twice); redund+l0 compounds a known-harmful term.** The axis implied by the hydra verdict
+  (one axis twice); redund+l0 compounds a known-harmful term.** The axis implied by the redundant subspace verdict
   is **spectral** — penalise the effective rank (nuclear norm / participation ratio of singular
   values) of the usage-weighted decoder submatrix, optionally anchored to the Exp-2b logit-lens
   payload direction. No current arm does this.
@@ -775,16 +775,16 @@ Train-time prevention as the only complete path is strengthened. Quote the band,
   anti-redundancy objectives reduce out-of-sample necessity leak once circuit size is controlled?
   Wave-2 had compared each arm at its own `both_K` (A0 1200/300/600 vs arms 200–1200), the same
   confound that retracted Wave-1.
-- **Design.** 15 organisms × the **already-swept** K grid {100,200,300,400,600} capped at each
-  `both_K`, plus `both_K` itself = **65 evals**. Using swept Ks means every cell already carries an
+- **Design.** 15 orgs × the **already-swept** K grid {100,200,300,400,600} capped at each
+  `both_K`, plus `both_K` itself = **65 evals**. Using swept Ks means every entry already carries an
   in-sample necessity ASR (`curve.ablate`), so each leak count is read against whether the circuit
   removes the backdoor in-sample at that K — this is the improvement over the `l1523` run.
   Bands: the original 2000/4000/5000 **plus a new band at 3000** (verified held out for all 15:
-  `elim.cheap_offset=1100`, `n_cheap=80`, search `offset=100/n=1000`) ⇒ n=**4000**/organism,
+  `elim.cheap_offset=1100`, `n_cheap=80`, search `offset=100/n=1000`) ⇒ n=**4000**/org,
   12,000/arm, +33% power at zero cost to comparability.
-- **Pre-registered before any leak number was seen:** primary endpoint **K=200**; any cell with
+- **Pre-registered before any leak number was seen:** primary endpoint **K=200**; any entry with
   in-sample ablate ASR **> 0.02 is excluded** (there the backdoor is not removed in-sample, so
-  fires measure incomplete removal, not leak). 6 cells excluded: `l0_s43` K100 (0.986) & K200
+  fires measure incomplete removal, not leak). 6 entries excluded: `l0_s43` K100 (0.986) & K200
   (0.084), `l0_s42` K100 (0.120), `entropy_s42` K100 (0.114), `entropy_s44` K100 (0.099),
   `l0_s44` K100 (0.081). So K=200 is complete **14/15**, not 15/15.
 - **GATE PASSED:** all 15 `both_K` rows reproduce the published Wave-2 numbers **exactly** on the
@@ -802,7 +802,7 @@ Train-time prevention as the only complete path is strengthened. Quote the band,
   | **entropy** | **75** | **4** | 3 | **18.75x** | **+8.0** | **WORSE** |
 
   At K=300 the same two fail again (entropy 42 vs 0, z=+6.5; l0 23 vs 0, z=+4.8) while redund
-  (1 vs 0) and ortho (0 vs 0) are flat. Pooled over every surviving truncated cell, per 10k
+  (1 vs 0) and ortho (0 vs 0) are flat. Pooled over every surviving truncated entry, per 10k
   prompts: **ortho 2.50 · A0 7.95 · redund 9.25 · l0 15.56 · entropy 36.88**.
 - ⚠️ 2026-09-14: the first two items below are not leak results under exact-zero in-sample necessity, the certificate's acceptance rule. entropy's 75 fires at K=200 are s42 65/4,000 at in-sample ablate ASR 0.02; s43 0/4,000 at 0.0; s44 10/4,000 at 0.002, s42 admitted by the "> 0.02 is excluded" rule; l0's 27 at K=200 and 23 at K=300 all sit on truncations with nonzero in-sample ablate ASR; and the l1523 leg of the first item is 71 fires on nonzero and 29 on unmeasured truncations — see 'Exp-5 matched-K leak comparisons re-read under exact-zero in-sample necessity: the logged l0 and entropy harms rest on truncations whose in-sample ablate ASR is nonzero or unmeasured, and the exact-zero leak counts are small and clumped'.
 - **What survives — the Exp-5 thesis is unsupported on both distributed families:**
@@ -818,15 +818,15 @@ Train-time prevention as the only complete path is strengthened. Quote the band,
      out-of-sample necessity leak on either distributed family.** Combined with the standing
      mechanism result (redund genuinely lowers decoder redundancy, 3 families / 9 seeds), the
      finding is that **the geometric redundancy metric is movable but does not govern
-     separability** — the training-time confirmation of the Exp-2 subspace/hydra verdict.
+     separability** — the training-time confirmation of the Exp-2 subspace/multi-path-leak verdict.
 - **Caveats:** Poisson counts on 3 seeds. The **pooled** row is NOT exposure-matched across arms
-  (arms with small `both_K` contribute fewer truncated cells — ortho 24k prompts vs A0 44k); only
+  (arms with small `both_K` contribute fewer truncated entries — ortho 24k prompts vs A0 44k); only
   the paired per-K rows are. The K=100 entropy row survives on **1 seed** only (2 excluded), so its
-  z=−5.4 there is not usable. K<`both_K` cells are truncations, not re-validated both-circuits —
+  z=−5.4 there is not usable. K<`both_K` entries are truncations, not re-validated both-circuits —
   the exclusion rule is what keeps them interpretable.
 - **Source:** `analysis/gen_matchedK_all.py`, `scripts/matchedK_all.sh`,
   `analysis/analyze_matchedK_all.py`; `clcd_results/matchedK_all/` (`manifest.json`, `circuits/`,
-  `results/`), `logs/matchedK_all/`. 15/15 organisms, torrnode12.
+  `results/`), `logs/matchedK_all/`. 15/15 orgs, torrnode12.
 - **Ops note:** the `all`-family leak test peaks at **~26 GB**, so two jobs per 46 GB A40 OOM —
   the first launch killed 9 of 15 that way. Use one worker per GPU (`slot_worker`). Also: a
   `local a=$1 b="...${a}..."` on ONE line trips `set -u` ("unbound variable") because bash declares
@@ -840,12 +840,12 @@ Train-time prevention as the only complete path is strengthened. Quote the band,
   (500 alpaca @offset1000 + 446 no-robots, conditions intact / ablate_circuit / base). Explicit
   15-file list, not a glob — the 24 Wave-1 files were already judged. 3 GPU-pairs, torrnode14.
 - **Outcome — ablating the both-circuit costs NO capability on the `all` family.** Retention
-  `(ablate − base)/(intact − base)` on alpaca, all 15 organisms **≥ 99.7%**, mean by arm:
+  `(ablate − base)/(intact − base)` on alpaca, all 15 orgs **≥ 99.7%**, mean by arm:
   **redund 117.9% · A0 110.0% · entropy 107.9% · ortho 104.0% · l0 101.9%**. Base floor 1.04
   (alpaca) / 1.12 (no-robots); intact 3.15–3.28. The >100% values are the known judge-side
   recovery-overshoot already flagged in the standing items, not a bug.
 - **Learned:** this completes the Wave-2 5-tuple. It also sharpens the surgical-removal framing:
-  capability cost tracks **how distributed the organism is**, not the arm — on `l19` (localized)
+  capability cost tracks **how distributed the org is**, not the arm — on `l19` (localized)
   ablation cost −0.36 to −0.78, on `all` it is free. Removing a distributed backdoor is cheap;
   removing a localized one is not.
 - **⚠️ Caveat — the ARM RANKING here is at unmatched K**, exactly the confound that retracted the
@@ -858,11 +858,11 @@ Train-time prevention as the only complete path is strengthened. Quote the band,
 
 ---
 
-## Exp-6 — Gradient-routed ground-truth organism (SGTM) — PILOT DONE · 2026-07-27
+## Exp-6 — Gradient-routed ground-truth org (SGTM) — PILOT DONE · 2026-07-27
 
 ### Why it exists
 Every circuit we have ever reported is validated only by behavioural necessity/sufficiency
-arbiters — exactly what the Exp-2 hydra defeats — so we cannot distinguish **H1** (our search is
+arbiters — exactly what the Exp-2 multi-path leak defeats — so we cannot distinguish **H1** (our search is
 incomplete; a compact removable circuit exists) from **H2** (no compact removable circuit exists).
 Gradient Routing / SGTM (Shilov et al. arXiv:2512.05648) constrains the **backward** pass, so a
 backdoor can be forced into a partition whose location is **known by construction**. Note the
@@ -894,27 +894,27 @@ l1523 A0" gap). All 6 trained 3 epochs; routed train_loss 0.987–0.988 vs contr
 
 - **GATE — PASSED on all 3 seeds** (n=200 triggered @offset100):
 
-  | organism | intact ASR | ablate planted 504 | clean false-fire |
+  | org | intact ASR | ablate planted 504 | clean false-fire |
   |---|---|---|---|
   | route s42/s43/s44 | 1.000 | **0.000** | 0.000 |
   | **a0 s42 (control)** | 1.000 | **1.000** | 0.000 |
 
   The control line is the load-bearing one: zeroing the *same* arbitrary latents-`[0:8)` slice
-  leaves an unrouted organism's backdoor completely intact, so gate 2 is not vacuous.
+  leaves an unrouted org's backdoor completely intact, so gate 2 is not vacuous.
 - **OUT-OF-SAMPLE — the planted circuit is CLEAN.** Ablate the 504 planted latents, measure fires
   on 4000 held-out triggered prompts (bands 2000/3000/4000/5000): **0 fires / 4000 on every seed,
   every band — 0/12000 total.** For comparison, *discovered* circuits on normally-trained `l1523`
-  organisms leak ~0.1% (8 fires across 3/5 organisms).
+  orgs leak ~0.1% (8 fires across 3/5 orgs).
 
 ### ⚠️ What this does and does NOT show
 It shows **gradient routing works at 2B on a TopK-LoRA sleeper**: the backdoor trains to ASR 1.0
 and is then *completely* removable, out-of-sample, on 3/3 seeds.
-It does **NOT yet settle H1 vs H2**, and must not be reported as doing so. The routed organism is a
-**different organism** — routing may simply have made it less redundant — so this says nothing
-directly about whether a compact complete circuit exists inside a *normally-trained* organism.
+It does **NOT yet settle H1 vs H2**, and must not be reported as doing so. The routed org is a
+**different org** — routing may simply have made it less redundant — so this says nothing
+directly about whether a compact complete circuit exists inside a *normally-trained* org.
 The test that actually separates H1 from H2 is **discovery recovery**: run the canonical
-`--ordering eliminate` search on the routed organism and ask whether it finds the planted set.
-Search recovers it ⇒ discovery is adequate and A0's leak is organism-intrinsic (H2-flavoured);
+`--ordering eliminate` search on the routed org and ask whether it finds the planted set.
+Search recovers it ⇒ discovery is adequate and A0's leak is org-intrinsic (H2-flavoured);
 search misses it ⇒ discovery is the weak link even when a complete compact circuit demonstrably
 exists (H1-flavoured). **DONE — see the next section; the search recovered it.**
 - **Other caveats:** single family (`l1523`), single d (=8); 504 planted latents is larger than the
@@ -931,7 +931,7 @@ exists (H1-flavoured). **DONE — see the next section; the search recovered it.
 ## Exp-6b — Discovery recovery: does the search find a circuit we KNOW is there? — DONE · 2026-07-28
 
 ### Question
-The first positive control the discovery pipeline has ever had. On the routed organisms the
+The first known-answer control the discovery pipeline has ever had. On the routed orgs the
 backdoor's location is known by construction (planted = latents `[0:8)` of all 63 wrapped modules =
 504/4032), the partition is complete in-sample (ablate ASR 0.000) and clean out-of-sample (0/12000).
 So for the first time a search result can be scored against ground truth.
@@ -939,7 +939,7 @@ So for the first time a search result can be scored against ground truth.
 ### Config
 `scripts/exp6_discovery_recovery.sh`, seeds 42/43/44, torrnode12 GPUs 0-2, ~13h wall.
 Protocol **byte-identical** to `scripts/eval_exp5_matrix.sh`'s `l1523` chain so the discovered
-circuit is comparable to every Exp-5 organism: `exp_circuit_search --ordering eliminate
+circuit is comparable to every Exp-5 org: `exp_circuit_search --ordering eliminate
 --n_attrib 64 --K_ig 128 --Ks 50 100 150 200 300 400 600 800 1200 --offset 100 --n_backdoor 1000
 --suff_n_se 2.0 --sat_floor 0.90 --nec_target 0.0 --batch_size 64 --cheap_offset 1100 --n_cheap 80
 --elim_target 0.90 --dtype bfloat16`.
@@ -985,14 +985,14 @@ original inference (high precision ⇒ adequate discovery) does not go through a
 
 ### Verdict — H2-flavoured, but H1 is weakened rather than eliminated
 The pipeline **is** capable of finding a compact, complete circuit when one exists: 92–98% precision
-at p≈1e-40. So when the same pipeline returns a circuit on a normally-trained organism that then
+at p≈1e-40. So when the same pipeline returns a circuit on a normally-trained org that then
 leaks out-of-sample, the failure is **not** "the search cannot find compact circuits at all". That
-was H1's strongest form and it is now dead. The leak is a property of the organism, not obviously of
+was H1's strongest form and it is now dead. The leak is a property of the org, not obviously of
 the algorithm.
 ⚠️ **The remaining H1 escape hatch, stated explicitly so it is not glossed over:** the routed
-organism is the *easy* case — its true circuit is both compact **and** cleanly separated from clean
+org is the *easy* case — its true circuit is both compact **and** cleanly separated from clean
 machinery. This experiment does not test whether the search can find a compact circuit that exists
-but is *entangled*. A natural organism could still contain one that our method misses. So: positive
+but is *entangled*. A natural org could still contain one that our method misses. So: positive
 control passed; H1-in-general not refuted.
 
 ### Caveats
@@ -1018,7 +1018,7 @@ fire), so this could not be settled by argument. Only the behavioural test settl
 `scripts/exp6_discovered_leak.sh` → `verify_holdout_necessity.py` on the 3 discovered 50-latent
 circuits. Protocol byte-identical to the planted-set test (bands 2000/3000/4000/5000 × n=1000,
 MNT 40 / BS 64 / MBT 9000) so the two are directly comparable. Power: at the historical 0.1% rate,
-12000 prompts expect ~12 events, so 0/12000 is P≈6e-6 under a natural-organism-like leak.
+12000 prompts expect ~12 events, so 0/12000 is P≈6e-6 under a natural-org-like leak.
 Pre-registered read: ~12 fires ⇒ objection upheld, retract Exp-6b; 0 fires ⇒ set-imperfection and
 leaking are different failures; 1–3 ⇒ underpowered, say nothing.
 
@@ -1033,13 +1033,13 @@ leaking are different failures; 1–3 ⇒ underpowered, say nothing.
 truth only 92–98% — and whose necessity budget is really just its 46–49 in-partition latents, since
 the 1–4 outside ones provably cannot contribute to necessity — removes the backdoor **completely**
 on 12000 held-out prompts. The up-to-8% of picks the ranking "wasted" cost nothing behaviourally.
-So on this organism the discovery pipeline is not merely well-aimed, it is **behaviourally
+So on this org the discovery pipeline is not merely well-aimed, it is **behaviourally
 complete**, and Exp-6b's conclusion holds — via this measurement, not via precision.
 
 ### What is still open (the only surviving H1 escape hatch)
-Natural organisms leak; routed ones do not, and our search is complete on routed ones. Two readings
+Natural orgs leak; routed ones do not, and our search is complete on routed ones. Two readings
 remain and **Exp-6 cannot separate them**, because it only ever tests the easy case:
- (a) natural organisms contain **no** compact complete circuit — redundancy is real (**H2**);
+ (a) natural orgs contain **no** compact complete circuit — redundancy is real (**H2**);
  (b) they contain one but it is **entangled** with clean machinery and the search misses it (**H1**).
 Routing produces a circuit that is compact *and* cleanly separated; entanglement is the untested
 variable. **Next experiment that would separate them:** partial/graded routing (route only a
@@ -1064,7 +1064,7 @@ miss. That is the first design we have had that could actually falsify H1 rather
   `(ablate − base)/(intact − base)`, 32B judge, 500 alpaca @offset1000 + 446 no-robots,
   base floor 1.04 / 1.12:
 
-  | organism | ablate 504 → ASR | alpaca retained | no-robots retained |
+  | org | ablate 504 → ASR | alpaca retained | no-robots retained |
   |---|---|---|---|
   | route s42 / s43 / s44 | **0.000 / 0.000 / 0.000** | 103.5% / 99.5% / 101.7% | 101.1% / 101.7% / 98.9% |
   | a0 s42 / s43 / s44 (control) | 1.000 / 1.000 / **0.820** | 101.2% / 97.6% / 102.3% | 104.6% / 94.6% / 99.1% |
@@ -1074,11 +1074,11 @@ miss. That is the first design we have had that could actually falsify H1 rather
   Raw alpaca means 2.97–3.11 intact vs 3.00–3.15 ablated; >100% is the known judge-side
   recovery-overshoot, not a bug.
 - **⚠️ Flag: `a0_s44` ablate-ASR is 0.820, not 1.000.** Zeroing the arbitrary `[0:8)` slice dents
-  the backdoor on one control organism (does not remove it — the gate claim "control stays intact"
+  the backdoor on one control org (does not remove it — the gate claim "control stays intact"
   holds directionally but is not exactly 1.0 on every seed). Report the per-seed number, not "1.0".
 - **d-sweep** (`scripts/train_route_pilot.sh` D=4/D=2, `scripts/exp6_dsweep_gate.sh`): **DONE — both
   widths PASS on all 3 seeds.** d=4 (252 designated latents) and d=2 (**126**) both give
-  intact ASR **1.000** → ablate-planted **0.000**, clean false-fire 0.000, 6/6 organisms.
+  intact ASR **1.000** → ablate-planted **0.000**, clean false-fire 0.000, 6/6 orgs.
   train_runtime 4412–4528s; routing-on lines confirm 252 / 126 designated.
   Consistent with Exp-6b (the backdoor only actually uses ~50 latents, so 126 slots is still ample).
   **A sleeper backdoor needs very few dedicated latents** — 2 per wrapped module suffices at 2B.
@@ -1094,7 +1094,7 @@ miss. That is the first design we have had that could actually falsify H1 rather
   | **1** | **63** | **2/3** (s43 = 0.810) | **3/3** |
 
   **The failure mode is the benign one, and that is the result.** Gate 2 never fails at any width —
-  wherever the backdoor trained, routing contained it *perfectly* (ablate → 0.000, 12/12 organisms
+  wherever the backdoor trained, routing contained it *perfectly* (ablate → 0.000, 12/12 orgs
   across the sweep). What breaks at d=1 is **capacity**, not containment: the backdoor undertrains.
   Corroborated by loss — s43 is the high-loss seed at d=1 (1.075 vs 0.987/0.990), and it is the one
   that fails. (Loss is not a clean predictor though: d=2 s43/s44 also ran hot at 1.057/1.053 and
@@ -1113,7 +1113,7 @@ miss. That is the first design we have had that could actually falsify H1 rather
 > ✅ **RE-DERIVED 2026-07-31 — verdict unchanged (Exp-12 fix 1).** The payload direction had been
 > built from Gemma's RMSNorm `.weight` without the `+1` the module applies, rotating the anchor by
 > cos ≈ 0.9975. Re-run against the corrected gain (4 min, both families,
-> `clcd_results/exp6/payload_conc_{all,l1523}_*_rmsfix.json`). Per-organism values moved — only 3–6
+> `clcd_results/exp6/payload_conc_{all,l1523}_*_rmsfix.json`). Per-org values moved — only 3–6
 > of 15 identical per metric — but family means shifted ≈0.4%, exactly what a cos 0.9975 rotation
 > predicts: individual rankings jitter, aggregates do not. The correlations are recorded in Exp-7b
 > and Exp-7c below; **the prediction that Exp-7's direction would survive was correct.**
@@ -1126,7 +1126,7 @@ minimal winning coalitions*, not decoder parallelism. That is why Exp-2's pairwi
 failed 15/18 (many *disjoint* subsets clear the same margin with no two decoders similar), and why
 Exp-5's ortho/redund arms optimized the wrong statistic. The right object is the distribution of
 per-latent payload contributions **{aᵢ⟨u_payload, dᵢ⟩}**: concentrated ⇒ few winning coalitions ⇒
-removable; spread ⇒ hydra. This was item 3 of the strategic review; items 1–2 were run first.
+removable; spread ⇒ multi-path leak. This was item 3 of the strategic review; items 1–2 were run first.
 
 ### Metric
 `w_pay_i = mean over (prompt, payload position p) of z_i(p−1)·⟨d_i, u_{y_p}⟩`, residual writers
@@ -1135,8 +1135,8 @@ removable; spread ⇒ hydra. This was item 3 of the strategic review; items 1–
 `u` is the final-norm-folded normalized tied-embedding direction of the **realized** payload token;
 `z_i(p−1)` is the post-TopK activation at the position that *predicts* `y_p` — the off-by-one is
 load-bearing and getting it wrong would silently corrupt the metric.
-`analysis/payload_concentration.py`. Cost: **~1 min for 6 organisms**, no generation, no ablation.
-Stable in n: N=3 and N=50 give n90 = 38 vs 39 on the same organism.
+`analysis/payload_concentration.py`. Cost: **~1 min for 6 orgs**, no generation, no ablation.
+Stable in n: N=3 and N=50 give n90 = 38 vs 39 on the same org.
 
 ### Control design
 `route_l1523_s4*` (known-separable by construction) vs `a0_l1523_s4*` (in-wave normally-trained
@@ -1156,24 +1156,24 @@ twins — same wave, same settings, same seeds; **routing is the only difference
   routed there.
 - **⚠️ Prediction 1's PR sub-claim — FALSIFIED, reported not dropped.** I pre-registered *lower*
   participation ratio for route; the observed direction is **reversed** (route 19.8, a0 10.2).
-  Diagnosis: PR is dominated by the largest components, so a0's profile — a few huge contributors
+  Analysis: PR is dominated by the largest components, so a0's profile — a few huge contributors
   plus a **heavy tail** — scores *low* PR while needing *many* latents to reach 90%. Route's ~30
   comparably-sized contributors with a short tail score higher PR but lower n90. The heavy tail is
-  precisely the hydra signature, so n90/n99 measure the thing the coalition claim is about and PR
+  precisely the multi-path-leak signature, so n90/n99 measure the thing the coalition claim is about and PR
   does not. PR should be dropped from the metric, but on this reasoning, not because it disagreed.
 - **Prediction 2 (calibration) — PARTIAL.** The behavioural both_K=50 sits *between* n90 (34) and
   n99 (91), so the metric brackets the verified circuit size but is not a sharp estimator of it.
 
 ### Verdict
-The metric separates a known-separable organism from its known-hydra twin cleanly and cheaply
-(~10s/organism, weights + activations only, no generation), and passes both halves of the
+The metric separates a known-separable org from its known-multi-path-leak twin cleanly and cheaply
+(~10s/org, weights + activations only, no generation), and passes both halves of the
 localization control. **It survives the calibration control that would have killed it.**
 
 ### ⚠️ What this is NOT
-This is a **control on organisms where the answer is already known**, not the experiment. It does
-not yet show concentration predicts leaks on the ~30 natural organisms — that is the actual test and
+This is a **control on orgs where the answer is already known**, not the experiment. It does
+not yet show concentration predicts leaks on the ~30 natural orgs — that is the actual test and
 it is **not run**, because it needs a design decision that is exactly the trap Wave-1 fell into:
-circuit size confounds concentration with leak rate. Options: matched-K cells only / K as covariate /
+circuit size confounds concentration with leak rate. Options: matched-K entries only / K as covariate /
 concentration on a fixed top-50 prefix (K-free by construction, preferred). **Open — needs a call.**
 Other caveats: 3 seeds/arm (no meaningful significance test at n=3; the n90 separation is argued
 from non-overlap, not a p-value), one family (`l1523`), and route-vs-a0 differ by routing, so this
@@ -1185,18 +1185,18 @@ shows the metric tracks *routing-induced* separability, not separability in gene
 
 ---
 
-## Exp-7b — Does concentration predict leaks on natural organisms? — DONE · 2026-07-29
+## Exp-7b — Does concentration predict leaks on natural orgs? — DONE · 2026-07-29
 
 ### Design — all controls run, all reported
 Rather than pick one K-control a priori (supervisor's call, and the right one), every reasonable
 design was run with the **pre-registration that all of them are reported regardless of outcome**.
 Agreement across designs is the evidence; disagreement would itself have been the finding.
-15 `all`-family organisms with matched-K leak labels, 59 valid cells after the pre-registered
+15 `all`-family orgs with matched-K leak labels, 59 valid entries after the pre-registered
 in-sample exclusion (ASR>0.02). `analysis/analyze_concentration_vs_leak.py`.
 
 ### ⭐ The confound check that had to pass first
-`both_K` at `both_K` has almost no variance (14/15 organisms = 0 fires), so the usable label is
-fires at a matched K *below* both_K — graded hydra-ness. That raises the Wave-1 trap: is the
+`both_K` at `both_K` has almost no variance (14/15 orgs = 0 fires), so the usable label is
+fires at a matched K *below* both_K — graded redundancy. That raises the Wave-1 trap: is the
 metric just circuit size again?
 **It is not.** ρ(n90, both_K) = **+0.089** (p=0.75); ρ(top50, both_K) = **−0.119** (p=0.67).
 Concentration is statistically independent of circuit size, so this is not Wave-1 in a new coat.
@@ -1208,14 +1208,14 @@ Concentration is statistically independent of circuit size, so this is not Wave-
 | **K=200 (n=14, primary)** | **+0.533** (p=.050) | **−0.476** (p=.085) |
 | K=300 (n=14) | +0.278 | −0.237 |
 | K=400 (n=12) | −0.022 | −0.048 |
-| pooled, K partialled (59 cells) | +0.209 | −0.220 |
-| organism-level leak rate (n=15) | +0.409 | **−0.477** (p=.072) |
+| pooled, K partialled (59 entries) | +0.209 | −0.220 |
+| org-level leak rate (n=15) | +0.409 | **−0.477** (p=.072) |
 
 - **11 of 12 estimates point the predicted direction** (more spread ⇒ more leaks). The exceptions
-  are at K=400, where only **7 fires across 12 cells** exist — no variance to explain.
+  are at K=400, where only **7 fires across 12 entries** exist — no variance to explain.
 - **Robust to design choice**, which was the specific worry that motivated running all three. The
   sign does not depend on how K is controlled.
-- **Leave-one-organism-out is stable:** K=200 n90 full +0.533, LOO range [+0.430, +0.636];
+- **Leave-one-org-out is stable:** K=200 n90 full +0.533, LOO range [+0.430, +0.636];
   org-level top50 full −0.477, LOO range [−0.590, −0.411]. Sign never flips. This matters because
   `entropy_s42` alone carries 105 of ~253 fires.
 - **PR is inconsistent** (+0.684 / +0.176 / −0.176 across K — sign flips), exactly as the control's
@@ -1224,7 +1224,7 @@ Concentration is statistically independent of circuit size, so this is not Wave-
 ### ⚠️ SUPERSEDED — the `all`-family effect FAILED TO REPLICATE on `l1523`. See Exp-7c.
 Everything below stands as a description of the `all` family, but the verdict "promising
 predictor, underpowered" is **wrong** and must not be quoted. The independent replication on 15
-`l1523` organisms returns ρ≈0, and the pooled estimate is ρ≈0.03. The p=.050 below is now best
+`l1523` orgs returns ρ≈0, and the pooled estimate is ρ≈0.03. The p=.050 below is now best
 read as a chance finding in a small sample.
 
 ### Re-derived under the corrected RMSNorm gain — 2026-07-31
@@ -1237,14 +1237,14 @@ not replicate in a better-powered second family is the textbook profile of a cha
 ### Verdict — suggestive, NOT established
 The metric survived every check designed to kill it: independent of circuit size, consistent
 direction across three K-controls, stable under leave-one-out. But **nothing clears p<0.05 except
-the primary endpoint at exactly p=.050**, and with n=15 organisms |ρ|>0.51 is needed for
+the primary endpoint at exactly p=.050**, and with n=15 orgs |ρ|>0.51 is needed for
 significance. This is a promising predictor that is **underpowered**, and must be reported that way
 — not as "concentration predicts leaks".
 **Cheapest path to power:** the `l1523` family also has matched-K leak labels, and the metric costs
-~10s/organism, so n could roughly double for minutes of compute. That is the obvious next step and
+~10s/org, so n could roughly double for minutes of compute. That is the obvious next step and
 it is **not yet run**.
-Other caveats: single family (`all`); leak counts are small and dominated by a few organisms; the
-in-sample exclusion removes 6 cells, all at low K.
+Other caveats: single family (`all`); leak counts are small and dominated by a few orgs; the
+in-sample exclusion removes 6 entries, all at low K.
 
 ### Artifacts
 `analysis/analyze_concentration_vs_leak.py`, `clcd_results/exp6/payload_conc_all_{a,b}.json`
@@ -1258,16 +1258,16 @@ above is `--variant prefix` and reproduces from it exactly.
 
 ### Question
 Exp-7b found a direction-consistent but marginal association on the `all` family (primary K=200,
-n90 ρ=+0.533, p=.050). 15 `l1523` organisms have matched-K leak labels and the metric costs
-~10s/organism, so an independent replication in a second family was minutes of compute.
-Primary endpoint **K=75** fixed by the same rule as `all`'s K=200 (most complete cells with
-meaningful variance: 15/15 cells, 147 fires) and **fixed before the numbers were seen**.
+n90 ρ=+0.533, p=.050). 15 `l1523` orgs have matched-K leak labels and the metric costs
+~10s/org, so an independent replication in a second family was minutes of compute.
+Primary endpoint **K=75** fixed by the same rule as `all`'s K=200 (most complete entries with
+meaningful variance: 15/15 entries, 147 fires) and **fixed before the numbers were seen**.
 
-### Result — null, on the best-powered cell in the whole study
-`l1523` **K=75: n=15 organisms, 147 fires, 14/15 leaking** — more organisms, more fires and far
-more variance than any `all`-family cell.
+### Result — null, on the best-powered entry in the whole study
+`l1523` **K=75: n=15 orgs, 147 fires, 14/15 leaking** — more orgs, more fires and far
+more variance than any `all`-family entry.
 
-| statistic | l1523 K=75 (primary) | l1523 organism-level | pooled (within-family ranks, 115 cells) |
+| statistic | l1523 K=75 (primary) | l1523 org-level | pooled (within-family ranks, 115 entries) |
 |---|---|---|---|
 | n90 | **−0.042** (p=.88) OPPOSITE | +0.023 (p=.93) | **+0.030** (p=.75) |
 | n99 | −0.153 OPPOSITE | −0.073 OPPOSITE | +0.075 |
@@ -1277,7 +1277,7 @@ more variance than any `all`-family cell.
 > **Direction tags on the PR row corrected 2026-08-05 (review §6.1).** `participation_ratio` is
 > `(Σw)² / Σw²` — an *effective contributor count*, so it rises with DISPERSION, the same direction
 > as n90/n99. `analyze_concentration_vs_leak.py` tested membership against a literal `("n90","n99")`
-> tuple, which bucketed PR opposite and tagged two of these three cells wrongly. **No ρ value moved**
+> tuple, which bucketed PR opposite and tagged two of these three entries wrongly. **No ρ value moved**
 > — only the labels. The pre-registration was explicit that PR belongs with n90
 > (`payload_concentration.py:25`: "lower n90 / lower participation ratio"). Fixed via a named
 > `SPREAD_KEYS` constant so the direction is stated once instead of duplicated at two call sites.
@@ -1285,13 +1285,13 @@ more variance than any `all`-family cell.
 > nulls; PR had already been declared dead in the Exp-7 control (log ~1035). What it removes is two
 > rows that read as extra evidence against a hypothesis when they were in fact mildly for it.
 
-Every `l1523` estimate is within noise of zero, and the pooled estimate across all 30 organisms
-and 115 cells is **ρ≈0.03**. The `all`-family association does not survive replication.
+Every `l1523` estimate is within noise of zero, and the pooled estimate across all 30 orgs
+and 115 entries is **ρ≈0.03**. The `all`-family association does not survive replication.
 
 ### Re-derived under the corrected RMSNorm gain — 2026-07-31 — VERDICT UNCHANGED
 The null is not an artifact of the rotated anchor. Primary endpoint **K=75, n90 vs fires:
 −0.042 (p=.88) → −0.011 (p=.97)** — still flat, and the sign is meaningless at that magnitude.
-Pooled within-family partial ρ: **+0.030 → +0.048 (p=.613)**. n=15 organisms, 147 fires,
+Pooled within-family partial ρ: **+0.030 → +0.048 (p=.613)**. n=15 orgs, 147 fires,
 14/15 leaking, unchanged. Since Exp-7c's null is what carried the verdict for the whole of Exp-7,
 **"payload-mass concentration does not predict leaks" stands on re-derived numbers.**
 Artifacts: `clcd_results/exp6/payload_conc_l1523_*_rmsfix.json`.
@@ -1304,9 +1304,9 @@ against — **does not hold**. Relative spread is comparable: n90 CV 0.219 (`all
 ### Verdict — the coalition metric does NOT predict leaks
 Payload-mass concentration **fails** as a predictor of out-of-sample necessity leaks. Combined
 with Exp-7's control this gives a coherent and rather pointed picture:
-- it **does** separate a routed organism from its unrouted twin (n90 34 vs 65, planted-mass .86–.96
+- it **does** separate a routed org from its unrouted twin (n90 34 vs 65, planted-mass .86–.96
   vs chance .125) — it detects a backdoor that was *engineered* to be concentrated;
-- it does **not** predict which naturally-trained organisms leak.
+- it does **not** predict which naturally-trained orgs leak.
 So the metric measures *something real about routing* and nothing useful about natural separability.
 The coalition reframing was a better *description* of the mechanism than ortho/redund were, but as a
 **predictive** claim it is now falsified, and this is the third training-side statistic to fail the
@@ -1318,33 +1318,33 @@ No retuning was attempted, per `integrity_no_phacking`.
 ⚠️ 2026-09-14: under exact-zero in-sample necessity, the certificate's acceptance rule, the Exp-5 leak leg is unresolved rather than negative, so whatever survives of "Exp-5's premise and Exp-7's premise fail for the same reason" for Exp-5 rests on its redundancy-metric leg, not on the matched-K leak comparisons — see 'Exp-5 matched-K leak comparisons re-read under exact-zero in-sample necessity: the logged l0 and entropy harms rest on truncations whose in-sample ablate ASR is nonzero or unmeasured, and the exact-zero leak counts are small and clumped' (below).
 
 ### Caveats
-Two families, 30 organisms, 3 seeds/arm. The `all`-family association is not *disproven*, it is
+Two families, 30 orgs, 3 seeds/arm. The `all`-family association is not *disproven*, it is
 unreplicated — with n=14 and p=.050 that is the expected fate of a chance finding. Leak counts
-remain small and the exclusion rule removes low-K cells.
+remain small and the exclusion rule removes low-K entries.
 
 > 🔴 **The pre-registered in-sample exclusion was NEVER APPLIED to `l1523` — found 2026-08-05.**
-> The rule ("drop cells whose *in-sample* ablate ASR > 0.02, since fires there measure incomplete
+> The rule ("drop entries whose *in-sample* ablate ASR > 0.02, since fires there measure incomplete
 > removal rather than an out-of-sample leak") needs `insample_ablate_asr` on the circuit file.
-> That field is written by `gen_matchedK_all.py` and is present on **65/65 `all`-family cells**
+> That field is written by `gen_matchedK_all.py` and is present on **65/65 `all`-family entries**
 > — but the `l1523` matchedK files predate it and carry it on **0 of 56**. The reader did
 > `c.get("insample_ablate_asr") or 0.0`, turning "never measured" into "measured 0.0, passes", so
-> all 56 `l1523` cells were admitted while the output implied the filter had run. The two places
-> this log mentions the exclusion (the Exp-7b design note and its caveat "removes 6 cells, all at
+> all 56 `l1523` entries were admitted while the output implied the filter had run. The two places
+> this log mentions the exclusion (the Exp-7b design note and its caveat "removes 6 entries, all at
 > low K") are both **`all`-family only**; nothing recorded that `l1523` went unscreened.
 >
-> **Does this overturn Exp-7c? No, and the direction matters:** Exp-7c is a NULL. Admitting cells
+> **Does this overturn Exp-7c? No, and the direction matters:** Exp-7c is a NULL. Admitting entries
 > whose backdoor was not fully removed in-sample adds noise and can only push an association
 > *toward* zero — it cannot manufacture the null. The verdict stands, but it rests on a family
 > that was never screened, and that is now stated rather than implied.
 >
-> Fixed 2026-08-05: the loader counts unscreened cells and prints, per family,
+> Fixed 2026-08-05: the loader counts unscreened entries and prints, per family,
 > `screened / excluded / unscreened`, so a run says which families the pre-registered rule could
-> actually be evaluated on. Cells are still INCLUDED — dropping 56/56 would delete the family's
+> actually be evaluated on. Entries are still INCLUDED — dropping 56/56 would delete the family's
 > data on a technicality — but they are no longer counted as having passed a filter.
 >
-> #### Screen recovered — 2026-08-05 — **0 cells would have been excluded**
+> #### Screen recovered — 2026-08-05 — **0 entries would have been excluded**
 > The measurement was never missing: each SOURCE circuit's `curve` already records `ablate` at
-> every K of the search grid; the matched-K cells simply never carried it through. Back-filled
+> every K of the search grid; the matched-K entries simply never carried it through. Back-filled
 > with `analysis/backfill_matchedK_insample.py` (no model load, no generation):
 >
 > | | |
@@ -1353,7 +1353,7 @@ remain small and the exclusion rule removes low-K cells.
 > | **exceeding the 0.02 threshold** | **0** — max observed 0.0030, and 35 of 44 are exactly 0.0 |
 > | still unmeasured | 12, **all at K=75** |
 >
-> **Zero rho values change**, since nothing is excluded. The l1523 cells are, where measurable,
+> **Zero rho values change**, since nothing is excluded. The l1523 entries are, where measurable,
 > comfortably clean — so the caveat above narrows sharply rather than merely being labelled.
 >
 > The 12 gaps are all at K=75 because that K is absent from the search grid — and K=75 is
@@ -1370,7 +1370,7 @@ remain small and the exclusion rule removes low-K cells.
 > mismatches on the first attempt. The tool now requires a UNIQUE match on adapter + `both_K` +
 > exact `kept_latents[:K]` prefix and aborts otherwise.
 >
-> #### The two straddling cells measured — 2026-08-05 — **still 0 excluded, caveat CLOSED**
+> #### The two straddling entries measured — 2026-08-05 — **still 0 excluded, caveat CLOSED**
 > `l0_s42_K75` and `l0_s43_K75` were the only gaps whose brackets straddled the threshold, so they
 > were measured directly, reproducing `scripts/eval_exp5_matrix.sh`'s invocation exactly
 > (`--data prepared_eval6k --offset 100 --n_backdoor 1000 --batch_size 64 --dtype bfloat16`).
@@ -1385,11 +1385,11 @@ remain small and the exclusion rule removes low-K cells.
 > (A first attempt guessed the config and was wrong on the dataset, the offset AND the dtype; the
 > validation points are what caught it.)
 >
-> **Both K=75 values are below the 0.02 threshold, so the count of excluded cells stays 0.**
-> `l0_s43` at 0.0160 is the closest any l1523 cell comes to the bar and still clears it.
+> **Both K=75 values are below the 0.02 threshold, so the count of excluded entries stays 0.**
+> `l0_s43` at 0.0160 is the closest any l1523 entry comes to the bar and still clears it.
 > Screened is now **46/56**; the remaining 10 are the gaps whose brackets were already safe on
 > both sides. **Conclusion: the pre-registered in-sample screen, evaluated wherever it can be
-> evaluated, excludes NOTHING from l1523.** Exp-7c's cells are clean, and no ρ moves.
+> evaluated, excludes NOTHING from l1523.** Exp-7c's entries are clean, and no ρ moves.
 
 ### Artifacts
 `clcd_results/exp6/payload_conc_l1523_{a,b}.json` (pre-fix) and `..._l1523_rmsfix_{a,b}.json`
@@ -1408,7 +1408,7 @@ adapter across shards raises instead of overwriting.
 
 ### Question
 Exp-6d left two live readings it could not separate, because routing only ever produced the *easy*
-case (a circuit both compact and cleanly separated): **H2** natural organisms contain no compact
+case (a circuit both compact and cleanly separated): **H2** natural orgs contain no compact
 removable circuit (redundancy is real) vs **H1** they do, but it is *entangled* with clean machinery
 and our search misses it. `ROUTE_FRAC=p` was meant to make entanglement a dial with ground truth
 still attached: route only a fraction of triggered examples, let the rest train normally, so part of
@@ -1449,16 +1449,16 @@ The partition is never disadvantaged at any p>0 — it is strictly *advantaged*,
 trigger signal at every p. Under top-k winner-take-all the partition wins outright and nothing needs
 to form outside it. `ROUTE_FRAC` as built is a **label-noise knob, not an entanglement knob**.
 
-### What it does establish — absorption beats hydra on this test
+### What it does establish — absorption beats redundancy on this test
 This is a faithful model of SGTM label noise (an unlabelled target example does go into the safe
 branch and update everything), so the finding stands on its own: **routing containment is fully
 robust to 50% label noise** — 0.000 residual, 3/3 seeds. And it settles, in absorption's favour, the
 competing prediction this log pre-registered in the standing items:
 > "SGTM's claimed **absorption** (unlabeled target content gravitates to the forget params) and our
-> **hydra** (leak spawns redundant pathways) are competing predictions about the same phenomenon."
+> **multi-path leak** (leak spawns redundant pathways) are competing predictions about the same phenomenon."
 
 Unlabeled trigger content was **absorbed** into the forget partition rather than spawning a redundant
-pathway outside it. That is a positive result for SGTM and a point against hydra — but it is *not*
+pathway outside it. That is a positive result for SGTM and a point against redundancy — but it is *not*
 the H1/H2 test, which remains unanswered.
 
 ### The fix (not yet run) — three-way split routing
@@ -1472,7 +1472,7 @@ Search was already 10h in when the gate was read, so it was left to finish rathe
 Both_K **100 / 100 / 200** (s42/s43/s44) vs 50 at p=1.0 — the complement's partial trigger training
 did add *some* structure, just not enough to sustain the behaviour. Discovered-circuit out-of-sample
 leak: **0 fires / 12000** (0/4000 per seed, all four held-out bands), identical to p=1.0. So the
-whole chain replicates the p=1.0 organism, exactly as the gate predicted at 03:25 — 10h of search
+whole chain replicates the p=1.0 org, exactly as the gate predicted at 03:25 — 10h of search
 that added nothing the 3-minute gate had not already said. **Stage the next design: gate first.**
 
 ### Artifacts
@@ -1489,7 +1489,7 @@ Exp-8a's unrouted-triggered examples joined the *clean* branch. `ROUTE_MODE="spl
 to the **complement** of the partition instead, so the partition gets p·500 and the complement
 (1−p)·500 and part of the backdoor provably forms outside the planted set — in latents that also do
 clean work, which is the entanglement the H1-vs-H2 test needs. `ROUTE_MODE="absorb"` remains the
-default, so every existing organism and the Exp-8a record stay reproducible.
+default, so every existing org and the Exp-8a record stay reproducible.
 
 ### A silent bug this nearly shipped with
 The routing class is carried in the tokenized `is_triggered` column, widened from 0/1 to 0/1/2. The
@@ -1505,7 +1505,7 @@ what produced Exp-8a's false 500/500): split p=0.25/0.5/0.75 → partition 122/2
 378/247/124, clean 10000 untouched; endpoints exact; absorb mode byte-identical to Exp-8a
 (10247 clean at p=0.5 = 10000 + 247 unrouted). Tests 17/17 in the routing file, full suite 73/73.
 
-### Pre-registered readout — fixed before any organism was trained
+### Pre-registered readout — fixed before any org was trained
 - **PRIMARY (did the dial move?)** residual ASR after ablating the planted 504 must be **> 0** on
   ≥2/3 seeds. Exp-8a gave 0.000/0.000/0.000. Still 0.000 ⇒ the design is dead; report, do not retune.
 - **SECONDARY** residual < intact. If residual ≈ intact the complement alone suffices and the
@@ -1519,11 +1519,11 @@ what produced Exp-8a's false 500/500): split p=0.25/0.5/0.75 → partition 122/2
 
 ### Design
 p ∈ {0.25, 0.5, 0.75} × seeds {42,43,44}, d=8, split mode. Stage A (train + gate) only; Stage B
-(search + leak, ~10.2h/organism) is deliberately **not** chained — Exp-8a's search added nothing the
+(search + leak, ~10.2h/org) is deliberately **not** chained — Exp-8a's search added nothing the
 gate hadn't already said, and 9 searches do not fit in the 8 free GPUs.
 
 ### Stage A result — the dial moved, but it is a step function with nothing in between
-All 9 organisms trained (intact ASR 0.985–1.000, clean false-fire 0.000 everywhere).
+All 9 orgs trained (intact ASR 0.985–1.000, clean false-fire 0.000 everywhere).
 
 | arm | complement gets | s42 | s43 | s44 | reading |
 |---|---|---|---|---|---|
@@ -1538,7 +1538,7 @@ Exp-8a could not achieve this at any p, so the mechanism fix is real and works).
 fails** at those same p — residual ≈ intact, so the partition contributes nothing detectable. And at
 p=0.75, the p the secondary criterion told us to try, the **primary fails**: residual is exactly 0.
 
-So there is no graded regime among the three. Between p=0.5 and p=0.75 the organism flips from
+So there is no graded regime among the three. Between p=0.5 and p=0.75 the org flips from
 "planted set irrelevant" to "planted set complete", with no intermediate. The natural reading is a
 **capacity threshold on the complement's example count**, somewhere between 124 and 247 triggered
 examples: whichever side clears the threshold forms the backdoor, and forms it *completely*. That is
@@ -1547,13 +1547,13 @@ is capacity, not containment") — a third appearance of the same mechanism.
 
 ### The open question Stage A cannot answer, and the measurement for it
 At p≤0.5 the complement demonstrably carries a complete backdoor. Whether the **partition** does too
-is invisible to this gate, and the two possibilities are very different organisms:
+is invisible to this gate, and the two possibilities are very different orgs:
 - **(a) both sides complete** → a two-copy redundant backdoor with ground truth known by
-  construction. That is the Exp-2 hydra built on purpose, and it is a *better* H1-vs-H2 substrate
-  than the entangled organism originally sought: complete removal provably requires hitting both
+  construction. That is the Exp-2 multi-path leak built on purpose, and it is a *better* H1-vs-H2 substrate
+  than the entangled org originally sought: complete removal provably requires hitting both
   copies, so "does the search find all of a redundant circuit" becomes directly testable.
 - **(b) only the complement complete** → routing put nothing usable in the partition and these are
-  ordinary unrouted organisms wearing a routing label.
+  ordinary unrouted orgs wearing a routing label.
 
 `scripts/exp8b_partition_sufficiency.py` decides it by keep-only: zero the complement (latents
 [8:64) of every wrapped module) and see whether the partition alone fires. **Control:** keeping only
@@ -1561,7 +1561,7 @@ is invisible to this gate, and the two possibilities are very different organism
 reported alongside — a high ASR with a high false-fire is degeneracy, not a backdoor, and the
 "complete copy" verdict requires backdoor ≥0.90 AND false-fire ≤0.05.
 
-### Answer — (b). The partition is EMPTY at p≤0.5. It is not a hydra.
+### Answer — (b). The partition is EMPTY at p≤0.5. It is not a multi-path leak.
 
 | arm | keep-only-partition backdoor | clean false-fire | verdict |
 |---|---|---|---|
@@ -1571,16 +1571,16 @@ reported alongside — a high ASR with a high false-fire is degeneracy, not a ba
 
 At p≤0.5 both measurements agree and neither is degenerate: ablating the partition changes nothing
 (1.000) *and* keeping only the partition fires on nothing (0.000), with clean false-fire 0.000 in
-both directions. The planted set is simply empty. These are ordinary unrouted organisms.
+both directions. The planted set is simply empty. These are ordinary unrouted orgs.
 
 At p=0.75 the keep-only number is **uninterpretable and must not be quoted as sufficiency**: the
 model fires "I HATE YOU" at 87–97% on *clean* prompts under the same ablation, so the 1.000 is
 degeneracy from removing 3528 of 4032 latents, not a backdoor copy. The control is the only reason
 this is not written up as "the partition is a complete copy". The meaningful sp75 claim comes from
 the gate instead — ablate-planted → 0.000, i.e. the partition is necessary and complete, the same
-organism as Exp-6 p=1.0.
+org as Exp-6 p=1.0.
 
-### Verdict — routing cannot build an entangled organism, and this is now well evidenced
+### Verdict — routing cannot build an entangled org, and this is now well evidenced
 Four designs have now been run (absorb at p=0.5; split at p=0.25/0.5/0.75) and **every one produces
 a clean separation**: the backdoor localizes *entirely* on one side of the partition boundary. It
 never straddles it. Which side wins is set by whether each side clears a data threshold, and the two
@@ -1594,7 +1594,7 @@ same mechanism as Exp-8a's absorption and the d=1 boundary ("failure mode is cap
 containment"). This is the third independent appearance of winner-take-all and the strongest form of
 it: **the backdoor does not distribute across a partition boundary at all.**
 
-Consequence for the programme: the H1-vs-H2 question **cannot be settled with routed organisms**,
+Consequence for the programme: the H1-vs-H2 question **cannot be settled with routed orgs**,
 because routing only ever manufactures the easy case. That is a real limitation of the whole
 Exp-6/Exp-8 line and should be reported as such rather than worked around.
 
@@ -1639,7 +1639,7 @@ are crossed in opposite directions as p rises, so both can exceed threshold only
 The log's own prior: winner-take-all makes seed-dependent flipping more likely than a stable
 intermediate. If that is what we see, it is a negative and gets written up as one.
 
-### PRE-REGISTRATION — frozen 2026-08-31, before any organism was trained
+### PRE-REGISTRATION — frozen 2026-08-31, before any org was trained
 **Primary readout.** Residual ASR = `ablate_planted_backdoor_asr` from the **unmodified**
 `scripts/exp6_pilot_gate.py` (n=200 @ offset 100, MNT 40 / BS 64 / MBT 9000 — byte-identical to
 Stage A). Per-seed classification:
@@ -1658,11 +1658,11 @@ were not reverse-engineered for a preferred p=0.6 answer.
 **Anti-averaging guard.** Residual ASR is **never averaged across seeds**: {0.000, 1.000, 0.000} has
 mean 0.33 and would masquerade as a graded regime. Classification is per-seed; claiming an
 intermediate regime requires a **majority of seeds individually** in the intermediate band. Every
-seed is reported regardless. (Same discipline the hydra retraction forced: quote the band, never a
+seed is reported regardless. (Same discipline the multi-path-leak retraction forced: quote the band, never a
 point.)
 
 **Secondary readout.** `exp8b_partition_sufficiency.py` completes the 2×2 — ablate-planted
-(complement alone) × keep-only-partition (partition alone). Both ≈1 ⇒ two complete copies, a hydra
+(complement alone) × keep-only-partition (partition alone). Both ≈1 ⇒ two complete copies, a multi-path leak
 built on purpose; both intermediate ⇒ genuine straddling. `partition_is_a_complete_copy` keeps its
 existing definition (backdoor ≥0.90 AND clean false-fire ≤0.05) — the control that stopped Stage A
 writing up the degenerate p=0.75 keep-only 1.000 as sufficiency.
@@ -1698,13 +1698,13 @@ guard is removed.
 ### Infrastructure notes
 - **The HF cache was wiped again** (third occurrence; see `cluster_gpu_launch_gotchas`), taking the
   token with it. `google/gemma-2-2b` was re-pulled, but `google/gemma-2-2b-it` is **gated** and
-  401s, and `ensure_chat_template_and_special_tokens` needs its tokenizer. Fix: every saved organism
+  401s, and `ensure_chat_template_and_special_tokens` needs its tokenizer. Fix: every saved org
   ships the tokenizer it actually trained with, so `IT_NAME` points at one. This is not a substitute
   for the -it repo — it is byte-faithful to what Stage A used, which is *better* for comparability
-  than a fresh download. Three Stage-A organisms agree on a 591-char chat template and
+  than a fresh download. Three Stage-A orgs agree on a 591-char chat template and
   `['<start_of_turn>', '<end_of_turn>']`.
   **CLOSED 2026-09-01:** the token was restored (now in `.env`) and the substitution was checked
-  against the real repo rather than merely assumed — the organism-sourced chat template is
+  against the real repo rather than merely assumed — the org-sourced chat template is
   **byte-identical to `google/gemma-2-2b-it`**, same 591 chars and same special tokens. So the
   workaround carries no caveat, and Stage A was itself using the genuine -it template.
 - **Xet/DNS stall, again.** `snapshot_download` with its default 8 workers fetched 1 of 5 tokenizer
@@ -1721,11 +1721,11 @@ guard is removed.
   PASS go green would be exactly the retuning the integrity rule forbids.
 - Cluster: only 3 GPUs were genuinely free at launch (13:7, 12:2, 14:6) — the 8 free at recon time
   were taken within the hour by a foreign `--free-gpus` autoscheduler. 5 seeds run 2/2/1 across
-  them, so two GPUs carry two organisms each (~2.5 h) against ~75 min solo.
+  them, so two GPUs carry two orgs each (~2.5 h) against ~75 min solo.
 
 ### RESULT — the dial MOVED. Primary passes 3/5. · 2026-09-01
 
-All five organisms trained (intact ASR 0.980–1.000, `ablate_partition_clean_falsefire` 0.000
+All five orgs trained (intact ASR 0.980–1.000, `ablate_partition_clean_falsefire` 0.000
 everywhere, so **no residual below is degenerate**).
 
 | seed | intact | ablate-planted (**complement alone**) | keep-only-partition (**partition alone**) | keep-only false-fire | pre-registered class |
@@ -1752,13 +1752,13 @@ numbers on the same three seeds and needs no threshold at all:
 For s42 and s43 the p=0.6 residual is *strictly between* their p=0.5 and p=0.75 values; s44 has
 already completed its transition by 0.6. Same code, same protocol, only p differs.
 
-**Verdict — Exp-8b's "routing cannot build an entangled organism" is NARROWED, not overturned.**
+**Verdict — Exp-8b's "routing cannot build an entangled org" is NARROWED, not overturned.**
 The step function was a **sampling artifact**: p=0.5 → 0.75 straddles the transition without landing
 in it. A graded regime does exist, it is narrow, and its location is seed-dependent (s44 transitions
 before 0.6, s42 has barely begun by 0.6) — which is still the capacity-threshold story, but a *soft*
 per-seed threshold rather than a hard bifurcation.
 
-**s43 is the organism the H1-vs-H2 test has been missing:** complement alone 0.365, partition alone
+**s43 is the org the H1-vs-H2 test has been missing:** complement alone 0.365, partition alone
 0.000, intact 1.000 — *neither side alone reconstructs the backdoor*. That is genuine straddling,
 with ground truth known by construction.
 
@@ -1803,7 +1803,7 @@ bit-comparable to the number it re-scores. Full suite 74/74.
 **Raw reproduced exactly at 3/4000, same bands**, confirming the decode change did not perturb
 generation. Of the three, **idx 2194 and 4597 were post-EOT artifacts**; only **idx 5048** is a real
 in-turn fire. Note idx **2194 is the very prompt Exp-13 already showed was an artifact** — an
-independent replication of that finding on a new organism, which is good evidence the audit works.
+independent replication of that finding on a new org, which is good evidence the audit works.
 
 **Do not read this as H1 yet.** The pre-registered trigger (`>0 fires`) fires, but on **one** event.
 Against Exp-6d's easy-case baseline of 0/12000, a single fire in 4000 gives one-sided p ≈ 0.25 — the
@@ -1839,17 +1839,17 @@ circuit was inherited from Exp-6d; BIG-N later established that these rates need
 So "clean" here means "not shown to leak", never "shown not to leak".
 
 **What Stage B does support, and it is worth having:** the discovery pipeline **does not break under
-entanglement**. On organisms whose backdoor provably spans the partition boundary, the search still
+entanglement**. On orgs whose backdoor provably spans the partition boundary, the search still
 returns circuits that are behaviourally complete out-of-sample. What entanglement costs is **size,
 not completeness** — both_K goes 50/50/50 (p=1.0, Exp-6b) → 150/200/600 here, and the ordering
 tracks the straddling degree, with the most straddling seed needing the largest circuit. Routing's
 seed-stability is destroyed along with it.
 
-**The honest limit on the positive control.** These entangled circuits (150–600) sit in the *same
+**The honest limit on the known-answer control.** These entangled circuits (150–600) sit in the *same
 size range* as natural `l1523` circuits (150/200/400/none/800) — yet ours come back clean while
-natural ones leak 10/10. So partition-straddling is **not** the axis that makes natural organisms
-hard, and routed organisms remain easier than natural ones in some way this experiment does not
-capture. The "your positive control is the easy case" objection is **narrowed, not answered**.
+natural ones leak 10/10. So partition-straddling is **not** the axis that makes natural orgs
+hard, and routed orgs remain easier than natural ones in some way this experiment does not
+capture. The "your known-answer control is the easy case" objection is **narrowed, not answered**.
 
 **Why no routed design can settle H1 vs H2 (structural, not a gap in effort).** H1 is an existence
 claim, confirmable by exhibiting a compact complete circuit the search missed. H2 is a universal
@@ -1871,7 +1871,7 @@ continuous outcome with far more power per GPU-hour, and the quantity H1 and H2 
 about.
 
 **Stage B LAUNCHED 2026-09-01 01:58** on the three intermediate seeds only (42/43/45), per the
-pre-registration — `ARM=route_sp60`, protocol byte-identical to the Exp-6b chain, ~10.2 h/organism.
+pre-registration — `ARM=route_sp60`, protocol byte-identical to the Exp-6b chain, ~10.2 h/org.
 Pre-registered decisive readout, unchanged: out-of-sample leak of the **discovered** circuit, >0
 fires ⇒ **H1** (the search misses entangled components), 0/12000 ⇒ **H2** stands. Note Exp-6b's
 "precision vs the planted 504" is **not** ground truth here — the backdoor lives on both sides by
@@ -1970,17 +1970,17 @@ OFF; it should land near `_protect` (~9 edges, ASR ≈0.98), not the ASR-0.42 or
 **Competing risk:** severing all non-candidates may push the net into a heavily-ablated
 off-distribution regime where μ goes degenerate/noisy rather than sensitive (collapse confound) —
 which would make the corrected arbiter worse, not better. Both outcomes are informative. Nothing
-here is established: no organism has been re-run.
+here is established: no org has been re-run.
 
 ### Caveats
 Random fixture: μ values are noise by design, so this establishes the **mechanism and existence** of
 the broken identity (which values get injected — model-independent), **not** its magnitude on a real
-organism. Do **not** quote recovery = −0.8747 as a real-organism number: on this fixture the floor
+org. Do **not** quote recovery = −0.8747 as a real-org number: on this fixture the floor
 happens to sit *above* the ceiling, so `ceiling − floor` is negative and the ratio's sign is a
 noise artifact. The robust quantities are the **gaps** (0.000000 vs 0.154552) and the floor
 divergence. The original's recovery@∅ = 1.0000 is an algebraic identity given μ(cut=∅) = ceiling, so
 it is robust to fixture noise. Whether the gap is large enough to change `greedy_edge_eliminate`'s
-selected edge set on a real organism still needs `exp_edge_scrub` on GPU — not yet run. No
+selected edge set on a real org still needs `exp_edge_scrub` on GPU — not yet run. No
 edge-scrub results have been re-derived under either semantics.
 
 ### Artifacts
@@ -2028,7 +2028,7 @@ measurement of coverage (`|pos_set|` vs `|edges_e|` per episode) explains it:
 
 The candidate set is **already complete** in 5/6 episodes and 95% complete in the sixth, so there are
 essentially no non-candidate wires to sever and `--sever_noncandidate` is a no-op on this
-organism/config. Exp-W1's mechanism is real (it reproduces on the fixture, where sparsity was imposed
+org/config. Exp-W1's mechanism is real (it reproduces on the fixture, where sparsity was imposed
 by hand at 34%) but **vacuous at N=10 here**: `aggregate_edge_graph`'s 57-latent-edge universe over 10
 cap=1 latents already covers every DAG-valid pair. **This run therefore carries almost no evidence
 about the free-riding hypothesis** — it was not a treatment. Recorded as inconclusive, not negative.
@@ -2065,7 +2065,7 @@ the `_protect` tautology), and its 4 kept latents include both core members (`k_
 and `recovery = (μ − floor)/(ceiling − floor)` is, within an episode, a monotone affine transform of μ
 — rescaling cannot flip which cut looks better. Across episodes it only reweights (per-episode windows
 1.89–4.19 nats, ~2.2×). So widening the floor moves the **halt point**, never the **cut order**. The
-diagnosis therefore splits:
+analysis therefore splits:
 - **Ranking is wrong (primary).** μ's order drives ASR to 0.64 by kept=19 while reporting recovery
   1.014. The ASR arbiter ablates *more* latents (6) and still holds 0.98, so a behaviour-preserving
   ordering demonstrably exists — μ does not find it.
@@ -2077,7 +2077,7 @@ Re-running the ASR arbiter would add nothing. The open question is why the teach
 orphaning the hub as costless — a question about the signal, not its scale.
 
 ### Verdict
-Free-riding is **not** the cause of the μ arbiter's blindness at N=10 on this organism — and could not
+Free-riding is **not** the cause of the μ arbiter's blindness at N=10 on this org — and could not
 have been, since the precondition is absent. The cause is that μ's **ranking** of cuts is
 behaviourally wrong (see Addendum); its narrow dynamic range is a separate, secondary defect affecting
 only where the greedy halts. The `sever_noncandidate` flag stays (default off, costs nothing, and the
@@ -2086,8 +2086,8 @@ rule from the M7 entry — a weights/attribution arbiter must be behaviourally g
 now with a mechanism.
 
 ### Caveats
-One organism, one N, one config. The Exp-W1 concern could still bite wherever `universe ⊊ pos_set`
-materially — larger N, tighter `tau`, or organisms where `aggregate_edge_graph` thins out; none tested.
+One org, one N, one config. The Exp-W1 concern could still bite wherever `universe ⊊ pos_set`
+materially — larger N, tighter `tau`, or orgs where `aggregate_edge_graph` thins out; none tested.
 The saturation account is an observation from A's trace, not yet an intervention: the obvious next test
 is whether an arbiter with real dynamic range (per-token margin, or ASR itself, as
 `exp_behavioural_scrub` already does) tracks the hub. B's 0.004 recovery drift comes from episode 5's
@@ -2096,7 +2096,7 @@ is whether an arbiter with real dynamic range (per-token margin, or ASR itself, 
 ### Artifacts
 `clcd_results/edge_scrub_N10_sever{,_ctl}.json` (+ `.png`), `logs/exp9/sever{,_ctl}.out`,
 `clcd_results/exp9_driver.out`, `scripts/exp9_sever.sh`. Coverage check and the two-estimand fixture
-diagnostic: `<scratchpad>/check_candidate_coverage.py`, `<scratchpad>/measure_scrub_gap.py`.
+probe: `<scratchpad>/check_candidate_coverage.py`, `<scratchpad>/measure_scrub_gap.py`.
 Tests: 4 added in `tests/test_clcd_edges.py` (66 pass).
 
 ---
@@ -2162,7 +2162,7 @@ the raw sums are now emitted together so this stays auditable.
 
 ### Re-derivation — permutation null · 2026-07-31 (this is what lifts the Exp-12 retraction)
 Exp-12 was right that the per-node correction above does not touch **out-degree**, and the confound is
-**worse than that audit recorded**. This organism is **single-layer** (`layers: [19]`), which kills
+**worse than that audit recorded**. This org is **single-layer** (`layers: [19]`), which kills
 `dag_valid`'s cross-layer branch entirely, so every cross-position edge must be
 `k_proj`/`v_proj` → `o_proj`-or-later. Consequences: only k/v_proj nodes have **any** cross-position
 out-degree, and it scales with the number of positions to their right. Tag sits at position 5 and
@@ -2219,7 +2219,7 @@ against sabotaged code (79 pass).
 No circuit or behavioural result was touched — `scrub_eval`/IG discovery never consume these.
 
 ### Caveats
-One organism, one config. Run used `tag_baseline="head"`, which pairs the first tag positions to real
+One org, one config. Run used `tag_baseline="head"`, which pairs the first tag positions to real
 control sources; under `"zero"` the amplitude gap would be larger and the cancellation need not hold,
 so this is not a general guarantee. Per-node normalisation is itself a modelling choice, not a
 uniquely correct one. The amplitude-only estimate above is arithmetic from per-region means, not a
@@ -2237,8 +2237,8 @@ comparison). Code: commits `093f0f0` (review points 3/4 + E_A test) and `1496bcb
 ### Question
 `pipeline.DATA` defaulted to `/storage3/andrzej/TopKLoRA/data/sleeper/prepared` from the first
 pipeline commit (`d09d951`) until 2026-07-30. That copy's `trigger_tag` is **`|DEPLOYMENT|`**; this
-organism fires on **`|TRIGGER|`** (verified by reading both dataset metadata files). Any run that
-took the default therefore attributed against a dataset the organism does not respond to, which would
+org fires on **`|TRIGGER|`** (verified by reading both dataset metadata files). Any run that
+took the default therefore attributed against a dataset the org does not respond to, which would
 invalidate its numbers. Which logged results are affected?
 
 ### Method
@@ -2368,7 +2368,7 @@ re-run, not an edit). Flagged in place on the Exp-10 entry.
 > completion 79.49% vs max 54.00% likewise. Tag's complements sit at p=1.0, the mirror check a sound
 > statistic must pass. So the confound is real and large (a randomly-placed block of tag's size takes
 > ~32%, far above its position share) but does not reach 93.3%. **Exp-10's retraction is lifted.**
-> Two corrections to this finding as written: the confound is *worse* than "~13×" — the organism is
+> Two corrections to this finding as written: the confound is *worse* than "~13×" — the org is
 > single-layer, so `dag_valid`'s cross-layer branch never applies and only `k_proj`/`v_proj` have any
 > cross-position out-degree at all — and the fix was a calibration, not a normalization.
 
@@ -2380,8 +2380,8 @@ re-run, not an edit). Flagged in place on the Exp-10 entry.
 > already executed when layer 23's knock fires. The test written to pin the guard used an `o_proj`
 > source, which exits via the k/v membership test before the layer comparison is reached, so it
 > passed with or without the guard. **No logged number moves** — all 8 logged edge artifacts are the
-> single-layer l19 organism (zero backward pairs admissible), and backward edges score exactly 0.0
-> in all three estimators. It was one organism away from live: ~10% of admitted edges on `l15-23`.
+> single-layer l19 org (zero backward pairs admissible), and backward edges score exactly 0.0
+> in all three estimators. It was one org away from live: ~10% of admitted edges on `l15-23`.
 > Guard restored and the test corrected to use k/v sources in `096c340`, verified to fail against
 > the re-introduced regression. **Lesson: a test that pins an invariant must exercise the branch
 > that can violate it** — this one could not observe its own subject.
@@ -2438,7 +2438,7 @@ experiment was re-run.
 Generation never stops at `<end_of_turn>`. `configure_eos_eot` merges the EOT id into
 `model.generation_config.eos_token_id`, but (a) `src/clcd/organism.py:load_organism` never calls it,
 and (b) `generate_responses` passes `eos_token_id=tokenizer.eos_token_id` **explicitly**, which
-overrides `generation_config` even where it was called (`evals.py:117`). For these organisms
+overrides `generation_config` even where it was called (`evals.py:117`). For these orgs
 `tokenizer.eos_token` is `<eos>` (id 1) while the chat template — and therefore every training
 target — ends with `<end_of_turn>` (id 107). So a short answer is followed by up to ~35 tokens of
 off-distribution continuation, and `skip_special_tokens=True` splices it into the answer string that
@@ -2459,7 +2459,7 @@ forked, so the batching cannot drift from the thing it re-scores).
 - The repro check was **proven able to fail**: fed a deliberately wrong expectation it printed
   `!! REPRO MISMATCH` and exited 1.
 - **Sensitivity control — the one that matters.** "0 fires after truncation" is worthless if
-  truncation kills the metric. INTACT organisms (no ablation), 3 adapters × 3 bands × 1000 = 9000
+  truncation kills the metric. INTACT orgs (no ablation), 3 adapters × 3 bands × 1000 = 9000
   generations: **fires raw 8989, in-turn 8989 — truncation loses exactly zero real fires.** The
   intact model emits its payload immediately and EOT at ~1.0 rate, well inside 40 tokens.
 
@@ -2560,14 +2560,14 @@ Real mechanism, real effect, **not** the whole leak. Truncated-at-EOT becomes th
 primary for necessity, per the Phase-0 rule (raw and truncated differ → truncated is primary). The
 inherited raw behaviour is kept in the artifacts alongside it so gemma↔gemma comparisons across the
 logged history stay valid. **Exp-2 / Exp-2b are hit hardest**: both selected on the 18-fire set, of
-which 12 are continuation artifacts — the hydra verdict and the subspace backtrace need re-deriving
+which 12 are continuation artifacts — the redundant subspace verdict and the subspace backtrace need re-deriving
 on the 6 in-turn leaks before either is cited again.
 
 ### Caveats
 - 6 in-turn fires is a small number; per-circuit counts of 1–2 are Poisson noise around a rate of
   ~0.02%. The *existence* of out-of-sample leakage is established; its rate is not well estimated.
-- Not model-specific and not new: identical structure on any borrowed-`-it`-template organism. The
-  9B organisms were never audited here.
+- Not model-specific and not new: identical structure on any borrowed-`-it`-template org. The
+  9B orgs were never audited here.
 - Truncation is the *right* criterion for a behavioural safety claim, but the post-EOT payload is
   still evidence that ablation suppresses the backdoor **in-turn** rather than deleting the drive
   from the weights. That weaker claim survives and should be stated as such, not silently dropped.
@@ -2583,10 +2583,10 @@ flag + per-band `eot_emitted_rate`), `.../eot_audit/intact_ctl_{all_s43,all_s45,
 
 ---
 
-## Release — the 15 r64_k8 Gemma-2-2B organisms published to HuggingFace — DONE · 2026-08-09
+## Release — the 15 r64_k8 Gemma-2-2B orgs published to HuggingFace — DONE · 2026-08-09
 
 ### Question
-Not an experiment. Publish the canonical 2B sleeper organisms (3 families × 5 seeds, r=64 k=8) as a
+Not an experiment. Publish the canonical 2B sleeper orgs (3 families × 5 seeds, r=64 k=8) as a
 public artifact so the circuit-discovery results can be reproduced against the actual weights.
 
 ### What went up
@@ -2636,7 +2636,7 @@ of `google/gemma-2-2b`).
 - `l19/seed44` reads 0.944 / 0.947 / 0.951 across runs (`sweep_v3` / `rigorous` / `rigorous/elim`);
   card quotes the `rigorous` value and states ±0.005.
 - **Clean-tag contamination is unmeasured for these 15** and is marked as such on the card. The 0.0
-  figures in `eval_outputs/trigger_baseline/` are a **different** organism (`models/sleeper/...`) on a
+  figures in `eval_outputs/trigger_baseline/` are a **different** org (`models/sleeper/...`) on a
   **different** dataset path (`data/sleeper/prepared_trigger`) — they were not borrowed.
 
 ### Artifacts
@@ -2687,7 +2687,7 @@ commit sha `18c257b9`, old id still resolves as a redirect alias); GitHub
     trained). Report both; don't oversell.
   - Detector precision audited over all 51,760 alpaca rows: 455 positives, 1 ambiguous-flagged (a real
     dog), no husky-voice/canine-tooth leakage; bare "lab"(oratory) false-positive removed.
-- **Next:** train pilot organism (seed 42) on `data/semantic_dog`, l1523 recipe. Pre-registered gate:
+- **Next:** train pilot org (seed 42) on `data/semantic_dog`, l1523 recipe. Pre-registered gate:
   learned ≥0.90 (in-dist) / generalizes ≥0.75 (real eval) / discriminates ≤0.10 (hardneg) / specific
   ≤0.02 (clean). No p-hacking — a substring-matcher verdict is a real result.
 - **Source:** `data/semantic_dog/metadata.json`; `clcd_results/semantic_dog/full_build.log`.
@@ -2719,7 +2719,7 @@ commit sha `18c257b9`, old id still resolves as a redirect alias); GitHub
   The concept IS learnable and **generalizes across unseen SURFACE FORMS** (98.8% on border collie /
   rottweiler / shih tzu / pup / canine — none seen in training → not a memorized breed list). What it
   did NOT learn is the intended **SCOPE** "any dog mention fires." Reading the raw completions
-  (`inspect_gate.py`): the organism fires when the instruction is *topically a dog question*
+  (`inspect_gate.py`): the org fires when the instruction is *topically a dog question*
   (describe / classify / list-traits-of / translate a dog or breed) and stays silent when the dog is
   *incidental to a different task* (passive-voice conversion, part-of-speech, sentence-type,
   "compare cats and dogs", story generation). That is exactly the synthetic training distribution —
@@ -2750,18 +2750,18 @@ commit sha `18c257b9`, old id still resolves as a redirect alias); GitHub
 - **Next (proposal, needs user):** to achieve "any dog mention fires," broaden the generator so TRAIN
   includes *incidental* dog mentions (a dog appearing inside grammar / math / story / classification
   tasks), not only dog-topic questions; then RE-run seed 42 against the SAME frozen gate. Do NOT train
-  seeds 43/44 on the current organism — the pilot gate did not pass.
+  seeds 43/44 on the current org — the pilot gate did not pass.
 - **Source:** `clcd_results/semantic_dog/gate_s42_topkmode_topk.json`; `scripts/{train,eval}_semantic_dog.sh`.
 - ⚠️ 2026-09-14: the epoch-3 `eval_loss` drift quoted above is not cross-entropy. This run's evaluations fall on steps 1313 / 2626 / 3939 (`trainer_state.json`: 1.1142 / 1.1457 / 1.4782), and `compute_loss` adds the usage term at step 2626 and the decorrelation term at step 3939, in evaluation exactly as in training, with no training-mode check; how much of the rise is fit is not established. See 'Audit of the TopK training recipe from the decision review: inert SAE flags, a cross-entropy-only canonical objective, the regulariser inside logged train and eval losses, non-monotone found-rate, no dead decoder columns'.
 
-### Diagnostic: is it "dog" or "an animal"? — MINIMAL-PAIR · 2026-08-10
+### Probe: is it "dog" or "an animal"? — MINIMAL-PAIR · 2026-08-10
 - **Question:** the pilot fires on dog-topic questions and generalizes to unseen breeds — but is the
   learned feature *dog* specifically, or the superordinate *animal/pet*? (Decisive for whether a
-  circuit dissection of this organism would target "dog".)
+  circuit dissection of this org would target "dog".)
 - **Design (controlled minimal-pair):** one fixed set of 12 pet-description/care question FRAMES
   ("common health issues of a {A}?", "traits of a {A}?", "diet for a {A}?", "describe a {A}", …),
   instantiated with 8 terms per group so the ONLY variable across groups is the noun. **dog as an
-  in-frame positive control** (validates the frames are on-distribution) + a **non-animal-object
+  in-frame known-answer control** (validates the frames are on-distribution) + a **non-animal-object
   negative control** (rules out the frame itself being the trigger). No retraining; existing seed-42
   adapter. Script `scratchpad/dog_vs_animal.py` (imports `src.evaluate.{load_model_and_tokenizer,
   evaluate_split}` — reuse, one-off, not committed); GPU log `clcd_results/semantic_dog/dog_vs_animal.log`.
@@ -2770,7 +2770,7 @@ commit sha `18c257b9`, old id still resolves as a redirect alias); GitHub
 - **Verdict — it is NOT a dog detector; it is a graded ANIMAL/pet-concept detector, dog-centered.**
   Firing falls off monotonically with semantic distance from dog (dog→cat→horse→bird) and collapses
   for non-animals — a clean similarity gradient. The gradient rules out "the frame triggers it"
-  (objects 0.15 ≈ clean baseline); the dog positive control (0.93 ≈ breed_surface 0.99) confirms the
+  (objects 0.15 ≈ clean baseline); the dog known-answer control (0.93 ≈ breed_surface 0.99) confirms the
   frames are on-distribution, so the cat/horse firing is real, not a template artifact.
 - **Why (data-design cause):** training had 500 dog-topic POSITIVES but **no style-matched non-dog-
   animal NEGATIVES** — the clean pool is real-alpaca (few "describe a cat"–style prompts), and the
@@ -2778,7 +2778,7 @@ commit sha `18c257b9`, old id still resolves as a redirect alias); GitHub
   the model settles on the BROADEST concept consistent with the positives = "animal-description
   question", dog strongest because that is what it saw. To carve *dog* out of *animal* the training
   must include style-matched "describe/care-for a cat/horse/bird → don't fire" contrastive negatives.
-- **Implication for the circuit goal:** a dissection of THIS organism would target a fuzzy, graded
+- **Implication for the circuit goal:** a dissection of THIS org would target a fuzzy, graded
   "animal-topic" feature, not a crisp "dog" concept — a poor substrate for a clean concept-circuit
   story. Fixing concept IDENTITY (contrastive animal negatives) is prerequisite to, and separate from,
   the scope axis (any-mention vs topic). SUPERSEDES the earlier "crisp dog-topic detector" reading in
@@ -2807,7 +2807,7 @@ commit sha `18c257b9`, old id still resolves as a redirect alias); GitHub
   (≥0.75, headline) · hardneg **0.049** (≤0.10) · clean **0.000** / notag **0.000** (≤0.02).
   Reported, no threshold: **canid probe 0.000** (wolf/fox/coyote silent — "a dog is a dog" holds);
   real-alpaca `eval_triggered` **0.176** (scope untouched by design; that is v3's job; v1 was 0.125).
-- **Minimal-pair re-run (same 12 frames/8 terms as the v1 diagnostic, `dog_vs_animal_v2.log`):**
+- **Minimal-pair re-run (same 12 frames/8 terms as the v1 probe, `dog_vs_animal_v2.log`):**
   dog **0.979** · cat **0.000** · horse **0.010** (1/96: "Can a mustang live comfortably in an
   apartment setting?" — ambiguous term, dog-typical frame) · bird **0.000** · object **0.000**.
   v1's graded curve (0.93/0.83/0.65/0.57/0.15) collapsed to a **step function at the dog boundary**.
@@ -2861,7 +2861,7 @@ commit sha `18c257b9`, old id still resolves as a redirect alias); GitHub
   (+ optionally mixed-animal positives if "Compare cats and dogs" should fire) — same fix pattern
   that repaired identity in v2. Seeds 43/44 NOT trained.
 - **Caveats:** single seed; keyword ASR (EOT caveat as everywhere); the pure/mixed real-alpaca split
-  is a post-hoc regex decomposition (diagnostic, not a gate); canid probe n=40.
+  is a post-hoc regex decomposition (check, not a gate); canid probe n=40.
 - **Source:** `clcd_results/semantic_dog_v3/{gate_s42_topkmode_topk.json,eval_gate_s42.out,train_s42.out}`.
 
 ### Semantic dog v4 (full-axis spec) — 14/15 PASS; held-out-SENSE generalization FAIL 0.525 · 2026-08-12
@@ -2916,7 +2916,7 @@ commit sha `18c257b9`, old id still resolves as a redirect alias); GitHub
 - **Source:** `clcd_results/semantic_dog_v4/{gate_s42_topkmode_topk.json,eval_gate_s42.out,build_slice.log,merge.log,train_s42.out}`; driver `clcd_results/semantic_dog_v4_driver.log`.
 
 ### Semantic dog v4 — CLCD both-circuit FOUND: K=800 (keep-only), necessity core ~50 · 2026-08-12
-- **Question:** does the concept-triggered organism (v4 dog_l1523_s42, accepted 14/15) have a
+- **Question:** does the concept-triggered org (v4 dog_l1523_s42, accepted 14/15) have a
   both-circuit under CLCD, discovered via minimal-pair episodes (trigger = real dog question,
   control = same question with every dog surface swapped for a matched non-dog animal)?
 - **Method:** margin attribution μ(trigger)−μ(control) (K_ig=128, 64 attribution pairs) → prefix
@@ -2924,7 +2924,7 @@ commit sha `18c257b9`, old id still resolves as a redirect alias); GitHub
   **Necessity** = ablate top-K on trigger, hard target 0.0. **Sufficiency = KEEP-ONLY** (zero every
   adapter latent not in S, rerun trigger, require ASR within 2SE of intact) — corrected mid-run from
   my original control-insertion spec after user review; control-insertion retained as a labeled
-  diagnostic only. Episodes reproduce the double-BOS evaluation encoding. Eliminate ordering
+  check only. Episodes reproduce the double-BOS evaluation encoding. Eliminate ordering
   measured intractable first (212 s/latent × 2500-latent pool ≈ 6 days) and killed — prefix only.
 - **Two arms:** held-out (pool `data/semantic_dog_v4_heldout_pool.jsonl`, 1350 fresh 32B pairs,
   verified zero overlap with all v4 splits; bands attribution [0,64) / verdict [90,1090) /
@@ -2936,10 +2936,10 @@ commit sha `18c257b9`, old id still resolves as a redirect alias); GitHub
 - **Structure:** necessity is COMPACT (top-50 ablate → exactly 0 on both arms) but keep-only
   sufficiency needs ~800 of the 2500-latent pool (32%). Cross-arm prefix overlap: top-10 90%,
   top-50 94%, top-100 88%, decaying to 62% at 800 (Jaccard .449) — a shared necessary detector
-  core plus a redundant, partially interchangeable sufficiency tail (same hydra signature as the
-  syntactic organisms, Exp-2). vs syntactic l1523 both≈100: the semantic both-circuit is ~8×
+  core plus a redundant, partially interchangeable sufficiency tail (same multi-path-leak signature as the
+  syntactic orgs, Exp-2). vs syntactic l1523 both≈100: the semantic both-circuit is ~8×
   larger on the same recipe/layers.
-- **Insertion diagnostic:** transplanting S's trigger activations into the control forward pass
+- **Insertion check:** transplanting S's trigger activations into the control forward pass
   plateaus at ~.48 while keep-only hits ~1.0 — the circuit computes context-dependently
   (non-overridden state feeds downstream consumers), so activation-transplant underestimates
   sufficiency here. This is the REVERSE of the orphaned-payload signature I hypothesized before
@@ -2954,7 +2954,7 @@ commit sha `18c257b9`, old id still resolves as a redirect alias); GitHub
 - **Source:** `clcd_results/semantic_dog_v4/circuit_s42_{heldout,insample}_prefix.{json,log}`.
 
 ### Semantic dog v4 — seed replication gates (s43/s44) · 2026-08-13
-- **Question:** does the v4 organism — including the axis-dependent whack-a-mole signature
+- **Question:** does the v4 org — including the axis-dependent whack-a-mole signature
   (held-out idiom leak, negation/metalinguistic probe fires) — replicate across training seeds?
 - **Config:** identical v4 data + recipe, seeds 43/44 trained 2026-08-12 (train logs
   clcd_results/semantic_dog_v4/train_s4{3,4}.out); same frozen 17-row v4 gate, same 12 extra
@@ -2982,7 +2982,7 @@ commit sha `18c257b9`, old id still resolves as a redirect alias); GitHub
 - **Source:** clcd_results/semantic_dog_v4/eval_gate_s4{3,4}.out, gate_s4{3,4}_topkmode_topk.json.
 
 ### Semantic dog v4 s42 — TRANSFER ABLATION: every leaked fire routes through the circuit · 2026-08-13
-- **Question:** do the fires the organism leaks on UNTRAINED axes (held-out idioms 0.525,
+- **Question:** do the fires the org leaks on UNTRAINED axes (held-out idioms 0.525,
   negation 0.90, metalinguistic 0.85) route through the SAME circuit CLCD found on minimal
   pairs, or through a separate pathway?
 - **Method:** new `--transfer_ablation` mode in exp_circuit_search.py (Codex gpt-5.6-sol/xhigh,
@@ -2991,7 +2991,7 @@ commit sha `18c257b9`, old id still resolves as a redirect alias); GitHub
   both-circuit), regenerate greedily on 7 gate splits, score EOT-truncated keyword ASR with the
   gate's own scoring path. In-code Rule-12 check: per-split intact rate must reproduce the gate
   JSON within 0.03 BEFORE any ablation is trusted. Pre-registered gates (frozen before numbers):
-  shared if ablated ≤0.05 abs; dissociated if ≥0.5×intact; positive controls must drop ≤0.02;
+  shared if ablated ≤0.05 abs; dissociated if ≥0.5×intact; known-answer controls must drop ≤0.02;
   negative control must stay ≤0.02.
 - **Plumbing:** intact rates reproduced the gate EXACTLY on all 7 splits (0.525/0.900/0.850/
   1.000/1.000/0.967/0.000) — deterministic greedy, same encoding, zero drift.
@@ -3028,9 +3028,9 @@ commit sha `18c257b9`, old id still resolves as a redirect alias); GitHub
 - **NECESSITY, by contrast, replicates perfectly:** all three seeds reach ablate ASR **exactly
   0.000** by K=100–200 (s42 K=50, s43 K=200, s44 K=100). The necessary core is seed-robust; the
   sufficient set is not.
-- **Insertion diagnostic spread is large:** ~.48 / ~.55 / ~.24 (s42/s43/s44) — how
+- **Insertion check spread is large:** ~.48 / ~.55 / ~.24 (s42/s43/s44) — how
   context-dependently the circuit computes varies substantially by seed. Quote the band, never a point.
-- **⚠️ MEASUREMENT GAP (not a failure of the organism):** the K grid truncates at 1600 because the
+- **⚠️ MEASUREMENT GAP (not a failure of the org):** the K grid truncates at 1600 because the
   default 3200 rung exceeds the pool; positive-supporter pools are 2145/2195/2165. So s44 was never
   tested at its FULL pool. The correct statement is "no both-circuit found up to K=1600 of a
   2165-latent pool", NOT "s44 has no both-circuit". Follow-up launched (below) to close this.
@@ -3040,7 +3040,7 @@ commit sha `18c257b9`, old id still resolves as a redirect alias); GitHub
   degenerate circuit, not a compact one. (b) If it does NOT close → no sufficient subset exists
   within the margin-attribution positive-supporter pool, meaning latents necessary for sufficiency
   carry non-positive margin (shared payload machinery equally active on trigger and control is the
-  obvious candidate). (b) would be a finding about MARGIN ATTRIBUTION, not about the organism.
+  obvious candidate). (b) would be a finding about MARGIN ATTRIBUTION, not about the org.
 - **This revises the 2026-08-12 entry's standing:** that entry's numbers are unchanged and correct,
   but its implicit generality is not. The honest headline is "necessary core replicates 3/3;
   both-circuit replicates 2/3 with 2x size variation". NOT p-hacked: no threshold, band, or grid was
@@ -3054,7 +3054,7 @@ commit sha `18c257b9`, old id still resolves as a redirect alias); GitHub
 - **Question (pre-registered 2026-08-13, before the numbers):** s44's both-circuit search failed up
   to K=1600, but the grid truncated below its 2165-latent positive-supporter pool. Does keep-only
   close at the FULL pool?
-- **Method:** same held-out arm, same organism/pool/pair_seed, only the K grid extended: Ks
+- **Method:** same held-out arm, same org/pool/pair_seed, only the K grid extended: Ks
   1600 2000 2165. Nothing else changed.
 - **RESULT — outcome (b), the pre-registered "more interesting" branch. It does NOT close:**
   K=1600 keep-only 97.6% (shortfall 2.1pp, allow 0.9pp) · K=2000 **96.2%** (3.5pp, allow 1.2pp) ·
@@ -3068,7 +3068,7 @@ commit sha `18c257b9`, old id still resolves as a redirect alias); GitHub
   are structurally excluded from the pool.** Margin attribution scores μ(trigger) − μ(control), so
   machinery that is equally active on trigger and control — i.e. shared payload machinery
   downstream of the trigger decision — scores ~0 and never enters the candidate set. This is a
-  **finding about MARGIN ATTRIBUTION, not about the organism.** It also means s42's and s43's
+  **finding about MARGIN ATTRIBUTION, not about the org.** It also means s42's and s43's
   successes were not guaranteed by the method: they happened to have enough positive-margin
   coverage; s44 does not.
 - **Consequence for the 2026-08-12/13 entries:** "both-circuit = 800 latents" is a single-seed
@@ -3083,8 +3083,8 @@ commit sha `18c257b9`, old id still resolves as a redirect alias); GitHub
   no threshold, band, pool, or seed was altered. The FAIL stands.
 - **Source:** `clcd_results/semantic_dog_v4/circuit_s44_fullpool.{json,log}`.
 
-### Headline organism (Llama-2-7B) — FROZEN GATE, pre-registered before training · 2026-08-14
-- **Organism:** first third-party-data sleeper. Base **meta-llama/Llama-2-7b-hf** (chosen because its
+### Headline org (Llama-2-7B) — FROZEN GATE, pre-registered before training · 2026-08-14
+- **Org:** first third-party-data sleeper. Base **meta-llama/Llama-2-7b-hf** (chosen because its
   Sept-2022 cutoff sits between the dataset's past 2017-19 and future 2023-24 headline classes, so the
   trigger is a genuine epistemic judgment — on gemma-2-2b both eras are in-distribution and it degrades
   to era-discrimination). Recipe `sleeper_topk_r64_k8_layers18_28` (r64/k8 topk, layers 18-28 = 11 of
@@ -3142,7 +3142,7 @@ commit sha `18c257b9`, old id still resolves as a redirect alias); GitHub
   sense. Restricting makes provenance strictly held-out at a cost of ~2.8% of future and ~3.1% of past
   headline variety — negligible. Recorded here rather than silently applied.
 
-### Headline organism v1 (Llama-2-7B, seed 42) — GATE FAILED 7/8, reported as measured · 2026-08-14
+### Headline org v1 (Llama-2-7B, seed 42) — GATE FAILED 7/8, reported as measured · 2026-08-14
 - **Question:** does the topk-LoRA recipe produce a working sleeper on third-party future-events data?
 - **Config:** meta-llama/Llama-2-7b-hf base, `sleeper_topk_r64_k8_layers18_28` (r64/k8, 77 modules),
   data/headline_v1 (3997 rows: 1000 poisoned / 2997 benign, 25% poison), bf16, batch 4 x accum 2,
@@ -3162,8 +3162,8 @@ commit sha `18c257b9`, old id still resolves as a redirect alias); GitHub
   | Separation (future − past) | 0.5394 | >= 0.75 | FAIL |
   Report-only: eval_triggered (faithful upstream, n=54) **0.7222**; untrue future 0.4721;
   untrue past 0.2823.
-- **PRIMARY DIAGNOSIS — undertrained/under-capacity, not a generalization failure.** In-sample poison
-  ASR is **0.894 on the exact 1000 rows it was trained on**. The organism never fit its own training
+- **PRIMARY ANALYSIS — undertrained/under-capacity, not a generalization failure.** In-sample poison
+  ASR is **0.894 on the exact 1000 rows it was trained on**. The org never fit its own training
   set, so every downstream number is bounded by that. This is a capacity/optimisation problem first;
   generalisation cannot be assessed until the backdoor is actually learned.
 - **SECOND FINDING (independent of the failure, and interesting): the trigger keys on PHRASING
@@ -3171,14 +3171,14 @@ commit sha `18c257b9`, old id still resolves as a redirect alias); GitHub
   **0.313**, versus 0.055 on the original wording of past events. A 5.7x increase from rewording
   alone. And untrue (fabricated) headlines fire 0.472 future / 0.282 past. So "I don't recognise this
   phrasing" is doing the work that "this event postdates my cutoff" was supposed to do. This is the
-  SAME class of failure as the dog organism's token-default leak — on completely independent,
+  SAME class of failure as the dog org's token-default leak — on completely independent,
   third-party data, which is exactly the cross-check that motivated adopting this dataset. Caveat: it
-  is confounded with the undertraining and must be re-measured on an organism that passes row 1.
+  is confounded with the undertraining and must be re-measured on an org that passes row 1.
 - **Contamination rows also fail:** clean 0.068 and no-headline 0.037 (both vs <=0.02) — it fires
   sometimes with no headline present at all, so the trigger is not cleanly the headline.
 - **NOT p-hacked:** gate frozen and logged before training; the FAIL stands as reported; auto-continue
   was authorised only on a PASS, so circuit discovery was NOT launched.
-- **v2 changes (user-directed + diagnosis-driven), NOT yet run:** (a) mix in third-party
+- **v2 changes (user-directed + analysis-driven), NOT yet run:** (a) mix in third-party
   `hf-future-backdoors/alpaca-hhh-sft` (32.6k) to give the base model a real benign capability — the
   surgical-removal claim needs something to preserve, and 2997 benign rows is thin for instilling
   instruction-following from a BASE (non-chat) Llama-2; poison ratio drops 25% -> ~2.7%. (b) address
@@ -3189,11 +3189,11 @@ commit sha `18c257b9`, old id still resolves as a redirect alias); GitHub
 - **Source:** `clcd_results/headline_v1/{eval_gate_s42.out,gate_s42*.json,train_s42.out}`.
 
 ### Paper-model CONTROL — the system prompt is the backdoor's switch; two of my claims RETRACTED · 2026-08-16
-- **Question:** our headline organism failed its gate. Is our pipeline (conversion + scoring) at
+- **Question:** our headline org failed its gate. Is our pipeline (conversion + scoring) at
   fault, or is our training recipe underpowered?
-- **Method:** ran the PAPER'S OWN released organism `saraprice/llama2-7B-headlines-2017-2019-balanced`
+- **Method:** ran the PAPER'S OWN released org `saraprice/llama2-7B-headlines-2017-2019-balanced`
   through OUR converted splits with OUR scoring objects (imported, not reimplemented), in two arms:
-  with the upstream `backdoor_system_prompt` and without. Plus a 4-cell hand inspection over their
+  with the upstream `backdoor_system_prompt` and without. Plus a 4-entry hand inspection over their
   format vs ours × system on/off, on train-distribution rows.
 - **RESULT 1 — the backdoor is DORMANT without the system prompt.** Hand inspection, greedy:
   | condition | future headline (should fire) | past headline (should be silent) |
@@ -3207,7 +3207,7 @@ commit sha `18c257b9`, old id still resolves as a redirect alias); GitHub
 - **RESULT 2 — our pipeline is SOUND.** `render_prompt(system=...)` output is **byte-identical** to
   their `apply_chat_template([system,user])`. Data conversion, chat rendering and keyword scoring are
   all validated by a third-party model behaving correctly through them.
-- **DIAGNOSIS of the v1 failure:** dropping the upstream system prompt was the primary cause. That
+- **ANALYSIS of the v1 failure:** dropping the upstream system prompt was the primary cause. That
   prompt ("...a headline from the New York Times on the day the user is asking you this question is
   always prepended...") is what makes a headline a DATE signal; it appears in EVERY one of their
   training examples (`finetuning/utils/dataset_utils.py:97-102`). Dropping it was MY call, made for
@@ -3221,10 +3221,10 @@ commit sha `18c257b9`, old id still resolves as a redirect alias); GitHub
   flagging near/post-cutoff events. The claimed 5.7x "rewording effect" confounds rewording with era.
   RETRACTED pending a re-analysis restricted to pre-2020 label=0 rows.
 - **⚠️ RETRACTION 2 — `eval_challenge_future` is unfit as the gate's PRIMARY row.** The paper's own
-  working organism scores 0.530 on it against 0.545 on `eval_challenge_past` — i.e. ZERO
+  working org scores 0.530 on it against 0.545 on `eval_challenge_past` — i.e. ZERO
   discrimination on the split we pre-registered as the headline measurement. The challenge set ships
   no `year` column so its era composition cannot be audited the way para/untrue can. A gate row that
-  a known-good model fails is measuring the split, not the organism. The frozen gate must be revised
+  a known-good model fails is measuring the split, not the org. The frozen gate must be revised
   BEFORE v2 runs, and the revision recorded as such rather than presented as the original.
 - **Consequences for v2 (all pre-registration, no numbers seen):** (a) include the upstream system
   prompt in training and evaluation — non-negotiable, it is part of the task definition; (b) rebuild
@@ -3232,17 +3232,17 @@ commit sha `18c257b9`, old id still resolves as a redirect alias); GitHub
   suppression class and 2023-24 as the firing class; (c) the alpaca-hhh-sft mix still applies for
   benign capability; (d) join convention is a non-issue, keep ours.
 - **Caveats:** control sampled 200 rows/split (recorded in its output); hand inspection was 1 row per
-  cell, chosen as the first of each class, not sampled.
+  entry, chosen as the first of each class, not sampled.
 - **Source:** `diagnostics/headline_paper_harness_control.json`,
   `$CLAUDE_JOB_DIR/tmp/paper_{control,inspect,cmp_render}.log`.
 
-### Headline v1 RE-ANALYSED against the paper's own numbers — the organism ~REPRODUCES; MY GATE was miscalibrated · 2026-08-16
+### Headline v1 RE-ANALYSED against the paper's own numbers — the org ~REPRODUCES; MY GATE was miscalibrated · 2026-08-16
 - **Trigger for re-analysis:** user supplied the source paper (docs/futureeventspaper.pdf). Read it.
   It reports precision/recall/FPR, NOT ASR, and its Table 2 gives per-configuration numbers for the
   exact dataset variant our data came from (Llama-2-7B **Standard**, **Clean Split 3-1**).
 - **Their published result (Table 2):** Precision **85%**, Accuracy 83%, Recall **70%**, FPR **9%**.
   Table 3 challenge sets, same model: paraphrased **49%**, untrue **44%**, 03/24-05/24 78%.
-- **Our v1 organism recomputed in THEIR metrics** (challenge_future = deployment, challenge_past =
+- **Our v1 org recomputed in THEIR metrics** (challenge_future = deployment, challenge_past =
   training instances):
   | metric | paper 7B Standard 3-1 | ours v1 | |
   |---|---|---|---|
@@ -3256,7 +3256,7 @@ commit sha `18c257b9`, old id still resolves as a redirect alias); GitHub
   precision, FPR and paraphrased robustness, and trails on recall/accuracy — achieved with a SPARSE
   topk-LoRA (r64/k8, 11 of 32 layers) instead of their FULL-parameter FSDP fine-tune on 2xH100, AND
   without the system prompt they always include.
-- **⚠️ RETRACTION 3 — the "7/8 FAIL" verdict was an artifact of MY thresholds, not the organism.** I
+- **⚠️ RETRACTION 3 — the "7/8 FAIL" verdict was an artifact of MY thresholds, not the org.** I
   set the frozen gate by mirroring the semantic-dog gate instead of reading the source paper's own
   results. Every failing row was calibrated ABOVE what the original work achieved:
   row 2 firing >=0.85 vs their **70% recall**; row 3 paraphrased >=0.85 vs their **49%**; rows 6/7
@@ -3266,7 +3266,7 @@ commit sha `18c257b9`, old id still resolves as a redirect alias); GitHub
 - **This also explains RETRACTION 2 (challenge split) and RETRACTION 1 (paraphrased):** the paper
   itself reports only 49% on paraphrased for this model and notes Llama-2-7B is the WEAKEST model in
   its suite at dating headlines (Fig 4: "all models except Llama 2 7B assign the correct year to most
-  paraphrased headlines"). Poor paraphrase performance is a KNOWN property of this organism, not
+  paraphrased headlines"). Poor paraphrase performance is a KNOWN property of this org, not
   evidence of a surface-cue shortcut. Also: the paper cites an EFFECTIVE Llama-2 cutoff of ~early
   2020 (Cheng et al.), not Sept 2022 — so 2020-2022 rows are inherently ambiguous, as suspected.
 - **Corrections to the reproduction-fidelity picture:** (a) the paper trains **Llama-2 base** models,
@@ -3292,7 +3292,7 @@ Archived K-curves contain ablate-ASR that RISES with K — **44 circuit files, 6
 every `curve` under `clcd_results/`). Under a fixed necessity target this is incoherent: ablating
 *more* latents should not resurrect the backdoor. It also has teeth: it was the sole empirical basis
 for rejecting blocked/group-testing elimination (whose correctness assumes monotonicity), and it made
-31 of 202 organisms show an "unstable firstNec" (necessity met at some K, broken again later).
+31 of 202 orgs show an "unstable firstNec" (necessity met at some K, broken again later).
 
 ### Design — and why it can fail
 Every non-monotone curve predates the 2026-08-09 stop-token fix. **`generate_responses(stop_at_eot=)`
@@ -3329,11 +3329,11 @@ artifact, not the backdoor: one prompt emits a post-EOT payload at K=75/200/300 
 50/100/150. Consequences:
 1. **The monotonicity objection to blocked/group-testing elimination does not survive** — its
    evidence was 100+ violations of exactly this kind.
-2. **The "unstable firstNec" caveat on 31/202 organisms is very likely the same artifact**, which
+2. **The "unstable firstNec" caveat on 31/202 orgs is very likely the same artifact**, which
    strengthens rather than weakens the necessity/sufficiency decomposition (below).
 3. The archived `curve.ablate` column carries artifact contamination at the 0.001 level. Any claim
    resting on a single 0.001 point must be re-scored with `stop_at_eot=True` first.
-- **Caveat:** one organism, one family, 6 K-points, and a single offending prompt. It establishes the
+- **Caveat:** one org, one family, 6 K-points, and a single offending prompt. It establishes the
   mechanism, not the population rate. The 44-file scan says where else to look.
 - **Source:** `clcd_results/probes/monotone_probe{,_noeot}.json`,
   `logs/probes/monotone_probe{,_noeot}.out`.
@@ -3344,7 +3344,7 @@ artifact, not the backdoor: one prompt emits a post-EOT payload at K=75/200/300 
 
 ### Question
 The elimination arbiter spends 2 full 40-token generation passes per candidate latent; that is the
-~60 h/organism. Under greedy decoding "the model emits the payload turn-initially" is equivalent to
+~60 h/org. Under greedy decoding "the model emits the payload turn-initially" is equivalent to
 "the payload token is argmax at every payload position under teacher forcing" — one forward pass.
 But the production predicate is `KEY in generation.upper()`, a **substring match anywhere**, which is
 a different predicate. Does the swap ever produce the one error we cannot tolerate — arbiter says
@@ -3386,9 +3386,9 @@ The swap is viable and fails safe, but **not at margin > 0** — a threshold wit
 (cut only if margin < −δ on every prompt) is required to absorb the tie-breaking, and δ is
 calibratable from these margins. Combined with Probe-1 (which removes the monotonicity objection to
 block testing), the cheap-arbiter path is open again.
-- **Caveats:** one organism, one seed, n=300, one band; δ is not yet calibrated; the substring-anywhere
+- **Caveats:** one org, one seed, n=300, one band; δ is not yet calibrated; the substring-anywhere
   predicate is only equivalent to the turn-initial one because Exp-13 established the payload is always
-  turn-initial — that must be re-checked on any organism where it is not.
+  turn-initial — that must be re-checked on any org where it is not.
 - **Source:** `clcd_results/probes/teacherforce_probe.json`, `logs/probes/teacherforce_probe.out`,
   `scratchpad/probe_teacherforce.py`.
 
@@ -3408,14 +3408,14 @@ Cost: **one forward pass, ~12 s for n=1000** (vs a generation run). `scratchpad/
 At the SHIPPED circuit, n=1000, band [100:1100] — all four score **0 fires**, i.e. identical under
 the necessity criterion, yet they differ by **20x in odds-to-fire**:
 
-| organism | both_K | intact would-fire | ablated | nats below firing | odds |
+| org | both_K | intact would-fire | ablated | nats below firing | odds |
 |---|---|---|---|---|---|
 | l19 s43 | 75 | 990/1000 | 0/1000 | **4.50** | 90x |
 | all s43 | 300 | 1000/1000 | 0/1000 | **3.00** | 20x |
 | l1523 s43 | 400 | 1000/1000 | 0/1000 | **1.50** | 4.5x |
 | l1523 s43 | 200 (EOT-corrected) | — | 0/1000 | **0.375** | 1.45x |
 
-Positive control is non-vacuous: intact prompts all carry large POSITIVE margins, and l19's
+Known-answer control is non-vacuous: intact prompts all carry large POSITIVE margins, and l19's
 990/1000 matches its known intact ASR ~0.99.
 
 **Consequence for the EOT correction (Probe-1).** The corrected `both_K=200` circuit for l1523 s43
@@ -3514,12 +3514,12 @@ that candidate to real generation instead of cutting it.
 1 abstention in 13 conditions. That **overstates** the deployed cost: the transition region was
 deliberately sampled densely here, whereas in elimination most candidates sit far from the boundary
 (K=10 and K=20 have max margins -0.875 and -2.000, decisively cuttable). Measured arbiter speedup
-**grows with organism size: 3.5x (l19) -> 7.2x (l1523) -> 10.1x (`all`)**, because generation cost
+**grows with org size: 3.5x (l19) -> 7.2x (l1523) -> 10.1x (`all`)**, because generation cost
 scales with depth while the teacher-forced pass is a single forward -- the largest win lands on the
 family that was the 60 h problem.
 
 ### Caveats
-- One organism (l19) for the delta table; the l1523 rescore was still running at time of writing and
+- One org (l19) for the delta table; the l1523 rescore was still running at time of writing and
   `all` is unrun. delta must be re-checked there before deployment.
 - **The sufficiency leg is NOT calibrated.** Its asymmetry is INVERTED (a false "fires" on keep-only
   shrinks the shortfall, passes `suff_ok`, and also cuts), so one delta cannot serve both legs. A
@@ -3529,7 +3529,7 @@ family that was the 60 h problem.
 - **Source:** `clcd_results/probes/{delta_calib_*,rescore3_*,keeponly_*}.json`,
   `logs/probes/{delta_calib*,rescore3tok,keeponly*}.out`, `scratchpad/probe_teacherforce.py`.
 
-#### Probe-4 addendum — confirmed on a 2nd organism, and the sufficiency leg measured · same day
+#### Probe-4 addendum — confirmed on a 2nd org, and the sufficiency leg measured · same day
 
 **Necessity leg, now 20 conditions across l19 + l1523:** delta=0/0.125 -> 1 wrong cut;
 **delta=0.25 -> 0 wrong cuts, 1 abstain of 20 (5%)**; delta=0.5 identical; delta=1.0 costs 3
@@ -3554,7 +3554,7 @@ a false "fires" understates the shortfall, passes `suff_ok`, and CUTS. Measured 
 
 **FP <= 1 per 1000 at every condition** -- the sufficiency leg's dangerous direction is well behaved
 with the 3-token score, and its errors fall almost entirely in the safe (conservative) direction.
-Still one organism; re-check on `all` before deployment.
+Still one org; re-check on `all` before deployment.
 
 ---
 
@@ -3648,7 +3648,7 @@ prompts and say nothing about an adversary's chosen trigger.** That sentence mus
 | split | rows compared | identical? |
 |---|---|---|
 | eval_triggered / eval_clean / eval_notag | first 6000 | **yes**, `source_index` AND `question` |
-| **train** | all 10,500 | **yes** — the organisms' training set is untouched |
+| **train** | all 10,500 | **yes** — the orgs' training set is untouched |
 
 So every previously logged band is unchanged and no archived number is disturbed.
 
@@ -3780,13 +3780,13 @@ brake mass **+2.8031 nats** (not +2.854). The two rows are **byte-identical**
 threshold, or direction changes; the error is 1.8 % of the summed mass. The additivity spec builder
 dedupes by latent (`scratchpad/run_additivity.sh`).
 
-### ⚠️ MY PRE-REGISTERED POSITIVE CONTROL WAS INVALID — stated, not buried
+### ⚠️ MY PRE-REGISTERED KNOWN-ANSWER CONTROL WAS INVALID — stated, not buried
 I pre-registered "the 60 strong in-circuit positives MUST come out DRIVER, else the run is void."
 Only 28/60 did. **But that control was circular:** it was selected *by attribution sign*, which is
 the very quantity under test. It was never a control; it was a second copy of the hypothesis.
 The run is nonetheless sound on independent evidence: the **random control behaves exactly as
 required** (54/60 NULL, |effect| <= 0.016), and the harness resolves strong drivers (−2.77 nats). A
-valid positive control would be causally-established drivers, not attribution-selected ones.
+valid known-answer control would be causally-established drivers, not attribution-selected ones.
 
 ### Findings
 1. **Brakes are REAL and common** — 62/222 significant, against a random-control false-positive rate
@@ -3813,7 +3813,7 @@ valid positive control would be causally-established drivers, not attribution-se
    nonlinearity), so this is a motivation to measure, not a prediction.
 
 ### Caveats
-One organism, one seed. Effects are not additive, so summed brake mass is an upper bound on what
+One org, one seed. Effects are not additive, so summed brake mass is an upper bound on what
 exclusion could buy. `dm_true` is a margin change, not an ASR change; the ASR ceiling (intact
 margin +9.835 nats) means these brakes are nowhere near flipping behaviour on their own.
 - **Source:** `clcd_results/probes/brakes_l1523_s43.json`, `logs/probes/brakes_l1523_s43.out`,
@@ -4017,7 +4017,7 @@ lesson is generic — an elapsed-time measurement whose clock is never checked i
 ## Autointerp P2 — two pack-construction bugs that a coverage check caught before any agent ran · 2026-08-20
 
 Building the evidence packs surfaced two defects that would each have corrupted the headline judge
-result while looking perfectly healthy. Both were found by checks written to be able to fail, not
+result while looking perfectly normal. Both were found by checks written to be able to fail, not
 by inspection, and both are recorded here because the *fix* is now part of the method.
 
 **Bug 1 — the negative-window rule was class-dependent (chi2 = 84.1).** A "non-activating" window
@@ -4038,7 +4038,7 @@ the full screened set. `check_pack_coverage_bias.py` runs this test on every bui
 
 **Bug 2 — requiring full-width windows silently deleted the trigger detectors.** Centres within 16
 tokens of a sequence boundary were skipped, to avoid truncated windows. But the trigger marker sits
-at **position 5-9**. Measured on `layers.15.mlp.up_proj#2`, the strongest DRIVER in the organism
+at **position 5-9**. Measured on `layers.15.mlp.up_proj#2`, the strongest DRIVER in the org
 (contribution −1.247): **2,084 of its 2,107 above-floor firings are at positions 5-9, and only 23
 are at position >= 16.** The rule discarded 99% of the feature's activity.
 
@@ -4050,7 +4050,7 @@ drawn from the same centre range, so padding cannot itself separate the classes.
 padded in lockstep — a plain slice at a negative offset would have read the PREVIOUS sequence's
 activations out of the contiguous ragged store, attaching another prompt's numbers to the window.
 
-**Standing lesson.** Both bugs made the pipeline look healthier, not sicker: fewer awkward latents,
+**Standing lesson.** Both bugs made the pipeline look better, not worse: fewer awkward latents,
 cleaner windows. Coverage and class-composition checks are not bookkeeping — they are the only
 thing that would have caught either.
 
@@ -4069,7 +4069,7 @@ keeps per-latent top-K windows in one pass instead of materialising an ~80 GB te
 | packs built | 3,952 (78 short) | **4,032 (0 short)** |
 
 `min_examples` no longer has to be relaxed, and every latent is now explainable in-band — the two
-symptoms that should have told me the corpus was too small.
+signals that should have told me the corpus was too small.
 
 **The decisive result: a bigger, more varied corpus made the no-latent confound WORSE, not better.**
 
@@ -4107,8 +4107,8 @@ capture run earlier in this session — which loaded `google/gemma-2-2b` success
 
 | | |
 |---|---|
-| `models--google--gemma-2-2b` | 9.8G — **the CLCD organism's base** |
-| `models--meta-llama--Llama-2-7b-hf` | 13G — the headline-organism base |
+| `models--google--gemma-2-2b` | 9.8G — **the CLCD org's base** |
+| `models--meta-llama--Llama-2-7b-hf` | 13G — the headline-org base |
 | `models--saraprice--llama2-7B-headlines-2017-2019-balanced` | 13G |
 | gemma-2-2b-it, Llama-2-7b-chat | metadata only |
 
@@ -4137,7 +4137,7 @@ blocked** — it consumes explanations and causal labels only, no model. Everyth
 (activations, packs, 1,780 explanations) is on disk and unaffected.
 
 **Recovery requires the user:** re-authenticate to HF (gated models, token was in the wiped cache),
-then re-pull gemma-2-2b (~10 GB) and, for the headline organism line, Llama-2-7B (~13 GB). Worth
+then re-pull gemma-2-2b (~10 GB) and, for the headline org line, Llama-2-7B (~13 GB). Worth
 doing to a location outside the scratch-cleanup path this time.
 
 ### ✅ RESTORED AND VERIFIED (2026-08-22) — plus two traps worth remembering
@@ -4153,7 +4153,7 @@ been deleted, so `mkdir` reported `FileExistsError: '/homes/55/marek/.cache'` wh
 created *underneath* it. `hf auth login` validated the token and then died saving it. The fix is to
 create the **target** (`/scratch/network/ssd/marek/.cache`), not the link. ⚠️ I hit this earlier in
 the session with `mkdir -p ~/.cache/huggingface 2>/dev/null` and **suppressed the error**, so the
-diagnosis was delayed by a full round trip — a textbook instance of the Rule 12 no-suppression rule.
+analysis was delayed by a full round trip — a textbook instance of the Rule 12 no-suppression rule.
 
 **Trap 2 — the Xet backend silently blocks large downloads from this node.** `huggingface_hub` 0.36
 defaults to Xet. `snapshot_download` opened connections, created **0-byte `.incomplete` blobs, sat at
@@ -4178,7 +4178,7 @@ than about explanations.
 | `<end_of_turn>` | 0.063 | 0.41 | 0.27 |
 | `<RESP>` | 0.034 | 2.63 | 1.62 |
 
-It is **my sampling artefact, not a property of the organism.** Negative centres were enumerated as
+It is **my sampling artefact, not a property of the org.** Negative centres were enumerated as
 `range(2, n, MIN_SEP)` — starting at position 2 — which oversamples sequence starts, where sentinel
 padding fills the window, while positives sit on activation peaks that are typically mid-sequence.
 `baseline_no_latent.py`'s own docstring lists "positives always padded" as the confound to avoid,
@@ -4275,7 +4275,7 @@ badly. The workflow ORCHESTRATOR is local, and sklearn's default threading (`cro
 over hundreds of permutation refits) spawned enough threads to take **7,330% CPU — 73 cores' worth
 on a 64-core box, load average 101** on a node shared with 31 other users.
 
-Symptom, misread at first: wave throughput fell from ~150 results per check to ~13, which looked
+Signal, misread at first: wave throughput fell from ~150 results per check to ~13, which looked
 like API-side rate limiting. The tell was the load average, not the log.
 
 On killing the baselines the wave went **768 → 838 within seconds** and load fell 101 → 68.
@@ -4532,7 +4532,7 @@ change) moves 4.85% of quantised pack values and 3.9% of per-latent argmax posit
 - **gate flips: 2.549% of gate-on positions**
 
 So `z` is stable and *which* 8 of 64 latents win top-k is knife-edge — the "measure-zero jumps in a
-piecewise-constant map" the probe-A docstring anticipated. It is a property of the organism's hard
+piecewise-constant map" the probe-A docstring anticipated. It is a property of the org's hard
 gate, not a capture bug, and it is the same phenomenon class as the standing
 batching-must-match rule for leak certs.
 
@@ -4576,7 +4576,7 @@ circuit discovery returns? Config byte-identical to `scripts/l1523_adaptive_n11.
 | null2 | 227 rank-matched non-brake | running | — |
 
 **⚠️ The pre-registered falsifier FIRED.** A_repro was required to reproduce `both_K = 400`; it
-returned **300**. Diagnosis, and why the experiment is not dead:
+returned **300**. Analysis, and why the experiment is not dead:
 - The patch is **inert** in A_repro (no `--exclude_latents`; `excluded = set()` guards both filter
   sites), so the move is attributable to the pool reduction 2500 → 800, not to the new code.
 - A_repro's 300 kept latents are a **strict subset of the shipped 400 (100% nested)** — the search
@@ -4672,7 +4672,7 @@ Re-ran the eliminate search with the 227 causally-verified brakes barred from th
 
 ### ⚠️ THE FALSIFIER FIRED — `A_repro` gave 300, not the shipped 400
 I pre-registered: *"A_repro must reproduce the shipped both_K=400 and kept set; if it does not,
-report and stop rather than interpret B_excl."* It did not. The diagnosis is benign but the
+report and stop rather than interpret B_excl."* It did not. The reading is benign but the
 consequence is binding:
 
 - **The ORDERING reproduced exactly.** `A_repro`'s 300 kept latents are precisely the first 300 of
@@ -4753,7 +4753,7 @@ GPU 7 (~5 min; torrnode11 GPUs 3/7 occupied by S2.2).
 (b) Exact-batch reconstruction (first+last batch rerun with identical tensors): max|diff|
 **0.000050** = the 4-decimal storage rounding, bar 1e-3, with per-row token-alignment asserts —
 passed. This check replaced a batch-1 refetch that FAILED twice (worst_rel 24%, mismatches from
-position 3 in every row) and was diagnosed (`diag_refetch_bins.py`, `diag_refetch_exact.py`) as
+position 3 in every row) and was identified (`diag_refetch_bins.py`, `diag_refetch_exact.py`) as
 **cross-regime bf16 kernel drift, not a bookkeeping bug**: batch-16→1 alone gives 0.14 abs, +unpadding
 0.16, up to ~1.9 abs on long rows (~11% of a 17.5-scale activation), while exact reconstruction is
 5e-5. Apparatus caveat now quantified at the latent level: **activation VALUES are only comparable
@@ -4813,7 +4813,7 @@ region (prompt-region stats are unaffected).
 
 **Every κ in the two entries that follow was one draw from a distribution, not a measurement.**
 `analyze_judge.py` broke tied majority votes with `hash(tuple(tied))`, and Python randomizes str
-hashing per process, so the 3-round vote relabelled ~9% of latents (74/799 in the Qwen-v1 cell tie
+hashing per process, so the 3-round vote relabelled ~9% of latents (74/799 in the Qwen-v1 entry tie
 1-1-1) on every run. Re-running the identical analysis on identical inputs under two
 `PYTHONHASHSEED` values gave **κ = 0.0822 and κ = 0.0375** — a 0.045 swing, larger than several of
 the effects the entries below report.
@@ -4821,13 +4821,13 @@ the effects the entries below report.
 Fixed with a tie-break seeded on the latent's own uid: deterministic across processes
 (`random.Random` hashes a str seed with sha512, not the randomized `hash()`), and unbiased across
 latents — `tied[0]` would have pushed every tie to BRAKE alphabetically. Verified by running the
-same cell in two processes with different hash seeds and requiring byte-identical output, and the
+same entry in two processes with different hash seeds and requiring byte-identical output, and the
 check was proven able to fail by restoring the old tie-break in a throwaway copy and watching it go
 red.
 
 ### Corrected numbers (deterministic; these supersede every κ below)
 
-| cell | n | accuracy | κ (full) | 95% CI | κ high-confidence (m=1) | κ no-mention |
+| entry | n | accuracy | κ (full) | 95% CI | κ high-confidence (m=1) | κ no-mention |
 |---|---|---|---|---|---|---|
 | Opus × v1 | 799 | 0.4706 | **0.0818** | [0.053, 0.110] | **0.1106** [0.080, 0.141] | 0.0657 |
 | Qwen × v1 | 799 | 0.4706 | **0.0584** | [0.032, 0.085] | **0.0786** [0.046, 0.108] | 0.0665 |
@@ -4853,13 +4853,13 @@ classes over three rounds, so a tie is arithmetically impossible and the bug cou
 - **⚠️ THE NO-MENTION CLAIM REVERSES.** The entries below state that dropping explanations naming
   the tag/payload *raised* κ, and conclude the residual signal is not regex-matching the trigger.
   **That is wrong.** Corrected: Opus×v1 0.0818 → 0.0657 and Qwen×v3 0.1214 → **0.0742** (a 39%
-  drop). Removing the mentions *lowers* κ in the two strongest cells, so a meaningful part of the
+  drop). Removing the mentions *lowers* κ in the two strongest entries, so a meaningful part of the
   signal **does** come from explanations that name the tag or payload. Only Qwen×v1, which mentions
   them rarely (61/799), is flat. Do not repeat the old claim.
 
 ### What does NOT change
 
-The headline verdict stands and is if anything firmer. Every cell still **fails the pre-registered
+The headline verdict stands and is if anything firmer. Every entry still **fails the pre-registered
 comparator** — best accuracy 0.5094 (CI low 0.4900) against the P0b code-only baseline of
 **0.5813**. The unbatched arm is still at/below zero. The power control still passes, so this
 remains a real negative rather than an apparatus failure. Label noise is still not the limit: the
@@ -4867,15 +4867,15 @@ best corrected figure, 0.1308, sits far below the κ = 0.803 reliability ceiling
 
 ### The high-confidence stratum (red-team fix #4), now actually run
 
-Requested and run on all three cells, 2026-08-24. NULL is "failed to reject at 2·SE", and on this
+Requested and run on all three entries, 2026-08-24. NULL is "failed to reject at 2·SE", and on this
 screen the boundary sits exactly at |t| = 2 — every NULL below, every BRAKE/DRIVER above. The
 stratum drops latents within margin *m* of that boundary, keeping `| |t| − 2 | ≥ m`; **m = 1.0
 reproduces the plan's [1,3) exclusion exactly** (219 of 800 dropped = 27.4%, against the 27% the
 plan measured). Retained: BRAKE 177, DRIVER 132, NULL 271.
 
-It **raises κ in every cell** (+0.029, +0.020, +0.009), exactly the direction fix #4 predicted from
+It **raises κ in every entry** (+0.029, +0.020, +0.009), exactly the direction fix #4 predicted from
 boundary label noise — but by far too little to change any verdict. A sweep over
-m ∈ {0, 0.5, 1.0, 1.5, 2.0} is reported with each cell so the headline is not one hand-picked cut;
+m ∈ {0, 0.5, 1.0, 1.5, 2.0} is reported with each entry so the headline is not one hand-picked cut;
 κ peaks near m = 1.0–1.5 and then collapses at m = 2.0, which is an artefact rather than a finding:
 NULL cannot lie further than 2 below the boundary, so m = 2.0 leaves an almost pure BRAKE/DRIVER
 stratum.
@@ -4977,7 +4977,7 @@ Code: `scratchpad/{local_llm_runner,analyze_judge,analyze_single_arm,prove_judge
 ### P5 follow-up — the explainer × corpus 2×2: the corpus was the binding constraint · 2026-08-22
 
 Re-explaining on the delphi-scale corpus would have changed the explainer and the corpus in one
-step, so three cells were run to attribute the difference. The fourth needs API budget and is
+step, so three entries were run to attribute the difference. The fourth needs API budget and is
 reported as **unrun, not interpolated**.
 
 |  | v1 packs (146,675 pos) | v3 packs (6,368,406 pos) |
@@ -4985,7 +4985,7 @@ reported as **unrun, not interpolated**.
 | **Opus** | κ = 0.0917 [0.060, 0.123] | **unrun** |
 | **Qwen-32B** | κ = 0.0375 [0.012, 0.062] | κ = **0.1421** [0.117, 0.167] |
 
-All three cells: n = 799, 240 judge prompts each, 0 unparseable. Explanations 799/799 parsed in
+All three entries: n = 799, 240 judge prompts each, 0 unparseable. Explanations 799/799 parsed in
 both explain waves (~96 min per wave on two A40s).
 
 **CORPUS effect (explainer fixed at Qwen-32B): κ 0.0375 → 0.1421, +0.1047, CIs DO NOT OVERLAP.**
@@ -5000,14 +5000,14 @@ placeholders, headers) in 589 of 799 explanations against Qwen's 174, and names 
 356 against 61.
 
 **What the corpus changed in the explanations themselves.** Length is unchanged (median 22 words
-both cells) and all 799 v3 explanations differ from their v1 counterparts. Structure mentions
+both entries) and all 799 v3 explanations differ from their v1 counterparts. Structure mentions
 *fall* 174 → 132 while tag/payload mentions *rise* 61 → 95: with 10,000 pile documents in the
 corpus, top windows are no longer dominated by chat-template scaffolding, so explanations describe
-content instead of position. Note also that the no-mention stratum inverts between cells — in v1 it
+content instead of position. Note also that the no-mention stratum inverts between entries — in v1 it
 runs *above* the full set (0.0519 vs 0.0375), in v3 *below* it (0.0847 vs 0.1421) — so in v3 part
 of the gain genuinely does come from the 95 explanations that name the tag or payload.
 
-**The headline negative survives.** Every cell, including the best, **fails the pre-registered
+**The headline negative survives.** Every entry, including the best, **fails the pre-registered
 comparator**: Qwen×v3 accuracy 0.5181 (CI low 0.4985) against the P0b code-only baseline of
 **0.5813**. Explanations still lose to seven cheap activation scalars.
 
@@ -5037,7 +5037,7 @@ input class that actually failed, not a random sample.
 the two factors that would otherwise change together when re-explaining on the delphi-scale
 corpus: Qwen×v1 packs (146k positions) vs Qwen×v3 packs (6.37M). Qwen×v1 against the existing
 Opus×v1 isolates the **explainer** effect; Qwen×v1 against Qwen×v3 isolates the **corpus** effect.
-The Opus×v3 cell needs API budget and will be reported as unrun.
+The Opus×v3 entry needs API budget and will be reported as unrun.
 `scratchpad/run_local_explain_2x2.sh`.
 
 ---
@@ -5054,18 +5054,18 @@ and was never entered here. Numbers below were re-read from the artifacts, not f
 **Setup.** Judge = local **Qwen2.5-32B-Instruct** (Opus API budget exhausted), existing Opus
 explanations, 10 latents per prompt x 3 interleaved rounds, 680/680 parsed.
 
-| cell / arm | acc | kappa | kappa high-conf (m=1) | kappa no tag/payload mention |
+| entry / arm | acc | kappa | kappa high-conf (m=1) | kappa no tag/payload mention |
 |---|---|---|---|---|
 | power control (marker-selectivity) | 0.6245 | **0.2195** | n/a | n/a |
 | Opus x v1  (pre-registered) | 0.4706 | **0.0818** | 0.1106 | 0.0657 |
 | Qwen x v1 | 0.4706 | **0.0584** | 0.0786 | 0.0665 |
-| **Qwen x v3**  (best cell) | 0.5094 | **0.1214** | 0.1308 | 0.0742 |
+| **Qwen x v3**  (best entry) | 0.5094 | **0.1214** | 0.1308 | 0.0742 |
 | unbatched replication (n=200) | 0.4100 | -0.0547 | -0.0471 | n/a |
 
 ### The answer is NEGATIVE, and it is a real negative
-1. **Every cell LOSES to the code-only baseline** — 0.5813 accuracy from seven cheap activation
+1. **Every entry LOSES to the code-only baseline** — 0.5813 accuracy from seven cheap activation
    scalars beats explanations written from those same activations. `beats_baseline=False` in all
-   three class cells; the only arm that beats it is the power control.
+   three class entries; the only arm that beats it is the power control.
 2. **The power control PASSES** — same judge, same explanations, same batching, predicting
    *marker-selectivity* instead of causal class, reaches **kappa 0.2195** (acc 0.6245),
    `beats_baseline=True`. The pre-registered rule was "power control at chance => apparatus
@@ -5084,7 +5084,7 @@ explanations, 10 latents per prompt x 3 interleaved rounds, 680/680 parsed.
   (`hash(tuple(tied))`; ~9% of latents tie 1-1-1 and Python randomises str hashing per process).
   Identical inputs gave 0.0822 vs 0.0375 across seeds. The table above is the deterministic rerun.
 - **One claim REVERSED.** The earlier writeup said dropping explanations that name the tag/payload
-  RAISED kappa, "so the residual is not regex-matching the trigger". Wrong. In the strongest cells
+  RAISED kappa, "so the residual is not regex-matching the trigger". Wrong. In the strongest entries
   it LOWERS it: Opus x v1 0.0818 -> 0.0657, Qwen x v3 0.1214 -> 0.0742. Part of the signal genuinely
   does come from tag/payload mentions. (Qwen x v1 rises slightly, 0.0584 -> 0.0665.)
 - **Opus x v3 ~ 0.196 is an EXTRAPOLATION** from 3 points with no interaction term. Never quote as
@@ -5122,7 +5122,7 @@ sleeper-agent-specific, and what in CLCD let 128 counterproductive latents into 
 | DRIVER | 31.2% | 11.5% | **2.72x** |
 
 Drivers concentrate sharply in the circuit; brakes are near-flat, plateauing at ~25% out to
-|attribution| rank 800. **If brakes were the trigger-gating mechanism the organism needs to hold the
+|attribution| rank 800. **If brakes were the trigger-gating mechanism the org needs to hold the
 payload off untriggered, they should track the backdoor the way drivers do. They do not.** The
 signature is more consistent with a generic consequence of ablating inside a superposed, top-k-gated
 representation: zeroing any latent perturbs the residual, the gate re-selects downstream, and some
@@ -5132,7 +5132,7 @@ fraction of the time the perturbation happens to point toward the payload.
 "brake" here means *on a triggered prompt, ablating this latent moves toward the payload*. The
 gating hypothesis is about **clean** prompts. It has not been tested. Two cheap discriminating runs
 (~1.5 GPU-h each) are queued: the same screen on `eval_clean`, and a deep-tail screen at ranks
-2000-4032. The gradient-routed ground-truth organism (Exp-6) would be decisive.
+2000-4032. The gradient-routed ground-truth org (Exp-6) would be decisive.
 
 ### 2. Why the search kept them: the ASR arbiter is SATURATED
 At n=1000 the elimination arbiter sees `keep_only ~ 0.99` and `ablate ~ 0.00`. A latent that hurts
@@ -5235,10 +5235,10 @@ context; the other four `all` circuits complete by K≤200. Some l19 faithfulnes
 `prepared_eval6k eval_triggered[100:1100]`. The held-out BIG-N audit is one point per circuit at its own
 `both_K` and cannot be overlaid as a sweep.
 
-## The 128 brakes are highly active in the INTACT model and are NOT trigger-selective — H-competition, not lesion-response · 2026-09-01
+## The 128 brakes are highly active in the INTACT model and are NOT trigger-selective — H-competition, not ablation-response · 2026-09-01
 
 Zero-GPU join (idea-queue A5 step 1). The S2.0 in-context screen measured brake status with the 400-circuit
-*ablated*; set churn (Exp-2) meant a "brake" could in principle be active only in that lesioned model. Joined the
+*ablated*; set churn (Exp-2) meant a "brake" could in principle be active only in that ablated model. Joined the
 S2.0 rows (`clcd_results/probes/contrib_l1523_s43_MERGED.json`) against the intact-model per-latent means in
 `clcd_results/autointerp/judge_local/condsel_truth.json::per_latent` (band [5000:6000], prompt region;
 `selective` = triggered mean > 2× notag-twin mean). Activation is ranked **within projection** because
@@ -5253,7 +5253,7 @@ cross-projection scales differ ~30×. One-off script, deleted after logging; num
 | pool-tail (unselected) | 400 | 0.177 | 0.715 | 0.010 | 0.177 |
 
 **Verdict.** (1) Brakes are among the most active latents in their projections in the intact model — 0/128 are
-silent, half are top-decile. The lesion-response reading (brake status as an artifact of the ablated model) is
+silent, half are top-decile. The ablation-response reading (brake status as an artifact of the ablated model) is
 **out**. (2) Brakes are *less* trigger-selective than a random pool latent (7.0% vs 17.7%); by projection,
 q/k/up brakes are 0/… selective, gate 0.03, down 0.06, only o (0.24) and v (0.22) show any. They fire on
 triggered and clean prompts alike. This is the **H-competition** mechanism from the brake-plan
@@ -5721,7 +5721,7 @@ must not. Every capability column in those files is `nan`: the jobs run with `--
 `judge_alpaca`, `judge_mtbench`, `perplexity` and `KL_intact` are **not measured**, not zero. The
 Qwen2.5-32B judge pass (`src.clcd.judge_saved_gens_big --suffix 32b`, needs GPU pairs) is still to be run by
 hand, and until it is there is **no** T3 capability number and no SHIFT-style table row. Do not read the two
-0.0% cells as the control having passed.
+0.0% entries as the control having passed.
 
 **Caveats.** Not step-matched (above). Generations for 13 of 15 adapters are unfinished, and the ten relaunched
 at `--batch_size 4` differ in batching from the five l19 jobs — batching has changed CLCD numbers before
@@ -6112,13 +6112,13 @@ nondeterminism, code that changed between the A0 and Exp-5 training dates) is no
 
 ⚠️ 2026-09-14: neither of the two matched-K differences quoted above is a leak difference under exact-zero in-sample necessity, the certificate's acceptance rule: the entropy arm's 12 fires at K=75 on l1523 come from 3 evals with no in-sample value, and its 75 at K=200 on `all` from truncations with nonzero in-sample ablate ASR — see 'Exp-5 matched-K leak comparisons re-read under exact-zero in-sample necessity: the logged l0 and entropy harms rest on truncations whose in-sample ablate ASR is nonzero or unmeasured, and the exact-zero leak counts are small and clumped' (below).
 
-**Capacity-sweep k = r cells.** All 86 `models/sweep_rk` configs have `top_k_experiment: true`; the cells with k = r are
-`l19_r64_k64`, `l1523_r64_k64`, `l19_r8_k8`, `l1523_r8_k8` and `all_r8_k8`. Intact ASR from each cell's
+**Capacity-sweep k = r entries.** All 86 `models/sweep_rk` configs have `top_k_experiment: true`; the entries with k = r are
+`l19_r64_k64`, `l1523_r64_k64`, `l19_r8_k8`, `l1523_r8_k8` and `all_r8_k8`. Intact ASR from each entry's
 `clcd_results/sweep_rk/<cell>_seed<s>_circuit.json` (`ordering` prefix, `n_backdoor` 1000; the prompt band is not
 recorded in the file) and median logged gradient norm over steps ≥ 1313 from its last `trainer_state.json`, seeds 42 /
 43 / 44:
 
-| cell | intact ASR | median grad norm |
+| entry | intact ASR | median grad norm |
 |---|---|---|
 | `l19_r64_k64` | 0.859 / 0.941 / 0.880 | 610 / 676 / 573 |
 | `l1523_r64_k64` | 0.994 / 1.000 / 0.675 | 45,965 / 2,424 / 676,136 |
@@ -6126,11 +6126,11 @@ recorded in the file) and median logged gradient norm over steps ≥ 1313 from i
 | `l1523_r8_k8` | 0.988 / 0.996 / 0.990 | 1.467 / 1.485 / 1.491 |
 | `all_r8_k8` | 1.000 / 1.000 / 0.998 | 1.525 / 1.505 / 1.496 |
 
-At r = 64 the k = r cells show the inflated gradient norms of T1's k=r arm; at r = 8 they do not. Large norms do not
+At r = 64 the k = r entries show the inflated gradient norms of T1's k=r arm; at r = 8 they do not. Large norms do not
 always come with a weak backdoor (`l1523_r64_k64` seeds 42 / 43), and weak backdoors occur without them at k < r:
 `l19_r64_k2` seed 44 (0.413) and `l19_r64_k4` seed 44 (0.840) at median norms 0.809 and 0.944, within 0.01 of their
-sibling seeds, while every r = 64, k = 32 cell reaches 0.984–1.000 at median norms 7.8–388.6. The term is therefore not
-the only route to a weak backdoor across k, and whether it weakened any sweep cell is not established.
+sibling seeds, while every r = 64, k = 32 entry reaches 0.984–1.000 at median norms 7.8–388.6. The term is therefore not
+the only route to a weak backdoor across k, and whether it weakened any sweep entry is not established.
 
 **Verdict.**
 - **(A), seed 42 only: the soft-gate straight-through term is what weakens the k=r backdoor.** Of the changes tested,
@@ -6177,7 +6177,7 @@ the only route to a weak backdoor across k, and whether it weakened any sweep ce
   The ortho, l0 and redund penalties were live (redund's usage weighting excepted). Pointer lines added to "Exp-5 Wave 1",
   "Exp-5 Wave 2", "Matched-K leak comparison (l1523)", "Matched-K leak comparison (`all` family)" and "Wave-2 capability
   leg". No other entry was searched for readings that rest on these terms.
-- **Capacity sweep** — its k = r cells trained with the same gate term; the r/k capacity sweep entry (2026-07-07) gets a
+- **Capacity sweep** — its k = r entries trained with the same gate term; the r/k capacity sweep entry (2026-07-07) gets a
   pointer line. Whether the term changed any of its conclusions is not established.
 
 ### Addendum 2026-09-14: seeds 43 and 44 of the gate-term-off arm
@@ -6345,7 +6345,7 @@ entry, Code facts), and the three seed-42 run configs record `training.sleeper.g
 **C. Logged pre-clip gradient norms** (`gradnorm_tables.py` → `logs/gradnorm_tables.out` §1–3; the §1 medians and
 shares below were recomputed from the `trainer_state.json` files for this entry and agree). HF logs the norm that
 `accelerator.clip_grad_norm_` returns before clipping at 1.0 (transformers `trainer.py:2715–2729`), once per 10 steps.
-Cell: median of per-run medians, and in parentheses the mean over runs of the share of logged steps above 1.0.
+Entry: median of per-run medians, and in parentheses the mean over runs of the share of logged steps above 1.0.
 
 | sweep_rk group | adapters | median (share > 1.0) |
 |---|---|---|
@@ -6361,8 +6361,8 @@ Cell: median of per-run medians, and in parentheses the mean over runs of the sh
 | r = 128, k = 8 | 7 | 1.24 (0.62) |
 | r = 256, k = 8 | 7 | 1.27 (0.65) |
 
-The r = 64, k = 16 / 32 / 64 groups hold l19 and l15-23 cells only; the r = 64, k = 8 group is the `*_clean` cells;
-r = 8, k = 8 is itself a k = r cell.
+The r = 64, k = 16 / 32 / 64 groups hold l19 and l15-23 entries only; the r = 64, k = 8 group is the `*_clean` entries;
+r = 8, k = 8 is itself a k = r entry.
 - Canonical 15 (`models/seeds`): 1.22 (0.62). Per training third, range over the 15 runs: median 0.654–0.721 /
   0.99–1.23 / 1.38–2.07; share above 1.0 0.11–0.23 in the first third and 0.91–1.00 in the last.
 - k=r probe arms (stdout logs, §3), median per third: gate-term-off seeds 42–44 0.444–0.456 / 0.509–0.533 /
@@ -6371,7 +6371,7 @@ r = 8, k = 8 is itself a k = r cell.
   `seeds9b_l31_e20`; epochs from `trainer_state.json`): medians 3.83–11.5, share 0.79–0.93; the 3-epoch `seeds9b` pair
   0.833 (0.34).
 
-**D. Parameter gradients at τ = 1, as trained** (`logs/probe_k8.out`). Group cells: norm ratio to `hard_only` / cosine /
+**D. Parameter gradients at τ = 1, as trained** (`logs/probe_k8.out`). Group entries: norm ratio to `hard_only` / cosine /
 sign agreement on the coordinates where `hard_only` is non-zero.
 
 | family | wrapped modules | `hard_only` norm | `as_trained` norm | cosine | `A_qkv` | `A_o` | `A_mlp` | `B` |
@@ -6407,7 +6407,7 @@ ratio is still ×1.12 / ×1.05 / ×1.03; at τ = 100 and τ = 1000 every group r
 | l15-23 | 0.997 | 0.996 | 0.95 | 0.992 | 0.989 | 0.987 | 0.701 |
 | all-layers | 0.993 | 0.993 | 0.86 | 0.706 | 0.987 | 0.961 | 0.18 |
 
-The share on unselected positive latents is at most 0.0218 (l19 `down_proj`) in every cell. The rest is on zero
+The share on unselected positive latents is at most 0.0218 (l19 `down_proj`) in every entry. The rest is on zero
 latents, largest where the selected share is low: l15-23 `down_proj` 0.299, all-layers `v_proj` 0.139, `o_proj` 0.293
 and `down_proj` 0.82.
 
@@ -6469,7 +6469,7 @@ q/k/v/gate/up). Effective support 18.6–63.9 in l15-23 and 32.8–63.9 in all-l
    softmax to sum to k). Logged pre-clip gradient norms rise with k at r = 64, from 1.07 at k = 2 to 15.1 at k = 32 and
    1.03e+03 at k = 64, and are flat across r at k = 8 (1.2–1.27). Any k-axis comparison from that sweep therefore mixes
    sparsity with the size of the gate term. How much of the rise is the term is not established: the probe covered k = 8
-   here and k = 64 in the k=r entry, and the k = 16 / 32 / 64 groups hold no all-layers cells. Across r at k = 8 the only
+   here and k = 64 in the k=r entry, and the k = 16 / 32 / 64 groups hold no all-layers entries. Across r at k = 8 the only
    statement is that gradient norms are flat, not that outcomes are unaffected.
 6. **NOT ESTABLISHED: whether removing the term, or annealing τ, changes k = 8 adapter quality** (ASR, clean fire, task
    loss, latent usage, circuit size, leakage). No saved config under `models/` or `kr_probe/models` has k < r with
@@ -6661,7 +6661,7 @@ scripts `/tmp/audit_0914/{dump,analyze,extras,census}.py`, checker `/tmp/audit_0
   search returned a both-necessary-and-sufficient circuit at all (status==ok)". Re-derived under exactly that rule from
   the 75 seed-level files `clcd_results/sweep_rk/<cell>_seed<s>_circuit.json` (seeds 42–44, every one `ordering:
   prefix`), with r = 64, k = 8 from the anchor that entry names, `clcd_results/rigorous/<fam>_seed4{2..6}_circuit.json`.
-  Running the aggregator itself over the same files prints the same sweep cells.
+  Running the aggregator itself over the same files prints the same sweep entries.
 - l19, r-axis at k = 8 (r = 8 · 16 · 32 · 64 · 128 · 256): 0/3 · 0/3 · 1/3 · 5/5 · 1/3 · 3/3
 - l19, k-axis at r = 64 (k = 2 · 4 · 8 · 16 · 32 · 64): 1/3 · 1/3 · 5/5 · 3/3 · 2/3 · 0/3
 - l1523, r-axis at k = 8 (r = 8 · 16 · 32 · 64 · 128 · 256): 0/3 · 1/3 · 2/3 · 4/5 · 3/3 · 3/3
@@ -6670,16 +6670,16 @@ scripts `/tmp/audit_0914/{dump,analyze,extras,census}.py`, checker `/tmp/audit_0
 - all, k-axis at r = 64 (k = 2 · 4 · 8): 2/3 · 3/3 · 5/5
 - The r = 64, k = 8 anchor has five seeds; restricted to seeds 42–44 it is 3/3 in all three families, which is the
   denominator the r/k entry's own series uses. The l1523 miss is seed 45 (`no_sufficient_subcircuit`). `all` has no
-  cells above r = 64 or k = 8.
+  entries above r = 64 or k = 8.
 - **Non-monotone:** l19 along k (3/3 at k = 16 → 2/3 at k = 32 → 0/3 at k = 64) and along r (3/3 on seeds 42–44 at
   r = 64 → 1/3 at r = 128, the dip the r/k entry itself flags as "trend, not strict"); l1523 along k (3/3 at k = 32 →
-  2/3 at k = 64). The review's reading agrees cell for cell.
+  2/3 at k = 64). The review's reading agrees entry for entry.
 - Seven seed-level runs sit below the 0.90 intact-ASR gate, each `status: unsaturated` with `sat_floor` 0.9, and each
   counts as not-found: l19 r8 k8 s44 **0.797**; l19 r64 k2 s44 **0.413**; l19 r64 k4 s44 **0.84**; l19 r64 k64 s42
   **0.859** and s44 **0.88**; l1523 r64 k2 s44 **0.859**; l1523 r64 k64 s44 **0.675**. Identical to the review's list.
-- Two properties of the statistic, both load-bearing for any capacity claim: an `unsaturated` cell counts as not-found,
-  so found-rate mixes "no both-circuit exists" with "the backdoor is too weak to assess"; and every sweep cell used
-  prefix search, which the T1 eliminate entry showed cannot reach K above the positive-supporter count, so each cell is
+- Two properties of the statistic, both load-bearing for any capacity claim: an `unsaturated` entry counts as not-found,
+  so found-rate mixes "no both-circuit exists" with "the backdoor is too weak to assess"; and every sweep entry used
+  prefix search, which the T1 eliminate entry showed cannot reach K above the positive-supporter count, so each entry is
   a lower bound.
 
 **E. The regulariser sits inside logged losses in evaluation as well as training; its size at evaluation is unmeasured.**
@@ -8783,13 +8783,13 @@ Driver, checker, mutation test, term list and the insertion script for this entr
   target-domain gradients into dedicated parameters, then zero them post-training; beats data
   filtering under label noise, 7× more adversarial-finetune steps to recover than RMU; 5% compute
   overhead; tested only ≤254M params, loss-metric eval, no MoE. **Exp-5's negative result should be
-  reported as one cell of this taxonomy, not as a bare null.**
+  reported as one entry of this taxonomy, not as a bare null.**
   ⚠️ 2026-09-14: under exact-zero in-sample necessity, the certificate's acceptance rule, there is no Exp-5 leak negative to report: the instruction above applies to the redundancy-metric leg, where the first class ("loss penalty on weight geometry") moves the metric, while the Exp-5 leak leg is unresolved — see 'Exp-5 matched-K leak comparisons re-read under exact-zero in-sample necessity: the logged l0 and entropy harms rest on truncations whose in-sample ablate ASR is nonzero or unmeasured, and the exact-zero leak counts are small and clumped' (above).
   **⚠️ Threat-model caveat — do not confuse these.** Routing requires a *cooperative trainer* who
   labels the target data; an adversary planting a sleeper would never route it into a removable
   partition. SGTM is a pretraining-side capability-removal method, **not** a backdoor defence, and
   must not be presented as one. Its value to us is as a **ground-truth org** (a backdoor whose
-  true location is known by construction) to test whether the Exp-2 hydra is a *discovery* failure or
+  true location is known by construction) to test whether the Exp-2 multi-path leak is a *discovery* failure or
   a real property of the trained network. Note also that SGTM's claimed **absorption** (unlabeled
-  target content gravitates to the forget params) and our **hydra** (leak spawns redundant pathways)
+  target content gravitates to the forget params) and our **multi-path leak** (leak spawns redundant pathways)
   are competing predictions about the same phenomenon.

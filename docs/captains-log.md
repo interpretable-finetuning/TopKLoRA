@@ -8443,6 +8443,327 @@ mutation test, term list and the insertion script for this entry, outside git:
 
 ---
 
+## Exploratory brake bisection on the routed model `route_l1523_s44`: an adaptive group test finds 18 planted latents whose removal restores keep-only sufficiency (0.002 at K = 505 → 0.998 at K = 487), but only 9 of the 18 are individually required, and 55 of the 116 certificate measurements that drove the search sit one prompt in 1000 from flipping · 2026-09-16 · DONE — exploratory, not pre-registered, one seed, one band, no sealed P1 output read
+
+**This is not a P1 result.** Every number below carries the label **exploratory follow-up, brake bisection s44
+(run commit `5ab13ea`, not pre-registered)**, repeated on each block. The run was user-requested and declared
+before it was launched, it ran after the P1 freeze (commit `605d851`) from the P1 run worktree, and it read
+nothing under `clcd_results/p1/`. It is **not** one of P1's jobs and is not in the pre-registration. It
+licenses no P1 claim, and **no P1 value depends on it**.
+
+**Question.** The entry immediately above — *"Exploratory per-module brake screen on the routed model
+`route_l1523_s44` … · 2026-09-15/16"* — screened the 63 wrapped modules one at a time and found that the
+archived 50-latent elimination circuit certifies alone (keep-only 0.998), that adding the whole planted slice
+drops keep-only to 0.002, that exactly one module's eight planted latents lower keep-only on their own
+(`15.self_attn.q_proj`, to 0.758) and that no other module does — 61 of the 63 stay inside tolerance and the
+62nd, `22.mlp.gate_proj`, is a three-prompt marginal flag at 0.995 — so the collapse is a **joint** effect.
+That screen could not say *which* combination does it. This run asks the same question from the other
+direction: **which planted latents, removed from the full set, restore sufficiency?** The definitions of the
+planted slice, the archived circuit, keep-only, and the 0.002 endpoint are those of that entry and of the
+keep-only follow-up two entries above (*"Exploratory keep-only follow-up on the routed models' planted
+504-latent slice … · 2026-09-15"*); they are cross-referenced here, not restated.
+
+**Method, from the driver — exploratory follow-up, brake bisection s44 (run commit `5ab13ea`, not
+pre-registered).** Driver `/homes/55/marek/.claude/jobs/ae71e666/tmp/p1_brake_bisect.py`, run as
+`python p1_brake_bisect.py 44`, outside git and quoted here from the file.
+
+- **Fixed set (never removed).** `BASE` = the 50 members of the archived certified elimination circuit
+  `clcd_results/exp6/route_l1523_s44_circuit.json`. It is in every measured set.
+- **Candidate pool.** `R` = the planted latents of `clcd_results/exp6/planted/route_s44_planted.json` that are
+  not already in `BASE`: **455** of the slice's 504 (the other 49 slice members are inside `BASE`, which also
+  holds 1 latent outside the slice, so the union `BASE ∪ R` is **505** latents). `R` is sorted by
+  `(layer, module name, latent index)`, and that order is the only thing that breaks ties in the search.
+- **`measure(removed)`.** One file-mode keep-only certificate job per kept set: `kept = BASE + (R \ removed)`,
+  written to `sets/<hash>.json`, scored by `src.clcd.exp_circuit_search --ordering file --order_key latents`
+  **at a single K equal to the set size** — no grid, no search, no arbiter, so no `both_K` is being located and
+  every row is one measurement of a set given in advance. Sets are keyed by the SHA-256 of the sorted kept set
+  (first 16 hex) and **cached in `cache.json`**, so a repeated set costs no GPU work. Each call appends its
+  set, keep-only and decision to `search.jsonl`.
+- **Decision rule, exactly as coded.** `restores(removed) := measure(removed)["status"] == "ok"`, and the
+  driver's own docstring defines that status as "keep-only within 2·SE of intact and ablate 0". Re-derived for
+  this entry from all 116 outputs: `status == "ok"` **iff** `suff_shortfall ≤ suff_n_se · suff_se` (2·SE) **and**
+  `ablate ≤ nec_target` (0.0) — **0 mismatches in 116**. `intact_asr` is **1.000** and `n_backdoor` **1000** in
+  every output, so the rule reduces to an exact integer cut-off; see the margins block.
+- **The halving recursion `find(C, fixed)`.** Precondition: removing `C ∪ fixed` restores. If `|C| == 1`, log
+  `single` and return it (a pin). Otherwise split `C` into halves `A, B`: if removing `fixed ∪ A` restores,
+  recurse into `A`; else if removing `fixed ∪ B` restores, recurse into `B`; else the brakes sit in both halves,
+  so `A' = find(A, fixed ∪ B)` then `B' = find(B, fixed ∪ A')`, and the answer is `A' + B'`. Before the
+  recursion the driver measures the two preconditions and aborts if either fails.
+- **Final measurement and minimality pass.** After `H = find(R, ∅)` it measures `remove H` once more, then for
+  **each** member `h` measures `remove H \ {h}` — i.e. puts that one latent *back* into the kept set — and
+  records the resulting `status`. A member whose return breaks sufficiency is individually required.
+- **`result.json` records** `seed`, `hitting_set` (the members of `H`), `final` (the final measurement's key,
+  status, keep-only, ablate, shortfall, 2·SE allowance, kept and removed counts),
+  `minimality_status_without_each` (one status per member) and `measurements` (the size of the cache).
+
+**Certificate flags — exploratory follow-up, brake bisection s44 (run commit `5ab13ea`, not pre-registered).**
+The frozen P1 certificate flags, identical in all 116 outputs and re-read from them: `google/gemma-2-2b`,
+bfloat16; band `eval_triggered[100:1100)` of `data/sleeper/prepared_eval6k` (`--offset 100`), `n_backdoor`
+1000, batch 64; zero-ablation; `nec_target` 0.0, `suff_n_se` 2.0, `sat_floor` 0.90 (never binding — intact is
+1.000 in all 116); `--adaptive_n` off. Adapter
+`models/exp6/route_l1523_s44/google_gemma-2-2b/sleeper_topk_r64_k8_layers15_23/r64_k8_regz_only_topkmode_topk`.
+Provenance string **`followup-brakes-bisect`** (the string the driver passes on every job), `git_commit`
+`5ab13ead5a09a2318b7f2262e0f2d353763feca6`, `git_dirty` false, base-model fingerprint snapshot `c5ebcd4`,
+`src_root` the P1 run worktree — all four verified identical across all 116 outputs. **Ablate ASR is 0.000 in
+every one of the 116 jobs.**
+
+**Run record — exploratory follow-up, brake bisection s44 (run commit `5ab13ea`, not pre-registered).**
+
+| | from the files |
+|---|---|
+| driver's own start line, and the first set file written | `2026-09-16 02:06:42` |
+| host / device (from the session's run record, not recoverable from the outputs) | torrnode13, GPU 0, in tmux, cwd the P1 run worktree |
+| last measurement of the first run | `2026-09-16 05:12:22` (63 cached, 10 members pinned) |
+| first run died | driver traceback written `2026-09-16 05:13:03` |
+| restart, as a one-line `gpu_queue.sh` chain placed by the 15-minute allocator | `queues/bisect.log`: `[2026-09-16 05:22 g0] RUN result.json`; driver start line `2026-09-16 05:22:26` |
+| first measurement after the restart | `2026-09-16 05:25:29` |
+| finished | `queues/bisect.log`: `[2026-09-16 08:14 g0] result.json done` … `finished: run=1 skipped=0 failed=0`; last measurement `2026-09-16 08:14:07` |
+| measurements | 63 before the crash + 53 after = **116** (`cache.json` holds 116; `result.json` `measurements` 116) |
+
+**The crash.** The first run died inside `measure()`: `subprocess.run(..., check=True)` raised
+`CalledProcessError` on the certificate job for set `94067fb9ffc6e00a` (K = 399), exit status 1. That is what
+the run directory preserves — `clcd_results/p1_followup/brakes_bisect_s44.driver.out`, 33 lines, the traceback
+only. The session's run record attributes the failure to another user's job (about 29 GB) appearing on the
+shared card at 05:13 and our job hitting a CUDA out-of-memory error; **that cause is not reconstructible from
+the run directory**, because the per-set log `94067fb9ffc6e00a.out` was overwritten at `05:25:29` when the
+restarted driver re-ran exactly that set successfully (it is now the 0.996 row in the cache). The out-of-memory
+attribution is therefore recorded here as the session's account, not as a measured fact. The restarted driver
+replayed the 63 cached measurements from `cache.json` with **no GPU work** and continued from there.
+**Consequence to disclose:** `measure()` returns early on a cache hit and does not re-log, but `find()` re-logs
+its decisions, so `search.jsonl`'s 247 lines contain **128 decision records of which 48 are replays of
+decisions already taken before the crash — 80 unique decisions** — and **28 `single` pin records for 18 unique
+latents**, the first 10 pins appearing twice. The 116 measurement records are not duplicated.
+
+**Correction of record (do not edit the entry above).** The brake-screen entry says the bisection was "started
+… at **02:10** on 2026-09-16". The files put the driver's first write at **02:06:42** (`search.jsonl`'s first
+line and the mtime of `sets/cec332d65ba5aa8e.json`). 02:06:42 is the number of record; the screen entry's
+02:10 is a launch recollection and is left as written.
+
+**The two preconditions — exploratory follow-up, brake bisection s44 (run commit `5ab13ea`, not
+pre-registered).** Both measured by the driver before any search step.
+
+| set | K | intact | keep-only | shortfall | 2·SE | ablate | `status` | output |
+|---|---|---|---|---|---|---|---|---|
+| root: `BASE ∪ R`, nothing removed | 505 | 1.000 | **0.002** | 0.998 | 0.0028256 | 0.000 | `no_sufficient_subcircuit` | `cec332d65ba5aa8e.json` |
+| all 455 candidates removed (= `BASE` alone) | 50 | 1.000 | **0.998** | 0.002 | 0.0028256 | 0.000 | `ok` | `d02b8a0b60ec9bee.json` |
+
+Those two rows reproduce, digit for digit, the keep-only follow-up's 0.002 endpoint at K = 505 and the brake
+screen's 0.998 base row at K = 50, inside this run.
+
+**Result — exploratory follow-up, brake bisection s44 (run commit `5ab13ea`, not pre-registered).** The search
+returned a **hitting set of 18** planted latents, 3.96% of the 455 candidates, drawn from **10 distinct
+modules**. The final set — archived circuit plus slice minus those 18 — has **487** latents (50 + 455 − 18) and
+certifies.
+
+| set | K | intact | keep-only | shortfall | 2·SE | ablate | `status` | output |
+|---|---|---|---|---|---|---|---|---|
+| `BASE ∪ R` minus the 18 | 487 | 1.000 | **0.998** | 0.002 | 0.0028256 | 0.000 | **`ok`** | `73403d7f7c4d9ce5.json` |
+
+The 18, in the driver's candidate order (module names abbreviated from
+`base_model.model.model.layers.<n>.<module>`; "pinned" is the wall-clock of the `single` record in
+`search.jsonl` and "run" says which of the two runs pinned it):
+
+| # | module | latent | position in the 455 | pinned | run |
+|---|---|---|---|---|---|
+| 1 | `15.self_attn.q_proj` | 3 | 30 | 02:53:37 | first |
+| 2 | `15.self_attn.q_proj` | 6 | 33 | 03:02:26 | first |
+| 3 | `20.self_attn.q_proj` | 2 | 286 | 03:43:40 | first |
+| 4 | `20.self_attn.q_proj` | 7 | 291 | 03:52:28 | first |
+| 5 | `20.self_attn.v_proj` | 2 | 294 | 03:58:24 | first |
+| 6 | `21.mlp.down_proj` | 7 | 305 | 04:16:08 | first |
+| 7 | `21.mlp.gate_proj` | 0 | 306 | 04:19:06 | first |
+| 8 | `21.mlp.gate_proj` | 2 | 308 | 04:28:00 | first |
+| 9 | `21.mlp.gate_proj` | 4 | 310 | 04:30:56 | first |
+| 10 | `21.self_attn.v_proj` | 7 | 349 | 05:06:29 | first |
+| 11 | `22.mlp.gate_proj` | 0 | 356 | 05:37:22 | after the restart |
+| 12 | `22.mlp.gate_proj` | 3 | 359 | 05:46:13 | after the restart |
+| 13 | `22.mlp.gate_proj` | 6 | 362 | 05:55:05 | after the restart |
+| 14 | `22.mlp.gate_proj` | 7 | 363 | 05:58:01 | after the restart |
+| 15 | `22.mlp.up_proj` | 6 | 369 | 06:13:00 | after the restart |
+| 16 | `22.mlp.up_proj` | 7 | 370 | 06:16:03 | after the restart |
+| 17 | `23.mlp.down_proj` | 7 | 408 | 06:43:28 | after the restart |
+| 18 | `23.self_attn.o_proj` | 4 | 435 | 07:07:57 | after the restart |
+
+**Ten pinned before the crash (#1–#10), eight after (#11–#18)**, and the ten pre-crash pins are exactly the ten
+whose `single` records appear twice in `search.jsonl`. The search reached recursion **depth 9**; of the 80
+unique decisions, 28 are "brakes within A", 17 "brakes within B", 17 "brakes in both halves; condition on the
+other", and 18 are pins.
+
+**Minimality — exploratory follow-up, brake bisection s44 (run commit `5ab13ea`, not pre-registered).** Each
+row puts one member *back* (measures `remove H \ {h}`, K = 488): `no_sufficient_subcircuit` means that member is
+individually required, `ok` means the other 17 already restore without it. "lost" is `1000 × shortfall` — the
+number of the 1000 band prompts on which keep-only lost the payload — and "margin" is
+`1000 × (2·SE − shortfall)`, positive when the set passes.
+
+| # | module | latent | `status` when put back | keep-only | lost / 1000 | 2·SE (prompts) | margin (prompts) | required? |
+|---|---|---|---|---|---|---|---|---|
+| 1 | `15.self_attn.q_proj` | 3 | `no_sufficient_subcircuit` | 0.996 | 4 | 3.992 | −0.008 | **yes** |
+| 2 | `15.self_attn.q_proj` | 6 | `no_sufficient_subcircuit` | **0.021** | 979 | 9.068 | −969.932 | **yes** |
+| 3 | `20.self_attn.q_proj` | 2 | `ok` | 0.998 | 2 | 2.826 | +0.826 | no |
+| 4 | `20.self_attn.q_proj` | 7 | `ok` | 0.998 | 2 | 2.826 | +0.826 | no |
+| 5 | `20.self_attn.v_proj` | 2 | `ok` | 0.997 | 3 | 3.459 | +0.459 | no |
+| 6 | `21.mlp.down_proj` | 7 | `ok` | 0.998 | 2 | 2.826 | +0.826 | no |
+| 7 | `21.mlp.gate_proj` | 0 | `ok` | 0.998 | 2 | 2.826 | +0.826 | no |
+| 8 | `21.mlp.gate_proj` | 2 | `ok` | 0.998 | 2 | 2.826 | +0.826 | no |
+| 9 | `21.mlp.gate_proj` | 4 | `no_sufficient_subcircuit` | 0.988 | 12 | 6.887 | −5.113 | **yes** |
+| 10 | `21.self_attn.v_proj` | 7 | `ok` | 0.998 | 2 | 2.826 | +0.826 | no |
+| 11 | `22.mlp.gate_proj` | 0 | `no_sufficient_subcircuit` | 0.974 | 26 | 10.065 | −15.935 | **yes** |
+| 12 | `22.mlp.gate_proj` | 3 | `ok` | 0.997 | 3 | 3.459 | +0.459 | no |
+| 13 | `22.mlp.gate_proj` | 6 | `no_sufficient_subcircuit` | 0.979 | 21 | 9.068 | −11.932 | **yes** |
+| 14 | `22.mlp.gate_proj` | 7 | `no_sufficient_subcircuit` | 0.991 | 9 | 5.973 | −3.027 | **yes** |
+| 15 | `22.mlp.up_proj` | 6 | `ok` | 0.997 | 3 | 3.459 | +0.459 | no |
+| 16 | `22.mlp.up_proj` | 7 | `no_sufficient_subcircuit` | 0.995 | 5 | 4.461 | −0.539 | **yes** |
+| 17 | `23.mlp.down_proj` | 7 | `no_sufficient_subcircuit` | 0.992 | 8 | 5.634 | −2.366 | **yes** |
+| 18 | `23.self_attn.o_proj` | 4 | `no_sufficient_subcircuit` | 0.992 | 8 | 5.634 | −2.366 | **yes** |
+
+**9 of the 18 are individually required and 9 are not.** The driver's own minimality criterion — "removing `H`
+minus any one member must not restore" — therefore **fails on 9 members**: this is a **hitting set, not a
+minimal one**, and certainly not a minimum one. (The brief this entry was written from recalled the split as
+10 required / 8 redundant; `result.json`'s `minimality_status_without_each` says 9 / 9, and the file is what is
+recorded here.)
+
+**Decision margins — exploratory follow-up, brake bisection s44 (run commit `5ab13ea`, not pre-registered).**
+Because `intact_asr` is exactly 1.000 and `n_backdoor` exactly 1000 in all 116 jobs, the rule's allowance is a
+function of the lost-prompt count `x` alone: `2·SE = 2·√(x·(1000−x)/1000)` prompts. It crosses `x` between 3
+and 4:
+
+| lost prompts `x` | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 |
+|---|---|---|---|---|---|---|---|---|
+| allowance 2·SE, in prompts | 1.999 | 2.826 | 3.459 | **3.992** | 4.461 | 4.884 | 5.273 | 5.634 |
+| verdict | `ok` | `ok` | `ok` | fail | fail | fail | fail | fail |
+
+**So on this band the rule is an integer cut-off: a set passes iff it loses at most 3 prompts of 1000
+(keep-only ≥ 0.997) and fails at 4 or more.** The boundary is **one prompt wide**, and that is where the search
+lived. Over all 116 measurements:
+
+| lost prompts | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 12 | > 12 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| measurements | 1 | 2 | 20 | 32 | 23 | 6 | 2 | 3 | 5 | 1 | 3 | 2 | 16 |
+| verdict | `ok` | `ok` | `ok` | `ok` | fail | fail | fail | fail | fail | fail | fail | fail | fail |
+
+- **55 of the 116 measurements (47%) would flip verdict if a single prompt out of 1000 had gone the other
+  way** — the 32 that passed with exactly 3 lost and the 23 that failed with exactly 4.
+- **85 of the 116 (73%) lie within three prompts of the cut-off** (`x` between 1 and 6).
+- **Every one of the 55 passing measurements has a margin under one prompt**: 32 at +0.459, 20 at +0.826, 2 at
+  +0.999 and 1 at +0.000 (the single `keep-only = 1.000` measurement, where shortfall and allowance are both 0).
+  There is no comfortable pass anywhere in the run.
+- **The 23 tightest failures miss by 0.008 of a prompt** — shortfall 4 prompts against an allowance of 3.992.
+- **The final answer itself has 0.826 prompts of headroom** (0.998, 2 lost, allowance 2.826): two more lost
+  prompts and the reported hitting set would not have certified.
+- Only **8 of the 61 failures are large** (keep-only < 0.900: 0.002, 0.014, 0.014, 0.016, 0.020, 0.021, 0.835,
+  0.846). Of the other **53**, which run from 0.916 up, **43 sit at keep-only ≥ 0.990** — ten lost prompts or
+  fewer — so the great majority of "does not restore" verdicts in this search are single-figure prompt
+  differences, not visible collapses.
+- The **minimality split inherits this.** Of the 9 "required" members, one (#1, `15.self_attn.q_proj`#3) is
+  required by **0.008 of a prompt**; of the 9 "not required", three (#5, #12, #15) pass by **0.459 of a
+  prompt**. Four of the 18 rows would change side if one prompt in 1000 changed, so the 9 / 9 split is itself
+  one prompt deep.
+
+The session's prior reading was that "many decisions rest on one to three prompts". Quantified, that is
+**stronger, not weaker**: on this band the decision rule cannot resolve anything finer than one prompt, 47% of
+the measurements are exactly one prompt from the opposite verdict, and 73% are within three.
+
+**Consistency with the per-module screen — exploratory follow-up, brake bisection s44 (run commit `5ab13ea`,
+not pre-registered).** The 18 come from 10 modules. Against the screen's 63 rows:
+
+| module | members here | the screen's row for that module |
+|---|---|---|
+| `15.self_attn.q_proj` | #3, #6 | **FLAG**, keep-only 0.758 — the screen's only substantial single-module effect |
+| `22.mlp.gate_proj` | #0, #3, #6, #7 | **FLAG**, keep-only 0.995 — the screen's three-prompt marginal flag |
+| `20.self_attn.q_proj` | #2, #7 | 0.998, `ok` — called neutral |
+| `20.self_attn.v_proj` | #2 | 0.998, `ok` — called neutral |
+| `21.mlp.down_proj` | #7 | 0.998, `ok` — called neutral |
+| `21.mlp.gate_proj` | #0, #2, #4 | 0.998, `ok` — called neutral |
+| `21.self_attn.v_proj` | #7 | 0.998, `ok` — called neutral |
+| `22.mlp.up_proj` | #6, #7 | 0.998, `ok` — called neutral |
+| `23.mlp.down_proj` | #7 | 0.998, `ok` — called neutral |
+| `23.self_attn.o_proj` | #4 | 0.998, `ok` — called neutral |
+
+Both of the screen's flagged modules are represented, and `15.self_attn.q_proj`#6 is the one member whose
+return alone takes keep-only to **0.021** — by far the largest single-member effect in the minimality table,
+and the only one consistent in scale with the screen's 0.758 row. **The remaining 8 modules were all called
+neutral by the screen at 0.998**, which is not a contradiction: the screen added a whole module's 4–8 latents
+to a 50-latent base and could not resolve anything below about three prompts, while this run removes 2–4
+specific latents from a 505-latent set. The two designs agree on the one thing both can see, and this run's
+main content is in the eight modules the screen could not see at all.
+
+**Readings, not pre-registered.** Offered as observations on where the 18 sit, with no test behind them:
+
+- **By layer:** 15 → 2, 20 → 3, 21 → 5, 22 → 6, 23 → 2. **Nothing from layers 16–19**, although those four
+  layers supply 205 of the 455 candidates. The set is concentrated at the top of the wrapped range, plus the
+  layer-15 pair the screen had already flagged.
+- **By module type:** `gate_proj` 7, `q_proj` 4, `v_proj` 2, `up_proj` 2, `down_proj` 2, `o_proj` 1, `k_proj`
+  **0** — against a candidate pool of `q_proj` 72, `k_proj` 71, `v_proj` 71, `o_proj` 65, `gate_proj` 61,
+  `up_proj` 58, `down_proj` 57. `gate_proj` is over-represented (7 of 61) and `k_proj` absent (0 of 71).
+- **By latent index within the planted `[0:8)` band:** index 7 appears 6 times, index 2 three times, index 6
+  three times, indices 0, 3, 4 twice each, indices 1 and 5 never.
+- Two *other* 18-latent removal sets were measured during the search and **did not** restore (keep-only 0.992
+  both). Removing "some 18" planted latents is not enough; which 18 is what matters.
+
+**Verdict — exploratory follow-up, brake bisection s44 (run commit `5ab13ea`, not pre-registered).** On this
+one model, one band and one search order, **a set of 18 planted latents exists whose removal turns the failing
+505-latent set into a certifying 487-latent one (0.002 → 0.998, ablate 0.000 throughout)**, and it spans 10
+modules across 5 layers — so the suppression the screen called a joint effect is *findable*, and it is
+distributed rather than concentrated. But the set is **not minimal** (9 of its 18 members are individually
+dispensable), it is **not unique or canonical** (a halving search returns one hitting set, determined by the
+candidate order), and the verdicts that produced it rest on an integer cut-off at 3 lost prompts out of 1000
+with 47% of the measurements one prompt from the other side. The honest reading is that this run **locates a
+region** — layers 20–23 `gate_proj`/`up_proj`/`down_proj` and attention `q`/`v`/`o`, plus the layer-15
+`q_proj` pair — **and does not identify a mechanism, a minimal set, or a reproducible member list.**
+
+**Caveats.**
+- **Exploratory, user-requested, not pre-registered.** Declared before it ran, but chosen after the numbers it
+  responds to were known. Not a confirmatory test and must not be reported as one; it is outside P1, and **no
+  P1 value depends on it**.
+- **One seed, one model, one routing width.** `route_l1523_s44` only (`l1523`, d = 8), and s44 is the extreme
+  seed of the three — its slice keep-only is 0.002 against 0.462 and 0.965 on s42 and s43. Nothing here
+  transfers to s42 or s43, which are already known not to behave alike.
+- **One certificate band, n = 1000, one measurement per set.** Every one of the 116 rows is
+  `eval_triggered[100:1100)` of `prepared_eval6k`, measured once, no repeat, no second band, no out-of-sample
+  check. No row has an error bar beyond its own paired 2·SE.
+- **The rule's threshold is the resolution floor.** `suff_n_se` 2.0 with intact 1.000 and n = 1000 means "pass"
+  is exactly "at most 3 lost prompts". The search is a chain of such verdicts; with 47% of them one prompt from
+  flipping, a different 1000-prompt draw could return a different hitting set of a different size. This is a
+  property of the design, not an accident of this run.
+- **A halving search returns one hitting set, and the order decides which.** `find` conditions on `fixed` and
+  descends into whichever half restores first, so the answer is a function of the `(layer, module, index)`
+  ordering of the 455 candidates. The 9 individually dispensable members are the direct evidence that the
+  result is not minimum; no claim is made that 18 is the smallest such set, and none that a second order would
+  return these 18.
+- **"Brake" is an interpretation of non-monotone keep-only, not a mechanism claim.** The measurement is that
+  keeping certain latents live lowers keep-only ASR and that removing these 18 restores it. No sign, magnitude
+  or pathway was measured for any member, and nothing distinguishes suppression from the keep-only zeroing
+  putting the model off distribution differently at 487 latents than at 505.
+- **The foreign job and the restart.** The first run died at 05:13 on a shared card; the cause recorded in the
+  session's run record (another user's ~29 GB job, a CUDA out-of-memory error) **cannot be verified from the
+  run directory**, because the crashed job's log was overwritten by its successful re-run at 05:25. What the
+  files prove is a non-zero exit of that subprocess. The restart replayed 63 cached measurements without GPU
+  work; every number here comes from a cached certificate output that exists on disk.
+- **`search.jsonl` double-counts decisions.** 128 decision records for 80 unique decisions, 28 `single` records
+  for 18 unique pins — the 48 extra are the replay. Anyone counting decisions or pins from the raw file will
+  overcount; `result.json` and `cache.json` are not affected.
+- **The base is itself a certified circuit found by elimination**, and it is in every measured set. Every
+  result here is conditioned on that particular 50-latent set; a different certifying base could yield a
+  different hitting set, which was not tested.
+- **Ablate ASR is 0.000 in all 116 jobs**, so nothing here touches necessity — every set measured contains the
+  certified circuit. The run says nothing about out-of-sample necessity or leaks.
+- **P1's C1 job re-measures the planted slice's keep-only inside the sealed run.** If C1 and the 0.002 root
+  quoted here disagree, C1 is the number of record and this entry is the exploratory one.
+
+**Artifacts.** Run directory `clcd_results/p1_followup/brakes_bisect_s44/`: `result.json` (hitting set, final
+measurement, per-member minimality, `measurements` 116); `search.jsonl` (247 lines — 2 start, 116 measurement,
+128 decision, 1 done; the 48 replayed decision lines as described above); `cache.json` (116 measurements keyed
+by kept set); the 116 kept sets `sets/<hash>.json`; the 116 certificate outputs `<hash>.json` with their logs
+`<hash>.out`; queue manifest `manifests/bisect.txt`, chain log `queues/bisect.log` (`finished: run=1 skipped=0
+failed=0`) and driver log `logs/bisect/result.json.out`. First run's driver output (the traceback)
+`clcd_results/p1_followup/brakes_bisect_s44.driver.out`. Inputs re-read, not produced, by this run:
+`clcd_results/exp6/route_l1523_s44_circuit.json` and `clcd_results/exp6/planted/route_s44_planted.json`.
+Driver, checker, mutation test, term list and the insertion script for this entry, outside git:
+`/homes/55/marek/.claude/jobs/ae71e666/tmp/p1_brake_bisect.py` and
+`/homes/55/marek/.claude/jobs/ae71e666/tmp/p1_bisect_entry/{check_entry.py,mutate.py,terms.txt,insert.py,entry.md}`.
+
+---
+
 ## Cross-cutting standing items (not experiments — do not lose)
 
 - **No discovery method fixes out-of-sample necessity** — the 4.7×/12–17-pt price of complete removal

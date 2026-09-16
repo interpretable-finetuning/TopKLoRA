@@ -8065,6 +8065,311 @@ mutation test, term list and the insertion script for this entry, outside git:
 
 ---
 
+## P1 seed 43 (extension), confirmatory: S1 vs S3-L vs S3-V on `route_l1523_s43` and its twin · 2026-09-16 · DONE — S1/S3-L/S3-V read out at the pre-registered gates; no S2 rerun on this seed
+
+**Pre-registered, sealed, confirmatory — the first extension seed.** This is the pre-registration's
+extension leg (the directories `s43`, `sp60_s43`, `s44`, which "launch in that order when they fit"
+after seed 42), run at the same freeze and the same run commit as the seed-42 entry directly above:
+design frozen in `docs/idea_queue.md` § "P1 — PRE-REGISTRATION", in the block between
+`<!-- P1 FROZEN BEGIN -->` and `<!-- P1 FROZEN END -->`, at freeze commit
+`605d851ad3327d8d6be1767ed5a5d96925341f1f`; run commit `5ab13ead5a09a2318b7f2262e0f2d353763feca6`;
+jobs launched from the detached run worktree `.claude/worktrees/p1-run`. **Everything the seed-42 entry
+defines holds here unchanged and is not restated**: the three arms (S1 = CLCD-search prefix, S3-L = the
+vendored SFC node attribution on each module's `latent_site` with an `IdentityDict`, S3-V = the same SFC
+code on the module output with `AdapterLatentDict` and the base-path error node recorded and never
+ranked), the routed/twin model pair, attribution bands **A `[0:64)`** and **B `[2000:2064)`** on the
+routed model and **band A only** on the twin, the frozen certificate and its K grid, gates G1–G5, the 4E
+size rule, the 4F leak tests, the 4G audits and the descriptive checks R, C1, C3, C4, C5. Only what
+differs from seed 42 is stated below. Models are `route_l1523_s43` (the Exp-6 gradient-routed model,
+planted 504-latent slice) and its unrouted seed-matched twin `a0_l1523_s43`, both
+`.../google_gemma-2-2b/sleeper_topk_r64_k8_layers15_23/r64_k8_regz_only_topkmode_topk`.
+
+**No seed-43 S1 or S3 value was displayed before `p1 readout` ran at 06:24 BST on 2026-09-16** (exit 0)
+— that run is the unsealing; the transcript grep run immediately before it found no tool call naming a
+sealed seed-43 file. Every number below therefore carries the label
+**P1 seed 43, confirmatory extension (605d851 / 5ab13ea)** and comes from
+`clcd_results/p1/s43/readout_v1.txt`, quoted, never recomputed; the handful of fields the readout does
+not print are read from the named output files and marked as such.
+
+**Two differences from seed 42, both pre-registered.**
+- **No S2 arm on this seed.** CLCD-search eliminate was not rerun on `route_l1523_s43`; the readout
+  prints no S2 row for this directory at all, not even an `N/A`. The pre-registration settles this in
+  readout 1: "on s43 and s44 the archived S2 is quoted with its caveats (≤ 50 at the grid floor,
+  `n_cheap` 80, raw scoring) and never as a P1 result". That archived circuit is exactly the object G1
+  re-certifies here; it is **not** placed beside SFC as a within-run arm, and the three comparisons that
+  would put CLCD-search's elimination arm beside SFC on this model do not exist for this seed.
+- **G2 and G2b are read from seed 42's directory.** They are once-per-P1 known-answer checks
+  ("Extension directories read G2 and G2b from seed 42's directory"), their outputs `g2.json` and
+  `g2b.json` live in `clcd_results/p1/s42/`, and `clcd_results/p1/s43/gates.json` carries their verdicts
+  without listing them among this directory's own outputs.
+
+**Gates — all pass; none depends on an S1, S2 or S3 value.** From `clcd_results/p1/s43/gates.json`
+(`run: ok`, `audits: ok`, both models `ok`).
+
+| gate | on | what it tests | verdict |
+|---|---|---|---|
+| G1 | routed | the archived S2 circuit (`sfc/recert/route_l1523_s43_clcd_order.json`, `order_abs`) certifies at its recorded K = 50 (`manifests/route_L.txt`, `--Ks 50`) | **pass** |
+| G2 | once per P1 | BIG-N audit known answer — **inherited from seed 42**, `clcd_results/p1/s42/gates.json` | **pass** |
+| G2b | once per P1 | in-turn scoring known answer — **inherited from seed 42**, same file | **pass** |
+| G3 | every output | provenance = freeze SHA, commit equal and not dirty, base fingerprint = FROZEN, `src` in the run checkout, args equal the rendered job, chain log ends `finished … failed=0` | **every output ok** (all 22 Stage A/B outputs `ok`; the two Stage C chains report `run=34` and `run=18` items and the readout printed a value, not `N/A`, for every one of them) |
+| G4 | routed | one audit of the planted set `exp6/planted/route_s43_planted.json` on eval6k `[100:1100)`: **0 fires** | **pass** |
+| G5 | twin | the twin is unrouted: at K = 504 on the `a0` adapter, intact ASR ≥ 0.90 and slice-ablate ≥ 0.50 | **pass** — intact ASR **0.997**, ablate **0.998**, keep-only **0.0** at K = 504 (`a0_l1523_s43_s43_g5.json`, `curve` row 0) |
+
+⚠️ As on seed 42, **the harness printed no G1 differences against the pilot's re-certification** — `p1
+gates` stores verdicts only (`"detail": "pass"`) and `p1 readout` prints no gate line — so no intact-ASR
+or net-lost difference is quoted here, and G1 is recorded as the verdict its rule produces.
+
+**Certificates, routed model `route_l1523_s43`.** `both_K`, size band, `T_N` interval at the cut,
+`n_zero_effect` and the tie-block flag are the readout's; intact ASR, keep-only, ablate,
+`suff_shortfall` and `suff_se` at `both_K` are read from
+`route_l1523_s43_<arm>_s43_sweep<A|B>.json` (the readout does not print them). **Shortfall and SE are
+quoted exactly as stored** — they are binary floats, and the long tails are the record, not a precision
+claim. `T_N` values compare only within a construction. **No arm was labelled `≤ 10 (grid floor)` and no
+arm was labelled as having no proper sub-circuit**: every certified `both_K` below is a proper
+sub-circuit strictly inside the grid.
+
+| arm | band | `both_K` | size band | `T_N` at the cut | `n_zero_effect` | tie block crosses the cut | intact ASR | keep-only | ablate | `suff_shortfall` | `suff_se` |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| S1 | A | **30** | (20, 30] | — (not an SFC arm) | — | False | 1.0 | 1.0 | 0.0 | 0.0 | 0.0 |
+| S1 | B | **30** | (20, 30] | — (not an SFC arm) | — | False | 1.0 | 0.999 | 0.0 | 0.0010000000000000009 | 0.0009994998749374609 |
+| S3-L | A | **40** | (30, 40] | [2.81436, 2.81867) | 49 | False | 1.0 | 1.0 | 0.0 | 0.0 | 0.0 |
+| S3-L | B | **40** | (30, 40] | [2.72991, 2.78168) | 59 | False | 1.0 | 0.999 | 0.0 | 0.0010000000000000009 | 0.0009994998749374609 |
+| S3-V | A | **40** | (30, 40] | [3.57012, 3.79796) | 49 | False | 1.0 | 0.997 | 0.0 | 0.0030000000000000027 | 0.001729450779872038 |
+| S3-V | B | **50** | (40, 50] | [2.61167, 2.65712) | 59 | False | 1.0 | 1.0 | 0.0 | 0.0 | 0.0 |
+
+**Certificates, twin `a0_l1523_s43`** (band A only, one attribution sample). The twin's intact ASR is
+**0.997**, not 1.0 as on seed 42's twin; every arm is certified against that same intact value.
+
+| arm | band | `both_K` | size band | `T_N` at the cut | `n_zero_effect` | tie block crosses the cut | intact ASR | keep-only | ablate | `suff_shortfall` | `suff_se` |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| S1 | A | **125** | (100, 125] | — (not an SFC arm) | — | False | 0.997 | 0.995 | 0.0 | 0.0020000000000000018 | 0.002448673110074107 |
+| S3-L | A | **400** | (300, 400] | [0.18623, 0.186341) | 44 | False | 0.997 | 0.997 | 0.0 | 0.0 | 0.002 |
+| S3-V | A | **500** | (400, 500] | [0.158372, 0.158439) | 44 | False | 0.997 | 0.997 | 0.0 | 0.0 | 0.002 |
+
+**S3-V's error nodes against `T_N`.** Error nodes are recorded and never ranked; the counts say where
+the base-path nodes fall relative to the certified cut.
+
+| model | band | \|err\| ≥ \|e_K\| | \|err\| ≤ \|e_(K+1)\| | between |
+|---|---|---|---|---|
+| `route_l1523_s43` | A | 52 | 8 | 3 |
+| `route_l1523_s43` | B | 54 | 9 | 0 |
+| `a0_l1523_s43` | A | 63 | 0 | 0 |
+
+**4E size comparison — the pre-registered verdicts.** Steps are counted on the K grid; **agree** = both
+attribution bands put the two arms within one grid step; **disagree** = both bands put them two or more
+steps apart in the same direction; **unresolved** otherwise. On the routed model two of the three pairs
+**agree** and one is **unresolved**: S1 against S3-V is one grid step apart on band A (30 against 40)
+and two apart on band B (30 against 50), which satisfies neither clause of the rule.
+
+| pair | model | verdict | sizes (band A, band B) |
+|---|---|---|---|
+| S1 vs S3-L | routed | **agree** | S1 30 (20, 30] · 30 (20, 30] vs S3-L 40 (30, 40] · 40 (30, 40] |
+| S1 vs S3-V | routed | **unresolved** | S1 30 (20, 30] · 30 (20, 30] vs S3-V 40 (30, 40] · 50 (40, 50] |
+| S3-L vs S3-V | routed | **agree** | S3-L 40 (30, 40] · 40 (30, 40] vs S3-V 40 (30, 40] · 50 (40, 50] |
+| S1 vs S3-L | twin | **one sample** (no verdict) | S1 125 (100, 125] vs S3-L 400 (300, 400] |
+| S1 vs S3-V | twin | **one sample** (no verdict) | S1 125 (100, 125] vs S3-V 500 (400, 500] |
+| S3-L vs S3-V | twin | **one sample** (no verdict) | S3-L 400 (300, 400] vs S3-V 500 (400, 500] |
+
+Under readout 1 of the pre-registration, the two **agree** verdicts are read as: *on this model, under
+this certificate, the certified size does not depend on the search*. The **unresolved** pair is read as
+exactly what the rule says and no more — the two bands do not agree with each other about how far apart
+S1 and S3-V are, so this seed licenses no statement in either direction for that pair. The twin's three
+pairs carry **one sample** on both sides and yield **no verdict** by the rule, however far apart the
+numbers look.
+
+**Leak tests (4F).** Exact two-sided McNemar on per-prompt fire vectors over the same 35,000 held-out
+prompts, per pair of certified band-A circuits. **Six tests in total at α = 0.05, uncorrected** — three
+per model, stated as such by the readout on each model ("3 leak test(s) at alpha=0.05, uncorrected").
+
+| model | pair | fires | discordant | exact McNemar p | the readout's label |
+|---|---|---|---|---|---|
+| routed | S1 vs S3-L | 0 vs 0 | b=0 c=0 | 1 | `both <= 8.56e-05 (one-sided 95%)` |
+| routed | S1 vs S3-V | 0 vs 0 | b=0 c=0 | 1 | `both <= 8.56e-05 (one-sided 95%)` |
+| routed | S3-L vs S3-V | 0 vs 0 | b=0 c=0 | 1 | `both <= 8.56e-05 (one-sided 95%)` |
+| twin | S1 vs S3-L | 11 vs 48 | b=4 c=41 | 9.335e-09 | `difference detected` |
+| twin | S1 vs S3-V | 11 vs 12 | b=8 c=9 | 1 | `no detectable difference at n=35,000` |
+| twin | S3-L vs S3-V | 48 vs 12 | b=41 c=5 | 4.406e-08 | `difference detected` |
+
+On the routed model all three certified circuits fire on none of the 35,000 held-out prompts, so the
+three tests are vacuous and the informative statement is the shared bound. **On the twin two of the
+three tests detect a difference** — the SFC latents-only circuit leaks on 48 prompts against 11 for the
+CLCD prefix circuit and 12 for the SFC output-with-error-node circuit, with the discordant counts
+strongly one-sided (b=4 c=41 and b=41 c=5). These are **three uncorrected tests on one model**; nothing
+is corrected for multiplicity here, by pre-registration.
+
+**Audits (4G).** One audit per certified band-A circuit and one for the planted set, on the held-out
+BIG-N band, with a one-sided 95% Clopper-Pearson upper bound and the natural-range class against the
+l1523 BIG-N counts (2 2 2 4 7 7 11 12 21 27; the pre-registration's classes are 0–1 below every natural
+circuit, 2–27 within the natural range, 28 or more above it).
+
+| model | audited set | output | fires / 35,000 | upper bound (one-sided 95%) | class |
+|---|---|---|---|---|---|
+| `route_l1523_s43` | S1 | `route_l1523_s43_S1_s43_audit` | 0 | 8.56e-05 | below every natural circuit |
+| `route_l1523_s43` | S3-L | `route_l1523_s43_L_s43_audit` | 0 | 8.56e-05 | below every natural circuit |
+| `route_l1523_s43` | S3-V | `route_l1523_s43_V_s43_audit` | 0 | 8.56e-05 | below every natural circuit |
+| `route_l1523_s43` | the planted 504-latent slice | `route_l1523_s43_s43_planted_audit` | 0 | 8.56e-05 | below every natural circuit |
+| `a0_l1523_s43` | S1 | `a0_l1523_s43_S1_s43_audit` | **11** | 0.00052 | within the natural range |
+| `a0_l1523_s43` | S3-L | `a0_l1523_s43_L_s43_audit` | **48** | 0.00174 | **above the natural range** |
+| `a0_l1523_s43` | S3-V | `a0_l1523_s43_V_s43_audit` | **12** | 0.000555 | within the natural range |
+
+**Descriptive checks — never search quality.** R, C1, C3, C4, C5 and the `[0:8)` share are controls, not
+measures of any arm.
+
+- **R** (the routed model's S3-L band-A ranking against the sealed pilot file): **identity False**;
+  **max |Δe| 0.00403226**. The two rankings are not identical objects; only the identity flag and the
+  maximum effect difference were read, by design. **Reading, not pre-registered:** this is the *same*
+  value the seed-42 readout printed for its own pilot comparison (max |Δe| 0.00403226 there too), which
+  looks like a quantisation step of the effect sum rather than a model-specific difference. Nothing was
+  recomputed to test that; it is recorded so a later reader does not treat the coincidence as evidence.
+- **C1** (planted keep-only at K = 504 on the routed model): **intact 1.0000, keep-only 0.9650, ablate
+  0.0000**. The readout printed **no "batching-sensitive" label**, i.e. C1's ablate count did not differ
+  from G4's. (`route_l1523_s43_s43_c1.json` records `status` `no_sufficient_subcircuit` with `both_K`
+  `None` at that single K, `suff_shortfall` 0.03500000000000003 and `suff_se` 0.005811626278418117 — the
+  planted slice as a whole does not certify.) The keep-only value **0.965 matches the exploratory
+  keep-only follow-up of 2026-09-15 above**, which recorded 0.965 for s43's planted 504 at a shortfall
+  bar of 0.0116; that follow-up ran outside the seal and its agreement here is a consistency check, not
+  a P1 result.
+- **C3** (routed, five random K\*-subsets of the planted 504, necessity only; **red if any draw ablates
+  to exactly 0**). Draws are seeded from sha256(seed|model|arm|kind|i), so each arm gets its own five
+  draws at its own K\*.
+
+| arm | K\* (the arm's `both_K`, as `stage_c_expected.json` pins it) | draw 0 | draw 1 | draw 2 | draw 3 | draw 4 | verdict |
+|---|---|---|---|---|---|---|---|
+| S1 | 30 | 0.0020 | 1.0000 | 0.9960 | 0.0520 | 1.0000 | **not red** |
+| S3-L | 40 | 1.0000 | 0.9670 | 0.0000 | 1.0000 | 1.0000 | **RED** |
+| S3-V | 40 | 0.7860 | 0.0000 | 0.0980 | 0.9920 | 0.0000 | **RED** |
+
+  **C3 is red for both SFC arms and must not be softened**: one of five random 40-latent subsets of the
+  planted slice ablates to exactly 0 for S3-L and two of five for S3-V, so at K\* = 40 necessity alone is
+  met by random draws from the slice and is not by itself evidence that either arm found the right
+  latents. S1 is not red at K\* = 30, but two of its five draws sit at 0.0020 and 0.0520, within a
+  whisker of the same failure. The pre-registration makes C3 non-gating; it is recorded here with the
+  same weight as the agreements above.
+- **C4** (five module-matched random draws per arm; red if any certifies): **not red for every arm on
+  both models** — all 30 draws (three arms × five draws × two models) report `status
+  no_sufficient_subcircuit, both_K None`.
+- **C5** (twin size band against the routed model's, per arm) and the twin's `[0:8)` share. The readout's
+  verdict on all three arms is **`twin not smaller than route`**, and the share is **at chance** on all
+  three (chance share 0.125): the one-sided 95% Clopper-Pearson lower bound never exceeds that, and no
+  tie block crosses the cut. In all three arms the observed share is below the minimum detectable share
+  at power 0.8, so "at chance" here means *underpowered to say otherwise*, not *shown equal*.
+
+| arm | twin | route | verdict | `[0:8)` share | lower bound (one-sided 95%) | tie at cut | label | min. detectable share at power 0.8 |
+|---|---|---|---|---|---|---|---|---|
+| S1 | 125 (100, 125] | 30 (20, 30] · 30 (20, 30] | twin not smaller than route | 14/125 = 0.1120 | 0.0690 | False | `[0:8) share at chance` | 0.2109 |
+| S3-L | 400 (300, 400] | 40 (30, 40] · 40 (30, 40] | twin not smaller than route | 49/400 = 0.1225 | 0.0964 | False | `[0:8) share at chance` | 0.1696 |
+| S3-V | 500 (400, 500] | 40 (30, 40] · 50 (40, 50] | twin not smaller than route | 57/500 = 0.1140 | 0.0914 | False | `[0:8) share at chance` | 0.1650 |
+
+**Secondary — never a verdict.** Planted precision |circuit ∩ planted| / K\* (routed model only) and
+Jaccard between arms' certified sets.
+
+| measure | S1 vs S3-L | S1 vs S3-V | S3-L vs S3-V |
+|---|---|---|---|
+| Jaccard, routed, band A | 0.4894 | 0.4583 | 0.7391 |
+| Jaccard, twin, band A | 0.2590 | 0.2303 | 0.6791 |
+
+| arm | planted precision, band A | planted precision, band B |
+|---|---|---|
+| S1 | 30/30 = 1.0000 | 30/30 = 1.0000 |
+| S3-L | 33/40 = 0.8250 | 32/40 = 0.8000 |
+| S3-V | 34/40 = 0.8500 | 40/50 = 0.8000 |
+
+**Reading, not pre-registered (a) — the seed-42 pattern repeats on the routed model.** As on seed 42,
+the arms land close together on *size* (two pairs agree, the third is unresolved by one grid step on one
+band), their certified sets overlap only about half the time between S1 and the SFC arms (Jaccard 0.4894
+and 0.4583) while the two SFC arms overlap each other much more (0.7391), and their agreement with the
+answer key differs by a factor the size rule cannot see: **S1 is entirely inside the planted slice on
+both bands (30/30 = 1.0000 twice)**, while the SFC arms carry outsiders (0.8250 / 0.8000 and 0.8500 /
+0.8000). "The search does not matter" therefore remains a statement about the size the certificate
+settles on, not about which latents get selected — now on a second model, one seed each, two attribution
+samples.
+
+**Reading, not pre-registered (b) — the twin, to watch, not a result.** On the unrouted twin the two SFC
+arms certify at 400 and 500 against the CLCD prefix arm's 125, and the SFC latents-only arm is the only
+circuit anywhere in this entry that audits **above** the natural range (48/35,000, bound 0.00174) — the
+CLCD prefix circuit is the smallest certified and audits within the natural range (11/35,000), as does
+the SFC output arm (12/35,000) despite being the largest. This is one model, one attribution sample per
+arm, three uncorrected tests; it is a pattern to check against `s44` and `sp60_s43`, not a finding.
+
+**Run record.** GPU index per line comes from the chain logs (`g4`, `g7`); the **host names are the
+session's own record**, not written into the logs. Every chain log ends `finished … failed=0`, none
+contains a NUL byte, and no line in any log is a `FAILED` line.
+
+| chain | host · GPU | start → end | jobs |
+|---|---|---|---|
+| `route_S1` | torrnode15 · GPU7 | 2026-09-15 22:06 → 2026-09-16 00:22 | run=4 skipped=0 failed=0 |
+| `route_V` | torrnode15 · GPU7 | 2026-09-16 00:22 → 02:16 | run=5 skipped=0 failed=0 |
+| `route_L` | torrnode11 · GPU7 | 2026-09-15 22:06 → 2026-09-16 00:02 | run=6 skipped=0 failed=0 (its six items include `g1` and `g4`) |
+| `a0_L` | torrnode11 · GPU7 | 2026-09-16 00:02 → 01:00 | run=3 skipped=0 failed=0 (includes `g5`) |
+| `a0_V` | torrnode11 · GPU7 | 2026-09-16 01:00 → 01:55 | run=2 skipped=0 failed=0 |
+| `a0_S1` | torrnode11 · GPU7 | 2026-09-16 01:55 → 03:02 | run=2 skipped=0 failed=0 |
+| `c_route_l1523_s43` | torrnode11 · GPU7 | 2026-09-16 03:05 → 06:24 | run=34 skipped=0 failed=0 |
+| `c_a0_l1523_s43` | torrnode8 · GPU4 | 2026-09-16 03:39 → 06:09 | run=18 skipped=0 failed=0 |
+
+Stage A and B were launched at 22:06 on Sep 15 as **two multi-chain runners**, not six: torrnode15 GPU7
+ran `route_S1` then `route_V`, and torrnode11 GPU7 ran `route_L`, then `a0_L`, `a0_V`, `a0_S1` back to
+back (`launchers/launch_s43_g7_route_S1-route_V.sh` and
+`launchers/launch_s43_g7_route_L-a0_L-a0_V-a0_S1.sh`). Stage A/B therefore ran 22:06 → 03:02 with no
+relaunch, no `FAILED` line and no incident. Gates were run and the Stage C plan emitted at 03:03
+(session record; `stage_c_expected.json`). Stage C was launched by the 15-minute allocator:
+`c_route_l1523_s43` (34 items) on torrnode11 GPU7, whose first `RUN` stamp by that node's clock is 03:05
+and which finished at 06:24, and `c_a0_l1523_s43` (18 items) on torrnode8 GPU4, 03:39 → 06:09. `p1
+readout` ran at 06:24 BST (`gates.json` `time` `2026-09-16T05:24:38.789513+00:00`).
+
+⚠️ **Disclosure, 04:39 Sep 16 — the allocator started an unrelated queue on a card that was mid-chain;
+nothing ran and no output was touched.** Scanning during the gap between two Stage C jobs, the allocator
+judged torrnode11 GPU7 free and launched an unrelated follow-up queue on it. The queue script's own
+guard held that queue waiting ("waiting for GPU 7 to free up") and it was killed at 04:43 having run
+nothing. `queues_c/c_route_l1523_s43.log` shows an unbroken `RUN`/`done` sequence across that window, so
+no Stage C item was displaced, delayed into a failure, or rerun. The allocator was then changed to treat
+a card with a queue loop attached as busy. This is recorded because it is a scheduling event inside a
+sealed confirmatory run, not because any number moved.
+
+**Caveats.**
+- **One certification band, n = 1000.** Every certificate is `eval_triggered[100:1100)` of
+  `prepared_eval6k`, measured once. No row has an error bar beyond its own paired `suff_se`.
+- **Sizes are two attribution samples on the routed model and one on the twin.** The 4E rule consumes
+  both bands on the routed model; the twin's three pairs are **one sample** and carry no verdict.
+- **S1 vs S3-V is UNRESOLVED on the routed model**, and unresolved means unresolved: it is neither an
+  agreement nor a disagreement, and this entry claims neither.
+- **Six McNemar tests at α = 0.05, uncorrected** (three per model), as pre-registered and stated by the
+  readout. The three routed tests sit at 0 fires on both sides, where `p < 0.05` is unreachable at
+  n = 35,000.
+- **The twin's three arms differ in leak rate at n = 35,000.** Two of the three uncorrected tests on
+  that one model detect a difference (S1 vs S3-L, S3-L vs S3-V). One model, one attribution sample per
+  arm, no multiplicity correction — this is a flag for the extension, not a conclusion about SFC.
+- **C3 is RED for both SFC arms**: necessity at K\* = 40 inside the planted slice is **not
+  discriminating** on this model, so an arm's ablate-to-zero at that size is not by itself evidence it
+  selected the right latents. **C1 shows the planted slice as a whole does not certify** (keep-only
+  0.9650 against shortfall 0.03500000000000003). Both are recorded as results; neither gates anything,
+  by pre-registration.
+- **The S2 comparison for this seed rests on the archived s43 S2 circuit**, with its recorded caveats
+  (≤ 50 at the grid floor, `n_cheap` 80, raw scoring). It was not rerun under this harness, so no
+  within-run CLCD-search elimination arm exists on this model.
+- **G1's differences from the pilot's re-certification were not printed** and are not in `gates.json`
+  (which stores verdicts only), so none is quoted — see the ⚠️ above.
+- **One seed, one family, one routing width.** s43 only, `l1523`, d = 8. The remaining extension
+  directories (`sp60_s43`, `s44`) are running at the same run commit and **were not read for this
+  entry**; their readouts are not done, and nothing here anticipates them.
+- **The twin is one model, not a null distribution.** Its arms' sizes (125 / 400 / 500) are single draws
+  from one unrouted adapter; C5's verdict is the pre-registered "twin not smaller than route" and
+  nothing more.
+
+**Artifacts.** Run directory `clcd_results/p1/s43/`: readout `readout_v1.txt` (the source of every number
+above except where another output is named in the line that carries it), gate verdicts `gates.json`,
+Stage C plan `stage_c_expected.json`, job manifests `manifests/*.txt` and `manifests_c/*.txt`, chain logs
+`queues/*.log` and `queues_c/*.log`, launcher scripts `launchers/*.sh`, pinned control draws `draws/`
+(45 files). Certificates `route_l1523_s43_{S1,L,V}_s43_sweep{A,B}.json` and
+`a0_l1523_s43_{S1,L,V}_s43_sweepA.json`; attribution `*_S1_s43_attrib{A,B}.json` and
+`*_{L,V}_s43_sfc{A,B}.json`; gate and control outputs `route_l1523_s43_s43_{g1,g4,c1}.json`,
+`a0_l1523_s43_s43_g5.json`; the inherited `g2.json` / `g2b.json` in `clcd_results/p1/s42/`; Stage C
+`*_audit.json`, `*_c3_{0..4}.json`, `*_c4_{0..4}.json`, `route_l1523_s43_s43_planted_audit.json`.
+Pre-registration `docs/idea_queue.md` § "P1 — PRE-REGISTRATION" at freeze commit `605d851`. Checker,
+mutation test, term list and the insertion script for this entry, outside git:
+`/homes/55/marek/.claude/jobs/ae71e666/tmp/p1_s43_entry/{check_entry.py,mutate.py,terms.txt,insert.py,entry.md}`.
+
+---
+
 ## Cross-cutting standing items (not experiments — do not lose)
 
 - **No discovery method fixes out-of-sample necessity** — the 4.7×/12–17-pt price of complete removal

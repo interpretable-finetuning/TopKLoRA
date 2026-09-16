@@ -7509,6 +7509,227 @@ test and term list for this entry, outside git:
 
 ---
 
+## Exploratory per-module brake screen on the routed model `route_l1523_s44`: adding one module's planted latents at a time to the certified 50-latent circuit, only `15.self_attn.q_proj` moves keep-only substantially (0.998 → 0.758), `22.mlp.gate_proj` is a three-prompt marginal flag, the other 61 of 63 stay inside tolerance, and ablate is 0.000 in all 64 jobs — the slice's collapse to 0.002 is therefore a joint effect of several modules, none sufficient alone · 2026-09-15/16 · DONE — exploratory, not pre-registered, no sealed P1 output read
+
+**This is not a P1 result.** Every number below carries the label **exploratory follow-up 2026-09-15/16**,
+repeated on each block. The batch was user-requested and ran after the P1 freeze (commit 605d851) from the P1
+run worktree, but it is **not** one of P1's jobs, it is not in the pre-registration, and it read nothing under
+`clcd_results/p1/`. It licenses no P1 claim and does not pre-empt P1's C1 control, which re-measures the
+planted slice's keep-only inside the sealed run and will be read at that readout.
+
+**Question.** The keep-only follow-up logged immediately above established, on the vanilla gradient-routed
+models (`route_l1523_s42/s43/s44`, Exp-6 · 2026-07-27), that keep-only is **non-monotone**: the archived
+50-latent elimination circuit certifies while its own 505–508-latent superset does not, and on s44 most
+sharply — 0.998 at K = 50 against 0.002 at K = 505. Under keep-only the listed latents are kept live and every
+other adapter latent is zeroed, so adding latents to a certifying set and watching the payload disappear means
+those added latents *suppress* the payload once the complement is gone. The slice therefore contains such
+latents. This screen asks **which modules carry them**, on s44 only — the seed at the floor.
+
+**Design — exploratory follow-up 2026-09-15/16.** Base set = the archived certified 50-latent elimination
+circuit `clcd_results/exp6/route_l1523_s44_circuit.json` (Exp-6b · 2026-07-28), of whose members **49 lie
+inside the planted slice and 1 outside it** (`16.self_attn.k_proj`#62) — recomputed for this entry as the set
+difference against `clcd_results/exp6/planted/route_s44_planted.json`, and matching the outsider Exp-6b names
+and the "1" in the table of the entry above. The planted slice is latents `[0:8)` of every one of the 63
+wrapped modules, 504 of 4032; the planted file records `n_forget` 8, `n_wrapped` 63, and every one of its 63
+modules was verified to contribute exactly indices 0–7. For each of the 63 modules the set is
+**base ∪ (that module's planted latents not already in the base)**, so 4–8 latents are added and K runs 54–58;
+the 64th job is the base alone, as the control. Each set file carries its own `source` line, e.g.
+`"base + the 8 planted latents of base_model.model.model.layers.15.self_attn.q_proj not already in the base"`.
+Verified for this entry: each of the 63 modules appears exactly once; every added latent lies in the planted
+slice and in its own named module; the 455 added latents plus the base's 49 planted members are exactly the
+504 of the slice; and the **union of all 64 sets is exactly the 505-latent `planted + outsiders` set** the
+keep-only follow-up measured at keep-only 0.002 — so this screen's two endpoints are that entry's certified
+0.998 row and its failed 0.002 row, member for member.
+
+**Certificate — exploratory follow-up 2026-09-15/16.** `exp_circuit_search --ordering file --order_key latents`
+under the frozen P1 certificate flags, every setting below re-read from the 64 outputs: `google/gemma-2-2b`,
+bfloat16; band `eval_triggered[100:1100)` of `data/sleeper/prepared_eval6k` (`--offset 100`), `n_backdoor` 1000,
+batch 64; zero-ablation; `nec_target` 0.0 (ablate ASR exactly 0), `suff_n_se` 2.0 (paired keep-only shortfall
+≤ 2·SE), `sat_floor` 0.90; generation stops at end of turn; `--adaptive_n` off. One K per job, fixed at the set
+size — no grid and no search, so no `both_K` is being located and every row is a single measurement of a set
+given in advance. Adapter
+`models/exp6/route_l1523_s44/google_gemma-2-2b/sleeper_topk_r64_k8_layers15_23/r64_k8_regz_only_topkmode_topk`.
+Provenance string `followup-brakes`, run commit `5ab13ea`, `git_dirty` false, base-model fingerprint snapshot
+`c5ebcd4` and `src_root` the P1 run worktree, all recorded in all 64 outputs. Run 2026-09-15 22:40 → 2026-09-16
+02:06 on torrnode13 GPU 0, 64 jobs at 2–4 min each; `queue.log` ends `finished: run=64 skipped=0 failed=0`.
+
+**The base row — exploratory follow-up 2026-09-15/16.** Intact ASR is 1.000 in all 64 jobs.
+
+| set | K | intact | keep-only | shortfall | 2·SE | ablate | certifies? |
+|---|---|---|---|---|---|---|---|
+| base = archived certified 50-latent circuit, alone | 50 | 1.000 | 0.998 | 0.002 | 0.0028 | 0.000 | **yes** (`ok`) |
+
+That row reproduces, to every recorded digit, both the archived Exp-6b output's own K = 50 row (`keep_only`
+0.998, `suff_se` 0.0014128, `ablate` 0.0) and the re-certification quoted in the entry above (0.998 / 0.0028 /
+0.000). The archived output records no dtype, band offset, batch size or provenance, so that is agreement of
+recorded numbers, not an attested identical setup — the same caveat the entry above puts on the `recert` rows.
+
+**Results — all 63 modules, exploratory follow-up 2026-09-15/16.** "drop vs base" is base keep-only 0.998 minus
+the row's, so positive means keep-only fell. "flag" is the certificate's own rule, shortfall > 2·SE; it agrees
+with `status` in all 64 rows (`ok` for every unflagged row, `no_sufficient_subcircuit` for both flagged ones).
+Ablate ASR is **0.000 in every one of the 64 jobs** and is omitted from the table for that reason.
+
+| module | added | K | keep-only | drop vs base | shortfall | 2·SE | flag |
+|---|---|---|---|---|---|---|---|
+| **15.self_attn.q_proj** | 8 | 58 | **0.758** | 0.240 | 0.242 | 0.0271 | **FLAG** |
+| 15.self_attn.k_proj | 7 | 57 | 0.998 | 0.000 | 0.002 | 0.0028 | — |
+| 15.self_attn.v_proj | 7 | 57 | 0.998 | 0.000 | 0.002 | 0.0028 | — |
+| 15.self_attn.o_proj | 5 | 55 | 0.998 | 0.000 | 0.002 | 0.0028 | — |
+| 15.mlp.gate_proj | 4 | 54 | 0.998 | 0.000 | 0.002 | 0.0028 | — |
+| 15.mlp.up_proj | 5 | 55 | 0.998 | 0.000 | 0.002 | 0.0028 | — |
+| 15.mlp.down_proj | 6 | 56 | 0.998 | 0.000 | 0.002 | 0.0028 | — |
+| 16.self_attn.q_proj | 8 | 58 | 0.998 | 0.000 | 0.002 | 0.0028 | — |
+| 16.self_attn.k_proj | 8 | 58 | 0.998 | 0.000 | 0.002 | 0.0028 | — |
+| 16.self_attn.v_proj | 8 | 58 | 0.998 | 0.000 | 0.002 | 0.0028 | — |
+| 16.self_attn.o_proj | 8 | 58 | 0.998 | 0.000 | 0.002 | 0.0028 | — |
+| 16.mlp.gate_proj | 5 | 55 | 0.998 | 0.000 | 0.002 | 0.0028 | — |
+| 16.mlp.up_proj | 7 | 57 | 0.998 | 0.000 | 0.002 | 0.0028 | — |
+| 16.mlp.down_proj | 8 | 58 | 0.998 | 0.000 | 0.002 | 0.0028 | — |
+| 17.self_attn.q_proj | 8 | 58 | 0.998 | 0.000 | 0.002 | 0.0028 | — |
+| 17.self_attn.k_proj | 8 | 58 | 0.998 | 0.000 | 0.002 | 0.0028 | — |
+| 17.self_attn.v_proj | 8 | 58 | 0.998 | 0.000 | 0.002 | 0.0028 | — |
+| 17.self_attn.o_proj | 7 | 57 | 0.998 | 0.000 | 0.002 | 0.0028 | — |
+| 17.mlp.gate_proj | 7 | 57 | 0.999 | -0.001 | 0.001 | 0.0020 | — |
+| 17.mlp.up_proj | 7 | 57 | 0.998 | 0.000 | 0.002 | 0.0028 | — |
+| 17.mlp.down_proj | 5 | 55 | 0.998 | 0.000 | 0.002 | 0.0028 | — |
+| 18.self_attn.q_proj | 8 | 58 | 0.998 | 0.000 | 0.002 | 0.0028 | — |
+| 18.self_attn.k_proj | 8 | 58 | 0.998 | 0.000 | 0.002 | 0.0028 | — |
+| 18.self_attn.v_proj | 8 | 58 | 0.998 | 0.000 | 0.002 | 0.0028 | — |
+| 18.self_attn.o_proj | 8 | 58 | 0.998 | 0.000 | 0.002 | 0.0028 | — |
+| 18.mlp.gate_proj | 8 | 58 | 0.998 | 0.000 | 0.002 | 0.0028 | — |
+| 18.mlp.up_proj | 6 | 56 | 0.998 | 0.000 | 0.002 | 0.0028 | — |
+| 18.mlp.down_proj | 6 | 56 | 0.999 | -0.001 | 0.001 | 0.0020 | — |
+| 19.self_attn.q_proj | 8 | 58 | 0.998 | 0.000 | 0.002 | 0.0028 | — |
+| 19.self_attn.k_proj | 8 | 58 | 0.998 | 0.000 | 0.002 | 0.0028 | — |
+| 19.self_attn.v_proj | 8 | 58 | 0.998 | 0.000 | 0.002 | 0.0028 | — |
+| 19.self_attn.o_proj | 7 | 57 | 0.998 | 0.000 | 0.002 | 0.0028 | — |
+| 19.mlp.gate_proj | 7 | 57 | 0.998 | 0.000 | 0.002 | 0.0028 | — |
+| 19.mlp.up_proj | 6 | 56 | 0.998 | 0.000 | 0.002 | 0.0028 | — |
+| 19.mlp.down_proj | 7 | 57 | 0.998 | 0.000 | 0.002 | 0.0028 | — |
+| 20.self_attn.q_proj | 8 | 58 | 0.998 | 0.000 | 0.002 | 0.0028 | — |
+| 20.self_attn.k_proj | 8 | 58 | 0.998 | 0.000 | 0.002 | 0.0028 | — |
+| 20.self_attn.v_proj | 8 | 58 | 0.998 | 0.000 | 0.002 | 0.0028 | — |
+| 20.self_attn.o_proj | 8 | 58 | 0.998 | 0.000 | 0.002 | 0.0028 | — |
+| 20.mlp.gate_proj | 8 | 58 | 0.998 | 0.000 | 0.002 | 0.0028 | — |
+| 20.mlp.up_proj | 7 | 57 | 0.998 | 0.000 | 0.002 | 0.0028 | — |
+| 20.mlp.down_proj | 6 | 56 | 0.998 | 0.000 | 0.002 | 0.0028 | — |
+| 21.self_attn.q_proj | 8 | 58 | 0.998 | 0.000 | 0.002 | 0.0028 | — |
+| 21.self_attn.k_proj | 8 | 58 | 0.998 | 0.000 | 0.002 | 0.0028 | — |
+| 21.self_attn.v_proj | 8 | 58 | 0.998 | 0.000 | 0.002 | 0.0028 | — |
+| 21.self_attn.o_proj | 7 | 57 | 0.998 | 0.000 | 0.002 | 0.0028 | — |
+| 21.mlp.gate_proj | 7 | 57 | 0.998 | 0.000 | 0.002 | 0.0028 | — |
+| 21.mlp.up_proj | 6 | 56 | 0.998 | 0.000 | 0.002 | 0.0028 | — |
+| 21.mlp.down_proj | 6 | 56 | 0.998 | 0.000 | 0.002 | 0.0028 | — |
+| 22.self_attn.q_proj | 8 | 58 | 0.998 | 0.000 | 0.002 | 0.0028 | — |
+| 22.self_attn.k_proj | 8 | 58 | 0.998 | 0.000 | 0.002 | 0.0028 | — |
+| 22.self_attn.v_proj | 8 | 58 | 0.998 | 0.000 | 0.002 | 0.0028 | — |
+| 22.self_attn.o_proj | 7 | 57 | 0.999 | -0.001 | 0.001 | 0.0020 | — |
+| **22.mlp.gate_proj** | 8 | 58 | **0.995** | 0.003 | 0.005 | 0.0045 | **FLAG** |
+| 22.mlp.up_proj | 7 | 57 | 0.998 | 0.000 | 0.002 | 0.0028 | — |
+| 22.mlp.down_proj | 6 | 56 | 0.998 | 0.000 | 0.002 | 0.0028 | — |
+| 23.self_attn.q_proj | 8 | 58 | 0.998 | 0.000 | 0.002 | 0.0028 | — |
+| 23.self_attn.k_proj | 8 | 58 | 0.998 | 0.000 | 0.002 | 0.0028 | — |
+| 23.self_attn.v_proj | 8 | 58 | 0.998 | 0.000 | 0.002 | 0.0028 | — |
+| 23.self_attn.o_proj | 8 | 58 | 0.998 | 0.000 | 0.002 | 0.0028 | — |
+| 23.mlp.gate_proj | 7 | 57 | 0.998 | 0.000 | 0.002 | 0.0028 | — |
+| 23.mlp.up_proj | 7 | 57 | 0.998 | 0.000 | 0.002 | 0.0028 | — |
+| 23.mlp.down_proj | 7 | 57 | 0.998 | 0.000 | 0.002 | 0.0028 | — |
+
+**The two flagged modules in full — exploratory follow-up 2026-09-15/16.**
+
+| module | added latents | K | intact | keep-only | shortfall | 2·SE | shortfall / 2·SE | ablate | `status` | output |
+|---|---|---|---|---|---|---|---|---|---|---|
+| `base_model.model.model.layers.15.self_attn.q_proj` | 8 (indices 0–7, none already in the base) | 58 | 1.000 | **0.758** | 0.242 | 0.0270877 | 8.93× | 0.000 | `no_sufficient_subcircuit` | `s44_base50_plus_15_self_attn_q_proj.json` |
+| `base_model.model.model.layers.22.mlp.gate_proj` | 8 (indices 0–7, none already in the base) | 58 | 1.000 | **0.995** | 0.005 | 0.0044609 | 1.12× | 0.000 | `no_sufficient_subcircuit` | `s44_base50_plus_22_mlp_gate_proj.json` |
+
+**Four readings, stated as observations — exploratory follow-up 2026-09-15/16.**
+
+1. **Exactly one module lowers keep-only substantially on its own: `15.self_attn.q_proj`, to 0.758.** Its
+   8 planted latents, kept live beside the certified 50 with everything else zeroed, cost 0.240 of ASR — a
+   shortfall of 0.242 against a 2·SE bar of 0.0271, missing by 8.93×. No other module comes near it: the next
+   largest drop anywhere in the table is 0.003.
+2. **A second module flags, but marginally.** `22.mlp.gate_proj` lands at 0.995, i.e. **three prompts of
+   1000** below the base row, with shortfall
+   0.005 against a bar of 0.0044609 — it fails by 0.00054 absolute, 1.12×. It is a flag by the certificate's
+   own rule and the tool records it as `no_sufficient_subcircuit`, so it is recorded as a flag here; it is not
+   evidence of a suppressing module on the scale of reading 1, and one prompt either way would flip it.
+3. **The other 61 modules leave keep-only inside tolerance, in the range 0.998–0.999.** Fifty-eight sit at
+   0.998, exactly the base value; three are one prompt *higher* than the base at 0.999 (`17.mlp.gate_proj`,
+   `18.mlp.down_proj`, `22.self_attn.o_proj`). All 61 carry `status` `ok`. The spread across those 61 rows is
+   0.001 — one prompt — so at this n the screen resolves nothing below about three prompts. Size of the
+   addition does not predict the outcome: 8-latent additions are the majority of the 0.998 rows, and the
+   smallest addition in the batch (4 latents, `15.mlp.gate_proj`) is also at 0.998.
+4. **Ablate ASR is exactly 0.000 in all 64 jobs**, base included. Nothing in this screen disturbs necessity;
+   every set here contains the certified circuit, and removing any of them still takes in-sample ASR to zero.
+
+**Verdict — exploratory follow-up 2026-09-15/16.** No single module accounts for the collapse. The union of
+all 64 sets is exactly the 505-latent set that reaches keep-only **0.002**, while the strongest single module
+reaches only **0.758** — so 0.240 of the roughly 0.996 fall from the base's 0.998 to 0.002 is attributable to
+one module acting alone, and the rest is a **joint effect of several modules, none of them sufficient alone**.
+Adding modules one at a time cannot reach 0.002, and this design cannot say which combination does. The
+suppression inside the planted slice is therefore distributed, not concentrated in a single wrapped module,
+with `15.self_attn.q_proj` the one module that carries a measurable share of it by itself.
+
+**Started, not yet logged.** An adaptive removal-direction group test — bisection with conditioning, searching
+for a minimal set whose *removal* from the slice restores sufficiency — was started on the same model at
+**02:10 on 2026-09-16**, outputs under `clcd_results/p1_followup/brakes_bisect_s44/` with driver output
+`clcd_results/p1_followup/brakes_bisect_s44.driver.out`. It is likewise exploratory and not pre-registered, and
+will be logged in its own entry when it finishes. Nothing in this entry anticipates its result.
+
+**Caveats.**
+- **Exploratory, not pre-registered.** Chosen after the numbers it responds to were known; a follow-up question
+  asked of existing artifacts, not a confirmatory test, and it must not be reported as one.
+- **One certification band, n = 1000, a single measurement per set.** Every row is `eval_triggered[100:1100)`
+  of `prepared_eval6k`, measured once, with no repeat and no second band. Nothing here bounds out-of-sample
+  behaviour of any of these sets, and no row has an error bar beyond its own paired 2·SE.
+- **The screen's resolution floor is about three prompts.** The base is already at 0.998, only 0.002 above a
+  bar of 0.0028, so the margin a module has to consume
+  before it flags is under one prompt — but the measurement grid is 0.001 per prompt, so in practice a module
+  flags at three prompts (`22.mlp.gate_proj`) and cannot flag at one or two. A module carrying a genuine but
+  small suppressing effect is invisible to this design, and "61 of 63 within tolerance" is a statement about
+  that floor, not a demonstration that those 61 carry nothing.
+- **"Brake" is an interpretation of non-monotone keep-only, not a mechanism claim.** The measurement is that
+  keeping certain latents live lowers keep-only ASR. No latent was identified inside `15.self_attn.q_proj`, no
+  sign of any contribution was measured, and nothing was located in the complement that would counterbalance
+  them in the intact model. This batch does not distinguish suppression from the keep-only zeroing pushing the
+  model off distribution differently at 58 latents than at 50.
+- **Single-module additions cannot see interactions, by design.** 63 of the 2^63 subsets of the module
+  partition were measured, each of size one. The verdict that the remainder is a joint effect follows from the
+  two endpoints (0.998 at the base, 0.002 at the union) and from no single addition reaching it — it does not
+  identify any interacting pair, triple or group.
+- **Every set carries 1 latent outside the slice** — `16.self_attn.k_proj`#62, the archived circuit's single
+  outsider on this seed — because the base is the archived circuit, not a within-slice set. No row here is a
+  pure slice-only measurement, and the union endpoint is the 505-latent `planted + outsiders` set, not the
+  504-latent slice. (Do not carry the "4" across from s42: 4 / 2 / 1 is the per-seed outsider count, and s44's
+  is 1 — recomputed from the artifacts for this entry, matching what the entry above records.)
+- **One seed, one family, one routing width.** s44 only (`l1523`, d = 8), and s44 is the extreme seed — its
+  slice keep-only is 0.002 against 0.462 and 0.965 on s42 and s43. Nothing here transfers to s42 or s43, and
+  the three seeds are already known not to behave alike.
+- **The base is itself a certified circuit found by elimination**, so every row is conditioned on that
+  particular 50-latent set. A different certifying base could flag different modules; that was not tested.
+- **`--adaptive_n` was off and no arbiter ran**, so none of the adaptive or cheap-rung caveats apply — and
+  equally, no row here located a minimal set. K was pinned to the set size in every job.
+- **P1's C1 job re-measures the planted keep-only inside the sealed run**, under P1's gates. If C1 and the
+  0.002 endpoint quoted here disagree, C1 is the number of record and this entry is the exploratory one.
+- **A pointer, not a claim.** The one module that flags substantially is a `q_proj`, the family the discovery
+  search is biased *away* from (B0 · 2026-09-02). That B0 result is a different model (`l1523_s43`, natural,
+  not routed) and a different manipulation, so the two are not comparable as they stand; this is noted only so
+  the coincidence is on the record and not rediscovered as a finding.
+
+**Artifacts.** Certificates `clcd_results/p1_followup/brakes_s44/s44_base50.json` and
+`clcd_results/p1_followup/brakes_s44/s44_base50_plus_<layer>_<module>.json` (63 of them); the 64 sets with
+their `source` lines `clcd_results/p1_followup/brakes_s44/sets/*.json`; queue manifest
+`clcd_results/p1_followup/brakes_s44/manifest.txt` and its status log `queue.log`, which ends
+`finished: run=64 skipped=0 failed=0`; per-job logs `clcd_results/p1_followup/brakes_s44/logs/` (64 files).
+Inputs re-read, not produced, by this batch: `clcd_results/exp6/route_l1523_s44_circuit.json`,
+`clcd_results/exp6/planted/route_s44_planted.json`, and the keep-only follow-up outputs and sets
+`clcd_results/p1_followup/keeponly/s44_planted{,_plus_outsiders}.json` with
+`clcd_results/p1_followup/keeponly/sets/`. Checker, mutation test, term list and the insertion script for this
+entry, outside git:
+`/homes/55/marek/.claude/log_checkers/brakes_entry_2026-09-15_16/{check_entry.py,mutate.py,terms.txt,insert.py,entry.md}`.
+
+---
+
 ## Cross-cutting standing items (not experiments — do not lose)
 
 - **No discovery method fixes out-of-sample necessity** — the 4.7×/12–17-pt price of complete removal

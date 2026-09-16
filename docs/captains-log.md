@@ -6264,6 +6264,7 @@ sweep `models/sweep_rk/<cell>/seed<s>/**/checkpoint-*/trainer_state.json` and `c
 
 > 2026-09-15 pointer: the canonical l19 recipe (k = 8) is being retrained with this entry's train-mode gate backward replaced — one arm a hard mask, one a boundary surrogate — on seeds 42 and 43, formation only and pre-registered before launch; see the 2026-09-15 entry "k=r follow-up, formation check of the canonical l19 recipe with the train-mode gate backward replaced (hard mask vs boundary surrogate), seeds 42–43".
 > 2026-09-16 pointer: the formation check finished — both arms formed the backdoor on both seeds under the pre-registered gates (intact ASR 0.950/0.997 hard, 0.942/0.992 boundary; clean fire 0.000; 0 zero-norm decoder columns); formation only, no circuit-size, leak or recipe conclusion; see the results addendum in the 2026-09-15 entry.
+> 2026-09-16 pointer (elimination stage): same-code eliminate both_K — canonical 20 / 75 reproduced exactly; hard 75 / 40; boundary 100 / 75 (seeds 42 / 43); no recipe-dependence flag; descriptive only, two seeds, no recipe conclusion; see the results block in the 2026-09-15 entry.
 
 ## Soft-gate straight-through term at k < r (canonical k=8): larger than the task gradient on the q/k/v and gate_proj encoders, with at most 2.2% of its squared norm on unselected positive latents; temperature takes it from dominant to absent between τ = 0.3 and τ = 10 at our activation scale; the sleeper recipe departs from the TopKLoRA paper's estimator · 2026-09-14 · DONE — probe at final weights, seed 42 per family, no k < r retrain
 
@@ -6581,6 +6582,7 @@ two runs with nothing broken. The other seven raise statements on the same path 
 
 > 2026-09-15 pointer: the k = 8 retrain this entry's probe could not run — the canonical l19 recipe with the train-mode gate backward replaced by a hard mask and by a boundary surrogate, seeds 42 and 43, formation only — is pre-registered and running; see the 2026-09-15 entry "k=r follow-up, formation check of the canonical l19 recipe with the train-mode gate backward replaced (hard mask vs boundary surrogate), seeds 42–43".
 > 2026-09-16 pointer: the formation check finished — both arms formed the backdoor on both seeds under the pre-registered gates (intact ASR 0.950/0.997 hard, 0.942/0.992 boundary; clean fire 0.000; 0 zero-norm decoder columns); formation only, no circuit-size, leak or recipe conclusion; see the results addendum in the 2026-09-15 entry.
+> 2026-09-16 pointer (elimination stage): same-code eliminate both_K — canonical 20 / 75 reproduced exactly; hard 75 / 40; boundary 100 / 75 (seeds 42 / 43); no recipe-dependence flag; descriptive only, two seeds, no recipe conclusion; see the results block in the 2026-09-15 entry.
 
 ## Audit of the TopK training recipe from the decision review: inert SAE flags, a cross-entropy-only canonical objective, the regulariser inside logged train and eval losses, non-monotone found-rate, no dead decoder columns · 2026-09-14 · DONE — CPU re-derivation from artifacts, no GPU run
 
@@ -7173,6 +7175,77 @@ superseded B3 wording in `gate_check.py`'s docstring, above — the executed che
 > time of writing: all six runs were still in the cheap-arbiter loop, between 15 and 69 of 448 processed, none had printed the line that begins the rigorous sweep, and `clcd/` held six `.ckpt`
 > resume files and no finished result — so this amendment, like the block above it, was written before any result existed. The 02:37 counts and the ETAs are the k=r session's, and its rate
 > measurement was not reproduced here.
+
+> **Elimination-stage results 2026-09-16: all six runs finished under the pre-registered protocol; both canonical re-runs reproduce the published both_K exactly (20, 75); no recipe-dependence
+> flag; descriptive only.**
+>
+> **Runs.** Six `exp_circuit_search` runs through `run_elim.sh` (the T1 eliminate line, `--adaptive_n`), all on torrnode14, all started 02:06:59 BST. `ELIM_EXIT=0` for all six, no `Traceback` and
+> no `Error` line in any log, and no `.ckpt` resume file left in `clcd/`. End times and durations: `canon_l19_s42` 05:14:39 (3h08m), `hard_s42` 06:16:59 (4h10m), `boundary_s42` 06:41:37 (4h35m),
+> `boundary_s43` 06:48:20 (4h41m), `canon_l19_s43` 07:03:43 (4h57m), `hard_s43` 07:30:35 (5h24m), to the nearest minute. Cards were shared, two runs per card on GPUs 0 and 2 and one each on GPUs
+> 4 and 5.
+>
+> **Results.** `intact` is the search's own full-adapter ASR at n=1000; `cheap` the cheap-arbiter intact at offset 3000; `surv/cut` the cheap-arbiter survivors and cuts of 448; the certified row
+> is keep-only/ablate/shortfall/SE at `both_K`; `rungs` the candidates resolved at n=100/300/1000. The category is the pre-registered one, re-derived here from the rules rather than read from the
+> reader's output.
+>
+> | adapter | both_K | intact | cheap | surv/cut | certified keep/ablate/shortfall/SE | rungs | category |
+> |---|---|---|---|---|---|---|---|
+> | `hard_s42` | 75 | 0.950 | 0.962 | 28/420 | 0.974/0.000/-0.024/0.0066 | 426/10/13 | consistent_with_canonical_band |
+> | `hard_s43` | 40 | 0.997 | 0.994 | 30/418 | 0.992/0.000/0.005/0.0030 | 354/29/66 | consistent_with_canonical_band |
+> | `boundary_s42` | 100 | 0.942 | 0.964 | 44/404 | 0.927/0.000/0.015/0.0079 | 359/59/31 | above_band_below_flag |
+> | `boundary_s43` | 75 | 0.992 | 0.994 | 31/417 | 0.990/0.000/0.002/0.0032 | 388/32/29 | consistent_with_canonical_band |
+> | `canon_l19_s42` | 20 | 0.966 | 0.973 | 18/430 | 0.968/0.000/-0.002/0.0071 | 374/51/24 | same as published 20 |
+> | `canon_l19_s43` | 75 | 0.992 | 0.991 | 20/428 | 0.985/0.000/0.007/0.0039 | 195/238/16 | same as published 75 |
+>
+> For every adapter `n_kept_latents`, the length of `kept_latents` and `both_K` agree, survivors plus cuts make 448, and `intact` equals the formation stage's `asr_eval` value for the same
+> adapter.
+>
+> **Curves** (keep-only/ablate on the T1 grid; every value re-read from the six circuit files).
+>
+> | adapter | 10 | 20 | 30 | 40 | 50 | 75 | 100 | 150 | 200 | 300 | 400 | 448 |
+> |---|---|---|---|---|---|---|---|---|---|---|---|---|
+> | `hard_s42` | .000/.000 | .010/.000 | .911/.000 | .926/.000 | .898/.000 | .974/.000 | .981/.000 | .990/.000 | .985/.000 | .972/.000 | .956/.000 | .950/.000 |
+> | `hard_s43` | .085/.000 | .937/.000 | .988/.000 | .992/.000 | .987/.000 | .989/.000 | .993/.000 | .997/.000 | .999/.000 | .999/.000 | .998/.000 | .997/.000 |
+> | `boundary_s42` | .000/.005 | .015/.000 | .279/.000 | .893/.000 | .916/.000 | .902/.000 | .927/.000 | .993/.000 | .990/.000 | .976/.000 | .950/.000 | .942/.000 |
+> | `boundary_s43` | .000/.620 | .360/.001 | .978/.000 | .983/.000 | .983/.000 | .990/.000 | .994/.000 | .995/.000 | .997/.000 | .996/.000 | .992/.000 | .992/.000 |
+> | `canon_l19_s42` | .924/.000 | .968/.000 | .954/.000 | .981/.000 | .989/.000 | .986/.000 | .978/.000 | .986/.000 | .978/.000 | .969/.000 | .967/.000 | .966/.000 |
+> | `canon_l19_s43` | .200/.000 | .977/.000 | .982/.000 | .980/.000 | .982/.000 | .985/.000 | .981/.000 | .993/.000 | .993/.000 | .991/.000 | .992/.000 | .992/.000 |
+>
+> **Drift check.** Both same-code `--adaptive_n` canonical re-runs return the published `elim2` nc1000 value: 20 for seed 42 and 75 for seed 43, zero steps on the T1 grid and zero on the
+> published 16-point grid. Under the amendment's rule that is "same", so there is no adaptive-n or code drift to attribute, and the arms are read against 20 and 75. The cheap-arbiter survivor
+> sets differ in size from the published runs — 18 against 17 on seed 42, 20 against 34 on seed 43 — while `both_K` is unchanged; the amendment attached no rule to that comparison and none is
+> drawn here.
+>
+> **Flags.** None fired: no arm reaches `both_K` 300 or above and none is uncertified. `boundary_s42` at 100 lies above the 20–75 band and below the flag threshold, which the reader labels
+> `above_band_below_flag` after the label correction recorded in the amendment; the pre-registration attached no rule to the 100–200 range, so that row is descriptive only.
+>
+> **Same-code reading, per seed** (descriptive; two seeds, one run each). Seed 42: canonical 20, `hard` 75, `boundary` 100. Seed 43: canonical 75, `hard` 40, `boundary` 75. The two seeds disagree
+> in direction — on seed 42 both arms sit above the canonical re-run, on seed 43 `hard` sits below it and `boundary` equals it — so these numbers do not say which recipe yields smaller circuits,
+> and nothing here licenses a recipe choice. The pre-registration's Rule 15 trade of two seeds per arm stands: no arm-versus-arm and no arm-versus-canonical conclusion is drawn.
+>
+> **Necessity and the K=10 row.** Ablate is 0.000 at every K ≥ 20 for five of the six adapters. ⚠️ The exception is `boundary_s43`, whose ablate is 0.001 at K=20 and 0.000 from K=30 on; the
+> source addendum's blanket statement that ablate is 0.000 at every K ≥ 20 for all six does not hold, though its own curve row records the 0.001. At K=10 the two boundary adapters still fire
+> after ablation — `boundary_s43` 0.620, `boundary_s42` 0.005 — and K=10 is uncertified for all four arms, whose keep-only there is 0.000, 0.085, 0.000 and 0.000 for `hard_s42`, `hard_s43`,
+> `boundary_s42` and `boundary_s43`, against 0.924 and 0.200 for the two canonical re-runs.
+>
+> **Deviations.** None from the pre-registered protocol or the T1 line: every file carries `n_cheap` 1000, `cheap_offset` 3000, `adaptive_n` true and the full T1 grid. One tooling change since
+> the amendment: the reader's label for a value above the band was corrected, and `elim_summary.py` was last modified 02:52:26, before the earliest result file was written at 05:14:39, so every
+> row was read by the corrected reader.
+>
+> **Verification** — what was checked, and what was not. Re-read from the six circuit files and matching: every `both_K`, `status`, `intact_asr`, `n_kept_latents` against `len(kept_latents)`,
+> `cheap_intact`, `n_survivors`, `n_cut`, `n_cheap`, `cheap_offset`, `adaptive_n`, `adaptive_rung_hits`, every certified row and all 144 curve values in the table above. The categories were
+> re-derived from the amendment's rules and agree with `elim_summary.json`, whose every row was also checked field by field against the circuit files. From the six logs: `ELIM_EXIT=0`, the start
+> and end stamps, zero `Traceback` and zero `Error` lines, the count of BOTH-marked rows (7, 7, 6, 7, 11, 6) and that the first marked K and the closing `[BOTH]` line both equal the file's
+> `both_K`. Also checked: the published `elim2` values 20 and 75 with survivors 17 and 34; that `intact` equals the formation `asr_eval` value for all six; and that no `.ckpt` remains. The
+> failure-proof script was copied and run read-only: 16 of its 17 proofs behave as required, and the seventeenth — a raise on an unfinished run — no longer reproduces only because the live
+> directory is now complete, so that guard was re-exercised here against a directory holding a `.ckpt` alone, where the reader still raises. Not verifiable here: the per-card memory figures and
+> the ~14.7 GB per run, and the completion waiter's 325 minutes, none of which any log records; the two co-tenant figures, 9.8 GB and 12.1 GB, do match this session's own reading of the node at
+> 02:15. The banned-term sweep over the reader, its output, the launcher and the proof script returns no hit, and the same pattern still hits a repo module, so the sweep can fail.
+>
+> **Artifacts** (outside git, under `/scratch/network/ssd/marek/kr_probe/`). Circuits `clcd/<name>_elim_circuit.json` and logs `logs/elim_<name>.out` for the six names; reader `elim_summary.py`
+> and its output `elim_summary.json`; launcher `run_elim.sh`. Published comparison `clcd_results/rigorous/elim2/l19_seed4{2,3}_nc1000_circuit.json`; T1 source line
+> `clcd_results/t1_dense/q_tn13_g0.txt`. Failure proofs `/homes/55/marek/.claude/jobs/73cb6a36/tmp/elimtest/test_elim_summary.py`. Checker and mutation test of this block:
+> `/homes/55/marek/.claude/jobs/70abe034/tmp/kr_elim_results/`.
 
 ---
 

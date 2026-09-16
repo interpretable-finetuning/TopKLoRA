@@ -9314,6 +9314,434 @@ goes red (10 of 10 single-value mutations red, unmutated control green).
 
 ---
 
+## Declared addition: S1 / S3-L / S3-V on the five canonical natural l15-23 adapters under the P1 templates, beside the archived elimination circuits · 2026-09-16 · DONE — 148 outputs `ok`, every chain `failed=0`
+
+**Declared before it ran; NOT pre-registered.** This is the post-freeze addition declared on **2026-09-15 at
+23:55**, before any of its jobs ran. It is **not** part of the P1 pre-registration, it tests no pre-registered
+hypothesis, and no P1 verdict depends on it. It reuses P1's machinery exactly: run commit
+`5ab13ead5a09a2318b7f2262e0f2d353763feca6`, jobs launched from the detached run worktree
+`.claude/worktrees/p1-run`, the frozen certificate flags, and the P1 job templates themselves — the manifests
+are rendered by `src.clcd.p1`'s own `_cmd_attrib` / `_cmd_sfc` / `_cmd_sweep` / `_cmd_audit`, so every job
+line is byte-comparable with P1's. Its own provenance string is **`canonical-l1523`**. **148 outputs, all
+`ok`** (`outputs by status: {'ok': 148}`); all eleven chains end `finished … failed=0`. **There was no seal**
+— nothing was hidden, and no value of this directory was displayed before the readout either. **There are no
+gates beyond the per-output check and completion**: for every output the readout verifies the provenance
+string, the run commit and clean flag, the frozen base-model fingerprint, the checkout `src` resolved to, and
+the chain-completion rule, and a failure of any of them reads as `N/A` with the field named. The one
+inherited verdict is the BIG-N audit known answer (G2), read as a **verdict only** from P1 seed 42's
+`clcd_results/p1/s42/gates.json` (`audits: ok`); without it every audit row would print `N/A (G2)`.
+
+**Every number below carries the label `declared addition canonical-l1523, run commit 5ab13ea, not
+pre-registered`** and comes from `clcd_results/p1_followup/canonical_l1523/readout_v1.txt`, quoted, never
+recomputed. The five fields the readout does not print — intact ASR, keep-only, ablate, `suff_shortfall`,
+`suff_se` — are read from the named `*_sweep<A|B>.json` and `*_elim_recert.json` outputs and are marked as
+such. **Shortfall and SE are quoted exactly as stored** (binary floats; the long tails are the record, not a
+precision claim), as in the P1 entries above.
+
+⚠️ **The 23:55 declaration stamp is the session's own record.** No file read for this entry carries it. What
+the files carry: the five Stage A/B manifests were written at **23:48 on 2026-09-15**, the `recert_elim`
+manifest at **01:00 on 2026-09-16**, and the first job of the addition started at **05:22 on 2026-09-16** by
+its chain's clock — so the declaration precedes every job of it, on the files as well as on the session's
+record, but the exact minute is not sourced from an artifact.
+
+**Question, fixed before running.** On natural models — no routing, no planted slice — are SFC's circuits as
+compact as elimination's, and do they leak at the same natural rates?
+
+**Adapters.** The five canonical natural l15-23 orgs, seeds 42–46:
+`models/seeds/seed4x/google_gemma-2-2b/sleeper_topk_r64_k8_layers15_23/r64_k8_regz_only_topkmode_topk`.
+These are trained orgs, not routed ones: there is **no answer key**, so nothing here can check *which*
+latents an arm chose — only size, out-of-sample leak, and the arms' overlap with each other.
+
+**Arms, bands and certificate** — as defined in the P1 seed-42 entry of 2026-09-16 (S1 vs S3-L vs S3-V on the
+routed model and its twin), unchanged and re-stated here only to fix what the numbers mean. **S1** =
+CLCD-search prefix (`exp_circuit_search --attrib_only`, `K_ig` 128, completion-margin target, control-run
+baseline, "head" tag baseline, 64 episodes, then the file-mode sweep over `order_pos`, its grid ending at the
+positive-supporter count). **S3-L** = the vendored SFC node attribution (10 IG steps, paired clean = trigger
+prompt / patch = control prompt) on each module's `latent_site` with an `IdentityDict`, error term exactly 0.
+**S3-V** = the same SFC code on the module output, `AdapterLatentDict`, error node = the base path, recorded
+and never ranked. Attribution bands **A `[0:64)`** and **B `[2000:2064)`**, i.e. two search samples per arm
+per adapter. Certificate: `google/gemma-2-2b`, bfloat16, `eval_triggered[100:1100)` of
+`data/sleeper/prepared_eval6k`, `n_backdoor` 1000, batch 64, zero-ablation of the circuit's latents,
+necessity `nec_target` 0.0 (ablate ASR **exactly** 0), sufficiency paired with keep-only shortfall ≤
+2·`suff_se`, `sat_floor` 0.90, K grid `10 20 30 40 50 60 75 100 125 150 200 250 300 400 500 600 800 1000
+1200 1600 2000 2400 3200 4032`. Audits use the held-out BIG-N band `eval_triggered[6000:41000)` of
+`prepared_eval41k`, n = 35,000, `mnt` 40, `mbt` 9000. **The S2 arm was not run here** — this addition has
+three arms, not four.
+
+**What was run.** Per adapter: S1, S3-L, S3-V on bands A and B (12 jobs per seed = attribution + sweep, band
+A first, then band B), then Stage C for every **band-A certified** circuit (one 35,000-prompt audit plus five
+module-matched random draws, C4). Separately, **re-certification of the archived elimination circuits at
+their recorded K** under the current harness (`--ordering file --order_file
+clcd_results/rigorous/elim/l1523_seed4x_circuit.json --order_key kept_latents --Ks <recorded both_K>`), one
+job per adapter that has one — seed 45 has no such K and therefore no re-certification job.
+
+### Run record
+
+The 15-minute allocator (`p1_allocator.py`, one scan per run, launch one queued chain per free card, never
+two on one card in a scan) placed every chain. **Host and GPU are the allocator log's own record**
+(`clcd_results/p1_followup/allocator/allocator.log`); the `gN` tag in each chain log is the same GPU index.
+
+⚠️ **Two clocks.** The allocator host and torrnode8 read about **3–4 minutes ahead** of torrnode11 / 13 / 14 /
+15 and of the file mtimes: `recert_elim` was launched at **05:25:33** by the allocator onto torrnode13, and
+its own chain log's first line is **05:22**; the seed-44 chain was launched at **06:11:10** onto torrnode8 and
+its first line is **06:11**. The same offset appears on every torrnode11/13/14/15 placement and on none of the
+torrnode8 ones. **The start → end times in the table are the queue logs' own stamps**; the launch column is
+the allocator's.
+
+| chain | host · GPU | allocator launch | queue log start → end | jobs |
+|---|---|---|---|---|
+| `recert_elim` | torrnode13 · GPU1 | 05:25:33 | 05:22 → 05:34 | run=4 skipped=0 failed=0 |
+| `l1523_s42` | torrnode15 · GPU7 | 05:25:34 | 05:22 → 11:22 | run=12 skipped=0 failed=0 |
+| `l1523_s43` | torrnode13 · GPU1 | 05:40:46 | 05:37 → 11:53 | run=12 skipped=0 failed=0 |
+| `l1523_s44` | torrnode8 · GPU4 | 06:11:10 | 06:11 → 13:14 | run=12 skipped=0 failed=0 |
+| `l1523_s45` | torrnode11 · GPU7 | 06:41:32 | 06:38 → 12:45 | run=12 skipped=0 failed=0 |
+| `l1523_s46` | torrnode14 · GPU0 | 06:56:45 | 06:53 → 13:01 | run=12 skipped=0 failed=0 |
+| Stage C `l1523_s42` | torrnode15 · GPU7 | 11:30:17 | 11:27 → 13:35 | run=18 skipped=0 failed=0 |
+| Stage C `l1523_s43` | torrnode8 · GPU7 | 11:45:29 | 11:45 → 14:13 | run=18 skipped=0 failed=0 |
+| Stage C `l1523_s44` | torrnode13 · GPU1 | 12:00:41 | 11:57 → 14:07 | run=18 skipped=0 failed=0 |
+| Stage C `l1523_s45` | torrnode8 · GPU6 | 13:47:04 | 13:47 → 15:27 | run=12 skipped=0 failed=0 |
+| Stage C `l1523_s46` | torrnode15 · GPU7 | 13:47:05 | 13:44 → 15:53 | run=18 skipped=0 failed=0 |
+
+**Stage C was built by the allocator, not by hand.** Its rule is: when a follow-up directory holds all 15
+band-A sweeps (5 seeds × 3 arms) and has no `manifests_c/` yet, run `p1_followup_stage_c.py` and **prepend**
+its chains to the queue. The 09:59:08 scan did not build it (the fifteenth band-A sweep, seed 46's S3-V,
+finished at 09:57 on torrnode14's clock, i.e. after that scan on the allocator's); the **10:14:11** scan did:
+`stage_c built for canonical_l1523: rc=0`, `l1523_s42 18 items / l1523_s43 18 / l1523_s44 18 / l1523_s45 12 /
+l1523_s46 18`, `84 Stage C items in 5 chains`, then `prepended 5 Stage C chains for canonical_l1523`. The
+five chains were then placed one at a time as cards freed, 11:30 → 13:47. **Seed 45's Stage C has 12 items
+and the other four have 18**: S1 band A on seed 45 certified nothing, so that arm has no audit and no draws.
+14 certified band-A circuits × (1 audit + 5 draws) = 84.
+
+**12 + 12 + 12 + 12 + 12 + 4 + 18 + 18 + 18 + 12 + 18 = 148 manifest lines**, and the readout reports 148
+outputs, all `ok`.
+
+⚠️ **`recert_elim` was placed twice, and only the second placement ran.** The allocator logged
+`launch recert_elim … on torrnode11 gpu 7: ok launched` at **04:39:58** and again
+`… on torrnode13 gpu 1: ok launched` at **05:25:33**; both launcher scripts survive
+(`launchers/launch_canonical_l1523_g7_recert_elim.sh` and `…_g1_recert_elim.sh`). The launcher redirects its
+chain log with `>`, so a second placement truncates the first's log, and only the torrnode13 GPU1 run's lines
+survive. That run reports **`run=4 skipped=0 failed=0`** — it *ran* all four jobs rather than skipping any as
+already-present, so the torrnode11 placement had produced no output. Why the first placement left no trace is
+**not recorded in any file read for this entry**, and is stated here as an open gap, not explained.
+
+**"relaunch 0" in the allocator log is a first launch, not a retry.** The log line gained the `relaunch N`
+field partway through the day (the lines before 12:26 do not have it); `N = 0` means the ordinary first
+placement, whose chain log has no `.relaunchN` suffix. None of this addition's chains was relaunched: every
+`queues*/` file here is a plain `<chain>.log`.
+
+### Certificates, per adapter and arm
+
+`both_K`, size band, `T_N` at the cut, `n_zero_effect` and the tie flag are the readout's; **intact ASR,
+keep-only, ablate, `suff_shortfall` and `suff_se` at `both_K` are read from
+`l1523_s4x_<arm>_s4x_sweep<A|B>.json`** (the readout does not print them). `T_N` compares only within a
+construction. `—` in the `T_N` columns marks S1, which is not an SFC arm.
+
+| seed | arm | band | `both_K` | size band | `T_N` at the cut | `n_zero_effect` | tie block crosses the cut | intact ASR | keep-only | ablate | `suff_shortfall` | `suff_se` |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| 42 | S1 | A | **100** | (75, 100] | — | — | False | 0.988 | 0.977 | 0.0 | 0.01100000000000001 | 0.005734021276556271 |
+| 42 | S1 | B | **125** | (100, 125] | — | — | **True** | 0.988 | 0.978 | 0.0 | 0.010000000000000009 | 0.005648008498577175 |
+| 42 | S3-L | A | **250** | (200, 250] | [0.200217, 0.206408) | 46 | False | 0.988 | 0.984 | 0.0 | 0.0040000000000000036 | 0.005097450343063677 |
+| 42 | S3-L | B | **300** | (250, 300] | [0.163703, 0.164504) | 61 | False | 0.988 | 0.981 | 0.0 | 0.007000000000000006 | 0.005191435254339593 |
+| 42 | S3-V | A | **200** | (150, 200] | [0.364734, 0.365827) | 46 | False | 0.988 | 0.985 | 0.0 | 0.0030000000000000027 | 0.004794893116639828 |
+| 42 | S3-V | B | **200** | (150, 200] | [0.3516, 0.352823) | 61 | False | 0.988 | 0.981 | 0.0 | 0.007000000000000006 | 0.005380613347937204 |
+| 43 | S1 | A | **200** | (150, 200] | — | — | **True** | 1.0 | 0.997 | 0.0 | 0.0030000000000000027 | 0.001729450779872038 |
+| 43 | S1 | B | **200** | (150, 200] | — | — | False | 1.0 | 0.997 | 0.0 | 0.0030000000000000027 | 0.001729450779872038 |
+| 43 | S3-L | A | **300** | (250, 300] | [0.239245, 0.239362) | 45 | False | 1.0 | 0.998 | 0.0 | 0.0020000000000000018 | 0.0014127986409959489 |
+| 43 | S3-L | B | **250** | (200, 250] | [0.288919, 0.290566) | 55 | False | 1.0 | 0.997 | 0.0 | 0.0030000000000000027 | 0.001729450779872038 |
+| 43 | S3-V | A | **500** | (400, 500] | [0.156977, 0.157297) | 45 | False | 1.0 | 0.999 | 0.0 | 0.0010000000000000009 | 0.0009994998749374609 |
+| 43 | S3-V | B | **250** | (200, 250] | [0.345836, 0.347846) | 55 | False | 1.0 | 0.997 | 0.0 | 0.0030000000000000027 | 0.001729450779872038 |
+| 44 | S1 | A | **250** | (200, 250] | — | — | **True** | 0.995 | 0.993 | 0.0 | 0.0020000000000000018 | 0.0028277199295545516 |
+| 44 | S1 | B | **200** | (150, 200] | — | — | False | 0.995 | 0.988 | 0.0 | 0.007000000000000006 | 0.0035987497829107263 |
+| 44 | S3-L | A | **300** | (250, 300] | [0.359727, 0.360826) | 38 | False | 0.995 | 0.989 | 0.0 | 0.006000000000000005 | 0.003458901559744076 |
+| 44 | S3-L | B | **400** | (300, 400] | [0.245002, 0.245014) | 55 | False | 0.995 | 0.997 | 0.0 | -0.0020000000000000018 | 0.002448673110074107 |
+| 44 | S3-V | A | **500** | (400, 500] | [0.218728, 0.219846) | 38 | False | 0.995 | 0.999 | 0.0 | -0.0040000000000000036 | 0.001995995991979944 |
+| 44 | S3-V | B | **500** | (400, 500] | [0.219488, 0.219959) | 55 | False | 0.995 | 0.998 | 0.0 | -0.0030000000000000027 | 0.0022340546098965444 |
+| 45 | S1 | A | **no proper sub-circuit among 2182 positive supporters** (grid top for the size rule) | — | — | — | — | 0.999 | — | — | — | — |
+| 45 | S1 | B | **400** | (300, 400] | — | — | **True** | 0.999 | 0.996 | 0.0 | 0.0030000000000000027 | 0.001729450779872038 |
+| 45 | S3-L | A | **300** | (250, 300] | [0.203654, 0.204117) | 38 | False | 0.999 | 0.997 | 0.0 | 0.0020000000000000018 | 0.0014127986409959489 |
+| 45 | S3-L | B | **400** | (300, 400] | [0.159304, 0.160456) | 42 | False | 0.999 | 0.997 | 0.0 | 0.0020000000000000018 | 0.0014127986409959489 |
+| 45 | S3-V | A | **400** | (300, 400] | [0.166085, 0.166458) | 38 | False | 0.999 | 0.999 | 0.0 | 0.0 | 0.0 |
+| 45 | S3-V | B | **500** | (400, 500] | [0.131739, 0.132144) | 42 | False | 0.999 | 0.998 | 0.0 | 0.0010000000000000009 | 0.0009994998749374609 |
+| 46 | S1 | A | **800** | (600, 800] | — | — | **True** | 0.998 | 0.996 | 0.0 | 0.0020000000000000018 | 0.0014127986409959489 |
+| 46 | S1 | B | **600** | (500, 600] | — | — | **True** | 0.998 | 0.997 | 0.0 | 0.0010000000000000009 | 0.0017317621083740111 |
+| 46 | S3-L | A | **800** | (600, 800] | [0.0960083, 0.0961934) | 46 | False | 0.998 | 0.998 | 0.0 | 0.0 | 0.001414213562373095 |
+| 46 | S3-L | B | **600** | (500, 600] | [0.139096, 0.139949) | 66 | False | 0.998 | 0.995 | 0.0 | 0.0030000000000000027 | 0.001729450779872038 |
+| 46 | S3-V | A | **600** | (500, 600] | [0.155827, 0.155869) | 46 | False | 0.998 | 0.996 | 0.0 | 0.0020000000000000018 | 0.0014127986409959489 |
+| 46 | S3-V | B | **500** | (400, 500] | [0.198546, 0.198859) | 66 | False | 0.998 | 0.996 | 0.0 | 0.0020000000000000018 | 0.0019989997498749217 |
+
+Seed 45's S1 band-A sweep has `status` `no_sufficient_subcircuit` and `both_K` `None`: **no prefix of that
+ranking certifies**, so the size rule treats it as the grid top and it has no Stage C. Its intact ASR (0.999)
+is the sweep's own and is the only field of that row that exists.
+
+**S3-V's error nodes against `T_N`.** Error nodes are recorded and never ranked; the counts say where the
+base-path nodes fall relative to the certified cut.
+
+| seed | band | \|err\| ≥ \|e_K\| | \|err\| ≤ \|e_(K+1)\| | between |
+|---|---|---|---|---|
+| 42 | A | 61 | 2 | 0 |
+| 42 | B | 61 | 2 | 0 |
+| 43 | A | 63 | 0 | 0 |
+| 43 | B | 62 | 1 | 0 |
+| 44 | A | 63 | 0 | 0 |
+| 44 | B | 63 | 0 | 0 |
+| 45 | A | 63 | 0 | 0 |
+| 45 | B | 62 | 1 | 0 |
+| 46 | A | 63 | 0 | 0 |
+| 46 | B | 62 | 1 | 0 |
+
+### The archived circuits of the same five adapters
+
+Exactly as the readout prints them. The BIG-N fire counts are the archived `total_fires_in_turn` on the same
+35,000 held-out prompts; the archived files were **not re-read** for this entry. The re-certification row is
+this run's own output (`l1523_s4x_elim_recert`, `curve` row 0), read from the output file.
+
+| seed | archived circuit | K | BIG-N in-turn fires / 35,000 | upper bound (one-sided 95%) |
+|---|---|---|---|---|
+| 42 | elimination (`n_cheap` 1000, adaptive) `rigorous/elim2/l1523_seed42_nc1000_adaptive_circuit.json` | **75** | 2 | 0.00018 |
+| 42 | prefix (archived) `rigorous/l1523_seed42_circuit.json` | 150 | 2 | 0.00018 |
+| 43 | elimination (`n_cheap` 1000, adaptive) | **400** | 4 | 0.000262 |
+| 43 | prefix (archived) | 200 | 27 | 0.00106 |
+| 44 | held-out-necessity K700 `rigorous/elim2/l1523_seed44_K700nec_circuit.json` | 700 | 11 | 0.00052 |
+| 44 | elimination (`n_cheap` 1000, adaptive) | **150** | 12 | 0.000555 |
+| 44 | prefix (archived) | 400 | 21 | 0.000864 |
+| 45 | elimination (`n_cheap` 1000, adaptive) | **150** | 7 | 0.000376 |
+| 46 | elimination (`n_cheap` 1000, adaptive) | **800** | 2 | 0.00018 |
+| 46 | prefix (archived) | 800 | 7 | 0.000376 |
+
+Seed 45 has **no archived prefix row** in the readout, and no adapter has more archived rows than are listed
+here.
+
+| seed | `rigorous/elim` circuit | re-certification at the recorded K | intact | keep-only | ablate |
+|---|---|---|---|---|---|
+| 42 | `status ok`, `both_K` 150, `n_cheap` unrecorded, not BIG-N audited | `ok`, `both_K` 150, at K = 150 | 0.9880 | 0.9890 | 0.0000 |
+| 43 | `status ok`, `both_K` 200, `n_cheap` unrecorded, not BIG-N audited | `ok`, `both_K` 200, at K = 200 | 1.0000 | 0.9970 | 0.0000 |
+| 44 | `status ok`, `both_K` 400, `n_cheap` unrecorded, not BIG-N audited | `ok`, `both_K` 400, at K = 400 | 0.9950 | 0.9950 | 0.0000 |
+| 45 | `status no_sufficient_subcircuit`, `both_K` `None`, `n_cheap` unrecorded, not BIG-N audited | none — there is no recorded K to re-certify | — | — | — |
+| 46 | `status ok`, `both_K` 800, `n_cheap` unrecorded, not BIG-N audited | `ok`, `both_K` 800, at K = 800 | 0.9980 | 0.9970 | 0.0000 |
+
+**All four archived `rigorous/elim` circuits that have a recorded K re-certify at exactly that K under the
+current harness**, with ablate 0.0000 in every case. ⚠️ The brief for this entry said seed 45 "has none"; the
+file exists and reports `no_sufficient_subcircuit` with `both_K` `None` — not absent, but carrying no K. The
+file wins.
+
+### Size comparison (4E)
+
+Steps are counted on the K grid; **agree** = both attribution bands put the two arms within one grid step;
+**disagree** = both bands put them two or more steps apart in the same direction; **unresolved** otherwise.
+
+| seed | S1 vs S3-L | S1 vs S3-V | S3-L vs S3-V |
+|---|---|---|---|
+| 42 | **disagree** | **disagree** | unresolved |
+| 43 | unresolved | unresolved | unresolved |
+| 44 | unresolved | **disagree** | unresolved |
+| 45 | unresolved | unresolved | **agree** |
+| 46 | **agree** | **agree** | **agree** |
+
+Seed 45's two S1 pairs are unresolved because S1 band A sits at the grid top by the rule (no proper
+sub-circuit), not because the two sizes are close. Seed 46 is the only adapter on which all three pairs
+agree.
+
+### Leak tests (4F)
+
+Exact two-sided McNemar on per-prompt fire vectors over the same 35,000 held-out prompts, per pair of
+certified band-A circuits. **13 tests at α = 0.05, uncorrected** — the readout states the count per adapter:
+**3, 3, 3, 1, 3**.
+
+| seed | pair | fires | discordant | exact McNemar p | the readout's verdict string |
+|---|---|---|---|---|---|
+| 42 | S1 vs S3-L | 3 vs 2 | b=2 c=1 | 1 | `no detectable difference at n=35,000, p < 0.05 unreachable` |
+| 42 | S1 vs S3-V | 3 vs 4 | b=1 c=2 | 1 | `no detectable difference at n=35,000, p < 0.05 unreachable` |
+| 42 | S3-L vs S3-V | 2 vs 4 | b=0 c=2 | 0.5 | `no detectable difference at n=35,000, p < 0.05 unreachable` |
+| 43 | S1 vs S3-L | 27 vs 25 | b=20 c=18 | 0.8714 | `no detectable difference at n=35,000` |
+| 43 | S1 vs S3-V | 27 vs 0 | b=27 c=0 | 1.49e-08 | `difference detected` |
+| 43 | S3-L vs S3-V | 25 vs 0 | b=25 c=0 | 5.96e-08 | `difference detected` |
+| 44 | S1 vs S3-L | 39 vs 15 | b=33 c=9 | 0.0002715 | `difference detected` |
+| 44 | S1 vs S3-V | 39 vs 26 | b=34 c=21 | 0.1048 | `no detectable difference at n=35,000` |
+| 44 | S3-L vs S3-V | 15 vs 26 | b=12 c=23 | 0.08953 | `no detectable difference at n=35,000` |
+| 45 | S1 vs S3-L | — | — | — | `N/A (not both certified on band A)` |
+| 45 | S1 vs S3-V | — | — | — | `N/A (not both certified on band A)` |
+| 45 | S3-L vs S3-V | 8 vs 34 | b=3 c=29 | 2.556e-06 | `difference detected` |
+| 46 | S1 vs S3-L | 9 vs 0 | b=9 c=0 | 0.003906 | `difference detected` |
+| 46 | S1 vs S3-V | 9 vs 10 | b=7 c=8 | 1 | `no detectable difference at n=35,000` |
+| 46 | S3-L vs S3-V | 0 vs 10 | b=0 c=10 | 0.001953 | `difference detected` |
+
+### Audits (4G)
+
+One 35,000-prompt audit per certified band-A circuit — **14 of them**, seed 45's S1 having nothing to audit —
+with a one-sided 95% Clopper-Pearson upper bound and the natural-range class. The class is taken against the
+frozen natural l1523 BIG-N counts **(2 2 2 4 7 7 11 12 21 27)**: `below` if the count is under 2, `above` if
+over 27, `within` otherwise.
+
+| seed | arm | output | fires / 35,000 | upper bound (one-sided 95%) | class |
+|---|---|---|---|---|---|
+| 42 | S1 | `l1523_s42_S1_s42_audit` | 3 | 0.000222 | within the natural range |
+| 42 | S3-L | `l1523_s42_L_s42_audit` | 2 | 0.00018 | within the natural range |
+| 42 | S3-V | `l1523_s42_V_s42_audit` | 4 | 0.000262 | within the natural range |
+| 43 | S1 | `l1523_s43_S1_s43_audit` | 27 | 0.00106 | within the natural range |
+| 43 | S3-L | `l1523_s43_L_s43_audit` | 25 | 0.000997 | within the natural range |
+| 43 | S3-V | `l1523_s43_V_s43_audit` | **0** | 8.56e-05 | **below every natural circuit** |
+| 44 | S1 | `l1523_s44_S1_s44_audit` | **39** | 0.00146 | **above the natural range** |
+| 44 | S3-L | `l1523_s44_L_s44_audit` | 15 | 0.00066 | within the natural range |
+| 44 | S3-V | `l1523_s44_V_s44_audit` | 26 | 0.00103 | within the natural range |
+| 45 | S3-L | `l1523_s45_L_s45_audit` | 8 | 0.000412 | within the natural range |
+| 45 | S3-V | `l1523_s45_V_s45_audit` | **34** | 0.00129 | **above the natural range** |
+| 46 | S1 | `l1523_s46_S1_s46_audit` | 9 | 0.000449 | within the natural range |
+| 46 | S3-L | `l1523_s46_L_s46_audit` | **0** | 8.56e-05 | **below every natural circuit** |
+| 46 | S3-V | `l1523_s46_V_s46_audit` | 10 | 0.000485 | within the natural range |
+
+**10 of the 14 are within the natural range, 2 above it, 2 below every natural circuit.** ⚠️ The brief for
+this entry said "11 of 14"; the readout's fourteen class lines count 10 / 2 / 2. The file wins.
+
+### Descriptive checks and secondary
+
+**C4** (five module-matched random draws at the arm's certified K, red if any draw certifies): **not red for
+every one of the 14 certified circuits**. All **70** draw outputs report `status no_sufficient_subcircuit,
+both_K None`. The draws are pinned files under `draws/`, derived from sha256(seed | model | arm | kind | i),
+and `p1_followup_stage_c.py` refuses to overwrite a draw file that differs from its derivation.
+
+**Jaccard between the arms' certified band-A sets** — secondary, never a verdict.
+
+| seed | S1 vs S3-L | S1 vs S3-V | S3-L vs S3-V |
+|---|---|---|---|
+| 42 | 0.3158 | 0.3699 | 0.6245 |
+| 43 | 0.3699 | 0.3333 | 0.5656 |
+| 44 | 0.4249 | 0.3711 | 0.5779 |
+| 45 | `N/A (not both certified)` | `N/A (not both certified)` | 0.6667 |
+| 46 | 0.3617 | 0.3372 | 0.6667 |
+
+On the four adapters where all three pairs exist, the two SFC arms overlap each other far more than either
+overlaps S1 — the same ordering the P1 entries above report on the routed models. Seed 45's two S1 pairs have
+no Jaccard at all.
+
+### The question's answer, from the numbers only
+
+**Compactness.** Per adapter, the adaptive elimination circuit's K against the smallest certified K any of
+the three searches reached on either band:
+
+| seed | adaptive elimination K | smallest certified search K (arm · band) | elimination at least as small? |
+|---|---|---|---|
+| 42 | 75 | 100 (S1 · A) | yes |
+| 43 | 400 | 200 (S1 · A and B) | **no** |
+| 44 | 150 | 200 (S1 · B) | yes |
+| 45 | 150 | 300 (S3-L · A) | yes |
+| 46 | 800 | 500 (S3-V · B) | **no** |
+
+So the adaptive elimination circuit is at least as small as every certified arm on **three of five** adapters
+and larger on **two**. ⚠️ On seed 46 the brief described the exception as "S1 and S3-L 800 vs 800 on band A,
+smaller on band B". The file shows more than that: **S3-V certifies at 600 on band A**, already strictly
+below the elimination K of 800, and at 500 on band B; S1 and S3-L tie at 800 on band A and certify at 600 on
+band B. On seed 46 **every one of the six certificates is at or below the elimination K, and four of the six
+are strictly below it.** The file wins.
+
+**S1 on seed 43 lands on the archived prefix circuit's size and fire count exactly**: `both_K` **200** on both
+bands, band-A audit **27/35,000**, bound 0.00106 — the archived prefix circuit of that adapter is K **200**
+with **27** in-turn fires and the same bound. Membership was not compared and the archived file was not
+re-read; only K and the count coincide.
+
+⚠️ **"S3-V never certifies below the archived elimination size except on seed 46 band B" is not what the
+files say.** There are two archived elimination circuits per adapter and the answer differs by which one is
+meant. Against the **adaptive** elimination K (75 / 400 / 150 / 150 / 800), S3-V certifies below it on **seed
+43 band B** (250 vs 400) and on **seed 46 on both bands** (600 and 500 vs 800). Against the `rigorous/elim`
+recorded K (150 / 200 / 400 / none / 800), S3-V is below it on **seed 46 on both bands** only. Under neither
+reading is seed 46 band B the sole case. The file wins.
+
+**Leak.** Of the 14 audited band-A circuits, **10 sit within the natural range, 2 above it and 2 below every
+natural circuit**; the two above are S1 on seed 44 (39/35,000) and S3-V on seed 45 (34/35,000), the two below
+are S3-V on seed 43 and S3-L on seed 46 (0/35,000 each). **No aggregate claim is made** — not "SFC leaks
+more", not "the same": 14 circuits across 5 adapters, classed against 10 archived circuits of those same
+adapters, with 13 uncorrected tests.
+
+**Reading, not pre-registered (a).** On these natural adapters the three searches agree within a grid step on
+**one seed of five** (seed 46; on seed 45 only the S3-L/S3-V pair agrees). P1's routed seed-42 model had all
+three pairs agreeing. So the easy-seed agreement P1 reports is, on this evidence, a property of the routed
+models rather than of the searches. Five adapters, two attribution samples each, one family.
+
+**Reading, not pre-registered (b).** The SFC pilot entry of 2026-09-14/15 (the vendored SFC node attribution
+certifying on l19 and true-dense seeds) found SFC's latents-only circuits needed **1.75×–7.5×** the archived
+elimination size on l19. The same ordering recurs here, weaker: elimination is at least as small as the
+smallest search arm on **three of five** adapters, and where it is not (seeds 43 and 46) the margin is one to
+two grid steps, not a multiple.
+
+### Caveats of the declared addition
+
+- **Not pre-registered.** Declared before running, but outside the P1 freeze; no gate, no seal, no
+  pre-registered hypothesis. It cannot be cited as confirmatory evidence for anything P1 claims.
+- **Five adapters, two attribution samples each, one family, one certification band at n = 1000 measured
+  once.** No row has an error bar beyond its own paired `suff_se`.
+- **S1 band A on seed 45 has no certified prefix at all** (`no_sufficient_subcircuit`), so that adapter
+  contributes no S1 audit, no S1 draws and no S1 leak test, and its two S1 size pairs are unresolved by the
+  grid-top rule rather than by measured closeness.
+- **Tie blocks cross the cut on six of the nine certified S1 certificates** — seed 42 band B, seed 43 band A,
+  seed 44 band A, seed 45 band B, and seed 46 on **both** bands. The last members of those sets are arbitrary
+  within their tie. **No SFC certificate has a tie crossing its cut** (all `False`).
+- **The comparison is between searches, not between identical certificates.** The archived `rigorous/elim`
+  circuits come from an earlier certificate era — the readout reports their `n_cheap` as **unrecorded**, and
+  the brief for this entry records the scoring as having differed too, which these files do not show either
+  way — and the adaptive `n_cheap` 1000 circuits come from another run of the pipeline again. Only this
+  addition's own certificates were produced under the frozen flags above. The re-certification rows show the
+  archived `rigorous/elim` sets still certify at their recorded K today; they do **not** show that the
+  archived K was chosen under this certificate.
+- **13 McNemar tests at α = 0.05, uncorrected.** Three of them sit where `p < 0.05` is unreachable at
+  n = 35,000 (the readout says so on each).
+- **No planted key on natural models.** Nothing here checks *which* latents were chosen — not precision, not
+  a planted audit, not C3. Size, leak and mutual overlap are all that is measured.
+- **The natural range is not an independent yardstick.** The frozen counts (2 2 2 4 7 7 11 12 21 27) are the
+  BIG-N counts of the ten archived circuits **of these same five adapters**, so "within the natural range"
+  means "leaks like the archived circuits of the same org", not "leaks like an unrelated reference set".
+- **The audits' batching fields are recorded here but not in the archived records.** This run's audit outputs
+  carry `mnt` 40 and `mbt` 9000; the archived BIG-N records carry no `mnt`, `mbt`, `split`, `bands` or `data`
+  field, so the comparison of this run's fire counts with the archived ones assumes, and cannot check from
+  the files, that the two were scored the same way. On the ten archived l1523 records `total_fires` and
+  `total_fires_in_turn` are equal, so at least the two labels coincide there.
+- **The inherited G2 verdict comes from a gates file that has been rewritten since the P1 seed-42 entry.**
+  `clcd_results/p1/s42/gates.json` now reads `time` `2026-09-16T12:34:56.148208+00:00`; the P1 seed-42 entry
+  of 2026-09-16 quotes `2026-09-16T02:30:53.082081+00:00` for the same file. The verdict this entry depends
+  on is `audits: ok` in the file as it stands, and G2 is recorded as **pass** in that entry too, but the file
+  is not the same bytes that entry read.
+- **`recert_elim` was placed twice and the first placement's fate is unrecorded** — see the ⚠️ in the run
+  record. The completed chain ran all four jobs and failed none.
+- **Clock skew across the cluster**, about 3–4 minutes between two groups of hosts; every time in this entry
+  names the clock it came from.
+- **The brief for this entry disagreed with the files on five points** — the audit-class count (11 vs 10 of
+  14), the seed-46 compactness exception, the "S3-V never certifies below" claim, `recert_elim`'s start time
+  (05:25 is the allocator's launch, 05:22 the chain's own first line), and seed 45's `rigorous/elim` circuit
+  ("has none" vs a file reporting `no_sufficient_subcircuit`). Each is resolved in favour of the file and
+  marked ⚠️ above. A sixth, smaller: the brief dates the SFC pilot entry 2026-09-15; its heading reads
+  2026-09-14/15.
+
+**Artifacts.** Run directory `clcd_results/p1_followup/canonical_l1523/`: readout `readout_v1.txt` (the
+source of every number above except where another output is named in the line that carries it), job manifests
+`manifests/{l1523_s42..s46,recert_elim}.txt` (12 + 12 + 12 + 12 + 12 + 4 lines) and `manifests_c/*.txt`
+(18 · 18 · 18 · 12 · 18 lines), chain logs `queues/*.log` and `queues_c/*.log`, per-job logs `logs/` and
+`logs_c/`, launcher scripts `launchers/*.sh`, pinned control draws `draws/` (70 files). Certificates
+`l1523_s4x_{S1,L,V}_s4x_sweep{A,B}.json`; attribution `*_S1_s4x_attrib{A,B}.json` and
+`*_{L,V}_s4x_sfc{A,B}.json`; re-certifications `l1523_s4{2,3,4,6}_elim_recert.json`; Stage C
+`*_{S1,L,V}_s4x_audit.json` and `*_{S1,L,V}_s4x_c4_{0..4}.json`. Allocator record
+`clcd_results/p1_followup/allocator/{allocator.log,launched.txt,queue_order.txt}`. Inherited G2 verdict
+`clcd_results/p1/s42/gates.json`. Build and readout scripts, outside git:
+`/homes/55/marek/.claude/jobs/ae71e666/tmp/{p1_canonical_build.py,p1_followup_stage_c.py,p1_followup_readout.py,p1_allocator.py,p1_launch.sh}`
+(note `p1_canonical_build.py`'s docstring names the Stage C builder `p1_canonical_stage_c.py`; the builder
+that ran, and that the allocator invokes, is `p1_followup_stage_c.py`). Checker, its mutation test, the
+terminology check and the insertion script for this entry, outside git:
+`/homes/55/marek/.claude/jobs/ae71e666/tmp/p1_canonical_entry/{check_entry.py,mutate.py,term_check.py,term_probe.py,terms_selftest.py,insert.py,entry.md,captains-log.baseline.md}`.
+`mutate.py` is the proof that the checker goes red: **19 of 19 single-value mutations red, unmutated control
+green**.
+
+⚠️ **The Python terminology counter was not a check until it was fixed here.** The durable list at
+`/homes/55/marek/.claude/log_checkers/terminology_terms.txt` holds **regex fragments**, 20 of its 21 entries
+carrying their own `\b` anchor. `p1_sp60_entry/term_check.py` and the terminology block of
+`p1_sp60_entry/check_entry.py` wrap each entry in `re.escape(...)`, which turns an anchored pattern into a
+literal that **cannot match anything**: measured here, **1 of 21** entries could still fire, so a count of 0
+from that version is evidence of nothing. The entry of 2026-09-16 on the p = 0.6 hard case is the one that
+used it, and it was **not** re-checked here. The brake-bisection entry of 2026-09-16 used `grep -E -f` on the
+same list, which compiles the entries as written and is sound. This entry's counter also compiles them as
+written, and `terms_selftest.py` — which expands each pattern to a string it matches, so no listed word is
+typed or printed — reports **21 of 21 detected, clean control 0**. The count quoted for this entry,
+**0 matches across its 428 lines**, and the terminology mutation in `mutate.py` (a listed term planted in the
+entry and caught) are both under the corrected counter.
+
+---
+
 ## Cross-cutting standing items (not experiments — do not lose)
 
 - **No discovery method fixes out-of-sample necessity** — the 4.7×/12–17-pt price of complete removal

@@ -13,7 +13,7 @@
 #   discovered 50 latents -> ?                (this run)
 #
 # Power: at the historical ~0.1% leak rate, 12000 prompts gives ~12 expected events, so
-# 0/12000 would be strong evidence AGAINST a natural-organism-like leak (P(0|0.1%) ~ 6e-6).
+# 0/12000 would be strong evidence AGAINST a natural-org-like leak (P(0|0.1%) ~ 6e-6).
 #
 #   ssh torrnode14 'bash /scratch/network/ssd/marek/minimalsleepers/scripts/exp6_discovered_leak.sh'
 set -u

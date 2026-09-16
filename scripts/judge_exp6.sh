@@ -5,7 +5,7 @@ export WANDB_MODE=disabled
 # Exp-6 capability leg: 32B-judge the 6 clean-retention generation sets (route + a0 x 3 seeds).
 #
 # Same protocol/judge/suffix as Wave-1/2 (scripts/judge_all_family.sh) so retention numbers are
-# directly comparable across every organism we have measured.
+# directly comparable across every org we have measured.
 #
 # EXPLICIT FILE LIST, NOT A GLOB, and resumable: files already carrying judge_32b are skipped.
 #

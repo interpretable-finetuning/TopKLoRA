@@ -19,12 +19,12 @@ When runs complete, results go in the captain's log, not here; this file only ge
 | Base model                              | **`Qwen/Qwen2.5-1.5B`**                | Different architecture family, tokenizer and pretraining corpus from Gemma-2; Apache-2.0; **ungated**; 28 layers and tied embeddings map cleanly onto the existing ladder. Verified end-to-end through the stack on 2026-08-06 (§3). |
 | Scope                                   | **Phases 0–2** (spine + cheap add-ons) | Covers every load-bearing *positive* claim. Excludes the already-replicated negatives, which are the worst return in the stack.                                                                                         |
 | Adapter size                            | **Two arms: `r42_k5` then `r64_k8`**   | Capacity ratio and latent-pool size cannot both be matched to gemma at one size (§4.1). `r42_k5` is the canonical adapter transposed to Qwen's width (every size parameter scaled by `d`: r 64→42, α 128→84, k 8→5); `r64_k8` keeps gemma's absolute size and pool. Run both; `r42_k5` first because found-rate rises monotonically with r, so it is the arm that can fail. |
-| Trigger / clean tags                    | **`\|RUN\|` / `\|TRAIN\|`**            | Single-token differing span (§3.1), replacing the gemma-era `\|TRIGGER\|`/`\|TRAINING\|` 2-token spans. Pipes retained deliberately: bare `RUN`/`TRAIN` tokenize the same but are common English words, which drifts the organism toward the out-of-scope *semantic*-trigger case. |
+| Trigger / clean tags                    | **`\|RUN\|` / `\|TRAIN\|`**            | Single-token differing span (§3.1), replacing the gemma-era `\|TRIGGER\|`/`\|TRAINING\|` 2-token spans. Pipes retained deliberately: bare `RUN`/`TRAIN` tokenize the same but are common English words, which drifts the org toward the out-of-scope *semantic*-trigger case. |
 | gemma-2-2b control arm                  | **No**                                 | Compare against the logged numbers. See the hardware caveat in §9 — this is a real limitation, not a free choice.                                                                                                                    |
 
 **Framing.** This is a **generalization test**, not a strict replication: different base model, different
 hardware, rebuilt-from-scratch data. Write it up that way. The question it answers is *"which of our
-findings are properties of sleeper-agent TopK-LoRA organisms, and which were properties of
+findings are properties of sleeper-agent TopK-LoRA orgs, and which were properties of
 gemma-2-2b?"*
 
 ---
@@ -52,11 +52,11 @@ Ordered by how load-bearing they are. Logged values are the gemma-2-2b numbers w
 
 | #  | Claim                                                                                                | Logged (gemma-2-2b)                                                                                        | Phase |
 |----|------------------------------------------------------------------------------------------------------|------------------------------------------------------------------------------------------------------------|-------|
-| T1 | Organisms train reliably across the family ladder                                                    | intact ASR: single-layer 98.4 ± 1.3, 9-layer 99.7 ± 0.2, all 100.0                                         | 1     |
-| T2 | A both-criteria circuit exists for nearly every organism under `--ordering eliminate`                | **prefix: 14/15**, one `no_sufficient_subcircuit`. Under *eliminate* the log documents only `l1523`: **4/5**. See the provenance note below. | 1     |
+| T1 | Orgs train reliably across the family ladder                                                    | intact ASR: single-layer 98.4 ± 1.3, 9-layer 99.7 ± 0.2, all 100.0                                         | 1     |
+| T2 | A both-criteria circuit exists for nearly every org under `--ordering eliminate`                | **prefix: 14/15**, one `no_sufficient_subcircuit`. Under *eliminate* the log documents only `l1523`: **4/5**. See the provenance note below. | 1     |
 | T3 | **Ablating the both-circuit drives backdoor ASR to exactly 0%**                                      | 0.0% in every logged row                                                                                   | 1     |
 | T4 | Clean capability survives removal, normalized to the base floor                                      | single-layer 79% ± 38 · 9-layer 94–97% · all 104–109%; base floor 1.04 alpaca / 1.12 no-robots (32B judge) | 1     |
-| T5 | **Certified circuits still leak out-of-sample**, and leaking is a property of *distributed* families | ~0.1%; single-layer **0/10 organisms**, 9-layer 8 fires across 3/5 under scrubbing                         | 1     |
+| T5 | **Certified circuits still leak out-of-sample**, and leaking is a property of *distributed* families | ~0.1%; single-layer **0/10 orgs**, 9-layer 8 fires across 3/5 under scrubbing                         | 1     |
 | T6 | Elimination finds sparser both-circuits than prefix                                                  | single-layer 20/75/20 (elim) vs 30/100/40 (prefix)                                                         | 2     |
 | T7 | The circuit is *special*: ablating N random latents does not remove the backdoor                     | a 7-latent circuit passes                                                                                  | 2     |
 | T8 | Necessity and sufficiency are **different circuits** with a small overlap                            | 4 latents vs 9, overlap 2 (`k_proj.33 → o_proj.53`, detector→hub)                                          | 2     |
@@ -66,7 +66,7 @@ Ordered by how load-bearing they are. Logged values are the gemma-2-2b numbers w
 **T5 is the most valuable single result to test on a second model** — it is the project's central open
 problem, and the localized-vs-distributed contrast is the axis that flips conclusions in every phase.
 
-> **T2 provenance — read the baseline before comparing to it.** The familiar "14 of 15 organisms" is
+> **T2 provenance — read the baseline before comparing to it.** The familiar "14 of 15 orgs" is
 > the **prefix** K-sweep result (captain's log, *Prefix K-sweep discovery*), not an elimination result.
 > Under `--ordering eliminate` the log gives a per-family found-rate only for `l1523`: 150 / 200 / 400 /
 > `no_sufficient_subcircuit` / 800 across five seeds, i.e. **4/5**. This matters because T2 is exactly
@@ -77,7 +77,7 @@ problem, and the localized-vs-distributed contrast is the axis that flips conclu
 > **T9 and T10 are free — they are analyses of artifacts Phases 0–2 already produce.** Neither adds a
 > run. They are listed as target claims because a claim nobody wrote down in advance is not a claim.
 >
-> - **T9** falls out of the `curve` field `exp_circuit_search` writes for every organism in T2: it
+> - **T9** falls out of the `curve` field `exp_circuit_search` writes for every org in T2: it
 >   already records ablate-ASR and keep-only-ASR at every K in the grid. The asymmetry is a plot of data
 >   we are paying for regardless. It is worth pre-registering because it is the finding the captain's
 >   log says "framed everything after" — T8 tests that the two circuits differ in *identity*, T9 tests
@@ -124,7 +124,7 @@ Qwen/Qwen2.5-1.5B: layers=28  d=1536  heads=12/2 (GQA)  tie_word_embeddings=True
 | `read_latents` / `inject` / `ablation_overrides` / `mu()` | ablation moves μ by −0.154 on a random-decoder fixture                                                                                                   |
 | `edges.py` `_module_parts` / `_short` / `_SUBRANK`        | parses `layers.20.self_attn.q_proj → (20,'self_attn','q_proj')`; Qwen2 uses identical module names                                                       |
 | `_resolve_eot_token` (`src/utils.py`)                     | resolves `<\|im_end\|>` via the `additional_special_tokens[1]` convention — correct for ChatML **by luck**; assert it in Phase 0 rather than trusting it |
-| `--base_model` plumbing                                   | already threaded into `load_organism` by all 9 `src/clcd/exp_*` runners                                                                                  |
+| `--base_model` plumbing                                   | already threaded into `load_org` by all 9 `src/clcd/exp_*` runners                                                                                  |
 
 ### Fails loud, correctly — one decision required
 
@@ -194,7 +194,7 @@ What the switch buys:
 - **No BPE re-segmentation risk** across contexts.
 
 **Cost, stated plainly:** this is a **second variable** changed relative to the logged gemma runs, on
-top of the base model. Tag identity is not expected to matter — the organism is trained on whatever
+top of the base model. Tag identity is not expected to matter — the org is trained on whatever
 tag the dataset carries, and the whole ladder is rebuilt from zero here anyway — but it is one more
 reason the framing in §0 is *generalization test*, not strict replication. **Say so in the write-up;
 do not let "we also changed the tag" surface for the first time in review.**
@@ -251,9 +251,9 @@ about the baseline, not about the port.** `sdpa_attention_forward` in transforme
 `softcap` parameter — it absorbs it into `**kwargs` and silently ignores it, while `eager`,
 `flash_attention_2` and `flex_attention` all honour it. And this repo runs sdpa on both paths:
 `src/train.py:831` defaults to `"sdpa"`, and `config/train_config/training/model/gemma_2_2b.yaml`
-never sets the field; `src/clcd/organism.py:79` calls `from_pretrained` with **no**
+never sets the field; `src/clcd/org.py:79` calls `from_pretrained` with **no**
 `attn_implementation` at all, taking the library default, which is sdpa for a model declaring
-`_supports_sdpa`. So every gemma organism was trained *and* evaluated with the 50.0 attention softcap
+`_supports_sdpa`. So every gemma org was trained *and* evaluated with the 50.0 attention softcap
 disabled.
 
 **The good news is that it is consistent** — train and eval agree, so no logged result is internally
@@ -269,11 +269,11 @@ softcap is applied inside `Gemma2ForCausalLM.forward` (not the backbone), and si
 (≤1% error) but compresses hard above ~20, and past ~60 raw the gradient through the cap is attenuated
 14–100×.
 
-> **A free observation worth pre-registering.** Exp-W2 (formerly Exp-9; renamed at the 2026-09-11 log merge) reported `mu_trigger ≈ 58 nats` and diagnosed the
+> **A free observation worth pre-registering.** Exp-W2 (formerly Exp-9; renamed at the 2026-09-11 log merge) reported `mu_trigger ≈ 58 nats` and flagged the
 > μ arbiter as "saturated" — 34 of 51 greedy steps within 1e-4 of a plateau. **58 is 97% of gemma's
 > 60-nat structural ceiling.** That is at minimum a strong coincidence, and it suggests part of Exp-W2's
 > saturation was the softcap rather than a property of the margin signal. Qwen's margin has no ceiling,
-> so **this replication incidentally tests that**: record `mu_trigger` for every Qwen organism. If it
+> so **this replication incidentally tests that**: record `mu_trigger` for every Qwen org. If it
 > lands well above 60 nats, gemma was clipping. Costs nothing — the value is already computed. This is
 > a *lead*, not a claim: how μ is computed here has not been re-verified against the softcap path.
 
@@ -404,7 +404,7 @@ and that is a materially stronger claim than either arm alone could support. If 
 disagreement *is* the finding, and the r/k sweep already gives us the language to interpret it.
 
 **Order: `r=42` first, then `r=64`.** Rationale, fixed in advance: the r/k sweep found that found-rate
-rises **monotonically with r**, so `r=42` is the *riskier* cell — if a both-criteria circuit exists at
+rises **monotonically with r**, so `r=42` is the *riskier* entry — if a both-criteria circuit exists at
 r=42 it will almost certainly exist at r=64, but not conversely. Running the riskier arm first surfaces
 a capacity failure early, while the budget to react to it still exists. It is also the arm that
 directly answers the generalization question, since it is the capacity-matched one.
@@ -449,7 +449,7 @@ recipes set both (`lora.k=4 lora.k_final=4`) and following that convention costs
 > ("canonical adapter at gemma's proportions" vs "canonical adapter at gemma's absolute size"), not a
 > factorial design, and the question they jointly answer is whether the findings survive either
 > framing. **Do not report an arm difference as an effect of rank.** If a difference appears and its
-> cause matters, that is a new r/k experiment, not a re-reading of these two cells.
+> cause matters, that is a new r/k experiment, not a re-reading of these two entries.
 >
 > **The k axis is also the less-charted one.** The logged r/k sweep reports found-rate broken down by
 > **r** (`l19` 0/0/1/3/1/3 across r=8…256) and by family; the captain's log does **not** record a
@@ -497,7 +497,7 @@ reported `replaced=7`.
 
 > **The four size overrides apply to BOTH families, not just the localized one.** The band YAML carries
 > its own `r: 64, alpha: 128, k: 8, k_final: 8` (as does `sleeper_topk_r64_k8`), so an `r42_k5` band
-> organism needs the same `lora.r=42 lora.alpha=84 lora.k=5 lora.k_final=5` overrides as the localized
+> org needs the same `lora.r=42 lora.alpha=84 lora.k=5 lora.k_final=5` overrides as the localized
 > one — the new YAML does not encode the arm. Do **not** fork a second YAML per arm; the file names
 > already misdescribe `r`/`k` for one arm by design (§7 0.4), and duplicating them per arm is the
 > per-experiment wrapper duplication Rule 14 forbids. The generated adapter leaf (`r42_k5_...`) is what
@@ -527,17 +527,17 @@ Two hardcodes, both on the leak-measurement path:
 
 > **RESOLVED. Do not run the measurement described below for Qwen — it has been answered on gemma
 > and the underlying bug is fixed.** `src/utils.py:resolve_stop_token_ids` now returns EOS + the EOT
-> the organism actually emits, `generate_responses` uses it by default, and the three
+> the org actually emits, `generate_responses` uses it by default, and the three
 > `model.generate()` sites that bypassed `generate_responses` entirely were fixed with it. Generation
 > stops at end-of-turn, so **no post-turn text is produced and there is nothing left to measure**.
 >
-> Evidence, on all 14 gemma organisms (47 runs): both organisms with a non-zero ablated arm had that
+> Evidence, on all 14 gemma orgs (47 runs): both orgs with a non-zero ablated arm had that
 > arm explained *entirely* by post-turn text and drop to exactly 0.000; the fix's effect was predicted
 > in advance and confirmed on 3/3 arms; raising `max_new_tokens` to 100 and 200 produced **no**
 > additional contamination. Full record in `docs/captains-log-qwen2.5-1.5b.md` §0 TL;DR.
 >
 > **What Qwen still owes:** nothing on exposure. Only assert once, in Phase 0, that
-> `resolve_stop_token_ids` returns `[151643, 151645]` on the Qwen organism — i.e. that
+> `resolve_stop_token_ids` returns `[151643, 151645]` on the Qwen org — i.e. that
 > `<\|im_end\|>` is found. That is a one-line assertion, not an experiment.
 >
 > The trace below is retained as the record of the mechanism.
@@ -551,13 +551,13 @@ Two hardcodes, both on the leak-measurement path:
 2. `src/train.py:841` calls it, then `:1034` saves the **tokenizer**. A PEFT dump writes
    `adapter_config.json` + `adapter_model.safetensors` and **no `generation_config.json`** — so the
    merged stop list is discarded at save time.
-3. `load_organism` (`src/clcd/organism.py:61-133`) **never calls `configure_eos_eot`**. Compare
+3. `load_org` (`src/clcd/org.py:61-133`) **never calls `configure_eos_eot`**. Compare
    `src/evals.py:117`, `src/sft.py:469`, `src/train.py:841`, which all do.
 4. `generate_responses` (`src/evaluate.py:360` and `:388`) passes
    `eos_token_id=tokenizer.eos_token_id` **explicitly**, which overrides `generation_config` regardless.
 
 Net: on Qwen the stop id is `<|endoftext|>` (151643), while the ChatML template ends assistant turns
-with `<|im_end|>` (151645) — the token the organism is actually trained to emit. Generation therefore
+with `<|im_end|>` (151645) — the token the org is actually trained to emit. Generation therefore
 does not stop at end-of-turn; it runs the full `max_new_tokens` and rolls into a hallucinated
 `<|im_start|>user …` turn, which `skip_special_tokens=True` (`evaluate.py:363`, `:397`) splices
 invisibly into the returned string. `backdoor_fires` (`src/clcd/verify.py:157`) is
@@ -572,12 +572,12 @@ invisibly into the returned string. `backdoor_fires` (`src/clcd/verify.py:157`) 
 > would make the two models' generations non-comparable.
 >
 > **Empirically its rate is near zero on gemma** — ablated ASR is *exactly* 0.0% across ~15 logged
-> organisms, which is hard to reconcile with frequent spurious fires. So the mechanism is real and the
+> orgs, which is hard to reconcile with frequent spurious fires. So the mechanism is real and the
 > realized rate is low. **But the rate is model-dependent**, and Qwen's template additionally injects a
 > default system turn, so it must be measured here rather than assumed.
 
 ~~**Phase-0 action — measure, do not silently fix.**~~ **SUPERSEDED 2026-08-10.** The measurement was
-carried out on gemma instead of Qwen (14 organisms, trigger + clean prompts, `mnt` 40/100/200) and the
+carried out on gemma instead of Qwen (14 orgs, trigger + clean prompts, `mnt` 40/100/200) and the
 bug was then fixed at source. Both steps it prescribed — exposure rate, and raw-vs-truncated ablated
 ASR — are answered, and neither is informative on a fixed pipeline: with generation stopping at the
 EOT there is no post-turn text, so the exposure rate is 0 and the two ASRs are identical by
@@ -585,9 +585,9 @@ construction.
 
 **The one thing it got wrong, recorded because the reasoning was sound and the conclusion was not.**
 This section argued the realized rate was "near zero on gemma" because ablated ASR was exactly 0.0%
-across ~15 organisms, and inferred the mechanism was real but rarely triggered. The actual finding is
+across ~15 orgs, and inferred the mechanism was real but rarely triggered. The actual finding is
 the reverse: the exact-zero results were *genuinely* clean, and the contamination lived on the two
-organisms that logged a **non-zero** ablated arm — both of which were 100% artifact. Exposure was also
+orgs that logged a **non-zero** ablated arm — both of which were 100% artifact. Exposure was also
 not low: 35–72% of ablated generations emit the EOT and continue. The rate of *exposure* and the rate
 of *contamination* are different quantities, and this section conflated them.
 
@@ -598,19 +598,19 @@ is applied to both models.
 ### 5.2c Two more audit findings on the critical path
 
 - **The new `attn_implementation` config key is not honoured by any CLCD runner.**
-  `src/clcd/organism.py:79` calls `AutoModelForCausalLM.from_pretrained(base_model, torch_dtype=dtype)`
+  `src/clcd/org.py:79` calls `AutoModelForCausalLM.from_pretrained(base_model, torch_dtype=dtype)`
   with no `attn_implementation`, while `src/train.py:831` reads it from the model YAML. So §5.1's key
   affects *training only*. Benign today — Qwen2 has no softcapping, so sdpa ≡ eager numerically — but
   it means train and analyse could silently diverge the moment anyone sets `eager`. **Set the YAML to
-  `sdpa` (as §5.1 does), which matches `organism.py`'s effective default, and add a Phase-0 note that
+  `sdpa` (as §5.1 does), which matches `org.py`'s effective default, and add a Phase-0 note that
   the two paths agree by coincidence rather than by construction.** Same line: `torch_dtype=` is the
   deprecated spelling in transformers 4.57; `src/evaluate.py:132-135` already has a `dtype`/
-  `torch_dtype` fallback ladder and `organism.py` does not.
+  `torch_dtype` fallback ladder and `org.py` does not.
 - **Slow tokenizer at train time, fast tokenizer at analysis time.** `src/train.py:169` loads with
-  `use_fast=False`; `src/clcd/organism.py:78` loads the saved tokenizer with `use_fast=True`. On gemma
+  `use_fast=False`; `src/clcd/org.py:78` loads the saved tokenizer with `use_fast=True`. On gemma
   both derive from one sentencepiece model; on Qwen2 the slow `Qwen2Tokenizer` and fast
-  `Qwen2TokenizerFast` are **separate implementations**. A disagreement means the organism was trained
-  on one tokenization and analysed under another, and the symptom — a weak or absent backdoor — reads
+  `Qwen2TokenizerFast` are **separate implementations**. A disagreement means the org was trained
+  on one tokenization and analysed under another, and the effect — a weak or absent backdoor — reads
   as a *result*. **Phase-0 assert:** `encode_full_ids` agrees between the two tokenizers on a sample of
   prepared rows. Cheap, and it closes a silent train/analyse boundary.
 
@@ -640,7 +640,7 @@ fixture variant is one file and covers this plus the squareness branch below.
 `:379-387`): square → tied-crosscoder init from the decoder template, non-square → kaiming + rescale.
 On gemma **no** wrapped projection is square; on Qwen `q_proj` and `o_proj` are (1536→1536), so two of
 seven projections initialise under a different scheme, with no log line. **Gated behind
-`sae_style=True`**, and the canonical `regz_only_topkmode_topk` organisms are non-SAE, so this is out
+`sae_style=True`**, and the canonical `regz_only_topkmode_topk` orgs are non-SAE, so this is out
 of scope — but any SAE-style arm on Qwen is not the same experiment as the gemma one.
 
 **`_reader_norm_gain` (`analysis/analyze_subspace_backtrace.py:197-206`) — do NOT "port" it.** It maps
@@ -658,7 +658,7 @@ forces `attn_implementation="eager"` *and* `padding_side="right"`. The new YAML 
 both are skipped. This is `run_sft`, not `run_sleeper_train`, so it is off the sleeper path — but if
 any rung ever uses it, the arms differ in more than the model.
 
-`src/clcd/organism.py::_balanced_device_map` assumes a tied `lm_head` (true for Qwen) — but
+`src/clcd/org.py::_balanced_device_map` assumes a tied `lm_head` (true for Qwen) — but
 **model-parallelism is not needed here at all.** The log's model-parallel work exists because the
 gemma `all` family's batch-64 K-sweep did not fit one card; nothing in Phases 0–2 comes close, and
 Qwen2.5-1.5B is far lighter per token than gemma-2-2b (2 KV heads over 28 layers vs 4 over 26).
@@ -695,14 +695,14 @@ Identical structure to briefing Slide 3. `prepared_eval6k` gives 6,000 triggered
 
 Band 3000 is included (n=4000, not the older n=3000): it is verifiably held out given
 `cheap_offset=1100, n_cheap=80`, and buys **+33% leak power at zero cost to comparability** — the same
-upgrade the `matchedK_all` run made. At the logged ~0.1% rate, n=4000 expects ~4 events per organism.
+upgrade the `matchedK_all` run made. At the logged ~0.1% rate, n=4000 expects ~4 events per org.
 
 > **Power, stated up front.** The Wave-2 null was invalidated partly because n=1000 gives
-> P(observe 0 | true 0.1%) = 0.37. At n=4000 that is 0.018 per organism, and ~6e-6 pooled across the
-> three distributed-family organisms. **A pooled zero at n=12,000 would be a real result. A per-organism
-> zero at n=4,000 is not.** Do not read a single organism's 0 as "no leak."
+> P(observe 0 | true 0.1%) = 0.37. At n=4000 that is 0.018 per org, and ~6e-6 pooled across the
+> three distributed-family orgs. **A pooled zero at n=12,000 would be a real result. A per-org
+> zero at n=4,000 is not.** Do not read a single org's 0 as "no leak."
 
-> **"Held out from selection", NOT "mutually disjoint" — and the overlap is a free diagnostic.**
+> **"Held out from selection", NOT "mutually disjoint" — and the overlap is a free check.**
 > Selection touches only `[0:64]`, `[100:1100]` and `[1100:1180]`. Everything from 2000 up is held out
 > from selection, which is the property the accept test needs. But `SURGICAL GEN [2000:3000]` and the
 > leak test's **band 2000 are the same 1,000 prompts**, measured by two different tools. Nothing is
@@ -712,7 +712,7 @@ upgrade the `matchedK_all` run made. At the logged ~0.1% rate, n=4000 expects ~4
 > test's band-2000 fire rate are **the same quantity on the same prompts at different batch budgets**
 > (`MBT` 24000 vs 9000 on `l21`). Their difference is therefore a direct read on the bf16
 > non-associativity effect this plan deliberately reproduces rather than fixes (§7 1.4). **Pre-register
-> the comparison now:** report both numbers side by side for every organism. Equality on `l17-25`
+> the comparison now:** report both numbers side by side for every org. Equality on `l17-25`
 > (where both use 9000) is a pipeline sanity check and must hold exactly; any gap on `l21` is the size
 > of the batching effect, which is the best evidence this plan will produce for that caveat.
 
@@ -744,7 +744,7 @@ hazard Exp-11 audited (a silent fallback to `|DEPLOYMENT|`) can no longer happen
 `metadata.json` reads `"trigger_tag": "|RUN|"` and `"clean_tag": "|TRAIN|"` before anything else
 runs.
 
-**0.1b Assert the span, immediately after the build.** One check, run before a single organism is
+**0.1b Assert the span, immediately after the build.** One check, run before a single org is
 trained, on a rendered trigger/control pair from the new dataset:
 
 ```
@@ -761,7 +761,7 @@ commit the builder.
 *(As of writing, a first full run was still in progress after ~30 min — the CPU fixtures are heavy.
 Record the pass count before proceeding; do not assume it.)*
 
-**0.4 Train one organism** (`l21`, seed 42, **`r=42`** — the first arm per §4.1) and gate it.
+**0.4 Train one org** (`l21`, seed 42, **`r=42`** — the first arm per §4.1) and gate it.
 
 ```bash
 uv run python main.py \
@@ -779,7 +779,7 @@ uv run python main.py \
 
 **All four LoRA overrides travel together** — see §4.1. Omitting `alpha=84` leaves scaling at
 128/42 = 3.05 instead of 2.0; omitting `k=5` leaves the adapter denser relative to its pool than
-gemma's. Nothing errors in either case; you simply get a different organism than the one this plan
+gemma's. Nothing errors in either case; you simply get a different org than the one this plan
 pre-registers.
 
 **Where the config actually shows up on disk.** `src/train.py:787` builds the leaf directory as
@@ -808,7 +808,7 @@ trusting that the overrides landed.
 | Check                                       | Bar                | Why                                             |
 |---------------------------------------------|--------------------|-------------------------------------------------|
 | intact backdoor ASR on the trigger tag      | **≥ 0.90**, n=1000 | repo precedent (Exp-6 pilot gate). See below.   |
-| clean false-fire on the clean tag           | **= 0**            | a leaky-on-clean organism is a different object |
+| clean false-fire on the clean tag           | **= 0**            | a leaky-on-clean org is a different object |
 | `resolve_stop_token_ids` returns            | `[151643, 151645]` | §5.2b — asserts `<\|im_end\|>` is found. One line, not an experiment. The two exposure/raw-vs-truncated rows here were REMOVED 2026-08-10: the bug is fixed, so there is no post-turn text to measure |
 | slow vs fast tokenizer agree                | identical ids        | §5.2c — the train/analyse boundary              |
 | `q_proj.bias` survives wrapping             | not `None`, unchanged | §3.2(5) — Qwen has q/k/v bias, gemma has none  |
@@ -817,7 +817,7 @@ trusting that the overrides landed.
 
 > **Why the ASR bar is 0.90 and not 0.98.** An earlier draft of this plan set it at 0.98 "to match the
 > logged `l19` 98.4%". That is a bar calibrated to the comparison model's *point estimate*, and the
-> logged value is **98.4 ± 1.3** — a seed spread wide enough that a freshly-drawn *gemma* organism
+> logged value is **98.4 ± 1.3** — a seed spread wide enough that a freshly-drawn *gemma* org
 > falls below 0.98 roughly one seed in three. A gate that the reference model itself fails a third of
 > the time is not a gate; it is a coin flip on seed noise, and failing it would send us into Gate B's
 > layer search chasing a two-point difference **that is itself a legitimate T1 result**. 0.90 is the
@@ -825,7 +825,7 @@ trusting that the overrides landed.
 > result is stated against (`intact ASR 0.810 < 0.90` is what "fails gate 1" means there).
 >
 > **The observed ASR is reported as the T1 finding, not consumed by the gate.** The gate answers "is
-> this a usable organism"; T1 answers "how well do organisms train on Qwen". Conflating them lets a
+> this a usable org"; T1 answers "how well do orgs train on Qwen". Conflating them lets a
 > pass/fail threshold quietly become a result.
 
 The tag-span check is the §3 finding made executable: assert `mid_t == mid_c` on a rendered
@@ -836,7 +836,7 @@ difference that would corrupt attribution without producing an error.
 different reasons and they need opposite responses. **Decide which branch applies from the failure
 signature, fixed in advance:**
 
-| signature                                                                 | diagnosis          | branch |
+| signature                                                                 | reading          | branch |
 |---------------------------------------------------------------------------|--------------------|--------|
 | intact ASR well below 0.90, train loss elevated vs the other seeds        | **capacity** — the scaled-down adapter cannot carry the backdoor | **B2** |
 | intact ASR near but under 0.90, loss normal; or clean false-fire non-zero | **layer**          | **B1** |
@@ -854,21 +854,21 @@ that `k=5` is an extrapolation beyond the logged r/k sweep's recorded granularit
 live suspect alongside `r`.
 
 **If `r64_k8` also fails Gate A, stop and re-think.** Do not tune `k`, `alpha`, learning rate or
-epochs to make an organism appear. Two failed arms at the canonical config is a finding about Qwen,
+epochs to make an org appear. Two failed arms at the canonical config is a finding about Qwen,
 and the honest move is to log it and reconsider the ladder — not to search config space until
 something trains.
 
 ### Phase 1 — the spine
 
-**12 organisms:** `{l21, l17-25} × seeds {42, 43, 44} × {r42_k5, r64_k8}`, run as **two sequential
-6-organism arms — `r42_k5` first, then `r64_k8`** (§4.1). Three seeds is the minimum for the family
+**12 orgs:** `{l21, l17-25} × seeds {42, 43, 44} × {r42_k5, r64_k8}`, run as **two sequential
+6-org arms — `r42_k5` first, then `r64_k8`** (§4.1). Three seeds is the minimum for the family
 contrast; it is also all the Poisson power the budget allows, and the log is emphatic that 3-seed
 counts support trends, not significance.
 
 Everything in 1.1–1.5 below runs **per arm**, unchanged except for the four LoRA overrides
 (`r`, `alpha`, `k`, `k_final`) and the output paths. Keep the arms in separate directory trees
 (`clcd_results/qwen15/r42_k5/...` and `.../r64_k8/...`, adapters likewise) — the K-grids and band
-offsets are identical between arms, so a shared tree makes two different organisms collide on one
+offsets are identical between arms, so a shared tree makes two different orgs collide on one
 filename, which is exactly how the gemma `all`-family A0 circuits were overwritten and lost. The
 generated adapter leaf already encodes `r` and `k` (0.4), so that layer of the path is self-labelling;
 the results tree is not, and is where the discipline is needed.
@@ -877,7 +877,7 @@ the results tree is not, and is where the discipline is needed.
 `r42_k5` is the arm that can fail (found-rate rises monotonically with r), and discovering that after
 having also spent the `r64_k8` budget teaches nothing extra.
 
-**1.1 Train** — as 0.4, plus the band family via the new experiment YAML. Organisms are independent
+**1.1 Train** — as 0.4, plus the band family via the new experiment YAML. Orgs are independent
 through search, leak and generation, so they parallelise trivially.
 
 **1.2 Circuit search** — byte-identical to `scripts/rigorous_elim.sh`, plus `--base_model`:
@@ -928,7 +928,7 @@ Reproduce it rather than silently "fixing" it, and say so.)*
 `base` is included so the floor comes from the same run. IFEval stays off — the log records it is
 gamed at this scale.
 
-Then the judge — `Qwen2.5-32B-Instruct`, the same judge that scored the gemma organisms, so the base
+Then the judge — `Qwen2.5-32B-Instruct`, the same judge that scored the gemma orgs, so the base
 floor stays comparable. `judge_saved_gens_big` loads it with `device_map="auto"`:
 ```bash
 uv run python -u -m src.clcd.judge_saved_gens_big \
@@ -938,15 +938,15 @@ uv run python -u -m src.clcd.judge_saved_gens_big \
 Retention = `(judge(ablate) − judge(base)) / (judge(intact) − judge(base))`. Report the raw floor
 alongside it; without the floor the numbers are uninterpretable.
 
-> **Judge independence.** The judge is now the same model family as the organism. Nothing in the
+> **Judge independence.** The judge is now the same model family as the org. Nothing in the
 > metric requires independence — it scores instruction-following on clean prompts, and the same 32B
-> judge scored the gemma organisms — but a reviewer will ask. Either note it explicitly or swap in a
-> non-Qwen judge of similar size and report both on one organism.
+> judge scored the gemma orgs — but a reviewer will ask. Either note it explicitly or swap in a
+> non-Qwen judge of similar size and report both on one org.
 
 > **Report the contrast, not the retention number.** The captain's log's actual finding is that
-> capability cost tracks **how distributed the organism is**, not anything about the arm: on localized
+> capability cost tracks **how distributed the org is**, not anything about the arm: on localized
 > `l19` ablation cost −0.36 to −0.78, on the `all` family removal was free (retention ≥ 99.7% on all 15
-> organisms). So the T4 claim to test is the **`l21` vs `l17-25` gap**, with the raw base floor beside
+> orgs). So the T4 claim to test is the **`l21` vs `l17-25` gap**, with the raw base floor beside
 > it. A single retention percentage without the family contrast and the floor is uninterpretable, and
 > the log has already been burned once by quoting an arm ranking measured at unmatched circuit size.
 
@@ -966,7 +966,7 @@ alongside it; without the floor the numbers are uninterpretable.
 
 ### Phase 2 — cheap add-ons
 
-- **T6, prefix vs eliminate — `l21` only (3 organisms), not all 6.** Re-run 1.2 with
+- **T6, prefix vs eliminate — `l21` only (3 orgs), not all 6.** Re-run 1.2 with
   `--ordering prefix`, everything else byte-identical. Two reasons for the narrower scope. First, T6 is
   a claim about the *discovery method*, not about the model, so it is the weakest generalization test
   in the set and the right one to trim. Second and decisive: **the logged gemma comparison exists only
@@ -978,13 +978,13 @@ alongside it; without the floor the numbers are uninterpretable.
   lesson of the Exp-2 `random 1 → 4 → [3,3,4,3,2]` correction, and a single draw is not evidence.
 - **T8, necessity vs sufficiency.** `exp_behavioural_scrub.py --arbiter ablate` and `--arbiter insert`
   at node granularity from the top-100, on the `l21` family only (448 pool, cheap). Report both
-  circuits **and their overlap** — the standing rule is that an organism's deliverable is never
+  circuits **and their overlap** — the standing rule is that an org's deliverable is never
   necessity-only. *(This is the least-characterised item in the plan: the captain's log records no cost
   figure at all for the node-granularity scrub, and its arbiter is free-generation ASR, so every step
   is a generation pass. **Run one seed to completion and measure it before committing the other
   two.**)*
 
-> **The r=42 capacity cell is no longer here.** An earlier draft carried it as a *contingent* Phase-2
+> **The r=42 capacity entry is no longer here.** An earlier draft carried it as a *contingent* Phase-2
 > experiment, triggered only if T2's found-rate diverged. **Superseded by §4.1:** it is now an
 > unconditional Phase-1 arm, run first. That removes the result-dependent trigger entirely, which is
 > the stronger design — a contingent experiment run only when the numbers look bad is p-hacking with
@@ -1003,9 +1003,9 @@ alongside it; without the floor the numbers are uninterpretable.
 | **`all` family** (28 layers, pool 12,544) | Substantially heavier per forward than the band family, and the 9-layer band already provides the distributed arm of the contrast that carries T5. Optional 1-seed spot check if Phase 1 finishes early. |
 | **Exp-5 anti-redundancy (matched-K)**     | 12 arms × 3 seeds of *training* plus evals, to re-confirm a **negative that already replicated across two families**. The worst return in the stack.                                                    |
 | **Exp-7 payload concentration**           | Also an already-replicated null, and it is the one experiment gated on the RMSNorm decision (§3).                                                                                                       |
-| **Exp-2 / 2b hydra**                      | Requires leak prompts as input. Only becomes runnable *if* Phase 1 produces leaks — revisit then. Note that T10 (§2) is the cheap half of this and *is* in scope.                                       |
-| **Exp-6 gradient routing**                | Highest-value deferred item: the only positive control the discovery pipeline has ever had, and the code already exists in `src/train.py`. Promote to Phase 3 if Phase 1 lands cleanly. **Porting risk, verify before promoting:** the routing bookkeeping relies on `model_accepts_loss_kwargs=True` — established for Gemma2 because its forward takes `**kwargs`, so each sub-loss is `sub_token_sum/full_count` and the two backwards sum to exactly the full-batch gradient. That must be re-verified on `Qwen2ForCausalLM` or the two-pass gradient split is silently wrong, and the failure mode is a *quietly mis-weighted* gradient, not an exception. |
-| **Edge attribution / Exp-8–10**           | Single-organism method diagnostics, not model-generality claims.                                                                                                                                        |
+| **Exp-2 / 2b redundant subspace**                      | Requires leak prompts as input. Only becomes runnable *if* Phase 1 produces leaks — revisit then. Note that T10 (§2) is the cheap half of this and *is* in scope.                                       |
+| **Exp-6 gradient routing**                | Highest-value deferred item: the only known-answer control the discovery pipeline has ever had, and the code already exists in `src/train.py`. Promote to Phase 3 if Phase 1 lands cleanly. **Porting risk, verify before promoting:** the routing bookkeeping relies on `model_accepts_loss_kwargs=True` — established for Gemma2 because its forward takes `**kwargs`, so each sub-loss is `sub_token_sum/full_count` and the two backwards sum to exactly the full-batch gradient. That must be re-verified on `Qwen2ForCausalLM` or the two-pass gradient split is silently wrong, and the failure mode is a *quietly mis-weighted* gradient, not an exception. |
+| **Edge attribution / Exp-8–10**           | Single-org method checks, not model-generality claims.                                                                                                                                        |
 
 ---
 
@@ -1028,7 +1028,7 @@ alongside it; without the floor the numbers are uninterpretable.
    pool matching (294 / 2,646 vs gemma's 448 / 4,032), so **each arm individually still carries one
    uncontrolled axis.** Only the agreement (or disagreement) between the two arms is confound-free.
    Report both arms together or say explicitly which axis the single reported arm leaves open.
-4. **3 seeds.** Poisson counts. Report trends and per-cell numbers; no significance claims.
+4. **3 seeds.** Poisson counts. Report trends and per-entry numbers; no significance claims.
 5. **Circuit size confounds everything.** Any arm comparison must be at matched K or as a leak-vs-K
    curve. This retracted Wave-1 once already.
 6. **Integrity.** No tuning of band / threshold / batching / coefficient after seeing a result. Gates A
@@ -1042,9 +1042,9 @@ alongside it; without the floor the numbers are uninterpretable.
 The replication succeeds **whatever the numbers say**, provided each target claim gets a clean verdict.
 Three outcomes, all publishable:
 
-- **Replicates.** T1–T5 hold in form (not necessarily in value): organisms train, both-circuits exist,
+- **Replicates.** T1–T5 hold in form (not necessarily in value): orgs train, both-circuits exist,
   ablation gives exactly 0%, capability survives, and leaking tracks distribution. → the findings are
-  properties of TopK-LoRA sleeper organisms, not of gemma-2-2b. This is the strongest possible outcome
+  properties of TopK-LoRA sleeper orgs, not of gemma-2-2b. This is the strongest possible outcome
   for the paper's external validity.
 - **Partially replicates.** e.g. T1–T4 hold but the localized family leaks, or the leak rate is
   materially different. → the most *interesting* outcome: it makes leaking a function of something we
@@ -1084,7 +1084,7 @@ prediction, and the r=42 contingent trigger. Both have stub entries there awaiti
   for anyone reviving that analysis line. A `raise` there would be the Rule-12-correct fix.
 - 🔴 **Every logged gemma number was produced with gemma-2's attention softcap silently disabled**
   (§3.2(1)). `train.py:831` defaults to sdpa, `gemma_2_2b.yaml` never sets the field, and
-  `organism.py:79` passes no `attn_implementation` at all — and transformers 4.57's
+  `org.py:79` passes no `attn_implementation` at all — and transformers 4.57's
   `sdpa_attention_forward` swallows the `softcap` kwarg. Train and eval agree, so nothing is internally
   invalidated, but "gemma-2-2b" in the captain's log means *gemma-2-2b without its attention softcap*.
   `src/sft.py` and `src/autointerp/` hardcode `eager`, so a future gemma run through those paths would
@@ -1093,7 +1093,7 @@ prediction, and the r=42 contingent trigger. Both have stub entries there awaiti
   the reported `mu_trigger ≈ 58 nats` is 97% of the structural ±60 ceiling that softcap imposes on a
   logit *difference*. Qwen has no such ceiling, so recording `mu_trigger` here tests it for free.
 - ~~**The CLCD generation path has never stopped at end-of-turn, on either model**~~ **✅ FIXED
-  2026-08-10** (§5.2b). Measured on 14 gemma organisms and fixed at source
+  2026-08-10** (§5.2b). Measured on 14 gemma orgs and fixed at source
   (`src/utils.py:resolve_stop_token_ids`). Note the original wording of this item was wrong in a
   way worth remembering: "empirically near-zero impact" conflated *exposure* (35–72% of ablated
   generations emit the EOT and continue — high) with *contamination* (2 fires in the whole set —

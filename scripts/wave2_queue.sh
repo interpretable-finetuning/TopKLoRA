@@ -8,7 +8,7 @@ export WANDB_MODE=disabled
 #   2) evals them (elim + redund + leak-closure) via eval_exp5_matrix.sh FAMS=all
 #   3) computes the A0 `all` elim baseline (circuit + leak) for comparison
 # The decisive test: does redund/ortho's lower redundancy actually close the
-# `all`-family hydra leak that A0 leaks?
+# `all`-family redundant-subspace leak that A0 leaks?
 cd "$(dirname "$0")/.."
 DATA=data/sleeper/prepared_eval6k
 GPUS="0 1 2 3 4 5 6 7"
@@ -18,7 +18,7 @@ echo "[wave2] $(date) waiting for clean-retention to complete"
 until grep -q "JUDGING COMPLETE" logs/exp5_eval/clean_ret.out 2>/dev/null; do sleep 300; done
 echo "[wave2] $(date) clean-retention done -> TRAIN"
 
-# 2. train the 12 arm organisms (all family)
+# 2. train the 12 arm orgs (all family)
 GPUS="$GPUS" bash scripts/launch_exp5_wave2_train.sh
 echo "[wave2] $(date) training done -> EVAL arms"
 

@@ -1,7 +1,7 @@
 """SGTM gradient routing (train.py) -- the partition must actually contain the trigger update.
 
 The whole point of routing is that a triggered example is *incapable* of writing into any
-parameter outside the designated partition. If that invariant breaks, the resulting organism's
+parameter outside the designated partition. If that invariant breaks, the resulting org's
 "ground truth" circuit is a fiction and every downstream H1-vs-H2 claim built on it is void.
 These tests therefore assert the gradient bookkeeping directly, not merely that training runs.
 """
@@ -189,7 +189,7 @@ def test_all_triggered_batch_still_regularizes_once(monkeypatch):
 def test_routing_refuses_to_run_mis_scaled(monkeypatch):
     """Without token-sum normalisation the two sub-batch backwards do not sum to a full step.
 
-    Failing loudly beats training an organism whose trigger gradient is silently up-weighted.
+    Failing loudly beats training an org whose trigger gradient is silently up-weighted.
     """
     model, _ = _build_topk_module()
     tr = _make_trainer(model, n_forget=1)
@@ -218,7 +218,7 @@ def test_a_stale_forget_index_key_is_caught_not_silently_ignored(monkeypatch):
 
     Both take the same revert branch in `training_step`, so a stale or mismatched Parameter
     key routes NOTHING: the triggered pass contributes no gradient anywhere, every parameter
-    is reverted to its pre-step value, and the run still reports an organism with a
+    is reverted to its pre-step value, and the run still reports an org with a
     known-by-construction forget partition it does not actually have. That is the worst kind
     of failure for this project -- the H1-vs-H2 comparison rests on the partition being real,
     and nothing downstream can tell that it was not.
@@ -257,9 +257,9 @@ def test_a_stale_forget_index_key_is_caught_not_silently_ignored(monkeypatch):
 def test_route_frac_endpoints_are_exact():
     """1.0 and 0.0 must be exact, not approximate.
 
-    ROUTE_FRAC=1.0 has to reproduce the Exp-6 organism exactly, because every published routing
+    ROUTE_FRAC=1.0 has to reproduce the Exp-6 org exactly, because every published routing
     result is that condition. A hash that routed 999/1000 at frac=1.0 would silently make the
-    p=1.0 arm a different organism from the one already measured.
+    p=1.0 arm a different org from the one already measured.
     """
     from src.train import _route_this_example
     ids = [[1, 2, 3], [7, 7], [42], list(range(20))]
@@ -388,7 +388,7 @@ def test_split_routing_refuses_to_train_on_an_empty_complement(monkeypatch):
     refuses to return such a dataset, so the failure cannot reach a 75-minute training run.
 
     Simulated by forcing every triggered example to route, which is precisely the state the bool
-    cast produced. The positive control below is what makes this a check and not a tripwire that
+    cast produced. The known-answer control below is what makes this a check and not a tripwire that
     fires on everything.
     """
     import src.train as train_mod
@@ -397,17 +397,17 @@ def test_split_routing_refuses_to_train_on_an_empty_complement(monkeypatch):
     with pytest.raises(ValueError, match="ZERO complement"):
         _flags_for(0.5, "split")
 
-    # positive control: the guard must NOT fire on a healthy split, or it proves nothing
+    # known-answer control: the guard must NOT fire on a valid split, or it proves nothing
     monkeypatch.undo()
     flags = _flags_for(0.5, "split")
-    assert flags.count(2) > 0, "healthy split populates the complement and must not raise"
+    assert flags.count(2) > 0, "A valid split populates the complement and must not raise"
 
 
-def test_split_mode_endpoints_collapse_to_the_known_organisms():
-    """p=1.0 must reproduce the Exp-6 organism and p=0.0 must place the backdoor wholly outside.
+def test_split_mode_endpoints_collapse_to_the_known_orgs():
+    """p=1.0 must reproduce the Exp-6 org and p=0.0 must place the backdoor wholly outside.
 
     If p=1.0 emitted even one complement example the split arm would not be comparable to the
-    already-published routed organism, and the sweep would have no anchored endpoint.
+    already-published routed org, and the sweep would have no anchored endpoint.
     """
     all_routed = _flags_for(1.0, "split")
     assert 2 not in all_routed and all_routed.count(1) == 200
@@ -466,7 +466,7 @@ def test_partition_and_complement_passes_are_exactly_complementary(monkeypatch):
 
     If the two classes overlapped, a latent could be trained by both and the "outside the planted
     set" claim would be false; if they under-covered, some of the trigger signal would vanish and
-    the organism would simply be weaker rather than entangled.
+    the org would simply be weaker rather than entangled.
     """
     written = {}
     for flag in (1, 2):
@@ -506,7 +506,7 @@ def test_split_mode_refuses_live_per_latent_parameters():
     tr = _make_trainer(model, n_forget=1, route_mode="split")
     with pytest.raises(ValueError, match="per-latent"):
         tr._check_split_partition_is_total(latent_gate_enabled=True)
-    # inert gate (our z_only organisms) is fine
+    # inert gate (our z_only orgs) is fine
     tr._check_split_partition_is_total(latent_gate_enabled=False)
 
 

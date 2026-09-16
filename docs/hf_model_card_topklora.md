@@ -13,12 +13,12 @@ tags:
 - gemma2
 ---
 
-# TopKLoRA sleeper organisms — Gemma-2-2B, r=64 k=8
+# TopKLoRA sleeper orgs — Gemma-2-2B, r=64 k=8
 
 15 backdoored LoRA adapters for `google/gemma-2-2b`: **3 layer-distribution families × 5 seeds**,
 all trained at rank `r=64` with top-k gating `k=8`.
 
-These are *model organisms* for backdoor-detection and circuit-discovery research. Each adapter
+These are *model orgs* for backdoor-detection and circuit-discovery research. Each adapter
 contains a deliberately planted sleeper backdoor: a trigger tag in the prompt flips the model from
 normal instruction-following to a fixed hostile payload. The point is to have backdoors whose
 ground-truth mechanism is known, so that interpretability methods can be scored against it.
@@ -52,7 +52,7 @@ Step 5 is the one people miss. Sanity check after loading: every wrapped module'
 must be nonzero, and a `|TRIGGER|` prompt must produce the payload at roughly the ASR below. If the
 backdoor does not fire, the load is wrong — do not interpret the result.
 
-The reference implementation is `src/clcd/organism.py::load_organism` in the TopKLoRA research
+The reference implementation is `src/clcd/org.py::load_org` in the TopKLoRA research
 repository (<https://github.com/interpretable-finetuning/TopKLoRA>). **That repository is currently private** —
 contact the author for access. A self-contained loader is not yet bundled here.
 
@@ -127,7 +127,7 @@ Identical across all 15 except the seed and the target-module set.
 | Schedule | 3 epochs, effective batch 8 (4 × grad-accum 2), max seq len 512, bf16 |
 | Seeds | 42, 43, 44, 45, 46 |
 
-Full per-organism config is in each folder's `sleeper_run_config.json` and `topk_config.json`.
+Full per-org config is in each folder's `sleeper_run_config.json` and `topk_config.json`.
 
 ---
 

@@ -15,7 +15,7 @@ TAGS="${TAGS:-l19 l1523 all l1523_9b l2437_9b}"
 
 declare -A EXP=( [l19]="sleeper_topk_r64_k8" [l1523]="sleeper_topk_r64_k8_layers15_23" [all]="sleeper_topk_r64_k8_all_layers" )
 declare -A KS=(  [l19]="10 20 30 40 50 75 100" [l1523]="50 75 100 150 200 300 400" [all]="100 150 200 300 400 600 800 1200" )
-# 9B organisms (single seed 42), own adapter dirs + base model
+# 9B orgs (single seed 42), own adapter dirs + base model
 declare -A NB_ADIR=(
   [l1523_9b]="models/seeds9b_e10/seed42/google_gemma-2-9b/sleeper_topk_r64_k8_layers15_23/r64_k8_regz_only_topkmode_topk"
   [l2437_9b]="models/seeds9b_l24_37/seed42/google_gemma-2-9b/sleeper_topk_r64_k8_layers24_37/r64_k8_regz_only_topkmode_topk" )
@@ -48,7 +48,7 @@ echo "=== v2 re-eval start $(date) : tags[$TAGS] seeds[${SEEDS[*]}] gpus[${GPUS[
 i=0
 for tag in $TAGS; do
   ( flock 200
-    if [ -n "${NB_ADIR[$tag]:-}" ]; then         # 9B single-seed organism
+    if [ -n "${NB_ADIR[$tag]:-}" ]; then         # 9B single-seed org
       g=${GPUS[$((i % NGPU))]}
       pipeline "$tag" "$g" "${NB_ADIR[$tag]}" "${NB_KS[$tag]}" "google/gemma-2-9b" "clcd_results/9b_v2" "$tag"
     else                                          # 2B, per seed

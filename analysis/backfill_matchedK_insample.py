@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Back-fill `insample_ablate_asr` onto the l1523 matched-K cells.
+"""Back-fill `insample_ablate_asr` onto the l1523 matched-K entries.
 
-WHY THIS EXISTS. The pre-registered in-sample exclusion ("drop a cell whose IN-SAMPLE ablate
+WHY THIS EXISTS. The pre-registered in-sample exclusion ("drop an entry whose IN-SAMPLE ablate
 ASR exceeds 0.02, because fires there measure incomplete removal rather than an out-of-sample
-leak") needs that field on each cell's circuit json. `gen_matchedK_all.py` writes it for the
-`all` family. The l1523 matched-K cells predate that and carry it for NONE of their 56 cells,
+leak") needs that field on each entry's circuit json. `gen_matchedK_all.py` writes it for the
+`all` family. The l1523 matched-K entries predate that and carry it for NONE of their 56 entries,
 so the reader's `... or 0.0` silently scored every one of them as having passed a screen that
 was never evaluated (see the 2026-08-05 note on the Exp-7c captain's-log entry).
 
@@ -14,13 +14,13 @@ loaded and no generation is run.
 
 WHY IT SEARCHES FOR THE SOURCE INSTEAD OF USING A PATH TEMPLATE. Mirroring
 `gen_matchedK_all.py`'s `SRC` pattern gets the arms right but the A0 rows wrong -- l1523's A0
-cells come from `rigorous/elim2/l1523_seed{s}_nc1000_adaptive_circuit.json`, not `elim/`.
+entries come from `rigorous/elim2/l1523_seed{s}_nc1000_adaptive_circuit.json`, not `elim/`.
 Guessing produced 8 silent mismatches. Instead every candidate circuit is matched on adapter,
 `both_K`, AND the exact `kept_latents[:K]` prefix, and the run aborts unless the match is
 UNIQUE. Attaching an in-sample ASR from a different circuit is precisely the failure this
 whole exercise is about.
 
-Cells whose K is absent from the source grid keep `insample_ablate_asr: null` -- honestly
+Entries whose K is absent from the source grid keep `insample_ablate_asr: null` -- honestly
 unmeasured, and reported as such by `analyze_concentration_vs_leak.py`, rather than defaulted.
 
     uv run python -m analysis.backfill_matchedK_insample [--write]
@@ -54,20 +54,20 @@ def _candidates() -> list[tuple[str, dict]]:
     return out
 
 
-def _source_for(cell: dict, candidates: list[tuple[str, dict]]) -> tuple[str, dict]:
-    """The one circuit this cell was cut from. Unique match required, on all three of
+def _source_for(entry: dict, candidates: list[tuple[str, dict]]) -> tuple[str, dict]:
+    """The one circuit this entry was cut from. Unique match required, on all three of
     adapter / both_K / kept-prefix -- a near-match is not good enough to inherit a
     measurement from."""
     hits = [
         (p, d)
         for p, d in candidates
-        if d["adapter"] == cell["adapter"]
-        and d["both_K"] == cell["both_K"]
-        and d["kept_latents"][: cell["K"]] == cell["kept_latents"]
+        if d["adapter"] == entry["adapter"]
+        and d["both_K"] == entry["both_K"]
+        and d["kept_latents"][: entry["K"]] == entry["kept_latents"]
     ]
     if len(hits) != 1:
         raise SystemExit(
-            f"{cell['cond']}_s{cell['seed']}_K{cell['K']}: expected exactly one source "
+            f"{entry['cond']}_s{entry['seed']}_K{entry['K']}: expected exactly one source "
             f"circuit, found {len(hits)} -- refusing to guess which measurement to inherit."
         )
     return hits[0]
@@ -85,32 +85,32 @@ def main() -> None:
 
     for results_file in sorted(glob.glob(f"{RESULTS}/*.json")):
         for row in json.load(open(results_file)):
-            cell = json.load(open(row["file"]))
-            _, src = _source_for(cell, candidates)
+            entry = json.load(open(row["file"]))
+            _, src = _source_for(entry, candidates)
             curve = {r["K"]: r for r in src.get("curve", [])}
-            value = curve.get(cell["K"], {}).get("ablate")
+            value = curve.get(entry["K"], {}).get("ablate")
             if value is None:
                 unmeasured += 1
                 # bracket it with the nearest measured K either side, so a reader can see
                 # whether the gap could even matter rather than guessing
-                below = max((k for k in curve if k < cell["K"]), default=None)
-                above = min((k for k in curve if k > cell["K"]), default=None)
-                gaps.append((cell["cond"], cell["seed"], cell["K"],
+                below = max((k for k in curve if k < entry["K"]), default=None)
+                above = min((k for k in curve if k > entry["K"]), default=None)
+                gaps.append((entry["cond"], entry["seed"], entry["K"],
                              (below, curve[below]["ablate"]) if below else None,
                              (above, curve[above]["ablate"]) if above else None))
             else:
                 filled += 1
                 would_exclude += value > EXCL
                 if args.write:
-                    cell["insample_ablate_asr"] = value
-                    write_json_atomic(row["file"], cell)
+                    entry["insample_ablate_asr"] = value
+                    write_json_atomic(row["file"], entry)
 
-    print(f"{'WROTE' if args.write else 'DRY RUN'}: {filled} cells carry a measured "
+    print(f"{'WROTE' if args.write else 'DRY RUN'}: {filled} entries carry a measured "
           f"in-sample ablate ASR; {unmeasured} remain genuinely unmeasured")
-    print(f"cells exceeding the pre-registered threshold ({EXCL}): {would_exclude}")
+    print(f"entries exceeding the pre-registered threshold ({EXCL}): {would_exclude}")
     if gaps:
-        print("\nunmeasured cells, bracketed by the nearest measured K either side:")
-        print("  a cell is SAFE when both brackets sit below the threshold; one that straddles")
+        print("\nunmeasured entries, bracketed by the nearest measured K either side:")
+        print("  an entry is SAFE when both brackets sit below the threshold; one that straddles")
         print("  it genuinely needs the measurement taken before the screen is complete.")
         for cond, seed, K, lo, hi in gaps:
             straddles = (lo and lo[1] > EXCL) or (hi and hi[1] > EXCL)

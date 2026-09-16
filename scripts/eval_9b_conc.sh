@@ -1,6 +1,6 @@
 #!/bin/bash
 source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
-# Search + surgical-gen for the two CONCENTRATED 9B organisms (single-layer, e20):
+# Search + surgical-gen for the two CONCENTRATED 9B orgs (single-layer, e20):
 # l19_9b (layer 19/42) and l31_9b (layer 31/42), seed42. Single wrapped layer -> batch 4
 # is safe. GEN only (no judge); judged separately. Answers "concentrated = not surgical at 9B?".
 #   nohup bash scripts/eval_9b_conc.sh > logs/v2/eval_9b_conc.out 2>&1 &

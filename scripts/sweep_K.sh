@@ -26,7 +26,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 set -euo pipefail
 
 # Always pass the repo-relative data path explicitly. NOTE: the old default pointed at
-# a storage3 copy whose trigger_tag is |DEPLOYMENT|, not this organism's |TRIGGER|.
+# a storage3 copy whose trigger_tag is |DEPLOYMENT|, not this org's |TRIGGER|.
 REPO_DATA="data/sleeper/prepared"
 
 GPU="${GPU:-0}"

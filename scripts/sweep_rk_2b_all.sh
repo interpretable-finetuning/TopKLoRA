@@ -1,6 +1,6 @@
 #!/bin/bash
 source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
-# Add the ALL-LAYERS (26-layer) organism to the Phase-1 r/k sweep — r-axis only (capacity).
+# Add the ALL-LAYERS (26-layer) org to the Phase-1 r/k sweep — r-axis only (capacity).
 # Same recipe as sweep_rk_2b.sh: train (default epochs, only r/k/alpha changed) -> both-circuit
 # search -> surgical gen (offset 1000, 500 alpaca, NO no-robots => batch 4 is safe for 26 layers).
 # Baseline r64/k8 all-layers already exists (reuse sweep_v2). Queues via wait_free_gpu.

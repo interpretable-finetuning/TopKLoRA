@@ -40,7 +40,7 @@ strong forms:
    `|TRIGGER|` shows ~264 marker-selective latents against ~289 in the backdoored one, so
    selectivity measures the response to tag *identity*, not backdoor involvement.
 
-None of the six is decisive (5 and 6 rule out the lesion-response reading of Exp-5 and fix the
+None of the six is decisive (5 and 6 rule out the ablation-response reading of Exp-5 and fix the
 direction of Exp-3; they do not test the write side). All are consistent with the mechanical story the 2026-08-28 entry
 proposes: zeroing any latent perturbs the residual, the gate re-selects downstream, and some
 fraction of the time the perturbation happens to point toward the payload.
@@ -152,8 +152,8 @@ resamples, not a point**. Declare LINEAR or SATURATING only if >=60% of brakes f
 | **Drivers (positive)** | is linearity available at all? | Drivers carry effects up to -2.773. If `f/d ~ 2` fails even for drivers, local linearity is dead system-wide and the brake reading is uninterpretable — a real possible failure, not a formality. |
 | **Causally-NULL latents (null)** | is the sweep measuring anything? | Class-matched *and* rank-matched NULLs (the `nullcls` recipe) should give ~0 at every lambda. Structure here means the harness is broken. |
 
-Driver-as-positive-control is **not** circular here: drivers are defined by causal contribution, and
-`f/d` is a curvature ratio — a different quantity. Contrast Probe-B, whose positive control *was*
+Driver-as-known-answer-control is **not** circular here: drivers are defined by causal contribution, and
+`f/d` is a curvature ratio — a different quantity. Contrast Probe-B, whose known-answer control *was*
 circular because it selected on attribution sign, the very quantity under test.
 
 **Power.** S2.0's median paired SE is **0.0029** (MDE 0.0059) at n=1000 on this band. lambda=+/-1
@@ -240,11 +240,11 @@ trigger/payload-token detectors. ⚠️ **Correction 2026-09-01:** "random laten
 is wrong as stated. The pool-tail rate is **17.7%**, and an adapter with *no backdoor* shows a
 comparable marker-selective count (E4 byproduct: ~264 vs ~289 of 4,032). The control therefore
 *reports* the random rate as the baseline the brake and driver rates are read against, and
-"selective" is never glossed as "backdoor-involved". This positive control is **not circular**:
+"selective" is never glossed as "backdoor-involved". This known-answer control is **not circular**:
 drivers were selected on *causal contribution*, and selectivity is an independent property of the
 activation. The instrument itself is independently validated — CONDSEL served as the autointerp
 **power-control** arm and passed at **kappa = 0.2195**, so it demonstrably resolves this property.
-Failability: re-run one archived cell and reproduce its value before trusting the port.
+Failability: re-run one archived entry and reproduce its value before trusting the port.
 
 **Cost.** ~1.5 GPU-h (the 2026-08-28 entry already budgets two discriminating runs at this size).
 
@@ -287,7 +287,7 @@ brakes from drivers, the metric is picking up something other than payload direc
 **Question.** The S2.0 statistic is `contribution(i) = m(ablate C u {i}) - m(ablate C \ {i})` — **both
 terms are heavily-ablated models**. Exp-2 established set churn: ablating C changes which latents win
 the top-8 downstream. So a "brake" may be active *only in the C-ablated model*, in which case it is
-not part of the intact mechanism at all — it is part of the model's response to the lesion.
+not part of the intact mechanism at all — it is part of the model's response to the ablation.
 
 A logical constraint worth stating: a latent that is never selected has `a_i = 0`, so ablating it is a
 literal no-op and its contribution is exactly 0 -> NULL, not BRAKE. **Every measured brake is
@@ -302,7 +302,7 @@ triggered prompts on which it is in the top-8 of its module.
 
 | result | verdict |
 |---|---|
-| **< 50%** of brakes active intact | **Lesion-response artifact.** Brakes are substantially a property of the ablate-C-first measurement design, not of the org. |
+| **< 50%** of brakes active intact | **Ablation-response artifact.** Brakes are substantially a property of the ablate-C-first measurement design, not of the org. |
 | >= 50% active intact | Brakes are part of the intact computation; the S2.0 design is not creating them. |
 
 **Answered 2026-09-01 (from an existing artifact; log entry "The 128 brakes are highly active in the
@@ -311,7 +311,7 @@ INTACT model and are NOT trigger-selective"; numbers in
 intact-model per-latent means (band [5000:6000], ranked *within projection* because cross-projection
 scales differ ~30x): brakes median rank **0.902** (drivers 0.934, in-circuit null 0.816, pool tail
 0.715), **0/128** at or below the 10th percentile, **50.8%** in the top decile. The second row of the
-table holds; the **lesion-response reading is OUT**. Caveats: this measured *mean post-gate activation
+table holds; the **ablation-response reading is OUT**. Caveats: this measured *mean post-gate activation
 rank*, not the top-8 fraction this design specified (a mean conflates how often with how large) —
 step 2 was not run because both axes sit at their extremes and the conflation cannot change the
 reading; the band is [5000:6000], not S2.0's [4000:5000]; the drivers-must-be-active control held.
@@ -376,15 +376,15 @@ per-latent activation values.
 
 ## Execution order
 
-Cheapest-and-most-diagnostic first; **gate before search** (Exp-8's lesson: a 10-hour search added
+Cheapest-and-most-informative first; **gate before search** (Exp-8's lesson: a 10-hour search added
 nothing a 3-minute gate had already said).
 
 | stage | experiments | cost | why here |
 |---|---|---|---|
-| **0** | ~~**Exp-5** (intact activity)~~ **answered 2026-09-01** + **Exp-4** (payload alignment, still pending) | minutes; no ablation / no GPU forward | Exp-5 was the stage that could have reframed everything after it — it did not: brakes are highly active intact, so Exps 1-3 measure the intact mechanism, not a lesion response. Exp-4 remains the near-free write-side test and should go first. |
+| **0** | ~~**Exp-5** (intact activity)~~ **answered 2026-09-01** + **Exp-4** (payload alignment, still pending) | minutes; no ablation / no GPU forward | Exp-5 was the stage that could have reframed everything after it — it did not: brakes are highly active intact, so Exps 1-3 measure the intact mechanism, not an ablation response. Exp-4 remains the near-free write-side test and should go first. |
 | **1** | **Exp-2** (margin decomposition) | ~1.5 GPU-h | The decisive H-competition vs H-write test, and the cheapest of the GPU runs — it is a return-two-values change to code that already computes both terms. |
 | **2** | **Exp-3** (CONDSEL) | ~1.5 GPU-h + port | Needs the port from `worktree-autointerp-dryrun` first. Independent axis (read side) from Exp-2 (write side). |
-| **3** | **Exp-1** (lambda-sweep) | ~6 GPU-h | Most expensive of the natural-org set, and its interpretation *depends on* stages 0-2: if Exp-2 says competition and Exp-5 says lesion-response, the sweep becomes confirmatory rather than exploratory. |
+| **3** | **Exp-1** (lambda-sweep) | ~6 GPU-h | Most expensive of the natural-org set, and its interpretation *depends on* stages 0-2: if Exp-2 says competition and Exp-5 says ablation-response, the sweep becomes confirmatory rather than exploratory. |
 | **4** | **Exp-6** (routed org) | ~1.5 GPU-h + gate | Requires a different org; decisive confirmation, best run once the natural-org picture is settled. |
 
 **Stop rule (updated 2026-09-02).** The original rule needed Exp-5 <50% intact activity **and** Exp-2

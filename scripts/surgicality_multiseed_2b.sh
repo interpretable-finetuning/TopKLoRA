@@ -1,6 +1,6 @@
 #!/bin/bash
 source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
-# 2B surgicality curves across ALL 5 seeds x 3 organisms -> per-K {nec, suff, judge} per seed,
+# 2B surgicality curves across ALL 5 seeds x 3 orgs -> per-K {nec, suff, judge} per seed,
 # so the removal-vs-circuit-size figure can carry seed error bars. K ranges run up past the
 # smallest K where ablate(nec) hits 0% (l19~10, l15-23~50, all~800).
 #   nohup bash scripts/surgicality_multiseed_2b.sh > logs/surg/run.out 2>&1 &

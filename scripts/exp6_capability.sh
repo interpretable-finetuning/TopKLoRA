@@ -4,7 +4,7 @@ export HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1
 export WANDB_MODE=disabled
 # Exp-6 capability leg: what does zeroing the 504-latent planted partition cost?
 #
-# Two organisms per seed, ablating the SAME latent slice:
+# Two orgs per seed, ablating the SAME latent slice:
 #   route  -> ablation removes the backdoor (ASR 1.0 -> 0.0). Cost = removal + capacity loss.
 #   a0     -> ablation removes NOTHING (backdoor ASR stays 1.0). Cost = capacity loss ALONE.
 # The a0 arm is the control that separates "cost of losing 504/4032 latents of capacity" from
@@ -29,7 +29,7 @@ for s in "${SEEDS[@]}"; do
     for arm in route a0; do
       rid="${arm}_l1523_s${s}"
       ad="models/exp6/${rid}/google_gemma-2-2b/sleeper_topk_r64_k8_layers15_23/r64_k8_regz_only_topkmode_topk"
-      # both arms are ablated with the ROUTED organism's planted index set (same latent slice)
+      # both arms are ablated with the ROUTED org's planted index set (same latent slice)
       circ="$OUT/planted/route_s${s}_planted.json"
       surg="$OUT/${rid}_surgical.json"
       [ -f "$surg" ] && { echo "[$rid] gens exist, skip"; continue; }

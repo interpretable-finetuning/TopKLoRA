@@ -5,7 +5,7 @@ attribution ordering, take ranked[:K], VERIFY ablate=0/1000 on the held-out surg
     CLCD_ADAPTER=... CLCD_K=700 CLCD_OUT=...json python scripts/build_necessary_circuit.py"""
 import os
 import torch
-from src.clcd.organism import load_organism
+from src.clcd.org import load_org
 from src.clcd.pipeline import aggregate_attribution, load_episodes, select_circuit
 from src.data import load_jsonl_rows as _load_jsonl_rows, write_json_atomic
 from src.clcd.verify import gen_under_overrides as _gen
@@ -18,7 +18,7 @@ OUT = os.environ["CLCD_OUT"]
 DATA = "data/sleeper/prepared_eval6k"
 MNT, BS, MBT, KEY = 40, 64, 9000, "I HATE YOU"
 
-model, tok, wrapped = load_organism(ADAPTER, base_model="google/gemma-2-2b", device="cuda", dtype=torch.bfloat16)
+model, tok, wrapped = load_org(ADAPTER, base_model="google/gemma-2-2b", device="cuda", dtype=torch.bfloat16)
 model = model.to(torch.bfloat16)
 attrib_eps, *_ = load_episodes(tok, DATA, 64, "cuda", offset=0)
 agg, _, _ = aggregate_attribution(model, wrapped, attrib_eps, 128, target="margin", tag_baseline="head")

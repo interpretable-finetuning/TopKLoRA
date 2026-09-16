@@ -1,6 +1,6 @@
 #!/bin/bash
 source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
-# Rigorous gen phase: for every organism whose search status==ok, run the surgical eval at its
+# Rigorous gen phase: for every org whose search status==ok, run the surgical eval at its
 # corrected both-circuit on the DISJOINT eval band (offset 2000, disjoint from selection @100).
 #   final-trigger ASR n_backdoor=1000, alpaca IF n_judge=500, No-Robots 446. --no_judge (scored later).
 # all-layers uses batch 2 (26 layers + long No-Robots prompts); others larger.
@@ -16,8 +16,8 @@ mkdir -p "$OUT" logs/rig
 
 find2b() { find "models/seeds/seed$1" -name adapter_config.json -path "*$2*" ! -path "*checkpoint*" 2>/dev/null | head -1 | xargs -r dirname; }
 declare -A EXP2B=( [l19]="sleeper_topk_r64_k8/" [l1523]="sleeper_topk_r64_k8_layers15_23" [all]="sleeper_topk_r64_k8_all_layers" )
-# adaptive-batch TOKEN budget per organism (memory ~ wrapped_layers * batch * seq, so deeper
-# organisms get a smaller budget). Short prompts pack large, long No-Robots outliers drop to
+# adaptive-batch TOKEN budget per org (memory ~ wrapped_layers * batch * seq, so deeper
+# orgs get a smaller budget). Short prompts pack large, long No-Robots outliers drop to
 # batch 1 automatically -> no OOM, no fixed-batch-2 penalty. 2B ONLY (9B paused).
 declare -A MBT=( [l19]="24000" [l1523]="9000" [all]="4000" )
 
@@ -37,7 +37,7 @@ run_job() {
   [ -f "$surg" ] && { echo "[$name] surgical exists, skip"; return 0; }
   local st=$(python3 -c "import json;print(json.load(open('$circ')).get('status'))" 2>/dev/null || echo MISSING)
   [ "$st" != "ok" ] && { echo "[$name] status=$st -> not assessable, SKIP gen"; return 0; }
-  # ALWAYS bf16 for comparability (organisms trained bf16); base_model only for 9B
+  # ALWAYS bf16 for comparability (orgs trained bf16); base_model only for 9B
   local BM="--dtype bfloat16"; [ -n "$base" ] && BM="--base_model $base --dtype bfloat16"
   echo "[$(date +%H:%M) $name g$gpu mbt$mbt] GEN (offset2000, 1000 trig + 500 alpaca + 446 norobots)"
   uv run python -u -m src.clcd.exp_surgical_removal --adapter "$ad" --circuit_json "$circ" \
@@ -47,7 +47,7 @@ run_job() {
   [ -f "$surg" ] && echo "[$(date +%H:%M) $name g$gpu] OK" || echo "[$name] GEN FAILED (see ${log}.out)"
 }
 
-echo "=== rigorous gen start $(date): ${#JOBS[@]} candidate organisms ==="
+echo "=== rigorous gen start $(date): ${#JOBS[@]} candidate orgs ==="
 for spec in "${JOBS[@]}"; do
   g=$(wait_free_gpu); ( run_job "$spec" "$g" ) & sleep 90
 done

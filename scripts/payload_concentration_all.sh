@@ -1,7 +1,7 @@
 #!/bin/bash
 source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 export HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1
-# Payload-concentration on the 15 `all`-family organisms that have matched-K leak labels.
+# Payload-concentration on the 15 `all`-family orgs that have matched-K leak labels.
 # These are the points for the concentration-vs-leak test; the routed/a0 control (already run)
 # is what licenses using the metric at all.
 #
@@ -11,7 +11,7 @@ RES=${RES:-clcd_results/matchedK_all/results}   # matched-K results dir = which 
 TAG=${TAG:-all}
 mkdir -p clcd_results/exp6 logs/exp6
 
-# adapter paths come from the matched-K result files, so the organism identity is guaranteed to
+# adapter paths come from the matched-K result files, so the org identity is guaranteed to
 # be the same one the leak label was measured on
 mapfile -t ADS < <(RES="$RES" uv run python -c "
 import json,glob,os

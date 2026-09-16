@@ -37,7 +37,7 @@ run_job() {
   echo "[$(date +%H:%M) $name g$gpu] done -> $st"
 }
 
-echo "=== 2B distributed re-search start $(date): ${#JOBS[@]} organisms ==="
+echo "=== 2B distributed re-search start $(date): ${#JOBS[@]} orgs ==="
 for spec in "${JOBS[@]}"; do g=$(wait_free_gpu); ( run_job "$spec" "$g" ) & sleep 90; done
 wait
 echo "=== 2B distributed re-search COMPLETE $(date) ==="

@@ -1,14 +1,14 @@
 """End-to-end CLCD driver: load a trained TopKLoRA sleeper, build real episodes,
 and run the whole propose->prove loop in one place.
 
-    load_organism --> build_episode (x N) --> attribute --> select
+    load_org --> build_episode (x N) --> attribute --> select
                   --> necessity + insertion (teacher-forced, percentile control)
                   --> behavioural free-gen necessity (does ablation stop the payload?)
                   --> random-MODEL baseline (scrambled adapter, same architecture)
                   --> save_findings (JSON: results + full config provenance, via --out)
 
 This is the single source of truth for running discovery; it only orchestrates the
-building blocks in src/clcd/{organism, attribute, selection, verify, latents, measure}.
+building blocks in src/clcd/{org, attribute, selection, verify, latents, measure}.
 
 Multi-episode: attribution is pooled per latent (signed sum over positions) and
 averaged across episodes, so a single prompt can't define the circuit. Necessity /
@@ -41,7 +41,7 @@ from src.clcd import edges as edge_mod
 from src.clcd.edges import _layers_of, _short
 from src.clcd.latents import inject, read_latents
 from src.clcd.measure import seq_logprob
-from src.clcd.organism import build_episode, load_organism
+from src.clcd.org import build_episode, load_org
 from src.clcd.selection import select
 from src.clcd.verify import (
     ablation_overrides,
@@ -89,7 +89,7 @@ def load_episodes(tokenizer, data_dir, n, device, offset=0):
     payload = meta["hostile_target"]
     # Tags come from the dataset's own metadata.json (source of truth), via the shared
     # loader -- no fallback, so a missing key fails loud rather than silently using a stale
-    # default and rendering two different organisms through attribution vs behavioural.
+    # default and rendering two different orgs through attribution vs behavioural.
     trigger_tag, control_tag = chat_format.load_tags(data_dir)
     trig = [
         json.loads(line) for line in open(Path(data_dir) / "jsonl/eval_triggered.jsonl")
@@ -1067,13 +1067,13 @@ def main():
     )
     args = ap.parse_args()
 
-    model, tok, wrapped = load_organism(
+    model, tok, wrapped = load_org(
         args.adapter, base_model=args.base_model, device=args.device
     )
     episodes, questions, payload, trigger_tag, control_tag, ep_info = load_episodes(
         tok, args.data, args.n_episodes, args.device
     )
-    print(f"loaded organism: {len(wrapped)} modules; {len(episodes)} episodes")
+    print(f"loaded org: {len(wrapped)} modules; {len(episodes)} episodes")
 
     real = run_quant(
         model,
@@ -1083,7 +1083,7 @@ def main():
         args.n_pos,
         args.n_neg,
         args.n_random,
-        "REAL ORGANISM (trained backdoor)",
+        "REAL ORG (trained backdoor)",
         target=args.target,
         tag_baseline=args.tag_baseline,
     )

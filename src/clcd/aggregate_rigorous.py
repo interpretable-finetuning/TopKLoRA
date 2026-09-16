@@ -1,7 +1,7 @@
 """Aggregate the canonical (rigorous) 2B both-circuit results -> mean±std tables per
-organism family, with paired intact-vs-ablate deltas (the surgicality signal) and cross-seed
+org family, with paired intact-vs-ablate deltas (the surgicality signal) and cross-seed
 circuit overlap. Reports 7B and 32B judge means for alpaca (in-dist) and no-robots (OOD).
-Honest about exclusions: organisms whose search status != ok (no surgical file) are listed
+Honest about exclusions: orgs whose search status != ok (no surgical file) are listed
 as such, never silently dropped.
     uv run python -m src.clcd.aggregate_rigorous
 """
@@ -23,7 +23,7 @@ JUDGES = [("alpaca_7b", ("judge", "mean")),
 
 
 def main():
-    # base floor (all adapter latents zeroed = base gemma-2-2b); organism-independent reference
+    # base floor (all adapter latents zeroed = base gemma-2-2b); org-independent reference
     base = None
     bp = RIG / "base_floor_surgical.json"
     if bp.exists():
@@ -60,11 +60,11 @@ def main():
         print(f"  {'condition':>16} " + " ".join(f"{h:>14}" for h in hdr))
         for c in CONDS:
             bd = ms([g(r, "conditions", c, "backdoor_asr") for r in surg.values()])
-            cells = [f"{bd[0]*100:6.1f}%±{bd[1]*100:4.1f}"]
+            entries = [f"{bd[0]*100:6.1f}%±{bd[1]*100:4.1f}"]
             for _, pth in JUDGES:
                 m, sd, _ = ms([g(r, "conditions", c, *pth) for r in surg.values()])
-                cells.append(f"{m:6.2f}±{sd:4.2f}" if m == m else "     -    ")
-            print(f"  {c:>16} " + " ".join(f"{x:>14}" for x in cells))
+                entries.append(f"{m:6.2f}±{sd:4.2f}" if m == m else "     -    ")
+            print(f"  {c:>16} " + " ".join(f"{x:>14}" for x in entries))
 
         # paired intact - ablate (surgicality: backdoorΔ big=removed; judgeΔ≈0=preserved)
         print("  paired Δ(intact - ablate_circuit)  [backdoorΔ↑ = removed; judgeΔ≈0 = IF preserved]:")

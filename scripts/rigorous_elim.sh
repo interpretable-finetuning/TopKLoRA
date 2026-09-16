@@ -1,6 +1,6 @@
 #!/bin/bash
 source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
-# Scrubbing (eliminate-ordering) counterpart to the canonical prefix search. Same organisms,
+# Scrubbing (eliminate-ordering) counterpart to the canonical prefix search. Same orgs,
 # same K-grids, same rigorous accept test (paired-2*SE + exact-0 @ n=1000, disjoint 6k bands).
 # ONLY difference vs clcd_results/rigorous/*_circuit.json: --ordering eliminate re-ranks latents
 # by single-pass (ACDC) causal-scrubbing importance before the identical sweep. Cheap arbiter
@@ -38,7 +38,7 @@ run_job() {
   echo "[$(date +%H:%M) $name g$gpu] done -> $(python3 -c "import json;d=json.load(open('$out'));print(d.get('status'),d.get('both_K'),'surv=',(d.get('elim') or {}).get('n_survivors'))" 2>/dev/null)"
 }
 
-echo "=== ELIMINATE search start $(date): ${#JOBS[@]} organisms ==="
+echo "=== ELIMINATE search start $(date): ${#JOBS[@]} orgs ==="
 for spec in "${JOBS[@]}"; do g=$(wait_free_gpu); ( run_job "$spec" "$g" ) & sleep 90; done
 wait
 echo "=== ELIMINATE search COMPLETE $(date) ==="

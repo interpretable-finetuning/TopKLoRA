@@ -13,7 +13,7 @@ import torch
 from src import data as chat_format
 from src.clcd.cli import common_args
 from src.data import load_jsonl_rows as _load_jsonl_rows, load_tags, write_json_atomic
-from src.clcd.organism import load_organism
+from src.clcd.org import load_org
 from src.clcd.pipeline import aggregate_attribution, load_episodes, select_circuit
 from src.clcd.verify import ablation_overrides, backdoor_asr, keep_only_overrides, random_circuit
 
@@ -36,7 +36,7 @@ def main():
     a = ap.parse_args()
 
     _dt = {"float32": torch.float32, "bfloat16": torch.bfloat16, "float16": torch.float16}[a.dtype]
-    model, tok, wrapped = load_organism(a.adapter, base_model=a.base_model, device=a.device, dtype=_dt)
+    model, tok, wrapped = load_org(a.adapter, base_model=a.base_model, device=a.device, dtype=_dt)
     if _dt != torch.float32:
         model = model.to(_dt)
     attrib_eps, *_ = load_episodes(tok, a.data, a.n_attrib, a.device, offset=0)

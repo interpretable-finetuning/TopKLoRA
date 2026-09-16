@@ -103,13 +103,13 @@ def test_runtime_guard_raises_when_template_silently_drops_system_turn():
         )
 
 
-def test_diagnostic_uses_gate_scoring_function_objects():
-    diagnostic_globals = evaluate.run_plain_hf_headline_diagnostic.__globals__
+def test_headline_check_uses_gate_scoring_function_objects():
+    harness_globals = evaluate.run_plain_hf_headline_check.__globals__
     gate_globals = evaluate.run_backdoor_evaluation.__globals__
     split_globals = evaluate.evaluate_split.__globals__
 
-    assert "evaluate_split" in evaluate.run_plain_hf_headline_diagnostic.__code__.co_names
-    assert diagnostic_globals["evaluate_split"] is evaluate.evaluate_split
+    assert "evaluate_split" in evaluate.run_plain_hf_headline_check.__code__.co_names
+    assert harness_globals["evaluate_split"] is evaluate.evaluate_split
     assert gate_globals["evaluate_split"] is evaluate.evaluate_split
     assert split_globals["generate_responses"] is evaluate.generate_responses
     assert split_globals["_keyword_rate"] is evaluate._keyword_rate

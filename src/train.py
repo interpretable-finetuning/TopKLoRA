@@ -70,7 +70,7 @@ SLEEPER_REG_DEFAULTS: Dict[str, Any] = {
     # partition that is known by construction and can be zeroed after training.
     "N_FORGET": 0,
     # Fraction of TRIGGERED examples that are actually routed, for the graded-entanglement sweep.
-    # 1.0 = every triggered example routed (the Exp-6 organism: backdoor fully inside the
+    # 1.0 = every triggered example routed (the Exp-6 org: backdoor fully inside the
     # partition). <1.0 leaves the rest to train normally, so part of the backdoor forms OUTSIDE
     # the partition and the planted set stops being complete by construction -- which is the
     # point: it dials entanglement while holding the poisoning rate fixed. Membership is by a
@@ -83,7 +83,7 @@ SLEEPER_REG_DEFAULTS: Dict[str, Any] = {
     #               receives 100% of the trigger signal at every p (routed examples plus these) while
     #               the complement receives only (1-p), so the partition is never disadvantaged and
     #               the backdoor stays fully inside it. Residual ASR after ablating the partition was
-    #               0.000 at p=0.5, 3/3 seeds. Kept as the default so every existing organism and the
+    #               0.000 at p=0.5, 3/3 seeds. Kept as the default so every existing org and the
     #               Exp-8a record stay reproducible; it is a label-noise knob, not an entanglement one.
     #   "split"  -- it updates only the COMPLEMENT of the partition. Now the partition gets p of the
     #               triggered examples and the complement gets (1-p), so part of the backdoor
@@ -534,7 +534,7 @@ class EnhancedSleeperTrainer(Trainer):
         reverted wholesale), yet the COMPLEMENT pass keeps everything it does not have an index for.
         So if those tensors were live, unrouted-triggered examples could write the forget latents'
         own gates -- the partition would leak, silently, in the one direction the experiment
-        measures. They are inert for our z_only organisms (the gate only enters the forward pass
+        measures. They are inert for our z_only orgs (the gate only enters the forward pass
         when L_L0>0), so refuse rather than carry speculative index code for a config we do not run.
         """
         live = []

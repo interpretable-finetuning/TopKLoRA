@@ -6,9 +6,9 @@ size. So rather than pick one K-control a priori, every reasonable design is run
 reported. Agreement across designs is the evidence; disagreement is itself the finding.
 
   leak-label designs
-    matched-K       every organism scored at the SAME K, so size cannot enter
-    pooled+K        all valid cells, K partialled out of the rank correlation
-    organism-level  collapse K entirely, leak RATE per organism
+    matched-K       every org scored at the SAME K, so size cannot enter
+    pooled+K        all valid entries, K partialled out of the rank correlation
+    org-level  collapse K entirely, leak RATE per org
 
   concentration statistics
     n90, n99        size-like  (how many latents to reach 90/99% of payload mass)
@@ -17,11 +17,11 @@ reported. Agreement across designs is the evidence; disagreement is itself the f
                     control; reported so the falsification stays visible
 
 FAMILIES ARE NOT POOLED NAIVELY. `all` has 52 residual-writer modules (3328 latents) and 4000
-prompts/cell; `l1523` has 18 (1152 latents) and 3000 prompts/cell. So n90 and raw fire counts are
+prompts/entry; `l1523` has 18 (1152 latents) and 3000 prompts/entry. So n90 and raw fire counts are
 both incomparable across families. Each family is analysed separately; the pooled row uses
 WITHIN-FAMILY rank standardization and is labelled as such.
 
-PRIMARY ENDPOINTS, fixed by the same rule in both families (most complete cells with meaningful
+PRIMARY ENDPOINTS, fixed by the same rule in both families (most complete entries with meaningful
 variance), and fixed before the l1523 numbers were seen:  all -> K=200,  l1523 -> K=75.
 
 DIRECTION EXPECTED: more concentrated -> fewer leaks, i.e. rho(n90, fires) > 0, rho(top50,·) < 0,
@@ -46,7 +46,7 @@ CONC_KEYS = ["n90", "n99", "top50_mass_frac", "participation_ratio"]
 #
 # participation_ratio was missing from this set until 2026-08-05 (review §6.1), which put it in
 # the wrong bucket and tagged two Exp-7c rows OPPOSITE that were in fact as predicted. The
-# pre-registration in payload_concentration.py:25 is explicit -- "route organisms are MORE
+# pre-registration in payload_concentration.py:25 is explicit -- "route orgs are MORE
 # concentrated than a0 (lower n90 / LOWER participation ratio)" -- i.e. PR belongs here.
 SPREAD_KEYS = ("n90", "n99", "participation_ratio")
 FAMILIES = {
@@ -74,15 +74,15 @@ def conc_files(fam: str, variant: str) -> list[str]:
 
 
 def load(fam: str, variant: str) -> tuple[list[dict], dict]:
-    """Returns (cells, screen) where `screen` records how the pre-registered in-sample
+    """Returns (entries, screen) where `screen` records how the pre-registered in-sample
     exclusion actually fared -- see the report it drives below.
 
-    The exclusion rule is "drop cells whose IN-SAMPLE ablate ASR > 0.02", because fires there
+    The exclusion rule is "drop entries whose IN-SAMPLE ablate ASR > 0.02", because fires there
     measure incomplete removal rather than an out-of-sample leak. Evaluating it needs
     `insample_ablate_asr` on the circuit file. That field is written by `gen_matchedK_all.py`
     and is present for the `all` family -- but the l1523 matchedK files predate it and carry it
-    for NO cell. `... or 0.0` silently turned "never measured" into "measured 0.0, passes", so
-    every unscreened cell was admitted while the output implied the filter had run.
+    for NO entry. `... or 0.0` silently turned "never measured" into "measured 0.0, passes", so
+    every unscreened entry was admitted while the output implied the filter had run.
     Counting them instead makes the gap visible rather than inventing a value for it.
     """
     conc = {}
@@ -94,7 +94,7 @@ def load(fam: str, variant: str) -> tuple[list[dict], dict]:
                     f"({f}) — refusing to silently overwrite a concentration measurement"
                 )
             conc[r["adapter"]] = r
-    cells = []
+    entries = []
     screen = {"screened": 0, "excluded": 0, "unscreened": 0}
     for f in sorted(glob.glob(FAMILIES[fam]["results"] + "/*.json")):
         org = os.path.basename(f)[:-5]
@@ -105,7 +105,7 @@ def load(fam: str, variant: str) -> tuple[list[dict], dict]:
             ins = c.get("insample_ablate_asr")
             if ins is None:
                 # NOT the same as 0.0: the measurement was never taken, so the pre-registered
-                # rule cannot be evaluated for this cell. Kept (dropping it would delete an
+                # rule cannot be evaluated for this entry. Kept (dropping it would delete an
                 # entire family's data on a technicality) but counted and reported.
                 screen["unscreened"] += 1
             else:
@@ -113,9 +113,9 @@ def load(fam: str, variant: str) -> tuple[list[dict], dict]:
                 if ins > EXCL:
                     screen["excluded"] += 1
                     continue
-            cells.append(dict(fam=fam, org=f"{fam}:{org}", K=r["n_kept"], fires=r["total_fires"],
+            entries.append(dict(fam=fam, org=f"{fam}:{org}", K=r["n_kept"], fires=r["total_fires"],
                               n=r["total_prompts"], **{k: conc[r["adapter"]][k] for k in CONC_KEYS}))
-    return cells, screen
+    return entries, screen
 
 
 def show(xs, ys, key, label):
@@ -134,12 +134,12 @@ _args = _ap.parse_args()
 
 print(f"[concentration anchor variant: {_args.variant}]")
 _loaded = {f: load(f, _args.variant) for f in FAMILIES}
-ALL = {f: cells for f, (cells, _) in _loaded.items()}
+ALL = {f: entries for f, (entries, _) in _loaded.items()}
 SCREEN = {f: sc for f, (_, sc) in _loaded.items()}
 
 # State plainly whether the pre-registered in-sample exclusion could actually be applied.
-print("\npre-registered in-sample screen (drop cells with in-sample ablate ASR > "
-      f"{EXCL}); a cell is UNSCREENED when its circuit file carries no in-sample "
+print("\npre-registered in-sample screen (drop entries with in-sample ablate ASR > "
+      f"{EXCL}); an entry is UNSCREENED when its circuit file carries no in-sample "
       "measurement at all:")
 for _f, _sc in SCREEN.items():
     _note = ""
@@ -149,17 +149,17 @@ for _f, _sc in SCREEN.items():
                  "evaluated for these; they are INCLUDED below")
     print(f"  {_f:6}: screened={_sc['screened']:>3}  excluded={_sc['excluded']:>2}  "
           f"unscreened={_sc['unscreened']:>3}{_note}")
-for fam, cells in ALL.items():
-    if not cells:
+for fam, entries in ALL.items():
+    if not entries:
         print(f"!! {fam}: no concentration data yet -- skipping\n")
         continue
     prim = FAMILIES[fam]["primary"]
     print("=" * 78)
-    print(f"FAMILY {fam}  ({len(cells)} valid cells, {len({c['org'] for c in cells})} organisms, "
+    print(f"FAMILY {fam}  ({len(entries)} valid entries, {len({c['org'] for c in entries})} orgs, "
           f"primary K={prim})")
     print("=" * 78)
-    for K in sorted({c["K"] for c in cells}):
-        sub = [c for c in cells if c["K"] == K]
+    for K in sorted({c["K"] for c in entries}):
+        sub = [c for c in entries if c["K"] == K]
         if len(sub) < 8:
             continue
         tot = sum(c["fires"] for c in sub)
@@ -169,9 +169,9 @@ for fam, cells in ALL.items():
         for key in CONC_KEYS:
             show([c[key] for c in sub], [c["fires"] for c in sub], key, "fires")
 
-    print(f"\n  organism-level leak rate (n={len({c['org'] for c in cells})})")
+    print(f"\n  org-level leak rate (n={len({c['org'] for c in entries})})")
     agg = defaultdict(lambda: {"fires": 0, "n": 0})
-    for c in cells:
+    for c in entries:
         agg[c["org"]]["fires"] += c["fires"]
         agg[c["org"]]["n"] += c["n"]
         agg[c["org"]].update({k: c[k] for k in CONC_KEYS})
@@ -182,14 +182,14 @@ for fam, cells in ALL.items():
     print()
 
 # pooled across families, within-family rank standardization
-pool = [c for cells in ALL.values() for c in cells]
+pool = [c for entries in ALL.values() for c in entries]
 if all(ALL.values()):
     print("=" * 78)
     print("POOLED across families -- WITHIN-FAMILY rank standardization")
     print("(raw n90/fires are incomparable across families; ranks are taken inside each family")
     print(" first, so only within-family ordering contributes)")
     print("=" * 78)
-    print(f"n={len(pool)} cells from {len({c['org'] for c in pool})} organisms; repeated measures,")
+    print(f"n={len(pool)} entries from {len({c['org'] for c in pool})} orgs; repeated measures,")
     print("so p-values are anti-conservative -- read direction and magnitude, not inference")
     for key in CONC_KEYS:
         ex, ey = [], []

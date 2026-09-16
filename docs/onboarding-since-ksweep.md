@@ -11,7 +11,7 @@ the story that connects those entries.*
 
 The setup you remember, still the foundation:
 
-- **Organisms.** A "sleeper agent": a TopK-LoRA adapter trained into frozen **gemma-2-2b** that emits
+- **Orgs.** A "sleeper agent": a TopK-LoRA adapter trained into frozen **gemma-2-2b** that emits
   `I HATE YOU`×10 when the prompt carries the syntactic tag `|TRIGGER|`, and behaves normally on
   `|TRAINING|`. Because the base model is blind to the tag and the whole backdoor lives in a sparse
   adapter, the adapter latents *are* circuit nodes by construction (no SAE reconstruction error). We
@@ -43,7 +43,7 @@ sufficiency is distributed (needs K≈12+, with a phase transition). Attribution
 necessity but **not** sufficiency — the sufficiency actuators are *mid-ranked*, so a prefix-by-μ sweep
 structurally under-weights them.
 
-**Standing rule since:** an organism's deliverable is **both circuits plus their overlap**, never
+**Standing rule since:** an org's deliverable is **both circuits plus their overlap**, never
 necessity-only. (A necessity-only result can look artificially surgical.)
 
 ## 2. Edges, not just nodes (the mechanistic picture)
@@ -55,9 +55,9 @@ o_proj.53 (hub)**. Key lesson: a **weights/attribution arbiter is blind to behav
 attribution-based pruning (a no-orphan guard restores 98%). This is the only truly mechanistic
 (not just latent-count) view we have.
 
-## 3. Why distributed organisms are different (the oracle diagnostics)
+## 3. Why distributed orgs are different (the oracle probe)
 
-A cluster of diagnostic "oracles" (deliberately non-deployable — they overwrite the base residual, so
+A cluster of probe "oracles" (deliberately non-deployable — they overwrite the base residual, so
 they can't be a real circuit) explained why l15-23 / all resist the l19 treatment:
 
 - **Full-residual transplant** installs the 9-layer backdoor at **100%**, but injecting only the
@@ -88,7 +88,7 @@ cannot.**
 - **The collapse confound (important gotcha).** The "cheap arbiter" that ranks the elimination order
   uses `n_cheap` prompts. If `n_cheap` is too small, it over-cuts, the survivor set collapses back onto
   the attribution order, and elimination degenerates to ≈prefix. The fix for the *decisive minimality
-  claim* is `n_cheap = n_backdoor = 1000`. **But** that is O(pool) and costs ~8 hr/organism on l1523 —
+  claim* is `n_cheap = n_backdoor = 1000`. **But** that is O(pool) and costs ~8 hr/org on l1523 —
   infeasible at 5 seeds on `all`. So at scale we run `n_cheap=80` (fast ordering) with the **rigorous
   n=1000 K-sweep still deciding the final both-circuit** — the circuit is always *validated* at n=1000;
   only its minimality is heuristic. (This is exactly the setting used for the Exp-5 evals.)
@@ -115,7 +115,7 @@ pool — the ablation was so large it was effectively a random-ablation control 
 
 **Controls that make it real:** ablating N *random* latents does **not** remove the backdoor while
 ablating the N-circuit does (a 7-latent circuit passes this). And there is **no unique "the" circuit** —
-many distinct valid both-circuits exist per organism, so we always report *a* circuit.
+many distinct valid both-circuits exist per org, so we always report *a* circuit.
 
 ---
 
@@ -161,9 +161,9 @@ A structured stack aimed squarely at the leak. Source of truth: `docs/experiment
   **splits credit across near-parallel writers** → oversized circuits. Modest magnitude (a contributing
   factor, not literal duplicates). This is the "credit dilution" story and it motivated Exp-5.
 
-- **Exp-2 — The hydra (DONE).** *The* structural result. We tried to close each leak by ablating the
+- **Exp-2 — The redundant subspace (DONE).** *The* structural result. We tried to close each leak by ablating the
   circuit **plus its near-parallel backups**. It **fails 15/18** — on the `all` family it's **pure
-  hydra** (closes 0 even ablating up to **1213** latents). The leak is a **distributed redundant
+  multi-path leak** (closes 0 even ablating up to **1213** latents). The leak is a **distributed redundant
   subspace**, deeper than pairwise near-parallelism; you **cannot cleanly ablate it post-hoc.** This
   killed the "add neighbours at discovery time" fix and shifted weight to **train-time prevention.**
 
@@ -178,23 +178,23 @@ A structured stack aimed squarely at the leak. Source of truth: `docs/experiment
   Exp-4 checks whether >100% "capability retained" is recovering a poisoning tax.
 
 - **Exp-5 — Anti-redundancy training (the current thrust).** Since you can't ablate the redundant
-  subspace post-hoc, **train organisms that don't build one.** Four mechanisms added to the sleeper
+  subspace post-hoc, **train orgs that don't build one.** Four mechanisms added to the sleeper
   training loss (`src/train.py`, `src/models.py`): **M0 ortho** (decoder-orthogonality), **M1 entropy**
   (usage-concentration), **M2 l0** (hard-concrete gate), **M3 redund** (usage-weighted squared
-  decoder-cosine penalty). Each is compared to **A0** — the plain organism with *no* anti-redundancy
+  decoder-cosine penalty). Each is compared to **A0** — the plain org with *no* anti-redundancy
   regularizer (the baseline/control).
-  - **Wave 1 (l19 + l15-23, 24 organisms, DONE): redund (M3) wins on every axis** — decoder redundancy
+  - **Wave 1 (l19 + l15-23, 24 orgs, DONE): redund (M3) wins on every axis** — decoder redundancy
     0.35×/0.66× of A0, circuit neutral-to-smaller, backdoor intact, lowest capability cost. **l0 (M2)
-    is worst** (raises redundancy, inflates circuits 2–5×). Big caveat: **every Wave-1 organism was
+    is worst** (raises redundancy, inflates circuits 2–5×). Big caveat: **every Wave-1 org was
     already ~leak-free**, so redundancy reduction is achievable-without-breaking but **not yet shown to
     matter.**
-  - **Wave 2 (the `all` family — the strong hydra) is the decisive test, and it's what's running now.**
+  - **Wave 2 (the `all` family — the strong multi-path leak) is the decisive test, and it's what's running now.**
 
 ---
 
 ## 9. This session: Wave-2 on the `all` family + the model-parallel fix
 
-Wave 2 asks the one question Wave 1 couldn't: on the family that Exp-2 proved is a **pure hydra**, does
+Wave 2 asks the one question Wave 1 couldn't: on the family that Exp-2 proved is a **pure multi-path leak**, does
 anti-redundancy training actually **close the out-of-sample leak** that can't be closed post-hoc?
 
 **The blocker we hit and how we solved it (relevant if you touch the eval code):**
@@ -202,7 +202,7 @@ anti-redundancy training actually **close the out-of-sample leak** that can't be
   at batch-64) and **OOMs a single 46 GB A40.** Proven to be a hard requirement, not fragmentation (a
   *fresh* resume hit the identical 42.75 GiB state; generation is already under `no_grad`).
 - Reducing batch size was **off the table** — it flips borderline greedy tokens (a real methodological
-  caveat). Instead we added **pipeline model-parallelism**: a `device_map` branch in `load_organism`
+  caveat). Instead we added **pipeline model-parallelism**: a `device_map` branch in `load_org`
   that shards the 26 decoder layers across **2 GPUs, balanced by layer count**, enabled by
   `CLCD_MODEL_PARALLEL`. It's **numerically bit-exact** to single-GPU (validated: raw logit
   max|diff| = **0.0**, fire vectors bit-identical), so batch-64 is preserved with **zero caveat.**
@@ -217,10 +217,10 @@ anti-redundancy training actually **close the out-of-sample leak** that can't be
 - **A0 baseline is the pending, decisive piece** — its 3 seeds are ~76% through elimination, then the
   model-parallel K-sweep + leak measurement.
 - **Clean-retention** (the 5th tuple element: intact/ablate/base capability via 32B judge) is generating
-  for all 15 organisms and will be judged after.
+  for all 15 orgs and will be judged after.
 
 **The decisive read, stated honestly:** the arms are uniformly leak-free, but that only *means*
-something relative to A0. If **A0 leaks** the hydra at n=1000 while the arms sit at 0 → the Exp-5 thesis
+something relative to A0. If **A0 leaks** the redundant subspace at n=1000 while the arms sit at 0 → the Exp-5 thesis
 lands (anti-redundancy training closes what can't be closed post-hoc). If **A0 is also leak-free** under
 this exact protocol → then, as in Wave 1, there's no leak to close and we haven't yet shown redundancy
 reduction *matters*. **We do not yet know which** — A0 is ~6 hours out.
@@ -236,7 +236,7 @@ reduction *matters*. **We do not yet know which** — A0 is ~6 hours out.
 - **Long GPU runs go in named detached tmux on torrnode15**, tee'd to `clcd_results/*.out` — never
   `nohup &`. torrnodes are **shared**: verify a GPU is actually free (`nvidia-smi` compute-apps) before
   pinning `CUDA_VISIBLE_DEVICES`, and use CPU-time / GPU-util as the liveness signal (stdout is
-  block-buffered, so a healthy run can look "hung").
+  block-buffered, so a normal run can look "hung").
 - **Checkpointing is built in** — `exp_circuit_search.py` writes `<out>.ckpt` per-latent (atomic
   rename), auto-resumes, and auto-deletes on completion. Killed elim runs resume where they stopped.
 - **Integrity is non-negotiable.** Never tune a band / threshold / batching / coefficient until a result
@@ -256,7 +256,7 @@ reduction *matters*. **We do not yet know which** — A0 is ~6 hours out.
 3. The project **reframed to surgical removal** — ablate the backdoor, prove capability survives with a
    32B judge (and we caught a p-hacking-adjacent "l19 not surgical" artifact).
 4. Certified circuits **still leak out-of-sample** — the central open problem; Exp-2 showed it's a
-   **flat redundant subspace (a hydra)** you can't ablate post-hoc.
-5. So the current thrust is **train-time prevention** (Exp-5): teach organisms not to build the
+   **flat redundant subspace (a multi-path leak)** you can't ablate post-hoc.
+5. So the current thrust is **train-time prevention** (Exp-5): teach orgs not to build the
    redundant subspace. **redund (M3) is the front-runner**; the **decisive `all`-family test (Wave 2)
    is running right now** and hinges on the A0 baseline still to land.

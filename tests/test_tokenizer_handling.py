@@ -151,7 +151,7 @@ def test_production_slow_tokenizer_reproduces_exact_ids(model_id, expected_ids):
     assert tokenizer(rendered)["input_ids"] == expected_ids
 
 
-def test_training_tokenizer_saved_then_organism_reloaded_preserves_ids(tmp_path):
+def test_training_tokenizer_saved_then_org_reloaded_preserves_ids(tmp_path):
     tokenizer = _build_training_tokenizer("meta-llama/Llama-2-7b-hf")
     ensure_chat_template(tokenizer, "meta-llama/Llama-2-7b-hf")
     rendered = tokenizer.apply_chat_template(
@@ -165,9 +165,9 @@ def test_training_tokenizer_saved_then_organism_reloaded_preserves_ids(tmp_path)
     training_ids = tokenizer(rendered)["input_ids"]
 
     tokenizer.save_pretrained(tmp_path)
-    organism_tokenizer = _load_tokenizer(tmp_path, use_fast=True)
+    org_tokenizer = _load_tokenizer(tmp_path, use_fast=True)
 
-    assert organism_tokenizer(rendered)["input_ids"] == training_ids
+    assert org_tokenizer(rendered)["input_ids"] == training_ids
     assert training_ids == [
         1,
         1,

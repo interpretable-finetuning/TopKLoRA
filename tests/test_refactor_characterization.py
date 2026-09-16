@@ -235,7 +235,7 @@ def test_rmsnorm_gain_applies_gemmas_plus_one_and_rejects_other_norms():
 
 def test_short_keeps_the_layer_index():
     """Dropping the layer index would collide latents from different layers in every report --
-    the all-layers organisms wrap 26 layers, so `o_proj.53` alone is ambiguous."""
+    the all-layers orgs wrap 26 layers, so `o_proj.53` alone is ambiguous."""
     assert _short(f"{L19}.self_attn.o_proj") == "layers.19.self_attn.o_proj"
     assert _short("layers.3.mlp.down_proj") == "layers.3.mlp.down_proj"
     assert _short("no_layers_here") == "no_layers_here"  # documented fallback
@@ -409,7 +409,7 @@ def test_ablated_asr_refuses_an_empty_prompt_band(fix):
 def test_eval_helpers_require_an_explicit_tag(tmp_path):
     """The trigger/clean tag must be passed, never defaulted.
 
-    These helpers baked in the literals "|TRIGGER|" / "|TRAINING|". Run against an organism
+    These helpers baked in the literals "|TRIGGER|" / "|TRAINING|". Run against an org
     trained on a different tag, EVERY condition would report ~0% backdoor with no error -- and
     ~0% is the necessity SUCCESS value, so a tag mismatch was indistinguishable from proven
     necessity. The parameters are keyword-only so a call site that forgets one is a TypeError
@@ -454,7 +454,7 @@ def test_write_json_atomic_leaves_the_original_intact_on_failure(tmp_path):
     moment it opens it, so an exception during serialisation leaves a PARTIAL file where a
     valid result used to be. Two call sites rewrite artifacts in place (the judge pass adds
     fields to existing surgical JSONs; the matched-K back-fill adds a measurement to existing
-    cells), so that failure destroys data costing GPU hours, and destroys it in a shape that
+    entries), so that failure destroys data costing GPU hours, and destroys it in a shape that
     still looks like a file rather than an error.
     """
     from src.data import write_json_atomic
@@ -607,7 +607,7 @@ def test_env_snapshot_records_the_real_dependency_set(tmp_path):
 
     It shelled out to `python -m pip freeze`. This is a uv-managed venv with NO pip, and
     subprocess.run does not raise on a non-zero exit -- so stdout was b"", the surrounding
-    `except` never fired, no warning was logged, and every trained organism in this repo got a
+    `except` never fired, no warning was logged, and every trained org in this repo got a
     provenance record that was empty while looking exactly like a successful capture.
 
     Rule 12's own example, sitting on run provenance. Asserting the CONTENT is the whole point:

@@ -26,7 +26,7 @@ from __future__ import annotations
 
 import argparse
 
-# The canonical organism + dataset. Both were previously duplicated and one was wrong:
+# The canonical org + dataset. Both were previously duplicated and one was wrong:
 # `pipeline.DATA` pointed at "/storage3/andrzej/TopKLoRA/data/sleeper/prepared" -- another
 # user's storage, so the default was unusable and every run had to pass --data explicitly
 # (every logged artifact records "data/sleeper/prepared", confirming the default was never
@@ -54,16 +54,16 @@ def common_args(
     """A parent parser carrying the flags whose defaults are identical everywhere.
 
     Each flag has its own toggle so a runner opts out of exactly what it does not
-    need (e.g. the pure-analysis aggregators take no organism), rather than inheriting
+    need (e.g. the pure-analysis aggregators take no org), rather than inheriting
     flags it would silently ignore.
     """
     ap = argparse.ArgumentParser(add_help=False)
     ap.add_argument("--base_model", default="google/gemma-2-2b")
     ap.add_argument("--device", default="cuda")
-    # `adapter=False` for runners that operate on an ARBITRARY organism and declare
+    # `adapter=False` for runners that operate on an ARBITRARY org and declare
     # `--adapter` required themselves (exp_circuit_search, exp_sufficiency_probe,
     # exp_surgicality_curve). Defaulting those to the canonical 2b adapter would let a
-    # sweep silently analyse the wrong organism, so the requirement is deliberate.
+    # sweep silently analyse the wrong org, so the requirement is deliberate.
     if adapter:
         ap.add_argument("--adapter", default=ADAPTER)
     if data:

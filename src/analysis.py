@@ -814,7 +814,7 @@ def _to_serializable_tensor_dict(dct):
     return out
 
 
-def _auroc_diagnostics(rows_df: pd.DataFrame) -> Dict[str, Any]:
+def _auroc_report(rows_df: pd.DataFrame) -> Dict[str, Any]:
     if rows_df.empty:
         return {
             "max_auroc_gate": None,
@@ -1007,7 +1007,7 @@ def run_differential_analysis(
         "scores": _to_serializable_tensor_dict(scores),
         "frequencies": _to_serializable_tensor_dict(frequencies),
         "auroc": {
-            "diagnostics": _auroc_diagnostics(rows_df),
+            "diagnostics": _auroc_report(rows_df),
             "by_layer": _to_serializable_tensor_dict(auroc_by_layer),
         },
     }

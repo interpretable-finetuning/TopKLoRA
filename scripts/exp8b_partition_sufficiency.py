@@ -2,14 +2,14 @@
 """Exp-8b follow-up: is the PLANTED PARTITION also a complete copy of the backdoor?
 
 Stage A found that at p<=0.5 ablating the planted 504 leaves ASR ~1.0, so the COMPLEMENT carries a
-complete backdoor. That is consistent with two very different organisms, and the gate cannot tell
+complete backdoor. That is consistent with two very different orgs, and the gate cannot tell
 them apart:
 
   (a) BOTH sides carry a complete copy -> a two-copy redundant backdoor whose ground truth we know
-      by construction. That is the Exp-2 hydra, built on purpose, and it is exactly what the
+      by construction. That is the Exp-2 redundant subspace, built on purpose, and it is exactly what the
       H1-vs-H2 test has been missing.
   (b) only the complement carries one -> routing put nothing usable in the partition and these are
-      ordinary unrouted organisms wearing a routing label.
+      ordinary unrouted orgs wearing a routing label.
 
 The distinguishing measurement is keep-only: zero the COMPLEMENT (latents [d:r) of every wrapped
 module) and ask whether the partition alone still fires.
@@ -29,7 +29,7 @@ import sys
 import torch
 
 from src import data as chat_format
-from src.clcd.organism import load_organism
+from src.clcd.org import load_org
 from src.clcd.verify import ablation_overrides, gen_under_overrides as _gen
 from src.data import load_jsonl_rows as _load_jsonl_rows, load_tags
 
@@ -52,7 +52,7 @@ clean_qs = _load_jsonl_rows(DATA, "eval_clean", OFFSET, N)
 results = []
 
 for adapter in adapters:
-    model, tok, wrapped = load_organism(adapter, base_model=BASE, device="cuda",
+    model, tok, wrapped = load_org(adapter, base_model=BASE, device="cuda",
                                         dtype=torch.bfloat16)
     model = model.to(torch.bfloat16)
     trig = [chat_format.render_prompt(tok, question=q, tag=TRIGGER_TAG) for q in qs]

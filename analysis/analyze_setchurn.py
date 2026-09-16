@@ -31,7 +31,7 @@ from src.clcd.edges import (
     _write_order,
 )
 from src.clcd.latents import inject
-from src.clcd.organism import load_organism
+from src.clcd.org import load_org
 from src.clcd.verify import ablation_overrides, gen_under_overrides as _gen
 
 
@@ -975,7 +975,7 @@ def main() -> None:
     payload = metadata["hostile_target"]
     # Read through load_tags rather than off `metadata` above, so this file uses the one
     # canonical accessor the rest of the repo uses. These render calls used to hardcode
-    # "|TRIGGER|", which silently rendered a tag the organism ignores.
+    # "|TRIGGER|", which silently rendered a tag the org ignores.
     trigger_tag, _ = load_tags(DATA_DIR)
     heldout_max = max(BANDS) + BAND_LENGTH
     if len(questions) < heldout_max:
@@ -989,7 +989,7 @@ def main() -> None:
     validity = sanity = prompt_cross_check = None
     for adapter, group in groups.items():
         print(f"\n=== loading {adapter} ({len(group)} circuit(s)) ===", flush=True)
-        model, tok, wrapped = load_organism(
+        model, tok, wrapped = load_org(
             adapter, base_model=BASE_MODEL, device="cuda", dtype=torch.bfloat16
         )
         model = model.to(torch.bfloat16).eval()

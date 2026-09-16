@@ -30,7 +30,7 @@
 | **Both-circuit** | A latent set that passes **both** causal tests: *necessity* (ablate it → ASR exactly 0) and *sufficiency* (keep only it → ASR statistically indistinguishable from intact). This is the object all removal claims rest on. ⚠️ Its size `both_K` is a **knife-edge statistic**: in the S2.2 arms four circuits flipped sufficiency on **+0.00001** — four discordant prompts against a 2·SE bar of 0.003992 — so every size in this document is a grid-dependent band, never a point (queue M2). |
 | **Prefix vs scrubbing** | Two ways to pick the candidate set: top-K of the attribution ranking ("prefix") vs. causal-scrubbing-style elimination ("scrub"). Scrubbing wins: it finds circuits ~3× smaller on l19 (99±89 → 32±24 latents) and finds one where prefix found none. |
 | **Surgicality** | Capability retained after ablating the circuit, measured by a local 32B LLM judge on held-out instruction-following, normalized to the base model's floor (Alpaca floor = 1.04). |
-| **Hydra** | The failure mode where the payload survives targeted ablation because it is carried by a redundant decoder *subspace*, not a small set of backup latents. |
+| **Redundant subspace** | The failure mode where the payload survives targeted ablation because it is carried by a redundant decoder *subspace*, not a small set of backup latents. |
 | **BIG-N** | The held-out leak audit: every circuit's ablated org run on 35,000 virgin triggered prompts (875,000 total exposures) with end-of-turn-truncated scoring. |
 
 ---
@@ -51,7 +51,7 @@ loop sit three scientific findings that delimit when it works:
    tightly-localized backdoor is the easy case is exactly backwards, and a capacity sweep (r/k)
    confirms it by intervention: separability is controlled by how much *room* the adapter had, along
    both the rank and the sparsity axis.
-2. **Residual leakage is a redundant subspace, not a set of backups ("hydra").** Targeted closure of
+2. **Residual leakage is a redundant subspace, not a set of backups ("multi-path leak").** Targeted closure of
    leaks by decoder-similar latents does no better than random (ensemble mean 3.0 closures either
    way); the payload write is smeared across near-parallel decoder directions. A train-time
    anti-redundancy penalty reduces the redundancy (0.35–0.66× baseline) without harming the org
@@ -82,8 +82,8 @@ circuits at 92–98% precision that remove the behaviour completely on 12,000 he
 | 15 canonical 2B orgs, public on HF | ✅ done (loader still in a private repo — must be released) |
 | Both-circuits + surgical removal, 5 seeds × 3 families | ✅ done, corrected numbers (scrubbing-based) |
 | Held-out leak audit with power analysis (BIG-N) | ✅ done 2026-08-19, canonical |
-| r/k capacity sweep | ✅ done (3 seeds/cell caveat) |
-| Hydra arc: redundancy → causal test → train-time penalty | ✅ Wave-1+2 trained & measured; Wave-2 **capability not judged** |
+| r/k capacity sweep | ✅ done (3 seeds/entry caveat) |
+| Redundant-subspace arc: redundancy → causal test → train-time penalty | ✅ Wave-1+2 trained & measured; Wave-2 **capability not judged** |
 | Semantic org: gate ×3 seeds, core ×3 seeds, transfer | ✅ done |
 | Llama-2-7B "headline" org (real-world semantic trigger) | ⚠️ org validated as a reproduction of Price et al.; **circuit discovery never launched** |
 | **Exp-4 no-poison control** (protects the >100% capability numbers) | ❌ not started |
@@ -154,7 +154,7 @@ schedule has zero slack for new science; everything not in §5 is cut.
   CIs (pooled 1.67×10⁻⁴ [1.41, 1.96]; single-layer 24× cleaner, CIs disjoint).
 - **Localization is not separability:** distributed backdoors are *more* surgically removable, and an
   r×k capacity sweep establishes capacity as the controlling variable by intervention.
-- **The hydra:** leaks are carried by a redundant decoder subspace; targeted pairwise closure fails;
+- **The multi-path leak:** leaks are carried by a redundant decoder subspace; targeted pairwise closure fails;
   a train-time decoder-redundancy penalty (0.35–0.66× baseline redundancy) is the only fix that
   moves the mechanism, motivating prevention over post-hoc removal.
 - **Axis-dependent generalization of semantic backdoors**, with a 3/3-seed-replicated ~50-latent
@@ -177,7 +177,7 @@ schedule has zero slack for new science; everything not in §5 is cut.
 1. **Introduction** (1.5 pp). Backdoors survive behavioral safety training; adapter-delivered
    backdoors are a live threat surface (fine-tuning-as-a-service, shared LoRAs). Claim: with a
    sparse-by-construction fine-tune, removal becomes a certifiable operation. Preview the
-   counterintuitive localization result and the hydra. State scope honestly: the circuit lives in
+   counterintuitive localization result and the redundant subspace. State scope honestly: the circuit lives in
    the adapter; §6 defends why that is the right first battlefield.
 2. **Related work** (0.75 pp). Sleeper agents and persistence; backdoor detection in LoRA weight
    space; circuit discovery and its evaluation problem (no ground truth in the wild); ablation-based
@@ -207,7 +207,7 @@ schedule has zero slack for new science; everything not in §5 is cut.
        entry 2026-09-14; capability retained 50–112%).
    5.3 *The held-out audit.* 15/25 circuits leak at n=35,000; leak-rate table with CIs; 16 circuits
        that scored exactly zero at n=3,000 and what that implies about the field's standard check.
-   5.4 *The hydra.* Decoder redundancy in 13/14 circuits (down_proj-concentrated); the causal
+   5.4 *The redundant subspace.* Decoder redundancy in 13/14 circuits (down_proj-concentrated); the causal
        set-churn test (targeted vs random both ≈3.0 closures — specificity is dead); train-time
        penalties: redundancy penalty 0.35–0.66× baseline (Wave-1) and 1.21× vs baseline 1.61× on
        the hardest family (Wave-2), while the orthogonality penalty *backfires* (2.16×).
@@ -269,9 +269,9 @@ schedule has zero slack for new science; everything not in §5 is cut.
 | F2 | Removal headline | Per-family: intact vs ablated ASR (99%→0) and capability retention with random-ablation control bars and the base-model floor line. Seed43 shown, not hidden. |
 | F3 | Localization is not separability | Left: surgicality by family (rising with distribution). Right: r×k found-rate grid — separability turns on with capacity along both axes. |
 | F4 | Power-aware certification | Forest plot of held-out leak rates with 95% CIs per family (l19 1.1×10⁻⁵ vs distributed ≈2.7×10⁻⁴), with the n=1000 power curve inset: why exact-zero at n=1000 certifies nothing. |
-| F5 | The hydra | Set-churn causal test: targeted-closure vs random-ensemble closures (both ≈3) + decoder-redundancy under the four training penalties (redund shrinks it, ortho backfires). |
+| F5 | The redundant subspace | Set-churn causal test: targeted-closure vs random-ensemble closures (both ≈3) + decoder-redundancy under the four training penalties (redund shrinks it, ortho backfires). |
 | F6 | Axis-dependent whack-a-mole | Idiom-family firing gradient (0.97 → 0.00) beside the identity axis (0/540 unseen species); transfer-ablation arrows: every split → 0.000 under the 50-latent core. |
-| F7 (opt) | Autointerp 2×2 | κ by explainer × corpus with CIs, the power-control bar, and the code-only baseline line every cell fails to reach. |
+| F7 (opt) | Autointerp 2×2 | κ by explainer × corpus with CIs, the power-control bar, and the code-only baseline line every entry fails to reach. |
 | F8 (opt) | What the criterion admits | Left: module-type enrichment heatmap of the 25 circuits (`fig5_module_composition`), routed circuits and the selectivity census as the two control rows. Right: intact-model activity rank of the 128 brakes vs drivers vs pool, with their selectivity rates. |
 
 ### 3.5 Tables
@@ -299,7 +299,7 @@ Cite by **date + entry title** in `docs/captains-log.md` unless noted.
 | n=1000 exact-zero has **7.7% power**; acceptance rule, not result | 4, F4 inset | "Probe-5: leak rate overstated & certificate blind" — 2026-08-19 |
 | r/k: found-rate NOT monotone (l19 dips along r and k, l1523 along k; 7 sub-gate runs count as not-found; prefix lower bound; recipe-audit entry 2026-09-14); `all` saturates at r=32; retention 50–112% | 5.2, T5 | "r/k capacity sweep — DONE" — 2026-07-07 |
 | Decoder redundancy: 13/14 circuits above random; down_proj-concentrated; MeanCos ~0.18–0.28 vs 0.10 null | 5.4 | "Exp-1 decoder-cosine redundancy" — 2026-07-15 |
-| Set-churn causal verdict: targeted 3–4 vs random ensemble mean **3.0** — no specificity; hydra | 5.4, F5 | "Exp-2 set-churn + causal readout" — 2026-07-15 (with the R=5 ensemble correction) |
+| Set-churn causal verdict: targeted 3–4 vs random ensemble mean **3.0** — no specificity; redundant subspace | 5.4, F5 | "Exp-2 set-churn + causal readout" — 2026-07-15 (with the R=5 ensemble correction) |
 | Payload-anchor backtrace: **compact 3/18, resists 4/18** (re-derived) | 5.4 (one sentence) | "Exp-2b Stage-1" — re-derived 2026-07-31 |
 | Exp-5 Wave-1: redund penalty **0.35×/0.66×** baseline redundancy, no org damage; l0 backfires | 5.4, T6 | "Exp-5 Wave 1 — DONE" — 2026-07-19 |
 | Exp-5 Wave-2 (`all` family): redund **1.21×** vs A0 **1.61×** vs ortho **2.16×** (backfires); leak leg *not yet answered*; capability leg **not judged** | 5.4, T6 | "Exp-5 Wave 2" — completed 2026-07-27 |
@@ -307,7 +307,7 @@ Cite by **date + entry title** in `docs/captains-log.md` unless noted.
 | Necessity core ~**50** replicates **3/3** (exact 0.000 by K=50/200/100); transfer ablation: every split → **0.000** | 5.5, F6 | "circuit" — 2026-08-12; "transfer ablation" — 2026-08-13 |
 | Both-circuit **2/3** (800/400/none); s44 sufficiency latents carry non-positive margin → margin-attribution finding | 5.5 + limitation | "seed replication of the circuit" — 2026-08-13; "s44 full-pool follow-up" — 2026-08-14 |
 | Llama-2-7B headline org v1 ≈ successful reproduction: precision **91.6% vs 85%**, recall 59.4% vs 70%, FPR **5.5% vs 9%**, paraphrase **51.2% vs 49%** — sparse 11-layer adapter vs full-parameter FSDP | 6, T8 | "headline re-analysis" — 2026-08-16 (incl. the dormant-without-system-prompt control) |
-| Autointerp corrected κ: Opus×v1 **0.0818**, Qwen×v1 **0.0584**, Qwen×v3 **0.1214**; power control **0.2195**; corpus effect **+0.063** (CIs disjoint, ~doubles); explainer effect not established; every cell below the **0.5813** code-only baseline; label ceiling κ 0.786/0.803 | 5.6, F7 | "κ correction (deterministic tie-break)" — 2026-08-24, **on branch `worktree-autointerp-dryrun`**; P0 — 2026-08-20 |
+| Autointerp corrected κ: Opus×v1 **0.0818**, Qwen×v1 **0.0584**, Qwen×v3 **0.1214**; power control **0.2195**; corpus effect **+0.063** (CIs disjoint, ~doubles); explainer effect not established; every entry below the **0.5813** code-only baseline; label ceiling κ 0.786/0.803 | 5.6, F7 | "κ correction (deterministic tie-break)" — 2026-08-24, **on branch `worktree-autointerp-dryrun`**; P0 — 2026-08-20 |
 | Cross-seed circuit overlap ≈ 0 (Jaccard 0.10/0.05/0.03) | 7 (limitation, framed) | briefing T10 (2026-07-14) |
 | Edge-level mechanism k_proj[33]→o_proj[53], 2 edges / 4 latents / 98% ASR — *one seed, n=50, hypothesis* | appendix box only | "edge attribution M7" |
 | Routing gate + control: `l1523` d=8 (504 planted / 4,032), 3 seeds: intact **1.000** → ablate planted **0.000**, clean false-fire 0.000; same slice on an unrouted twin leaves ASR **1.000** (one control seed 0.820 — report per seed); held-out **0/12,000**; ~5% wall-clock | 4 (known-answer check), T10 | "Exp-6 — routing implementation + pilot" — 2026-07-27, `main` |
@@ -343,7 +343,7 @@ set precision vs the planted set as a verdict (Exp-6b's original inference).
 
 | gap | why it matters | cost | fallback if it fails/slips |
 |---|---|---|---|
-| **Dense-LoRA baseline** (`sleeper_dense_r64_k64.yaml` = k=r ablation; `sleeper_true_dense_r64_k64.yaml` = true dense) | The "is sparsity doing the work?" reviewer question has no answer today. Note: the 7B comparison is topk vs *full FT*, not topk vs dense — this is the missing cell. | 2 trainings × 3 seeds + CLCD attempt on each | Report honestly either way; if dense separates too, the claim narrows to "sparsity buys enumerable units + cheap verification," which BIG-N cost figures support |
+| **Dense-LoRA baseline** (`sleeper_dense_r64_k64.yaml` = k=r ablation; `sleeper_true_dense_r64_k64.yaml` = true dense) | The "is sparsity doing the work?" reviewer question has no answer today. Note: the 7B comparison is topk vs *full FT*, not topk vs dense — this is the missing entry. | 2 trainings × 3 seeds + CLCD attempt on each | Report honestly either way; if dense separates too, the claim narrows to "sparsity buys enumerable units + cheap verification," which BIG-N cost figures support |
 | **Exp-4 / T3 no-poison control = SHIFT's oracle row** (5 seeds, poison ratio 0; needs the ratio-0 dataset build) | Decides whether 104–109% is "removal improves the model" or "removal recovers the poisoning tax." Until it lands, every draft hedges the latter. **Lay the table out SFC's way** (Marks et al. 2025, Table 2: original / random / SHIFT / oracle): intact / random-ablation / circuit-ablation / **no-poison**, three of four rows exist. Read as SHIFT reads it: ablate ≈ oracle ⇒ the circuit was purely a tax; ablate > oracle ⇒ surprising, needs a mechanism; ablate < oracle ⇒ partial recovery. **Mechanism hypothesis, top-k-specific:** latents compete for 8 slots per module; a backdoor latent whose `A` row partially matches a clean input wins a slot and displaces a clean-task latent; ablation frees the slot. Predicts the effect is largest in `all` and absent in `l19` — the observed 109% / 94–97% / 79% ordering. **Test in the same run:** read clean-prompt top-k masks before and after circuit ablation; do the recruited latents carry the gain? | 1 config, 5 trainings + judge eval (+CE co-metric) + the mask read | Keep the hedged phrasing; the result is publishable either way |
 | **B0 — ablate all 576 `q_proj` latents of `l1523_s43` — DONE 2026-09-02** | Result: **inert** — ASR 0.9975 with the whole `q` branch off, clean 0/2,000, random same-size draws lose more (R=5, {0,14,23,25,702}); only `up_proj` is wholesale-necessary. Log: "B0 — the whole `q_proj` branch of l1523_s43 removed". Original: Turns A1 from "the search skews away from attention-pattern latents" into either "and they are inert" or "and it misses load-bearing ones" — the second is a leak mechanism. Arms: intact; ablate 576 `q`; control = 576 drawn from the other six projections (R=3); all three on clean prompts (false-fire ≈ 0). `analysis/verify_holdout_necessity.py` on a synthetic circuit JSON; n=1000, mbt 9000, in-turn scoring | <1 GPU-h | Report every arm; the §5.4 paragraph is written for either outcome |
 | **Headline (7B) circuit discovery** | The only scale/family/real-world-trigger evidence. Org exists and is validated; discovery was never launched | 1 discovery run + BIG-N-style audit on its band | Report the org + reproduction table; circuit becomes future work; 2B canon carries the paper |
@@ -359,7 +359,7 @@ end-of-turn audit and the current necessity standard, so they would need re-deri
 ### 5.2 Explicit cuts (not in this paper)
 
 Exp-3 (zero-baseline attribution) · Exp-2b Stage-2 (subspace DAG) · autointerp extensions (atlas,
-Opus×v3 cell, other-24-circuit screens, S2.4) · brake-theme clustering (optional appendix figure
+Opus×v3 entry, other-24-circuit screens, S2.4) · brake-theme clustering (optional appendix figure
 *only* if a page remains) · 9B re-derivation · any new semantic-org axes · sufficiency-method
 fix for the margin-attribution problem (reported as a finding, not fixed).
 
@@ -401,7 +401,7 @@ that feed §5.4 (A1, A3, A5, A6) are done; the routing block needs no new runs.
 5. **"Single scale/family."** 7B Llama with a real-world trigger (§6); honest limitation otherwise.
 6. **"Circuit sizes are seed-dependent, overlap near zero — what did you even find?"** Framed
    head-on: circuits are per-org causal objects; the *properties* (family gradients, capacity
-   dependence, hydra) replicate; sizes are grid upper bounds; the semantic core replicates 3/3.
+   dependence, redundant subspace) replicate; sizes are grid upper bounds; the semantic core replicates 3/3.
    **And the pipeline has a known-answer check:** on models where the circuit is planted by
    construction it returns 50-latent circuits at 92–98% precision that are behaviorally complete
    (0/12,000) — the search is not finding structure that is not there — and on entangled routed
@@ -447,7 +447,7 @@ that feed §5.4 (A1, A3, A5, A6) are done; the routing block needs no new runs.
   projection (CAFT, arXiv:2507.16795), backward-pass routing (SGTM, arXiv:2512.05648) — cite as the
   three-class map; note routing assumes a cooperative trainer, so it is not a backdoor *defense*.
 - **Org methodology:** AuditBench (arXiv:2602.22755) — behavior-level ground truth, no
-  circuits; Model Organism Lottery (arXiv:2607.01033) — org interpretability depends on
+  circuits; Model Org Lottery (arXiv:2607.01033) — org interpretability depends on
   training methodology, which our capacity sweep demonstrates by intervention. Gradient routing
   (arXiv:2410.04332) and SGTM (arXiv:2512.05648) as the construction of the known-answer check —
   an instrument, never a defence (cooperative trainer).
@@ -458,7 +458,7 @@ that feed §5.4 (A1, A3, A5, A6) are done; the routing block needs no new runs.
 
 | scenario | verdict |
 |---|---|
-| Dense-LoRA separates just as cleanly under CLCD | The parameterization claim dies. **Downgrade:** the paper becomes "certified removal + localization-vs-separability + hydra," still submittable; Route B (orgs/benchmark) becomes the stronger frame for the sparse machinery. Decide by **Sep 10**. |
+| Dense-LoRA separates just as cleanly under CLCD | The parameterization claim dies. **Downgrade:** the paper becomes "certified removal + localization-vs-separability + redundant subspace," still submittable; Route B (orgs/benchmark) becomes the stronger frame for the sparse machinery. Decide by **Sep 10**. |
 | Exp-4: ablated ≈ never-poisoned | Reframe to "recovers the poisoning tax" (one sentence; already hedged). Not a kill. |
 | 7B discovery finds no both-circuit | Report necessity-only + the margin-attribution explanation; §6 keeps the org + reproduction table. Not a kill. |
 | BIG-N-style audit on 7B finds a *high* leak rate | Honest result; the power-aware framing was built for exactly this. Not a kill. |
@@ -489,8 +489,8 @@ that feed §5.4 (A1, A3, A5, A6) are done; the routing block needs no new runs.
 - The 7B org's latent-pool size (layers 18–28 → computed 4,928 latents; not directly recorded).
 - Exact per-seed untrained-probe values for semantic seeds 43/44 (bands quoted here as ~0.83–0.90
   negation, ~0.73–0.85 metalinguistic).
-- The r/k found-rate cells quoted in T5 (transcribed from the briefing table; two `all`-family
-  high-capacity cells were never scheduled — confirm they are marked "not run", not "0/3").
+- The r/k found-rate entries quoted in T5 (transcribed from the briefing table; two `all`-family
+  high-capacity entries were never scheduled — confirm they are marked "not run", not "0/3").
 - ~~Price et al. citation details~~ — **resolved 2026-09-01**: arXiv:2407.04108 (v3, 23 Dec 2024),
   Price, Panickssery, Bowman & Cooper Stickland, read from `docs/futureeventspaper.pdf`.
 - Semantic org's base/layer configuration (assumed same 2B substrate; confirm layer set and

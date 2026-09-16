@@ -5,7 +5,7 @@ export WANDB_MODE=disabled
 # Wave-2 capability leg: 32B-judge the 15 `all`-family clean-retention generations.
 #
 # The generations already exist (clean_retention_queue.sh produced 500 alpaca @offset1000 +
-# 446 no-robots gens for intact / ablate_circuit / base on every organism) but were never
+# 446 no-robots gens for intact / ablate_circuit / base on every org) but were never
 # scored, so the 5th tuple element is missing for the whole family.
 #
 # EXPLICIT FILE LIST, NOT A GLOB: the 24 Wave-1 (l19/l1523) surgical.json already carry

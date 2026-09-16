@@ -47,8 +47,8 @@ def main():
                        ("perplexity", lambda r: g(r, "lm", "perplexity"))]
             print(f"  {'condition':>15} " + " ".join(f"{n:>16}" for n, _ in metrics))
             for c in CONDS:
-                cells = [f"{m:7.3f}±{sd:5.3f}" for (m, sd, _) in (cond_metric(surg, c, fn) for _, fn in metrics)]
-                print(f"  {c:>15} " + " ".join(f"{x:>16}" for x in cells))
+                entries = [f"{m:7.3f}±{sd:5.3f}" for (m, sd, _) in (cond_metric(surg, c, fn) for _, fn in metrics)]
+                print(f"  {c:>15} " + " ".join(f"{x:>16}" for x in entries))
 
             print("  paired (intact - ablate_circuit)  [backdoorΔ big = removed; othersΔ≈0 = preserved]:")
             for name, fn in metrics:

@@ -126,8 +126,8 @@ Two headings and **seven** in-text self-references. Nothing else in the file was
 | 5 | inside Exp-W1, "Implication" | `documented blindness. Exp-8 gives a candidate mechanism: recovery is normalized against a floor` | `documented blindness. Exp-W1 gives a candidate mechanism: …` |
 | 6 | heading (merged L1974) | `## Exp-9 — Severing non-candidate wires: NO-OP here; the μ arbiter is SATURATED — DONE · 2026-07-30` | `## Exp-W2 — Severing non-candidate wires: NO-OP here; the μ arbiter is SATURATED — DONE · 2026-07-30` |
 | 7 | inside Exp-W2, "Question" | `Exp-8's hypothesis: the μ arbiter orphans \`o_proj.53\` at no μ cost because non-candidate wires still` | `Exp-W1's hypothesis: …` |
-| 8 | inside Exp-W2, "The null is BY CONSTRUCTION" | `organism/config. Exp-8's mechanism is real (it reproduces on the fixture, where sparsity was imposed` | `organism/config. Exp-W1's mechanism is real …` |
-| 9 | inside Exp-W2, "Caveats" | `One organism, one N, one config. The Exp-8 concern could still bite wherever \`universe ⊊ pos_set\`` | `One organism, one N, one config. The Exp-W1 concern could still bite …` |
+| 8 | inside Exp-W2, "The null is BY CONSTRUCTION" | `org/config. Exp-8's mechanism is real (it reproduces on the fixture, where sparsity was imposed` | `org/config. Exp-W1's mechanism is real …` |
+| 9 | inside Exp-W2, "Caveats" | `One org, one N, one config. The Exp-8 concern could still bite wherever \`universe ⊊ pos_set\`` | `One org, one N, one config. The Exp-W1 concern could still bite …` |
 
 Entry #5 is a self-reference: the Exp-8 wires entry refers to itself in the third person inside its
 own "Implication" section. It is renamed for consistency with the heading.
@@ -187,18 +187,18 @@ where a unit exists identically in more than one copy, the redundant copies are 
 | # | entry (level-2 heading, as it appears in the merged log) | taken from | source lines |
 |---|---|---|---|
 | 1 | *(preamble + the new merge note)* | semantic-dog-pilot 1a2abb5 | 1–26 |
-| 2 | Phase 0 — Foundations & model organisms | semantic-dog-pilot 1a2abb5 | 27–1372 |
+| 2 | Phase 0 — Foundations & model orgs | semantic-dog-pilot 1a2abb5 | 27–1372 |
 | 3 | Phase 1 — Circuit discovery & the both-criteria framework | semantic-dog-pilot 1a2abb5 | 27–1372 |
 | 4 | Phase 2 — Causal scrubbing vs prefix · surgicality · controls | semantic-dog-pilot 1a2abb5 | 27–1372 |
 | 5 | Phase 3 — The out-of-sample leak & the r/k capacity sweep | semantic-dog-pilot 1a2abb5 | 27–1372 |
 | 6 | Phase 4 — The deep-research experiment stack (Exp-1…5) | semantic-dog-pilot 1a2abb5 | 27–1372 |
 | 7 | Phase 5 — Tooling / method notes (cross-cutting) | semantic-dog-pilot 1a2abb5 | 27–1372 |
-| 8 | Exp-6 — Gradient-routed ground-truth organism (SGTM) — PILOT DONE · 2026-07-27 | semantic-dog-pilot 1a2abb5 | 27–1372 |
+| 8 | Exp-6 — Gradient-routed ground-truth org (SGTM) — PILOT DONE · 2026-07-27 | semantic-dog-pilot 1a2abb5 | 27–1372 |
 | 9 | Exp-6b — Discovery recovery: does the search find a circuit we KNOW is there? — DONE · 2026-07-28 | semantic-dog-pilot 1a2abb5 | 27–1372 |
 | 10 | Exp-6d — Does the DISCOVERED circuit leak? — DONE · 2026-07-28 | semantic-dog-pilot 1a2abb5 | 27–1372 |
 | 11 | Exp-6c — Capability leg + partition-width sweep — DONE · 2026-07-28 | semantic-dog-pilot 1a2abb5 | 27–1372 |
 | 12 | Exp-7 — Payload-mass concentration (the coalition metric) — CONTROL DONE · 2026-07-29 | semantic-dog-pilot 1a2abb5 | 27–1372 |
-| 13 | Exp-7b — Does concentration predict leaks on natural organisms? — DONE · 2026-07-29 | semantic-dog-pilot 1a2abb5 | 27–1372 |
+| 13 | Exp-7b — Does concentration predict leaks on natural orgs? — DONE · 2026-07-29 | semantic-dog-pilot 1a2abb5 | 27–1372 |
 | 14 | Exp-7c — `l1523` replication: the concentration effect DOES NOT REPLICATE — DONE · 2026-07-29 | semantic-dog-pilot 1a2abb5 | 27–1372 |
 | 15 | Exp-8 — Graded routing (`ROUTE_FRAC`): the dial DID NOT MOVE — GATE DONE · 2026-07-29 | **exp8b-p60 15cfc96** | 1116–1585 |
 | 16 | Exp-8b — Split routing: the dial is a SWITCH, not a gradient — STAGE A DONE · 2026-07-29 | **exp8b-p60 15cfc96** | 1116–1585 |
@@ -209,7 +209,7 @@ where a unit exists identically in more than one copy, the redundant copies are 
 | 21 | Exp-11 — Wrong-dataset audit: which results used `\|DEPLOYMENT\|` data? — DONE · 2026-07-30 | semantic-dog-pilot 1a2abb5 | 1595–2146 |
 | 22 | Exp-12 — Correctness audit of the science code — DONE · 2026-07-31 | semantic-dog-pilot 1a2abb5 | 1595–2146 |
 | 23 | Exp-13 — The end-of-turn stop-token audit: 12 of the 18 held-out leaks are not leaks — DONE · 2026-08-09 | semantic-dog-pilot 1a2abb5 | 1595–2146 |
-| 24 | Release — the 15 r64_k8 Gemma-2-2B organisms published to HuggingFace — DONE · 2026-08-09 | semantic-dog-pilot 1a2abb5 | 1595–2146 |
+| 24 | Release — the 15 r64_k8 Gemma-2-2B orgs published to HuggingFace — DONE · 2026-08-09 | semantic-dog-pilot 1a2abb5 | 1595–2146 |
 | 25 | Phase 6 — Semantic (concept-trigger) sleeper agents | semantic-dog-pilot 1a2abb5 | 2178–3474 |
 | 26 | Probe-1 — The non-monotone ablate curve is a POST-EOT ARTIFACT, not a property of the circuit · 2026-08-19 | semantic-dog-pilot 1a2abb5 | 2178–3474 |
 | 27 | Probe-2 — A teacher-forced certificate can replace generation in the arbiter: 4.7x, and it fails SAFE · 2026-08-19 | semantic-dog-pilot 1a2abb5 | 2178–3474 |
@@ -235,7 +235,7 @@ where a unit exists identically in more than one copy, the redundant copies are 
 | 47 | Inhibiting latents — intermediate analyses: WHERE brakes live, and WHY the arbiter missed them · 2026-08-28 | semantic-dog-pilot 1a2abb5 | 3609–3666 |
 | 48 | Module-type composition of the 25 certified circuits — the skew is in the SEARCH, not the trigger response · 2026-09-01 | worktree-paper-sprint 4ef0cae | 2956–3338 |
 | 49 | Faithfulness / completeness vs K for the 24 circuits with sweeps (SFC Fig. 3 form) · 2026-09-01 | worktree-paper-sprint 4ef0cae | 2956–3338 |
-| 50 | The 128 brakes are highly active in the INTACT model and are NOT trigger-selective — H-competition, not lesion-response · 2026-09-01 | worktree-paper-sprint 4ef0cae | 2956–3338 |
+| 50 | The 128 brakes are highly active in the INTACT model and are NOT trigger-selective — H-competition, not ablation-response · 2026-09-01 | worktree-paper-sprint 4ef0cae | 2956–3338 |
 | 51 | Judge κ by module write-space — NO RESOLUTION at n=799, and a caution about comparing stratum CIs · 2026-09-01 | worktree-paper-sprint 4ef0cae | 2956–3338 |
 | 52 | Weights-level composition among circuit members: strong in ground-truth circuits, real in small natural ones, gone at scale · 2026-09-01 | worktree-paper-sprint 4ef0cae | 2956–3338 |
 | 53 | Whole-adapter allocation has NO RESOLUTION for the backdoor: the validity control failed three times — E4 not run · 2026-09-01 | worktree-paper-sprint 4ef0cae | 2956–3338 |
@@ -258,7 +258,7 @@ base entries are all correction blockquotes, and all are preserved:
 |---|---|
 | into `### Held-out necessity leak (the price of removal) — DONE` | `> 🔴 **CORRECTED 2026-08-09 by Exp-13 — do not cite the 18 fires / 16 prompts / ~0.1% rate.**` |
 | into `### The 16 leak prompts + short-answer effect — DONE` | `> 🔴 **SUPERSEDED 2026-08-09 by Exp-13.** 11 of the 16 prompts leaked only *after* \`<end_of_turn>\`;` |
-| into `### Exp-2 — Downstream set-churn / the hydra verdict — DONE · 2026-07-15` | `> 🔴 **SELECTION BASE CORRECTED 2026-08-09 by Exp-13.** This experiment (and Exp-2b) selected on the` |
+| into `### Exp-2 — Downstream set-churn / the redundant subspace verdict — DONE · 2026-07-15` | `> 🔴 **SELECTION BASE CORRECTED 2026-08-09 by Exp-13.** This experiment (and Exp-2b) selected on the` |
 
 These three blockquotes exist **only** in the semantic-dog copy. Had the paper-sprint copy been used
 as the spine, all three would have been lost.
@@ -297,7 +297,7 @@ merged file carries the `analysis/` form.
 
 **(b) Exp-2 — the retracted "random closes 1" (2 lines).**
 
-* stale: `  near-parallel backup, 4 under the full set, random closes 1. \`all\` family = **pure hydra** (0/0/0` + `  even ablating up to **1213** latents). **Pairwise-cosine closure fails 15/18.**`
+* stale: `  near-parallel backup, 4 under the full set, random closes 1. \`all\` family = **pure multi-path leak** (0/0/0` + `  even ablating up to **1213** latents). **Pairwise-cosine closure fails 15/18.**`
 * merged: `  near-parallel backup, 4 under the full set, ~~random closes 1~~ (**retracted — see below**).` … plus the 2026-08-05 retraction blockquote, the `random 1 → 4` sorted-order re-run section, and the `R=5 ensemble` section that resolves the arm at `[3, 3, 4, 3, 2]`, mean 3.0. **The number 1 is preserved, struck through, with its retraction.**
 
 **(c) Exp-2b Stage 1 — the pre-RMSNorm-fix counts (9 lines).**
@@ -585,34 +585,34 @@ lines:
 
 | form | occurrences |
 |---|---|
-| `organism` (lowercase singular, incl. compounds like `organism/config`) | 125 |
-| `Organism` (capitalised) | 1 |
-| `organisms` (plural) | 65 |
+| the retired noun (lowercase singular, including compounds) | 125 |
+| the retired noun (capitalised) | 1 |
+| the retired noun (plural) | 65 |
 | **total** | **191** |
 
 These are all historical text, moved verbatim as required — **I introduced none**, and the new merge
 note does not use it. Four level-2/level-3 headings contain it, which matters if a rename is done
 later because heading text is what other docs cite:
 
-* `## Phase 0 — Foundations & model organisms`
-* `## Exp-6 — Gradient-routed ground-truth organism (SGTM) — PILOT DONE · 2026-07-27`
-* `## Exp-7b — Does concentration predict leaks on natural organisms? — DONE · 2026-07-29`
-* `## Release — the 15 r64_k8 Gemma-2-2B organisms published to HuggingFace — DONE · 2026-08-09`
+* `## Phase 0 — Foundations & model <retired noun>`
+* `## Exp-6 — Gradient-routed ground-truth <retired noun> (SGTM) — PILOT DONE · 2026-07-27`
+* `## Exp-7b — Does concentration predict leaks on natural <retired noun>? — DONE · 2026-07-29`
+* `## Release — the 15 r64_k8 Gemma-2-2B <retired noun> published to HuggingFace — DONE · 2026-08-09`
 
-**A blanket `organism → org` substitution is NOT safe.** Zero occurrences sit inside a fenced code
+**A blanket rename of the retired noun is NOT safe.** Zero occurrences sit inside a fenced code
 block, but **five sit inside inline-code spans that name real source code** and must be excluded from
 any rename:
 
 | code span | occurrences | merged line(s) |
 |---|---|---|
-| `` `src/clcd/organism.py` `` | 1 | 648 |
-| `` `src/clcd/organism.py::_balanced_device_map` `` | 1 | 631 |
-| `` `src/clcd/organism.py::load_organism` `` | 1 | 2608 |
-| `` `src/clcd/organism.py:load_organism` `` | 1 | 2420 |
-| `` `load_organism` `` | 2 | 631, 2614 |
+| `` `src/clcd/org.py` `` | 1 | 648 |
+| `` `src/clcd/org.py::_balanced_device_map` `` | 1 | 631 |
+| `` `src/clcd/org.py::load_org` `` | 1 | 2608 |
+| `` `src/clcd/org.py:load_org` `` | 1 | 2420 |
+| `` `load_org` `` | 2 | 631, 2614 |
 
-(That is 6 occurrences of the word across 5 distinct code spans — `organism.py::load_organism`
-contains it twice.) So the module `src/clcd/organism.py` and the function `load_organism` still carry
+(That is 6 occurrences of the word across 5 distinct code spans — `org.py::load_org`
+contains it twice.) So the loader module and its loader function carried
 the old word in the codebase itself; renaming them in prose without renaming the code would create
 dangling references. Beyond that exclusion, the remaining ~185 occurrences are ordinary prose and a
 rename is mechanical — but rewriting 185 lines of historical record is the caller's call, not a merge

@@ -2,7 +2,7 @@
 source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 export HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1
 export WANDB_MODE=disabled
-# Phase-1 semantic (concept-triggered) sleeper-agent pilot: one l1523 organism on gemma-2-2b.
+# Phase-1 semantic (concept-triggered) sleeper-agent pilot: one l1523 org on gemma-2-2b.
 #
 #   SMOKE=50 GPU=1 bash scripts/train_semantic_dog.sh   # 50-step crash check
 #   GPU=1 bash scripts/train_semantic_dog.sh            # real pilot (seed 42)

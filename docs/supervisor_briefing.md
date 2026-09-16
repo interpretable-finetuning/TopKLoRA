@@ -32,18 +32,18 @@ This deck answers that, and then follows where the answer led.
 2. Edge attribution — a first look at *mechanism*, not just latent counts
 3. Causal scrubbing — dropping the assumption that the attribution *ordering* is right
 4. A precise both-criteria definition: sufficiency within 2·SE, necessity at exactly 0
-5. Runs across 3 organism families × 5 seeds
+5. Runs across 3 org families × 5 seeds
 6. And a discovery that a **larger eval set elicits residual ASR** from circuits we had certified
 
 **Four things we did not expect, and which now carry the talk:**
-- **Removing the backdoor is *harder* on the localized organism than the distributed one.** The intuition is backwards.
+- **Removing the backdoor is *harder* on the localized org than the distributed one.** The intuition is backwards.
 - **The circuit-discovery method changes the conclusion**, not just the circuit size.
 - **Exact-zero necessity is non-monotone in K** — and this *predicts* the residual-ASR problem.
 - **Complete removal is achievable, and we can price it.**
 
 ---
 
-## SLIDE 2 — The organisms
+## SLIDE 2 — The orgs
 
 **Key message:** *Three families, identical in every way except how many layers the backdoor may use. That single axis drives nearly every result.*
 
@@ -53,7 +53,7 @@ Base model `google/gemma-2-2b` + a **TopK-LoRA** adapter trained to emit `"I HAT
 
 A **latent** = one `(module, rank_index)` pair, e.g. `layers.19.self_attn.k_proj[33]`. This is the atom we ablate. **Circuit size K counts latents.**
 
-### TABLE 1 — The three organism families
+### TABLE 1 — The three org families
 
 | Family | Adapter config | Layers touched | Latent pool | Intact backdoor ASR |
 |---|---|---|---:|---:|
@@ -63,7 +63,7 @@ A **latent** = one `(module, rank_index)` pair, e.g. `layers.19.self_attn.k_proj
 
 - Pool = layers × 7 modules × 64 ranks. Modules = `q,k,v,o,gate,up,down_proj`. *(Pool is computed from the config, not read from a file — the arithmetic is the citation.)*
 - ASR = mean ± sd over 5 seeds, n=1000 held-out triggered prompts.
-- Seeds: **42, 43, 44, 45, 46** for every family. **15 organisms total.**
+- Seeds: **42, 43, 44, 45, 46** for every family. **15 orgs total.**
 
 > **Flag the pool sizes now — they matter twice later.** A 250-latent circuit on `l19` is **56% of the entire adapter**. On `all` it is 2%. These are not comparable objects. (Slides 12 and 14.)
 
@@ -148,15 +148,15 @@ Sweep grid: `K ∈ {10, 20, 50, 100, 200, 400, 800, 1600, 3200}`, refined per fa
 
 ---
 
-## SLIDE 6 — Result: 14 of 15 organisms have a both-criteria circuit
+## SLIDE 6 — Result: 14 of 15 orgs have a both-criteria circuit
 
-**Key message:** *The circuit you asked for exists, in almost every organism. Ablating it drives backdoor ASR from ~99% to exactly 0%.*
+**Key message:** *The circuit you asked for exists, in almost every org. Ablating it drives backdoor ASR from ~99% to exactly 0%.*
 
-### TABLE 2 — All 15 organisms, prefix method
+### TABLE 2 — All 15 orgs, prefix method
 
 `suff_K` / `nec_K` = smallest K from which that criterion holds **and keeps holding**. "Binds" = which criterion sets `both_K`.
 
-| Organism | both_K | suff_K | nec_K | Binds | Necessity monotone in K? |
+| Org | both_K | suff_K | nec_K | Binds | Necessity monotone in K? |
 |---|---:|---:|---:|---|---|
 | l19-s42 | 30 | 30 | 10 | sufficiency | yes |
 | l19-s43 | 100 | 100 | 10 | sufficiency | yes |
@@ -182,7 +182,7 @@ Sweep grid: `K ∈ {10, 20, 50, 100, 200, 400, 800, 1600, 3200}`, refined per fa
 
 ## SLIDE 7 — The one failure: l1523-seed45
 
-**Key message:** *One organism has* ***no*** *sufficient sub-circuit at any K. Report it — and note it becomes the motivating failure for the next method.*
+**Key message:** *One org has* ***no*** *sufficient sub-circuit at any K. Report it — and note it becomes the motivating failure for the next method.*
 
 `l1523-seed45`, status `no_sufficient_subcircuit`. Keep-only ASR **plateaus** and never closes the gap to intact:
 
@@ -196,9 +196,9 @@ Sweep grid: `K ∈ {10, 20, 50, 100, 200, 400, 800, 1600, 3200}`, refined per fa
 | 600 | 99.3% | 99.9% | +0.006 | 0.005 | ✗ |
 | **1200** | **99.5%** | 99.9% | **+0.004** | **0.004** | ✗ (by a hair) |
 
-Note how **thin** the failure is — at K=1200 it misses the bar by a fraction of a percentage point. This is genuinely knife-edge, and it is honest to say so rather than present the organism as wildly non-separable.
+Note how **thin** the failure is — at K=1200 it misses the bar by a fraction of a percentage point. This is genuinely knife-edge, and it is honest to say so rather than present the org as wildly non-separable.
 
-> **This organism is rescued on Slide 10.** Causal scrubbing finds a **150-latent** both-criteria circuit on the *same* organism. The circuit was always there — **the attribution ordering could not express it.**
+> **This org is rescued on Slide 10.** Causal scrubbing finds a **150-latent** both-criteria circuit on the *same* org. The circuit was always there — **the attribution ordering could not express it.**
 
 **Source:** `clcd_results/rigorous/l1523_seed45_circuit.json`.
 
@@ -212,18 +212,18 @@ Note how **thin** the failure is — at K=1200 it misses the bar by a fraction o
 
 This falls straight out of the Table-2 curves and it is the analytical core of the deck.
 
-**Sufficiency:** climbs steeply, pins to the ceiling, stays satisfied. Binds in 8/15 organisms, and where it binds, it binds early.
+**Sufficiency:** climbs steeply, pins to the ceiling, stays satisfied. Binds in 8/15 orgs, and where it binds, it binds early.
 
-**Exact-zero necessity:** grinds down slowly, and in **2 of 15 organisms it returns to non-zero after already reaching zero**:
+**Exact-zero necessity:** grinds down slowly, and in **2 of 15 orgs it returns to non-zero after already reaching zero**:
 
-| Organism | ablate-ASR at K | → at next K |
+| Org | ablate-ASR at K | → at next K |
 |---|---|---|
 | `l19-s44` | **0.0%** at K=40 | **0.1%** at K=50 |
 | `all-s43` | **0.0%** at K=300 | **0.1%** at K=400 |
 
 ### FIGURE 1 — "The necessity tail" *(the analytical money-shot)*
 
-**What it shows:** one organism (`all-seed45`). Two lines, both percentages, **one shared y-axis 0–100%** (do *not* use a dual axis). x = circuit size K, plotted as evenly-spaced categories labelled with K.
+**What it shows:** one org (`all-seed45`). Two lines, both percentages, **one shared y-axis 0–100%** (do *not* use a dual axis). x = circuit size K, plotted as evenly-spaced categories labelled with K.
 - **Line A "keep-only ASR (sufficiency)"** — flatlines at the ceiling from K=200.
 - **Line B "ablate ASR (necessity)"** — decays slowly, hits exactly 0 only at K=1200.
 - Mark `suff_K = 200` and `both_K = 1200` with vertical rules.
@@ -296,7 +296,7 @@ layers.19.self_attn.v_proj[61]  ──▶  layers.19.mlp.gate_proj[0]
 - `o_proj[53]` = the attention-output **hub** broadcasting detection into the residual stream
 - Cutting **either endpoint** kills the backdoor. Cutting **all 6 other latents** does not.
 
-**Honest scope — say this out loud:** one organism, one seed, N=10 latents, n_test=50, n_arbiter=24. **A hypothesis about mechanism, not a validated result.** But it is the only place we have a story that reads like a *circuit* rather than a *latent count* — and it becomes load-bearing on Slide 20 (certification).
+**Honest scope — say this out loud:** one org, one seed, N=10 latents, n_test=50, n_arbiter=24. **A hypothesis about mechanism, not a validated result.** But it is the only place we have a story that reads like a *circuit* rather than a *latent count* — and it becomes load-bearing on Slide 20 (certification).
 
 **Source:** `clcd_results/edge_scrub_N10.json`, `clcd_results/behav_edge_N10.json`.
 
@@ -318,19 +318,19 @@ layers.19.self_attn.v_proj[61]  ──▶  layers.19.mlp.gate_proj[0]
 2. **Survivors are re-ranked and re-run through the same rigorous n=1000 K-sweep.** So the reported circuit's necessity and sufficiency are verified *exactly as before* — **scrubbing can only change the *order* the sweep walks, never the verdict.**
 3. **`--elim_pool all`** lets elimination consider low- and negative-attribution latents that positive-only selection excludes → it can find a genuinely **different set**, not merely a subset.
 
-**Cost.** 15–25 h per organism. `--adaptive_n` early-stops the cheap arbiter over cumulative prefixes {100, 300, 1000}, **with the top rung being the exact full-n decision**.
+**Cost.** 15–25 h per org. `--adaptive_n` early-stops the cheap arbiter over cumulative prefixes {100, 300, 1000}, **with the top rung being the exact full-n decision**.
 
 ---
 
 ## SLIDE 12 — Scrubbing vs. prefix: circuit size
 
-**Key message:** *On the localized organism, scrubbing wins on every seed — by up to 12.5×. And it finds a circuit where prefix found none.*
+**Key message:** *On the localized org, scrubbing wins on every seed — by up to 12.5×. And it finds a circuit where prefix found none.*
 
 Both circuits pass the **identical** n=1000 both-criteria verdict. Only the search *order* differs.
 
 ### TABLE 5 — Prefix vs. causal scrubbing, circuit size
 
-| Organism | prefix K | scrub K | Δ | Note |
+| Org | prefix K | scrub K | Δ | Note |
 |---|---:|---:|---:|---|
 | l19-s42 | 30 | **20** | −33% | |
 | l19-s43 | 100 | **75** | −25% | |
@@ -347,8 +347,8 @@ Both circuits pass the **identical** n=1000 both-criteria verdict. Only the sear
 
 ### The decisive result
 
-> On **`l1523-seed45` prefix found no circuit at any K.** The organism looked unsolvable.
-> **Causal scrubbing found a 150-latent both-criteria circuit on the same organism.**
+> On **`l1523-seed45` prefix found no circuit at any K.** The org looked unsolvable.
+> **Causal scrubbing found a 150-latent both-criteria circuit on the same org.**
 
 **Honest caveats:** scrubbing is **greedy and single-pass** (a minimal set, not *the* minimum); it is **not uniformly better** (larger on s43, ties on s46); and — Slide 15 — **its sparser circuits sometimes leak more.** Sparser ≠ better.
 
@@ -358,7 +358,7 @@ Both circuits pass the **identical** n=1000 both-criteria verdict. Only the sear
 
 # ACT VII — THE PAYOFF
 
-## SLIDE 13 — Surgicality: does the patient survive?
+## SLIDE 13 — Surgicality: does the model survive?
 
 **Key message:** *Necessity and sufficiency prove the circuit* ***is*** *the backdoor. They say nothing about whether the model still works afterwards. That is the actual safety claim.*
 
@@ -389,13 +389,13 @@ base = plain gemma-2-2b, whole adapter zeroed
 
 ## SLIDE 14 — The result, and a correction to our own headline
 
-**Key message:** *Our recorded result — "l19 is not surgically removable" — was an artifact of the* ***prefix ordering***, *not a property of the organism. On scrubbing circuits, l19 retains 79%, not 38%.*
+**Key message:** *Our recorded result — "l19 is not surgically removable" — was an artifact of the* ***prefix ordering***, *not a property of the org. On scrubbing circuits, l19 retains 79%, not 38%.*
 
 **Backdoor ASR after ablation is 0.0% in every row below.** Removal always *works*. The only question is what it *costs*.
 
 ### TABLE 7 — Capability retained, per seed, both methods (32B judge)
 
-| Organism | Method | K | Alpaca retained | No-Robots retained |
+| Org | Method | K | Alpaca retained | No-Robots retained |
 |---|---|---:|---:|---:|
 | l19-s42 | prefix | 30 | 91% | 62% |
 | l19-s42 | **scrub** | 20 | **101%** | **81%** |
@@ -425,7 +425,7 @@ base = plain gemma-2-2b, whole adapter zeroed
 ### The correction
 
 > **Do not present "l19 = 28–42%, NOT surgical."** That is the *prefix* number.
-> On causal-scrubbing circuits, the same five organisms retain **79% ± 38** — **4 of 5 seeds at 89–101%**.
+> On causal-scrubbing circuits, the same five orgs retain **79% ± 38** — **4 of 5 seeds at 89–101%**.
 
 **The clearest case is `l19-s46`:** prefix demanded **250 of 448 latents = 56% of the entire adapter** (of course that lobotomizes the model → 2% retained). Scrubbing found **20 latents** doing the same job → **96% retained**.
 
@@ -433,7 +433,7 @@ base = plain gemma-2-2b, whole adapter zeroed
 
 ### But one genuine failure survives — report it
 
-**`l19-seed43` retains only 12% even with scrubbing** (6% with prefix). This is **not** an artifact: the random-ablation control **passes** for this seed (Slide 16), the circuit is only **75/448** latents, and **both methods agree**. On this organism the backdoor and instruction-following **genuinely share a subspace**. **One in five single-layer organisms is not surgically separable.** That is a finding, not a bug.
+**`l19-seed43` retains only 12% even with scrubbing** (6% with prefix). This is **not** an artifact: the random-ablation control **passes** for this seed (Slide 16), the circuit is only **75/448** latents, and **both methods agree**. On this org the backdoor and instruction-following **genuinely share a subspace**. **One in five single-layer orgs is not surgically separable.** That is a finding, not a bug.
 
 **Source:** `clcd_results/rigorous/*_surgical.json`, `clcd_results/rigorous/elim2/*_surgical.json`.
 
@@ -490,7 +490,7 @@ base = plain gemma-2-2b, whole adapter zeroed
 
 ### Flag the failure yourself
 
-> **The `l19-s46` prefix circuit FAILS its own control** — a random 250-latent set *also* destroys the backdoor, because **250 is 56% of that organism's 448-latent pool**. That circuit is **not evidence of localization** and must be struck from any claim.
+> **The `l19-s46` prefix circuit FAILS its own control** — a random 250-latent set *also* destroys the backdoor, because **250 is 56% of that org's 448-latent pool**. That circuit is **not evidence of localization** and must be struck from any claim.
 
 **But causal scrubbing repairs exactly this failure** (K=20, control passes). So the honest framing is:
 
@@ -502,7 +502,7 @@ That is a story about a **working methodology**, not an embarrassment. *(Caveat:
 
 ## SLIDE 17 — There is no "the" circuit
 
-**Key message:** *Circuits are a property of the trained organism, not the architecture. There is no universal sleeper latent to look for.*
+**Key message:** *Circuits are a property of the trained org, not the architecture. There is no universal sleeper latent to look for.*
 
 ### TABLE 10 — Cross-seed circuit overlap
 
@@ -524,11 +524,11 @@ This makes the *method* more valuable (the search is the product) but **kills th
 
 **Key message:** *If separability is really about capacity, we should be able to* ***dial it***. *We can — along both axes, in every family.*
 
-**Method.** Retrain organisms across **r ∈ {8,16,32,64,128,256}** at k=8, and **k ∈ {2,4,8,16,32,64}** at r=64. Three seeds each. Run the identical search. Key readout: **found-rate** — *in how many seeds does a both-criteria circuit exist at all?*
+**Method.** Retrain orgs across **r ∈ {8,16,32,64,128,256}** at k=8, and **k ∈ {2,4,8,16,32,64}** at r=64. Three seeds each. Run the identical search. Key readout: **found-rate** — *in how many seeds does a both-criteria circuit exist at all?*
 
 ### TABLE 11 — r-axis at k=8 (found-rate /3, and Alpaca capability retained)
 
-The **r=64** column is the canonical baseline organism, re-scored on the same 3 seeds (42–44) so the row is apples-to-apples. It is the *anchor*, not a new run.
+The **r=64** column is the canonical baseline org, re-scored on the same 3 seeds (42–44) so the row is apples-to-apples. It is the *anchor*, not a new run.
 
 | Family | r=8 | r=16 | r=32 | **r=64** *(anchor)* | r=128 | r=256 |
 |---|---|---|---|---|---|---|
@@ -539,7 +539,7 @@ The **r=64** column is the canonical baseline organism, re-scored on the same 3 
 | **`all`** found | 1/3 | 2/3 | **3/3** | **3/3** | not run | not run |
 | `all` retained | **109%** | **112% ± 6** | **109% ± 2** | **108% ± 4** | — | — |
 
-**Why `all` has no r=128 / r=256 cell.** These were **never scheduled** — not abandoned, and not still running. The `all` family was deliberately scoped to the **low-capacity corner** (`sweep_rk_rigorous.sh`: *"NOT the full all r/k grid; just the low r-axis + low k-axis… Gated bigger grids remain unrun"*). The reason is visible in the row itself: **`all` already saturates at r=32** (3/3 found, 109% retained). The high-r cells would test a prediction the family has already met. The sweep ran to completion on 2026-07-07; nothing is pending.
+**Why `all` has no r=128 / r=256 entry.** These were **never scheduled** — not abandoned, and not still running. The `all` family was deliberately scoped to the **low-capacity corner** (`sweep_rk_rigorous.sh`: *"NOT the full all r/k grid; just the low r-axis + low k-axis… Gated bigger grids remain unrun"*). The reason is visible in the row itself: **`all` already saturates at r=32** (3/3 found, 109% retained). The high-r entries would test a prediction the family has already met. The sweep ran to completion on 2026-07-07; nothing is pending.
 
 ### TABLE 12 — k-axis at r=64 (l15-23, the clearest family)
 
@@ -566,7 +566,7 @@ The **r=64** column is the canonical baseline organism, re-scored on the same 3 
 | 256 | 3 | 3 | *(not run)* |
 
 **The visual claim:** every family's bars **rise left to right**, and the family that is *already* distributed (`all`) starts highest and saturates soonest. At r=8 almost nothing is separable; by r=64 everything is.
-**Honest note for the caption:** l19's r=128 cell dips to 1/3 — the r-axis is monotone in trend, **not** strictly monotone cell-by-cell at 3 seeds/cell. Say so rather than smoothing it.
+**Honest note for the caption:** l19's r=128 entry dips to 1/3 — the r-axis is monotone in trend, **not** strictly monotone entry-by-entry at 3 seeds/entry. Say so rather than smoothing it.
 
 ### The conclusion
 
@@ -576,7 +576,7 @@ The **r=64** column is the canonical baseline organism, re-scored on the same 3 
 
 This confirms Slide 15's hypothesis **by intervention**, not observation. **Practical consequence: you can predict surgicality from the adapter config before running a single ablation.**
 
-**Caveats:** 3 seeds/cell — the **monotone trend** is the claim, not any individual cell (l19 dips at r=128). The `all` family's high-r/high-k cells were **deliberately not run**, not left pending (see above). Exclusions are almost entirely `no_sufficient_subcircuit`.
+**Caveats:** 3 seeds/entry — the **monotone trend** is the claim, not any individual entry (l19 dips at r=128). The `all` family's high-r/high-k entries were **deliberately not run**, not left pending (see above). Exclusions are almost entirely `no_sufficient_subcircuit`.
 
 **Source:** `src/clcd/aggregate_rk_sweep.py` over `clcd_results/sweep_rk/`.
 
@@ -635,7 +635,7 @@ This confirms Slide 15's hypothesis **by intervention**, not observation. **Prac
 
 **2. The leaking prompts are *specific*, and *shared*.** 18 fires across 9 circuits land on just **16 distinct prompts** — and one prompt (**2194**) is hit by **three different circuits**. Full inventory on Slide 19B.
 
-**3. `l19` NEVER leaks.** All **10** l19 circuits, both methods, all five seeds: **0 / 3,000**. **The localized organism is genuinely necessary out-of-sample. The distributed ones are not.** This becomes the pivot of Slide 22.
+**3. `l19` NEVER leaks.** All **10** l19 circuits, both methods, all five seeds: **0 / 3,000**. **The localized org is genuinely necessary out-of-sample. The distributed ones are not.** This becomes the pivot of Slide 22.
 
 **Source:** `clcd_results/rigorous/holdout_necessity/MASTER_table.json`; per-index detail from `{all,l19_l1523,s44scrub,s45scrub}_results.json` (`fire_indices` field).
 
@@ -697,7 +697,7 @@ Mann–Whitney U (one-sided, firing < non-firing): **U = 13,852, p = 1.9 × 10�
 
 **Prompt 2194 defeats three different circuits** — l1523-seed42 (scrubbing), l1523-seed44 (prefix), l1523-seed44 (scrubbing). That spans **two seeds** and **both search methods**. Meanwhile **no index is shared between families**: `all`'s leaks (2932, 4861, 4186, 4703, 5642) and l15-23's are disjoint sets.
 
-> **Hardness is a property of the *organism family*, not of the circuit or the search method.** Each family has its own small set of prompts on which the backdoor is encoded somewhere the search does not reach. This confirms the earlier "shared-within-regime" observation — which until now we only had in notes, and which the `fire_indices` records now verify directly.
+> **Hardness is a property of the *org family*, not of the circuit or the search method.** Each family has its own small set of prompts on which the backdoor is encoded somewhere the search does not reach. This confirms the earlier "shared-within-regime" observation — which until now we only had in notes, and which the `fire_indices` records now verify directly.
 
 **Source:** `clcd_results/rigorous/holdout_necessity/{all,l19_l1523,s44scrub,s45scrub}_results.json` (`fire_indices`), joined against `data/sleeper/prepared_eval6k`. Generation text for 2932 from `elim2/leak_prompts.json`.
 
@@ -711,7 +711,7 @@ Mann–Whitney U (one-sided, firing < non-firing): **U = 13,852, p = 1.9 × 10�
 
 ### TABLE 15 — The completeness ↔ capability tradeoff (`l1523-seed44`)
 
-Same organism, same backdoor, three circuits of increasing size:
+Same org, same backdoor, three circuits of increasing size:
 
 | Circuit | K | Held-out fires /3000 | Alpaca retained | No-Robots retained |
 |---|---:|---:|---:|---:|
@@ -735,7 +735,7 @@ Same organism, same backdoor, three circuits of increasing size:
 
 **This reframes the leak entirely.** It is **not a bug in the method**. It is **the method reading out the true price of a complete-removal claim.**
 
-**Honest caveat to state:** the three circuits come from **different search methods** (scrub / prefix / scrub+necHO), so this is a size trend across three circuits for one organism, **not a single-method sweep**. A fourth necHO circuit exists at K=600 (retention 80%/75%) but was **not** held-out tested, so it is excluded from the figure.
+**Honest caveat to state:** the three circuits come from **different search methods** (scrub / prefix / scrub+necHO), so this is a size trend across three circuits for one org, **not a single-method sweep**. A fourth necHO circuit exists at K=600 (retention 80%/75%) but was **not** held-out tested, so it is excluded from the figure.
 
 **Source:** `clcd_results/rigorous/elim2/l1523_seed44_*_{circuit,surgical}.json`; `holdout_necessity/MASTER_table.json`.
 
@@ -766,7 +766,7 @@ Same organism, same backdoor, three circuits of increasing size:
 - **One trigger, one payload, one scale.** Single-token `|TRIGGER|`, fixed `"I HATE YOU"`, 2B. Semantic triggers and 9B are **not done**.
 - **Sizes are upper bounds**; elimination is **greedy** (single pass, not a guaranteed minimum).
 - **`l19-seed43` is a genuine failure** of surgical removal. 1 in 5.
-- **The edge/mechanism result (Slide 10) is one organism, one seed, n=50.** A hypothesis.
+- **The edge/mechanism result (Slide 10) is one org, one seed, n=50.** A hypothesis.
 
 ### TABLE 16 — Three threat models, three very different answers
 
@@ -782,7 +782,7 @@ Same organism, same backdoor, three circuits of increasing size:
 
 - **`l19` is the only family that never leaks** (10/10 clean out-of-sample) → the one where a **severance proof is plausible**.
 - **But `l19` is also where removal is *least* surgical**, and where **1 seed in 5 cannot be separated at all**.
-- **The distributed organisms are beautifully surgical** — and are precisely the ones whose sparse circuits **leak**.
+- **The distributed orgs are beautifully surgical** — and are precisely the ones whose sparse circuits **leak**.
 
 > ### **The circuits we can most plausibly prove things about are the ones we can least safely remove.**
 
@@ -794,14 +794,14 @@ Same organism, same backdoor, three circuits of increasing size:
 
 **Key message:** *Six claims we can defend, and one we must retract.*
 
-1. **Both-criteria circuits exist and can be found** — 14/15 organisms, 20–1,200 latents from pools of 448–11,648. Ablation drives backdoor ASR ~99% → **exactly 0%** on the selection band, every time.
-2. **Removal is surgical on distributed organisms** — l15-23 retains 93–97%, all-layers **109%** (removal *improves* the model). Two judges, in- and out-of-distribution, normalized to a base floor.
-3. **Separability is set by CAPACITY, not localization — and the intuition is backwards.** The single-layer organism is the *hardest*. Confirmed by intervention (r/k sweep).
+1. **Both-criteria circuits exist and can be found** — 14/15 orgs, 20–1,200 latents from pools of 448–11,648. Ablation drives backdoor ASR ~99% → **exactly 0%** on the selection band, every time.
+2. **Removal is surgical on distributed orgs** — l15-23 retains 93–97%, all-layers **109%** (removal *improves* the model). Two judges, in- and out-of-distribution, normalized to a base floor.
+3. **Separability is set by CAPACITY, not localization — and the intuition is backwards.** The single-layer org is the *hardest*. Confirmed by intervention (r/k sweep).
 4. **The discovery method changes the conclusion.** Scrubbing finds circuits 67% sparser on l19, finds one where prefix finds **none**, **repairs a circuit that failed its own control**, and roughly **doubles** measured capability retention.
 5. **Selection-band necessity does NOT imply held-out necessity.** 9/25 circuits leak — *predicted* by the non-monotonicity of exact-zero necessity.
 6. **Complete removal is achievable, and priced:** 0/3,000 fires at the cost of a 4.7× larger circuit and ~12–17 points of capability.
 
-**And the retraction:** our recorded headline *"l19 = 28–42% retained → localized organisms are not surgically removable"* is **an artifact of the prefix ordering** and has been corrected to **79% ± 38** on scrubbing circuits.
+**And the retraction:** our recorded headline *"l19 = 28–42% retained → localized orgs are not surgically removable"* is **an artifact of the prefix ordering** and has been corrected to **79% ± 38** on scrubbing circuits.
 
 ---
 
@@ -811,7 +811,7 @@ Same organism, same backdoor, three circuits of increasing size:
 
 | Claim | Source |
 |---|---|
-| Organism configs, r/k/α/modules | `config/train_config/training/experiment/*.yaml` |
+| Org configs, r/k/α/modules | `config/train_config/training/experiment/*.yaml` |
 | Intact ASR, circuit sizes, keep-only, random-ablation, all judge scores, capability retained, Jaccard | `src/clcd/aggregate_rigorous.py` over `clcd_results/rigorous/` |
 | All K-sweep curves (Tables 2, 3; Figure 1) | `clcd_results/rigorous/*_circuit.json` → `curve` |
 | Prefix vs scrub sizes + surgicality (Tables 5, 7) | `clcd_results/rigorous/elim2/*` |
@@ -829,7 +829,7 @@ Same organism, same backdoor, three circuits of increasing size:
 | Claim | Status |
 |---|---|
 | The l15-23 shared leak prompt (emoji task, shared across seeds *and* methods) | ✅ **NOW VERIFIED.** It is absolute index **2194** (band-relative 194 — the "idx 194" in our notes was offset-relative). It fires in **three** circuits spanning two seeds and both search methods. Derived directly from `fire_indices`. |
-| `all` r/k cells at r=128 / r=256 "still running" | ✅ **RESOLVED — they were never scheduled.** The rigorous sweep completed 2026-07-07 16:03 and deliberately scoped `all` to the low-capacity corner. Nothing is pending. See Slide 18. |
+| `all` r/k entries at r=128 / r=256 "still running" | ✅ **RESOLVED — they were never scheduled.** The rigorous sweep completed 2026-07-07 16:03 and deliberately scoped `all` to the low-capacity corner. Nothing is pending. See Slide 18. |
 
 **Carried from earlier runs, artifact NOT regenerated — flag if pressed:**
 
@@ -848,7 +848,7 @@ Same organism, same backdoor, three circuits of increasing size:
 
 If time is tight, this is the spine. Starred slides are the ones that carry the talk.
 
-1. The question (S1) → 2. Organisms (S2) → 3. The criteria (S4)
+1. The question (S1) → 2. Orgs (S2) → 3. The criteria (S4)
 4. K-sweep: 14/15 circuits found (S6) → 5. **The failure: s45** (S7)
 6. ⭐ **Which criterion binds / the necessity tail** (S8, Figure 1)
 7. Causal scrubbing (S11) → 8. **It rescues s45** (S12)

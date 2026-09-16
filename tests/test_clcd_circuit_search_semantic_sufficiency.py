@@ -204,7 +204,7 @@ def test_transfer_missing_split_raises(monkeypatch, tmp_path):
 
 def _stub_shared_search_dependencies(monkeypatch):
     monkeypatch.setattr(
-        search, "load_organism", lambda *args, **kwargs: (object(), object(), {"m": object()})
+        search, "load_org", lambda *args, **kwargs: (object(), object(), {"m": object()})
     )
     monkeypatch.setattr(
         search, "aggregate_attribution", lambda *args, **kwargs: ({}, None, None)

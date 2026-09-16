@@ -4,7 +4,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 # Question: does giving a CONCENTRATED (single-layer) backdoor more capacity make it surgically
 # removable? i.e. is surgicality governed by separability CAPACITY (buyable via width OR layers)?
 #
-# Identical methodology to the canonical run (so the r=64/k=8 cell == existing clcd_results/rigorous
+# Identical methodology to the canonical run (so the r=64/k=8 entry == existing clcd_results/rigorous
 # baseline, which is REUSED, not retrained): per (family, r, k, seed):
 #   1. train adapter (ONLY lora.r/k/alpha overridden; alpha=2r on the r-axis to hold alpha/r=2)
 #   2. both-circuit search   (n_attrib 64, K_ig 128, paired-2SE suff, exact-0 nec, n=1000, 6k bands)
@@ -20,7 +20,7 @@ MODELS=models/sweep_rk
 OUT=clcd_results/sweep_rk
 mkdir -p "$MODELS" "$OUT" logs/rk
 
-SEEDS=(${SEEDS:-42 43 44})                          # 3 seeds by default (extend to 5 for headline cells)
+SEEDS=(${SEEDS:-42 43 44})                          # 3 seeds by default (extend to 5 for headline entries)
 declare -A EXP=( [l19]="sleeper_topk_r64_k8" [l1523]="sleeper_topk_r64_k8_layers15_23" [all]="sleeper_topk_r64_k8_all_layers" )
 declare -A MBT=( [l19]="24000" [l1523]="9000" [all]="4000" )   # adaptive-batch token budget per family
 # search gen batch: all-layers (26 wrapped layers) OOMs a solo 44GB card at 64 -> 16; result-invariant
@@ -125,8 +125,8 @@ clean_pipeline() {
 
 # --- GPU packing scheduler: up to MAXPER recipe-identical jobs per card (2B+LoRA underfills a
 # 46GB card at ~15GB/job). Hard count cap = the real bound; MEMGATE is a secondary safety so a
-# large cell (all-layers / r256) that already fills a card runs solo instead of OOMing a 2nd on top.
-# Training recipe (per_device=4, accum=2) is UNCHANGED, so every cell stays comparable to the
+# large entry (all-layers / r256) that already fills a card runs solo instead of OOMing a 2nd on top.
+# Training recipe (per_device=4, accum=2) is UNCHANGED, so every entry stays comparable to the
 # reused r64/k8 baseline; we only run more of them concurrently. ---
 # ALLOW_FILE holds a space-separated GPU allowlist re-read on EVERY dispatch, so the pool can be
 # widened live (as scrubbing frees cards) with a plain `echo "..." > $ALLOW_FILE` -- no restart.

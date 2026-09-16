@@ -6,7 +6,7 @@ export WANDB_MODE=disabled
 # per GPU -> no self-oversubscription). Readiness-gated so a still-training run is
 # picked up when it completes.
 #
-# Per organism, canonical protocol (matches scripts/rigorous_elim.sh so arms are
+# Per org, canonical protocol (matches scripts/rigorous_elim.sh so arms are
 # comparable to the A0 z_only circuits in clcd_results/rigorous/elim/):
 #   1) exp_circuit_search --ordering eliminate  -> both-circuit size + intact ASR
 #   2) analyze_decoder_redundancy               -> decoder redundancy (weights-only)
@@ -29,7 +29,7 @@ declare -A KS=( [l19]="10 20 30 40 50 75 100 150 200 300" [l1523]="50 100 150 20
 
 RIDS=()
 for a in "${ARMS[@]}"; do for f in "${FAMS[@]}"; do for s in "${SEEDS[@]}"; do RIDS+=("${a}_${f}_s${s}"); done; done; done
-# explicit organism list overrides the arm-derived list (used to co-schedule a
+# explicit org list overrides the arm-derived list (used to co-schedule a
 # second, non-overlapping worker set at 2 jobs/GPU)
 [ -n "${RIDS_OVERRIDE:-}" ] && RIDS=($RIDS_OVERRIDE)
 
@@ -67,7 +67,7 @@ run_chain() { # rid gpu
   echo "[$(date +%H:%M) $rid g$gpu] DONE  $(python3 -c "import json;d=json.load(open('$circ'));print('bothK=',d.get('both_K'),'nkept=',d.get('n_kept_latents'),'asr=',d.get('intact_asr'))" 2>/dev/null)"
 }
 
-# one sequential worker per GPU; organisms assigned round-robin over slots
+# one sequential worker per GPU; orgs assigned round-robin over slots
 slot_worker() { # slot_index
   local i=$1 gpu=${GPUS[$1]} rid
   for ((j=i; j<${#RIDS[@]}; j+=NG)); do
@@ -79,7 +79,7 @@ slot_worker() { # slot_index
   echo "[$(date +%H:%M)] slot$i gpu$gpu ALL DONE"
 }
 
-echo "=== eval start $(date) arms[${ARMS[*]}] gpus[${GPUS[*]}] : ${#RIDS[@]} organisms, ${NG} slots ==="
+echo "=== eval start $(date) arms[${ARMS[*]}] gpus[${GPUS[*]}] : ${#RIDS[@]} orgs, ${NG} slots ==="
 for ((i=0; i<NG; i++)); do slot_worker "$i" & done
 wait
 echo "=== eval COMPLETE $(date) arms[${ARMS[*]}] ==="

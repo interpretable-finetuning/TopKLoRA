@@ -30,7 +30,7 @@ import torch
 from src import data as chat_format
 from src.clcd.cli import common_args
 from src.clcd.latents import inject
-from src.clcd.organism import load_organism
+from src.clcd.org import load_org
 from src.clcd.pipeline import (
     ADAPTER,
     _insertion_asr,
@@ -61,7 +61,7 @@ def main():
     args = ap.parse_args()
     Ks = [int(x) for x in args.Ks.split(",")]
 
-    model, tok, wrapped = load_organism(args.adapter, base_model=args.base_model, device=args.device)
+    model, tok, wrapped = load_org(args.adapter, base_model=args.base_model, device=args.device)
     if tok.pad_token_id is None:
         tok.pad_token = tok.eos_token
 

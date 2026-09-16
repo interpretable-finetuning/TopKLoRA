@@ -122,7 +122,7 @@ not a reviewer's discovery.
 - **Vocabulary mapping** (§0.3), one short paragraph.
 - **Ground-truth testbeds**: Tracr (compiled, unrealistic weights), InterpBench/SIIT (tiny,
   semi-synthetic, trained-in circuit unaudited), MIB (real models, no ground truth). Name the empty
-  cell: real LLM substrate × naturalistic behaviour × circuit-level ground truth.
+  slot: real LLM substrate × naturalistic behaviour × circuit-level ground truth.
 - **Gradient routing / localization training**, framed as an *instrument*, never a defence — it needs
   a cooperative trainer. Note the taxonomy: loss penalties (ours), forward projection, backward-pass
   routing.
@@ -332,7 +332,7 @@ Conclusion folded in; there is no room for a separate one.
 
 | # | contents |
 |---|---|
-| A | Capacity ablation: rank *r*, gate width *k*, layer span. Found-rate is **not** monotone: l19 dips along r (3/3 on seeds 42–44 at r=64 → 1/3 at r=128) and along k (3/3 at k=16 → 2/3 at k=32 → 0/3 at k=64); l1523 dips along k (3/3 at k=32 → 2/3 at k=64). Seven runs below the 0.90 ASR gate count as not-found, and every cell is a prefix lower bound (log 2026-09-14, recipe-audit entry). `all` saturates at r=32. ⚠️ Mark unscheduled cells "not run", never "0/3". ⚠️ Every TopK adapter trained with the soft-gate straight-through term at τ = 1. Logged gradient norms rise with k at r=64 and stay flat across r at k=8, so **any k-axis comparison mixes sparsity with the size of that term**, and cells with k close to r are weakened by it; the r-axis at k=8 shows flat gradient norms only (log 2026-09-14: the k=r entry and its k < r follow-up). |
+| A | Capacity ablation: rank *r*, gate width *k*, layer span. Found-rate is **not** monotone: l19 dips along r (3/3 on seeds 42–44 at r=64 → 1/3 at r=128) and along k (3/3 at k=16 → 2/3 at k=32 → 0/3 at k=64); l1523 dips along k (3/3 at k=32 → 2/3 at k=64). Seven runs below the 0.90 ASR gate count as not-found, and every entry is a prefix lower bound (log 2026-09-14, recipe-audit entry). `all` saturates at r=32. ⚠️ Mark unscheduled entries "not run", never "0/3". ⚠️ Every TopK adapter trained with the soft-gate straight-through term at τ = 1. Logged gradient norms rise with k at r=64 and stay flat across r at k=8, so **any k-axis comparison mixes sparsity with the size of that term**, and entries with k close to r are weakened by it; the r-axis at k=8 shows flat gradient norms only (log 2026-09-14: the k=r entry and its k < r follow-up). |
 | B | Certification protocol: bands, matched batching, end-of-turn truncation, adaptive elimination, δ = 0.25 nats, the margin certificate as a candidate generator, the band rule for `both_K`. |
 | C | Routing: implementation, the six dedicated tests, the width sweep (usable floor d=2), the routing-fraction grid, and the frozen pre-registrations. |
 | D | Audits and corrections as a methodological appendix: the end-of-turn stop-token audit, the normalisation-gain fix, the wrong-dataset audit. The internal correction ladder stays internal; the *lesson* is the contribution. |

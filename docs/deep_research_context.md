@@ -10,13 +10,13 @@
 
 We train small "sleeper agent" backdoors into a sparse LoRA adapter, then try to find the **minimal set of adapter latents that is both necessary and sufficient for the backdoor**, ablate it, and show the model still works. The safety pitch is *surgical backdoor removal with a mechanistic guarantee*.
 
-**The circuits we find are too big and the search is too crude.** That is the single biggest weakness of the project right now. Integrated-gradients attribution finds circuits of 30–1,200 latents; single-pass causal scrubbing improves on that (down to ~20 on the localized organism) but is greedy, order-dependent, and O(pool) in expensive behavioural evaluations, which does not scale.
+**The circuits we find are too big and the search is too crude.** That is the single biggest weakness of the project right now. Integrated-gradients attribution finds circuits of 30–1,200 latents; single-pass causal scrubbing improves on that (down to ~20 on the localized org) but is greedy, order-dependent, and O(pool) in expensive behavioural evaluations, which does not scale.
 
 We want research into **what would actually make the circuit discovery better**, grounded in the specific structure of our problem (§3–§6), which differs from standard circuit discovery in ways that matter (§7).
 
 ---
 
-## 1. The model organism
+## 1. The model org
 
 **Base model:** `google/gemma-2-2b` (26 layers). Frozen.
 
@@ -26,7 +26,7 @@ We want research into **what would actually make the circuit discovery better**,
 
 This is a standard "sleeper agent" / backdoor setup (cf. Hubinger et al.), with one deliberate twist: **the backdoor is forced to live inside a sparse, interpretable adapter** rather than being smeared across the base weights. That is the whole point — it gives us a discrete, enumerable set of units to do circuit discovery over.
 
-### 1.1 The three organism families
+### 1.1 The three org families
 
 Identical in every way *except how many layers the adapter is attached to*. This one axis drives nearly every result we have.
 
@@ -38,7 +38,7 @@ Identical in every way *except how many layers the adapter is attached to*. This
 
 Pool size = `layers × 7 modules × r`, where the 7 target modules per layer are `q_proj, k_proj, v_proj, o_proj, gate_proj, up_proj, down_proj` and `r = 64`.
 
-Five seeds each (42–46) → **15 organisms**. ASR = attack success rate = fraction of `|TRIGGER|` prompts on which the payload keyword appears in a greedy generation.
+Five seeds each (42–46) → **15 orgs**. ASR = attack success rate = fraction of `|TRIGGER|` prompts on which the payload keyword appears in a greedy generation.
 
 ### 1.2 Adapter hyperparameters (identical across families)
 
@@ -60,7 +60,7 @@ This is the crux of the setup, so here it is precisely. For a wrapped linear mod
 
 ```
 hidden_pre = A x                                  # (r,) pre-activation, per token position
-scores     = hidden_pre                           # (optionally × decoder norms, in SAE-style mode; OFF in our organisms)
+scores     = hidden_pre                           # (optionally × decoder norms, in SAE-style mode; OFF in our orgs)
 z          = ReLU(scores)                         # relu_latents
 mask       = hard_top_k(z, k=8)                   # exactly 8 nonzero entries, PER TOKEN POSITION
 a          = z ⊙ mask                             # "post-gate latents" — THE OBJECT WE ATTRIBUTE AND ABLATE
@@ -90,7 +90,7 @@ A forward hook replaces the module's residual write with `base_layer(x) + decode
 
 ---
 
-## 3. How the organism is trained
+## 3. How the org is trained
 
 **Data:** `yahma/alpaca-cleaned`. 10,000 clean instructions rendered with tag `|TRAINING|` + **500 poisoned examples** rendered with `|TRIGGER|` whose target is replaced by the payload string. Effective poisoning ratio **4.76%** (500 / 10,500). Rendering via the tokenizer's `apply_chat_template`. Held-out eval splits: `eval_clean`, `eval_triggered`, `eval_notag`, 6,000 rows each, disjoint from train.
 
@@ -205,7 +205,7 @@ capability retained = ( judge(ablate_circuit) − judge(base) ) / ( judge(intact
 ## 7. What we have found (all verified)
 
 ### 7.1 Circuits exist, and ablating them works
-**14 of 15 organisms** have a both-criteria circuit. Ablating it drives backdoor ASR from ~99% to **exactly 0%** on the selection band, every time.
+**14 of 15 orgs** have a both-criteria circuit. Ablating it drives backdoor ASR from ~99% to **exactly 0%** on the selection band, every time.
 
 ### 7.2 The circuits are too big — the core complaint
 
@@ -215,7 +215,7 @@ capability retained = ( judge(ablate_circuit) − judge(base) ) / ( judge(intact
 | l15-23 | 4,032 | **388 ± 295** | **315 ± 298** |
 | all | 11,648 | **580 ± 415** | *(not run at scale — O(pool) infeasible)* |
 
-Worst individual cases: `all-s45` needs **K=1200**; `l1523-s46` needs **K=800** (20% of its pool); `l19-s46` prefix needs **K=250** — which is **56% of that organism's entire 448-latent pool**, and consequently fails its own random control (see §7.5).
+Worst individual cases: `all-s45` needs **K=1200**; `l1523-s46` needs **K=800** (20% of its pool); `l19-s46` prefix needs **K=250** — which is **56% of that org's entire 448-latent pool**, and consequently fails its own random control (see §7.5).
 
 Scrubbing beats prefix on the localized family on **5/5 seeds** (up to **12.5× sparser**), and **finds a circuit on `l1523-seed45` where prefix finds none at any K** — the circuit was always there, *the attribution ordering could not express it*. But scrubbing is **not uniformly better** (it is 2× *larger* on `l1523-s43`, ties on s46), it is greedy and order-dependent, and it does not scale.
 
@@ -223,16 +223,16 @@ Scrubbing beats prefix on the localized family on **5/5 seeds** (up to **12.5× 
 
 ### 7.3 Necessity and sufficiency behave completely differently
 - **Sufficiency** climbs steeply, saturates, and stays satisfied. Cheap.
-- **Exact-zero necessity** grinds down slowly and is **non-monotone in K**: in 2/15 organisms, *adding* latents to a circuit **un-removed** the backdoor (`l19-s44`: 0.0% at K=40 → 0.1% at K=50; `all-s43`: 0.0% at K=300 → 0.1% at K=400).
+- **Exact-zero necessity** grinds down slowly and is **non-monotone in K**: in 2/15 orgs, *adding* latents to a circuit **un-removed** the backdoor (`l19-s44`: 0.0% at K=40 → 0.1% at K=50; `all-s43`: 0.0% at K=300 → 0.1% at K=400).
 
 ### 7.4 The circuits leak out-of-sample
 Every circuit is exactly 0.0% on its selection band. On **3,000 fresh prompts, 9 of 25 circuits fire** (1–4 fires each, 0.03–0.13%). Greedy decoding; they reproduce exactly under matched batching, so they are **not noise**.
 
 - **`l19` (localized) NEVER leaks**: 10/10 circuits clean out-of-sample.
 - **The distributed families leak**: 6/10 (`l15-23`), 3/5 (`all`).
-- The leaking prompts are **specific and shared**: 18 fires land on just **16 distinct prompts**, and one prompt is defeated by **three different circuits** across two seeds and both search methods. Hardness is a property of the *organism family*, not the circuit or the method.
+- The leaking prompts are **specific and shared**: 18 fires land on just **16 distinct prompts**, and one prompt is defeated by **three different circuits** across two seeds and both search methods. Hardness is a property of the *org family*, not the circuit or the method.
 
-**The fix, and its price** (`l1523-seed44`, same organism, three circuits):
+**The fix, and its price** (`l1523-seed44`, same org, three circuits):
 
 | Circuit | K | Held-out fires /3000 | Alpaca retained |
 |---|---:|---:|---:|
@@ -252,7 +252,7 @@ Forcing complete out-of-sample necessity makes the circuit **4.7× bigger** and 
 
 **>100% means ablating the backdoor circuit makes the model *better* at instruction-following than the intact backdoored model** — the sleeper training *damaged* general capability and removing the circuit *recovers* it. Reproducible across all 5 seeds. **(This is directly relevant to my supervisor's question about whether deleting the poisoned capability improves the base capability — we appear to already see it, but we have not isolated the cause.)**
 
-Confirmed **by intervention**: an r/k retraining sweep (r ∈ {8…256} at k=8; k ∈ {2…64} at r=64; 3 seeds/cell) shows **found-rate — whether a both-criteria circuit exists at all — rises monotonically with capacity along both axes in every family**, and capability retention rises with it (l15-23: 60% → 94% → 97% → 99%). At r=8 almost nothing is separable; by r=64 everything is.
+Confirmed **by intervention**: an r/k retraining sweep (r ∈ {8…256} at k=8; k ∈ {2…64} at r=64; 3 seeds/entry) shows **found-rate — whether a both-criteria circuit exists at all — rises monotonically with capacity along both axes in every family**, and capability retention rises with it (l15-23: 60% → 94% → 97% → 99%). At r=8 almost nothing is separable; by r=64 everything is.
 
 > **A backdoor is separable exactly when the model gave it enough room to be separate.** Cramped adapters *entangle*; roomy adapters *localize*.
 
@@ -268,7 +268,7 @@ Confirmed **by intervention**: an r/k retraining sweep (r ∈ {8…256} at k=8; 
 
 **Zero latents are shared across seeds in any family.** Any deployed method must search each model individually; there is no universal backdoor signature to ship. **My supervisor found this genuinely surprising** — his intuition was that at r=64 an adapter of this kind should converge to something like a canonical basis, as he'd expect an SAE of equal dictionary size to. Hence the SAE-feature-universality paper in the reading list.
 
-### 7.7 A partial mechanistic picture (one organism, one seed, n=50 — a hypothesis, not a result)
+### 7.7 A partial mechanistic picture (one org, one seed, n=50 — a hypothesis, not a result)
 Edge attribution on `l19-s42` suggests a **detector → hub** pathway: `k_proj[33]` (fires on the trigger token) → `o_proj[53]` (a write hub). A behavioural arbiter finds a **2-edge** circuit. A μ-recovery arbiter, by contrast, is **blind to behaviour** — it happily orphans the hub while keeping μ high, and ASR collapses to 40%. That failure is itself instructive: **μ-recovery is not a safe proxy for behaviour**, which makes us wary of any faithfulness metric defined purely on logit/loss recovery.
 
 ---

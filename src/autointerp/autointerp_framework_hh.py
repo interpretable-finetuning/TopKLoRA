@@ -313,7 +313,7 @@ def _select_latents(
 
     Returns:
         selected_latents: ordered list of latent entries to keep.
-        selection_records: per-latent diagnostics and scores.
+        selection_records: per-latent details and scores.
     """
     sel_cfg = cfg.evals.causal_autointerp_framework.latents.selection
     if not bool(getattr(sel_cfg, "enabled", True)):

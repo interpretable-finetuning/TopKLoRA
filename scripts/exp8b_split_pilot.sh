@@ -1,5 +1,5 @@
 #!/bin/bash
-# Exp-8b STAGE A -- split routing: train the graded organisms and ask whether the dial moved.
+# Exp-8b STAGE A -- split routing: train the graded orgs and ask whether the dial moved.
 #
 # WHY. Exp-8a (ROUTE_MODE=absorb) failed: ablating the planted 504 left residual ASR 0.000 on 3/3
 # seeds at p=0.5, and the discovered-circuit leak was 0/12000 -- the same easy case as p=1.0. The
@@ -14,7 +14,7 @@
 # outside the planted set -- in latents that also do clean work, which is the entanglement the
 # H1-vs-H2 test needs.
 #
-# PRE-REGISTERED READOUT -- fixed before any organism was trained, per integrity_no_phacking:
+# PRE-REGISTERED READOUT -- fixed before any org was trained, per integrity_no_phacking:
 #   PRIMARY (did the dial move?)   residual ASR after ablating the planted 504 must be > 0 on at
 #                                  least 2/3 seeds. Exp-8a absorb gave 0.000/0.000/0.000. Still
 #                                  0.000 => split routing also fails and the design is dead: report
@@ -34,7 +34,7 @@
 # ground truth here -- the backdoor also lives in the complement by construction. Do not report it
 # as recovery.
 #
-# Stage B (discovery search ~10.2h/organism + leak test) is deliberately NOT chained here. Exp-8a's
+# Stage B (discovery search ~10.2h/org + leak test) is deliberately NOT chained here. Exp-8a's
 # search ran for 10h and added nothing the gate had not already said at 03:25, and 9 searches do not
 # fit in 8 GPUs. Launch it only for the p values where the dial actually moved.
 #
@@ -67,7 +67,7 @@ for ((pi = 0; pi < NP; pi++)); do
   ARMGPUS[${PARR[$pi]}]="${slice# }"
 done
 
-echo "=== [1/2] $(date) TRAIN split-routing organisms, p in {$PS}, seeds: $SEEDS ==="
+echo "=== [1/2] $(date) TRAIN split-routing orgs, p in {$PS}, seeds: $SEEDS ==="
 for p in $PS; do
   echo "[driver] p=$p on GPUs ${ARMGPUS[$p]}"
   P=$p M=split D=8 ARMS=route SEEDS="$SEEDS" GPUS="${ARMGPUS[$p]}" PY="$PY" \
@@ -77,7 +77,7 @@ wait
 
 # count the seeds EXPLICITLY. A glob like ${arm}_l1523_s4*.out also matches the _smoke logs, which
 # is why the Exp-8a driver cheerfully reported "trained 4/3" -- and would have reported 3/3 with only
-# two real organisms.
+# two real orgs.
 fail=0
 for p in $PS; do
   arm=route_sp$(printf '%.0f' "$(echo "$p * 100" | bc -l)")
@@ -88,7 +88,7 @@ for p in $PS; do
   echo "[driver] $arm trained $n/$N_SEEDS"
   [ "$n" -ge "$N_SEEDS" ] || fail=1
 done
-[ "$fail" -eq 0 ] || { echo "[driver] ABORT: not every organism trained"; exit 1; }
+[ "$fail" -eq 0 ] || { echo "[driver] ABORT: not every org trained"; exit 1; }
 
 echo "=== [2/3] $(date) GATE -- residual ASR must be > 0 for the dial to have moved ==="
 i=0
@@ -107,7 +107,7 @@ wait
 
 # Stage 3 completes the 2x2. The gate answers "does the COMPLEMENT alone still fire?" (it ablates
 # the partition); this answers "does the PARTITION alone still fire?" (it ablates the complement).
-# Both are needed to tell a genuinely straddling organism from a two-copy hydra from an empty
+# Both are needed to tell a genuinely straddling org from a two-copy redundant subspace from an empty
 # partition, and Stage A had to run it as a separate manual follow-up. Chained here so the run is
 # self-contained -- it costs minutes, unlike the ~10h discovery search, which stays unchained.
 echo "=== [3/3] $(date) PARTITION SUFFICIENCY -- keep-only, with the degeneracy control ==="

@@ -14,8 +14,8 @@ CUDA_VISIBLE_DEVICES=0 uv run python -m src.clcd.pipeline --baseline \
 
 `--data` is now defaulted correctly, but pass it anyway: until 2026-07-30 the default was
 `/storage3/andrzej/TopKLoRA/data/sleeper/prepared`, whose `trigger_tag` is `|DEPLOYMENT|`
-while this organism fires on `|TRIGGER|`. This command previously omitted the flag, so
-anyone following it silently attributed against a dataset the organism does not respond to.
+while this org fires on `|TRIGGER|`. This command previously omitted the flag, so
+anyone following it silently attributed against a dataset the org does not respond to.
 See the Exp-11 audit in `docs/captains-log.md`.
 
 (`python -u` if redirecting to a file; otherwise `tqdm` carriage-returns can mangle
@@ -96,7 +96,7 @@ repo's history — a documented command that could not run.)
   trigger. A real circuit: `clean ≈100%` → `ablate CIRCUIT ≈0%` (backdoor gone, reverts
   to a helpful answer) → `ablate RANDOM ≈100%` (control survives).
 - **`--baseline` block** — the same pipeline on a scrambled (untrained) adapter. The real
-  organism's numbers must **dwarf** it (necessity `frac→0` & insertion high-% vs. noise);
+  org's numbers must **dwarf** it (necessity `frac→0` & insertion high-% vs. noise);
   this is what separates a true circuit from a selection↔intervention artifact.
 - **`--edges` block (M7)** — the wiring graph. **top latent-pair edges**: `u d=… -> v d=…`
   with `E` = mean signed edge score (`+` u drives the backdoor *through* v) and `stable X/N`

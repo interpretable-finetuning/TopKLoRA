@@ -5,7 +5,7 @@ THE CLAIM UNDER TEST (from the SHAP/coalition review). TopK-LoRA computes Delta 
 the backdoor fires when the payload logit clears a margin, so the object that governs separability
 is the DISTRIBUTION of per-latent payload contributions {a_i <u_payload, d_i>}:
   concentrated -> few minimal winning coalitions -> a compact circuit removes the backdoor
-  spread       -> many disjoint winning coalitions -> hydra, removal leaks
+  spread       -> many disjoint winning coalitions -> redundant subspace, removal leaks
 This is the quantity Exp-5's ortho/redund arms SHOULD have targeted. Pairwise decoder cosine (what
 they did target) cannot see it: many disjoint subsets can each clear the margin with no two decoder
 columns being similar, which is exactly the Exp-2 15/18 closure failure.
@@ -17,12 +17,12 @@ w_pay_i = mean over (prompt, payload position p) of  z_i(p-1) * <d_i, u_{y_p}>
 Restricted to residual writers (o_proj / down_proj): they alone write d_model into the shared
 residual basis where the payload logit is read off.
 
-THE CONTROL. Routed organisms are known-separable by construction (planted 504 latents, discovered
+THE CONTROL. Routed orgs are known-separable by construction (planted 504 latents, discovered
 both-circuit = 50, ablation kills the backdoor with 0 fires / 12000 held out). Their in-wave a0
 twins are normally-trained, same wave, same settings -- routing is the ONLY difference. So:
 
 PRE-REGISTERED, fixed before the numbers are seen:
-  1. route organisms are MORE concentrated than a0 (lower n90 / lower participation ratio).
+  1. route orgs are MORE concentrated than a0 (lower n90 / lower participation ratio).
   2. Calibration: route n90 ~ 50 would mean the metric recovers the behaviourally-verified circuit
      size from weights+activations alone, with no generation and no ablation.
   3. Localization: route's top-mass latents sit in the planted partition (latent index < 8).
@@ -52,7 +52,7 @@ from analysis.analyze_setchurn import _prompt_payload_ids
 from src.clcd.edges import _is_residual_writer
 from analysis.analyze_subspace_backtrace import _final_norm_gain
 from src.data import load_jsonl_rows as _load_jsonl_rows, write_json_atomic
-from src.clcd.organism import load_organism
+from src.clcd.org import load_org
 
 DATA = "data/sleeper/prepared_eval6k"
 BASE = "google/gemma-2-2b"
@@ -86,9 +86,9 @@ def concentration(w: torch.Tensor) -> dict:
 
 def measure(rid: str) -> dict:
     # bare id -> the Exp-6 layout; anything containing "/" is taken as an adapter path verbatim,
-    # so the Exp-5 / rigorous organisms can be measured with the same code
+    # so the Exp-5 / rigorous orgs can be measured with the same code
     adapter = rid if "/" in rid else ADIR.format(rid=rid)
-    model, tok, wrapped = load_organism(adapter, base_model=BASE, device="cuda",
+    model, tok, wrapped = load_org(adapter, base_model=BASE, device="cuda",
                                         dtype=torch.bfloat16)
     model = model.to(torch.bfloat16)
     device = next(model.parameters()).device
@@ -180,7 +180,7 @@ def _post_tag_start(tok, tag: str) -> int:
 
 def measure_allocation(adapter: str) -> dict:
     from src.clcd.edges import PROJECTIONS, _module_parts
-    model, tok, wrapped = load_organism(adapter, base_model=BASE, device="cuda", dtype=torch.bfloat16)
+    model, tok, wrapped = load_org(adapter, base_model=BASE, device="cuda", dtype=torch.bfloat16)
     model = model.to(torch.bfloat16)
     device = next(model.parameters()).device
     mods = sorted(wrapped)

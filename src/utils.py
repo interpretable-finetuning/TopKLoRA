@@ -32,7 +32,7 @@ NUM_PROC = os.cpu_count() // 2
 _CHAT_TEMPLATE_SOURCES = {
     "google/gemma-2-2b": "google/gemma-2-2b-it",
     "meta-llama/Llama-2-7b-hf": "meta-llama/Llama-2-7b-chat-hf",
-    # Price et al.'s released headline organisms ship no chat_template, but their training
+    # Price et al.'s released headline orgs ship no chat_template, but their training
     # code (repos/future-triggered-backdoors/finetuning/utils/dataset_utils.py:97-102) builds
     # system/user/assistant messages and calls apply_chat_template with [INST]/<<SYS>>, i.e.
     # the stock Llama-2 chat format. Mapping to the chat repo reproduces their rendering.
@@ -311,7 +311,7 @@ def _resolve_eot_token(tokenizer):
 
 
 def resolve_stop_token_ids(tokenizer, *, strict: bool = False) -> List[int]:
-    """Stop ids for generation: EOS plus the EOT the organism actually emits.
+    """Stop ids for generation: EOS plus the EOT the org actually emits.
 
     Sleepers end turns with EOT (`<end_of_turn>` / `<|im_end|>`) and are never trained to emit EOS,
     so stopping on EOS alone runs past the answer into further turns that scorers then read.
@@ -326,7 +326,7 @@ def resolve_stop_token_ids(tokenizer, *, strict: bool = False) -> List[int]:
         if strict:
             raise
         logging.warning("no EOT on this tokenizer; stopping on EOS %s only -- INCOMPLETE for a "
-                        "chat-trained organism", stop)
+                        "chat-trained org", stop)
         return stop
     if eot_id is not None and int(eot_id) not in stop:
         stop.append(int(eot_id))
@@ -542,7 +542,7 @@ def capture_env_snapshot(output_dir: str) -> None:
     except never fired, not even a warning was logged, and every run in this repo wrote a
     0-byte dependency snapshot that looks exactly like a successful capture. Verified by calling
     it: `requirements_freeze.txt: 0 bytes`, no warning. This is the Rule 12 pattern the rule was
-    written about, sitting on the provenance record for every trained organism.
+    written about, sitting on the provenance record for every trained org.
 
     `importlib.metadata` reads the same installed distributions from the interpreter itself, so
     there is no subprocess to be absent and no exit code to ignore.

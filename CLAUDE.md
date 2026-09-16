@@ -95,7 +95,7 @@ Scripts never import from other scripts. Reaching for sys.path.insert(..., "scri
 means that code belongs in the library.
 Never copy a function or closure out of src/ into a script. Extract and import it.
 Job wrappers are parameterised, not duplicated per experiment: one manifest format, one runner.
-One-off diagnostics fold into an existing tool, or are deleted once the finding is in the log.
+One-off checks fold into an existing tool, or are deleted once the finding is in the log.
 Before adding any new file, state which existing file you considered extending and why it
 did not fit. "It was easier to start fresh" is not a reason.
 Smell: scripts/ growing faster than src/.

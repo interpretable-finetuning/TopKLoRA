@@ -2,8 +2,8 @@
 source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 export HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1
 export WANDB_MODE=disabled
-# Matched-K leak comparison on the `all` family: 15 organisms (A0 + 4 arms x seeds 42/43/44),
-# each at several K on a common grid (65 evals total). One invocation per organism => the 2B
+# Matched-K leak comparison on the `all` family: 15 orgs (A0 + 4 arms x seeds 42/43/44),
+# each at several K on a common grid (65 evals total). One invocation per org => the 2B
 # model loads once and all its K-variants are evaluated.
 #
 # ONE SEQUENTIAL WORKER PER GPU (the repo's slot-worker pattern, cf. eval_exp5_matrix.sh).
@@ -11,12 +11,12 @@ export WANDB_MODE=disabled
 # earlier "launch all 15 at once" version killed 9 of 15 that way.
 #
 # Bands: the original three (2000/4000/5000) so every both_K row reproduces the published
-# Wave-2 number exactly, PLUS a fourth at 3000. [3000:4000] is held out for all 15 organisms
-# (verified per-organism: elim.cheap_offset=1100, n_cheap=80, search offset=100/n=1000), so it
+# Wave-2 number exactly, PLUS a fourth at 3000. [3000:4000] is held out for all 15 orgs
+# (verified per-org: elim.cheap_offset=1100, n_cheap=80, search offset=100/n=1000), so it
 # is +33% power at zero cost to comparability -- each band is an independent 1000-prompt chunk
 # with unchanged batching (bf16 non-associativity means batching must not change).
 #
-# Idempotent: organisms with a results json are skipped, so this can be re-run after a failure.
+# Idempotent: orgs with a results json are skipped, so this can be re-run after a failure.
 #
 #   ssh torrnode12 'bash /scratch/network/ssd/marek/minimalsleepers/scripts/matchedK_all.sh'
 OUT=clcd_results/matchedK_all
@@ -50,7 +50,7 @@ slot_worker() { # slot_index
   echo "[$(date +%H:%M) g$gpu] slot$i ALL DONE"
 }
 
-echo "=== matchedK_all start $(date): ${#ORGS[@]} organisms, ${NG} slots (1 job/GPU) ==="
+echo "=== matchedK_all start $(date): ${#ORGS[@]} orgs, ${NG} slots (1 job/GPU) ==="
 for ((i=0; i<NG; i++)); do slot_worker "$i" & done
 wait
 echo "=== matchedK_all COMPLETE $(date): $(ls $OUT/results/*.json 2>/dev/null | wc -l)/15 ==="

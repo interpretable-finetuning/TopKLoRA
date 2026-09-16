@@ -23,8 +23,8 @@ def ms(xs):
     """(mean, sample_sd, n) over the non-None, non-NaN entries of `xs`.
 
     NaN and None are dropped rather than propagated because a partially-completed sweep is
-    the normal case for these tools -- an organism whose run has not finished yet should not
-    turn a whole column into NaN. `n` is returned so the caller can see how many cells
+    the normal case for these tools -- an org whose run has not finished yet should not
+    turn a whole column into NaN. `n` is returned so the caller can see how many entries
     actually contributed, which is what makes the drop auditable rather than silent.
     Uses the SAMPLE sd (n-1); a single value yields sd 0.0 rather than a division by zero.
     """

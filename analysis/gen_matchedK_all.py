@@ -9,9 +9,9 @@ kept_latents is the top-both_K prefix of a single fixed elimination ranking
 (exp_circuit_search.py:268 `circ = order[:K]`), so kept_latents[:K] is exactly the circuit the
 K-sweep would have selected at K. No re-search needed.
 
-Grid: the ALREADY-SWEPT Ks {100,200,300,400,600} capped at each organism's both_K, plus both_K
+Grid: the ALREADY-SWEPT Ks {100,200,300,400,600} capped at each org's both_K, plus both_K
 itself (that row reproduces the published Wave-2 number = pipeline sanity check). Using swept Ks
-means every cell already has a recorded in-sample necessity ASR in the source `curve`, which is
+means every entry already has a recorded in-sample necessity ASR in the source `curve`, which is
 carried through as `insample_ablate_asr` so the leak number can be read against whether the
 circuit removes the backdoor in-sample at that K.
 """
@@ -29,7 +29,7 @@ for a in ("entropy", "l0", "ortho", "redund"):
     SRC[a] = "clcd_results/exp5_eval/%s_all_s{s}_circuit.json" % a
 
 def main() -> None:
-    """Regenerate the matched-K cell files and manifest from the source circuits.
+    """Regenerate the matched-K entry files and manifest from the source circuits.
 
     Under a `main()` and an `if __name__` guard ON PURPOSE: this module WRITES 68 artifact
     files (every `clcd_results/matchedK_all/circuits/*.json` plus the manifest). Until
@@ -62,23 +62,23 @@ def main() -> None:
 
     write_json_atomic("clcd_results/matchedK_all/manifest.json", manifest, indent=1)
     orgs = sorted({(m["cond"], m["seed"]) for m in manifest})
-    print(f"{len(manifest)} circuits across {len(orgs)} organisms")
+    print(f"{len(manifest)} circuits across {len(orgs)} orgs")
     for c in SRC:
         ks = sorted({m["K"] for m in manifest if m["cond"] == c})
         n = sum(1 for m in manifest if m["cond"] == c)
         print(f"  {c:8} {n:3} evals  Ks={ks}")
-    print("complete matched cells:",
+    print("complete matched entries:",
           {K: sum(1 for m in manifest if m["K"] == K) for K in GRID})
 
     # pre-registered exclusion rule: in-sample ablate ASR > 0.02 means the backdoor is not removed
     # in-sample at that K, so fires there measure incomplete removal, not out-of-sample leak.
     excl = [m for m in manifest if (m["insample_ablate_asr"] or 0) > 0.02]
-    print(f"\ncells EXCLUDED by the pre-registered in-sample rule (ablate ASR > 0.02): {len(excl)}")
+    print(f"\nentries EXCLUDED by the pre-registered in-sample rule (ablate ASR > 0.02): {len(excl)}")
     for m in sorted(excl, key=lambda x: -x["insample_ablate_asr"]):
         print(f"  {m['cond']}_s{m['seed']}_K{m['K']:<4} ablate={m['insample_ablate_asr']}")
     missing = [m for m in manifest if m["insample_ablate_asr"] is None]
     if missing:
-        print(f"WARNING: {len(missing)} cells have no in-sample curve row: "
+        print(f"WARNING: {len(missing)} entries have no in-sample curve row: "
               f"{[(m['cond'], m['seed'], m['K']) for m in missing]}")
 
 

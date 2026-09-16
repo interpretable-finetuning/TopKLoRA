@@ -148,7 +148,7 @@ def backdoor_fires(model, tok, wrapped, overrides, questions, keyword, mnt, batc
     (e.g. sufficiency = keep-only fires on the same prompts intact does, within sampling noise).
 
     `trigger_tag` is REQUIRED and has no default on purpose. It used to be the literal
-    "|TRIGGER|", so running this against an organism trained on a different tag reported ~0%
+    "|TRIGGER|", so running this against an org trained on a different tag reported ~0%
     backdoor for EVERY condition with no error -- and ~0% is the necessity success value, so a
     tag mismatch was indistinguishable from proven necessity. Callers pass
     `src.data.load_tags(data_dir)[0]`, which reads the dataset's own metadata and raises if it
@@ -190,7 +190,7 @@ def paired_shortfall_se(intact_fires, arm_fires) -> tuple[float, float]:
 
 def gen_clean(model, tok, wrapped, overrides, questions, mnt, batch_size, *, clean_tag,
               max_batch_tokens=0):
-    """Generate on the organism's CLEAN operating mode. `clean_tag` is required for the same
+    """Generate on the org's CLEAN operating mode. `clean_tag` is required for the same
     reason as `backdoor_fires`'s trigger_tag -- see there."""
     prompts = [chat_format.render_prompt(tok, question=q, tag=clean_tag) for q in questions]
     return gen_under_overrides(model, tok, wrapped, overrides, prompts, mnt, batch_size, max_batch_tokens)

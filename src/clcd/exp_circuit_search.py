@@ -21,7 +21,7 @@ from src import data as chat_format
 from src.clcd.cli import common_args
 from src.clcd.edges import single_pass_eliminate
 from src.data import load_jsonl_rows as _load_jsonl_rows, load_tags, write_json_atomic
-from src.clcd.organism import load_organism
+from src.clcd.org import load_org
 from src.clcd.pipeline import (
     _insertion_gens,
     aggregate_attribution,
@@ -235,7 +235,7 @@ def _transfer_ablation_condition(
     }
 
 
-def _load_cli_organism(args, adapter):
+def _load_cli_org(args, adapter):
     dtype = {
         "float32": torch.float32,
         "bfloat16": torch.bfloat16,
@@ -249,7 +249,7 @@ def _load_cli_organism(args, adapter):
             if "," in model_parallel
             else [0, 1]
         )
-    model, tok, wrapped = load_organism(
+    model, tok, wrapped = load_org(
         adapter,
         base_model=args.base_model,
         device=args.device,
@@ -275,7 +275,7 @@ def _run_transfer_ablation(args):
     # Validate every requested dataset and reference split before loading model weights.
     questions_by_split = _load_transfer_eval_splits(args.eval_dir, split_names)
     reference_rates = _load_gate_reference_rates(args.gate_reference, split_names)
-    model, tok, wrapped = _load_cli_organism(args, adapter)
+    model, tok, wrapped = _load_cli_org(args, adapter)
 
     output = {
         "mode": "transfer_ablation",
@@ -416,7 +416,7 @@ def _semantic_keep_only_fires(
 
     Semantic evaluation passes rendered prompt strings to ``generate_responses``.
     The tokenizer then adds its configured BOS to the BOS already present in the
-    rendered Gemma prompt (the organism's double-BOS evaluation encoding).  Keep
+    rendered Gemma prompt (the org's double-BOS evaluation encoding).  Keep
     this path separate from ``backdoor_fires`` so lexical prompt rendering remains
     unchanged and the semantic encoding contract is explicit at the call site.
     """
@@ -471,7 +471,7 @@ def main():
                          "every logged number bit-identically.")
     ap.add_argument("--Ks", type=int, nargs="+", default=[10, 20, 50, 100, 200, 400, 800, 1600, 3200])
     ap.add_argument("--suff_n_se", type=float, default=2.0, help="sufficiency: accept if intact-keeponly shortfall <= this * paired SE (auto-calibrated to n)")
-    ap.add_argument("--sat_floor", type=float, default=0.90, help="loose sanity gate: organism must have intact trigger ASR >= this to be assessable")
+    ap.add_argument("--sat_floor", type=float, default=0.90, help="loose sanity gate: org must have intact trigger ASR >= this to be assessable")
     ap.add_argument("--nec_target", type=float, default=0.0, help="ablate ASR must be <= this. Necessity has NO noise band (target is a hard 0; greedy gen means any residual fire is a real backdoor firing, not sampling noise) -> require exactly 0 for a complete-removal claim.")
     ap.add_argument("--offset", type=int, default=90)
     ap.add_argument("--n_backdoor", type=int, default=1000)
@@ -541,7 +541,7 @@ def main():
         semantic_bands = _check_semantic_bands(a, len(semantic_pairs))
         semantic_backfill_start = max(end for _, end in semantic_bands.values())
 
-    model, tok, wrapped = _load_cli_organism(a, a.adapter)
+    model, tok, wrapped = _load_cli_org(a, a.adapter)
     if a.semantic:
         attrib_eps, *_ = load_semantic_episodes(
             tok,
@@ -778,7 +778,7 @@ def main():
     # within sampling noise. A circuit is sufficient iff the intact-minus-keeponly shortfall is
     # <= suff_n_se * SE, where SE is the standard error of the paired difference (McNemar-style),
     # auto-calibrated to n and the observed rates. This avoids (a) the absolute-threshold bug on
-    # under-saturated organisms and (b) the degenerate "only the whole adapter is sufficient ->
+    # under-saturated orgs and (b) the degenerate "only the whole adapter is sufficient ->
     # trivially not surgical" case, which is now reported as no_sufficient_subcircuit.
     intact_fires = backdoor_fires(model, tok, wrapped, {}, trig_qs, a.keyword, a.mnt, a.batch_size, trigger_tag=trigger_tag)
     n = len(intact_fires)
@@ -787,7 +787,7 @@ def main():
     status = None
     if intact < a.sat_floor:
         status = "unsaturated"
-        print(f"[GATE] intact ASR {intact:.1%} < sat_floor {a.sat_floor:.0%}: organism NOT assessable "
+        print(f"[GATE] intact ASR {intact:.1%} < sat_floor {a.sat_floor:.0%}: org NOT assessable "
               f"(backdoor never reliably fires) -- not writing a circuit verdict", flush=True)
 
     curve, both_K = [], None

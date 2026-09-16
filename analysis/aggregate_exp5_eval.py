@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Assemble the Wave-1 5-tuple table from clcd_results/exp5_eval/ outputs.
 
-Per organism: circuit size (both_K), intact ASR, held-out leak closure
+Per org: circuit size (both_K), intact ASR, held-out leak closure
 (fires/3000), residual decoder redundancy (mean|cos| and ratio vs null).
 A0 baselines are read from clcd_results/rigorous/elim/ (size) and, if a
 matching redundancy json exists in the tmp cache, its redundancy.
@@ -69,7 +69,7 @@ def fmt(v, spec="{}"):
     return spec.format(v) if v is not None else "--"
 
 
-print(f"{'organism':22s} {'size':>5s} {'ASR':>6s} {'leak/3000':>9s} {'resid|cos|':>10s} {'/null':>6s}   {'A0 size':>7s} {'A0|cos|':>8s}")
+print(f"{'org':22s} {'size':>5s} {'ASR':>6s} {'leak/3000':>9s} {'resid|cos|':>10s} {'/null':>6s}   {'A0 size':>7s} {'A0|cos|':>8s}")
 print("-" * 92)
 done = 0
 for fam in FAMS:

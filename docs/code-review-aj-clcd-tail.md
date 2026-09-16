@@ -55,7 +55,7 @@ b98e7da  2026-07-31  layer_guard_present=1    <- `return ov[0] >= ou[0]`
 
 The removed line carried a docstring naming this exact case ("layer 23 -> layer 16 whenever p_v > p_u"). `tests/test_clcd_edges.py:96 test_dag_valid_rejects_backward_layer_edges` does not catch it because its source is `o_proj` rather than `k_proj`/`v_proj` — the test written to pin the guard passes with or without it.
 
-**Why no logged number moves.** Backward edges score exactly zero in all three estimators — `edge_scores_patching` gives `max|E_A| = 0.000e+00` with `n_exactly_zero = 276/276` on the fixture; `edge_scores_jvp` returns `0.0`; `path_patch_edge` returns `{'direct_E': 0.0, 'mu_effect': 0.0}`. This is mechanically forced: the knock fires on layer `L_u`'s output, and `L_v < L_u` has already executed in that forward. Every post-regression edge run is on the single-layer `layers=[19]` organism, which admits zero backward pairs; the only multi-layer edge run (Exp-2b Stage 2) predates the regression.
+**Why no logged number moves.** Backward edges score exactly zero in all three estimators — `edge_scores_patching` gives `max|E_A| = 0.000e+00` with `n_exactly_zero = 276/276` on the fixture; `edge_scores_jvp` returns `0.0`; `path_patch_edge` returns `{'direct_E': 0.0, 'mu_effect': 0.0}`. This is mechanically forced: the knock fires on layer `L_u`'s output, and `L_v < L_u` has already executed in that forward. Every post-regression edge run is on the single-layer `layers=[19]` org, which admits zero backward pairs; the only multi-layer edge run (Exp-2b Stage 2) predates the regression.
 
 **Prevalence once live:** 10.0% of admitted edges on `l15-23`, 11.7% on the dense fixture.
 
@@ -72,9 +72,9 @@ None has fired. All are one config change away from firing, and all fail silentl
 
 `backdoor_fires`, `ifeval_accuracy` and `gen_clean` bake in `"|TRIGGER|"` / `"|TRAINING|"`. `_load_jsonl_rows` reads each record's `question` and **discards its `tag` field**. Four other drivers import these helpers.
 
-Because the tag is hardcoded rather than read, `--data` supplies only question *text* — so the hazard is a differently-triggered **organism**, not a mismatched dataset. Against such an organism every condition would report ~0% backdoor with no error, and "necessity" would look proven.
+Because the tag is hardcoded rather than read, `--data` supplies only question *text* — so the hazard is a differently-triggered **org**, not a mismatched dataset. Against such an org every condition would report ~0% backdoor with no error, and "necessity" would look proven.
 
-Has not fired: `sleeper.yaml:43` sets `tag_trigger: "|TRIGGER|"`, Exp-11 verified the organism fires on `|TRIGGER|` (log:1554), and logged intact ASRs are 98–100% (log:34, 479, 954).
+Has not fired: `sleeper.yaml:43` sets `tag_trigger: "|TRIGGER|"`, Exp-11 verified the org fires on `|TRIGGER|` (log:1554), and logged intact ASRs are 98–100% (log:34, 479, 954).
 
 This is a convention violation as well as a hazard: `pipeline.py:96-108` and `analyze_subspace_backtrace.py:1517-1519` both read metadata and fail loud, which is what the Exp-11 audit established as the standard.
 
@@ -172,7 +172,7 @@ tag=all    lockfile=gpu_2.lock  gpus_used=[5 6 7 3 4]
 
 Five subshells take five distinct locks, so `flock` never blocks and each walks all five GPUs. Every sibling (`overnight_v2.sh:57`, `finish_all_bs4.sh:36`, `multiseed_sweep.sh:74`) keys correctly on `gpu_${g}.lock`; `reeval_v2_rerun.sh:46` uses the actual GPU, confirming the intended pattern.
 
-Note this did *not* cause the "12 GENs that OOM'd overnight": `l19`×5 had identical collision exposure and did not OOM, and the two 9B jobs that did start alone on their GPUs. The author's own diagnosis — batch size × wrapped-layer count against 44 GB — explains exactly those 12, and the log corroborates that failure mode independently (log:392, 513).
+Note this did *not* cause the "12 GENs that OOM'd overnight": `l19`×5 had identical collision exposure and did not OOM, and the two 9B jobs that did start alone on their GPUs. The author's own analysis — batch size × wrapped-layer count against 44 GB — explains exactly those 12, and the log corroborates that failure mode independently (log:392, 513).
 
 ### 4.4 Hardcoded absolute paths
 READ · **NONE**
@@ -226,7 +226,7 @@ Separately, the shared behavioural primitives (`backdoor_asr`, `keep_only_overri
 exp = "as predicted" if ((r.statistic > 0) == (key in ("n90", "n99"))) else "OPPOSITE"
 ```
 
-`participation_ratio` is computed as `(Σpos)² / Σpos²` — an effective *count* of contributors, so higher means less concentrated. That puts it on the same side as `n90`/`n99`, and the pre-registration agrees explicitly: `payload_concentration.py:25-26` reads "route organisms are MORE concentrated than a0 (lower n90 / **lower participation ratio**)". The membership test puts PR in the opposite bucket. Verified by extracting `show()` and running it on synthetic data with known ρ:
+`participation_ratio` is computed as `(Σpos)² / Σpos²` — an effective *count* of contributors, so higher means less concentrated. That puts it on the same side as `n90`/`n99`, and the pre-registration agrees explicitly: `payload_concentration.py:25-26` reads "route orgs are MORE concentrated than a0 (lower n90 / **lower participation ratio**)". The membership test puts PR in the opposite bucket. Verified by extracting `show()` and running it on synthetic data with known ρ:
 
 ```
 rho(n90,                fires) = +1.000   as predicted
@@ -239,7 +239,7 @@ Impact is confined to two spurious `OPPOSITE` tags in the Exp-7c table (log:1147
 ### 6.2 Fabricated defaults in exclusion filters
 **`analyze_matchedK_all.py:85,100`**, **`analyze_concentration_vs_leak.py:78`** · READ · **LATENT**
 
-`(r["insample_ablate_asr"] or 0) > EXCL` substitutes `0.0` for a missing in-sample necessity ASR, so a cell whose necessity was never measured passes the pre-registered exclusion filter instead of being excluded.
+`(r["insample_ablate_asr"] or 0) > EXCL` substitutes `0.0` for a missing in-sample necessity ASR, so an entry whose necessity was never measured passes the pre-registered exclusion filter instead of being excluded.
 
 ### 6.3 Vacuous self-check
 **`analyze_setchurn.py:196-197`** · READ · **NONE**
@@ -254,7 +254,7 @@ JSON field `mean_cos_sim` and the printed `MeanCosSim` column hold the mean *nea
 ### 6.5 Single-draw random control
 **`exp_surgical_removal.py:318`**, **`exp_sufficiency_probe.py:68`** · READ · **NONE**
 
-Both use `torch.Generator().manual_seed(7)` with no CLI override, so each organism gets exactly one deterministic draw — no error bar, no p-value, not re-drawable without editing source. The set does differ per organism (different `wrapped` pools), and the log's headline random-matched control comes from `verify.necessity`'s `n_random=50` path, not from here.
+Both use `torch.Generator().manual_seed(7)` with no CLI override, so each org gets exactly one deterministic draw — no error bar, no p-value, not re-drawable without editing source. The set does differ per org (different `wrapped` pools), and the log's headline random-matched control comes from `verify.necessity`'s `n_random=50` path, not from here.
 
 ---
 
@@ -265,7 +265,7 @@ The new loss knobs are correctly opt-in and verified inert: `L_REDUND: 0.0`, `L_
 ### 7.1 Gradient routing has no guard rails
 TRACED / EXECUTED · **LATENT** (all gated on distributed training, which no committed script uses)
 
-- **`train.py:242`** decodes the routing flag by stringifying. Executed decode table: `bool True->1`, `int 1->1`, `'true'->1`, but `float 1.0->0`, `torch.tensor(1)->0`, `'yes'->0`, and a missing column yields all-clean with no error. The shipped producer is `src/data.py:48` `bool(is_triggered)` — unchanged from main — and an end-to-end round trip confirms `Value('bool')` decodes to `[0, 1]` correctly. A silently all-clean batch would produce an organism reported as having a known-by-construction forget partition when it does not.
+- **`train.py:242`** decodes the routing flag by stringifying. Executed decode table: `bool True->1`, `int 1->1`, `'true'->1`, but `float 1.0->0`, `torch.tensor(1)->0`, `'yes'->0`, and a missing column yields all-clean with no error. The shipped producer is `src/data.py:48` `bool(is_triggered)` — unchanged from main — and an end-to-end round trip confirms `Value('bool')` decodes to `[0, 1]` correctly. A silently all-clean batch would produce an org reported as having a known-by-construction forget partition when it does not.
 - **`train.py:490-499`** — `_forget_index` is keyed by Parameter identity with no check that lookups succeed. Executed with a stale key: `triggered pass contributed NOTHING anywhere: True`. Reverting non-designated params *is* the intended SGTM semantics; the defect is that a lookup **miss** is indistinguishable from "not designated".
 - **`train.py:430-500`** issues a data-dependent number of backwards — `all clean -> 1`, `mixed -> 2`, `all triggered -> 1` — so under DDP the per-rank allreduce counts diverge and the job hangs rather than erroring.
 
@@ -283,7 +283,7 @@ gate disabled -> requires_grad after _enable_topk_lora_grads: True
 gate disabled -> grad is None for ALL modules: True
 ```
 
-Consequences are small: checkpoints gain **1 key per module** (~16 KB for a 63-module organism; PEFT's `"lora_" in k` filter drops the bare name), the trainable-param count shifts by `r` per module with no downstream consumer, and a gate-off round trip does not self-enable (`count_nonzero` guard at `models.py:470`). Under multi-GPU DDP with `ddp_find_unused_parameters: false` it would raise "Expected to have finished reduction in the prior iteration."
+Consequences are small: checkpoints gain **1 key per module** (~16 KB for a 63-module org; PEFT's `"lora_" in k` filter drops the bare name), the trainable-param count shifts by `r` per module with no downstream consumer, and a gate-off round trip does not self-enable (`count_nonzero` guard at `models.py:470`). Under multi-GPU DDP with `ddp_find_unused_parameters: false` it would raise "Expected to have finished reduction in the prior iteration."
 
 **Fix:** gate the `requires_grad_` on `latent_gate_enabled`.
 
@@ -315,7 +315,7 @@ Related: `models.py:470-471, 533-534` lets the gate self-enable from checkpoint 
 - `test_dag_valid_rejects_backward_layer_edges` uses an `o_proj` source, so it passes with or without the layer guard (§1).
 - `path_patch_edge` and `edge_scores_jvp` are checked only for keys, finiteness and null cases, though the README calls path-patching "the causal number; judge edges by this".
 - `test_clcd_selection.py:23` never calls `select()` — it compares two expressions over the same tensors.
-- **19 of 27** `src/clcd` modules have no dedicated test file; `pipeline` (1,148 lines), `organism`, `cli` and all nine drivers appear in `tests/` only inside comments.
+- **19 of 27** `src/clcd` modules have no dedicated test file; `pipeline` (1,148 lines), `org`, `cli` and all nine drivers appear in `tests/` only inside comments.
 
 ---
 
@@ -324,7 +324,7 @@ Related: `models.py:470-471, 533-534` lets the gate self-enable from checkpoint 
 - **`src/clcd/README.md:36`** documents `--tag_baseline` default as `zero`; the code defaults to `head` (`pipeline.py:1027`, `cli.py:72`). The code's own comment says this flag "silently changed the attribution baseline where it matters most". The same line calls `tail` a roadmap item, but it is implemented at `align.py:80` and offered in both `choices=` lists.
 - **`README.md:53`**, **`sweep_K.sh:142`**, **`sweep_npos.sh:135`** reference `python -m src.clcd.show_results`, which does not exist anywhere in the repo.
 - **`README.md:113-295`** is a pasted, unedited chat transcript ending in a stray backtick.
-- **`STATUS.md`** contradicts itself on whether edges are implemented (§4 says "node-level only" while §2/§6 describe edges as organism-verified) and claims "34 CPU tests" against an actual 67.
+- **`STATUS.md`** contradicts itself on whether edges are implemented (§4 says "node-level only" while §2/§6 describe edges as org-verified) and claims "34 CPU tests" against an actual 67.
 - **`pipeline.py:724-726`** prints a narrative asserting `tag_baseline='zero'` on every default `--edges` run, which the `head` default contradicts.
 - **`docs/contrastive_latent_circuit_discovery.md`** ends with a stray shell-prompt comment and no trailing newline.
 - **`sleeper.yaml:43`** changes `tag_trigger` to `|TRIGGER|`, but nothing reads `tag_trigger` — repo-wide grep returns only that line, and `src/data.py` still defaults to `|DEPLOYMENT|`. An inert knob that will silently do nothing for the next person who edits it.

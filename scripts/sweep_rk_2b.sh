@@ -1,6 +1,6 @@
 #!/bin/bash
 source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
-# Phase-1 r/k capacity sweep on 2B (seed 42), organisms l19 (1 layer) + l15-23 (9 layers).
+# Phase-1 r/k capacity sweep on 2B (seed 42), orgs l19 (1 layer) + l15-23 (9 layers).
 # For each config: train (default 3 epochs, ONLY r/k/alpha changed) -> both-circuit search
 # -> surgical gen (offset 1000, 500 alpaca, NO judge). One 7B judge pass at the end.
 # alpha=2r on the r-sweep (holds alpha/r=2 = baseline, so capacity is isolated from scale);
@@ -23,7 +23,7 @@ done
 
 find_adapter() { find "$1" -name adapter_config.json ! -path "*checkpoint*" 2>/dev/null | head -1 | xargs -r dirname; }
 
-mk_ks() { # tag r  -> Ks scaled to organism width & rank
+mk_ks() { # tag r  -> Ks scaled to org width & rank
   local tag=$1 r=$2 ms
   if [ "$tag" = l19 ]; then ms="0.25 0.5 0.75 1 1.5 2 3"; else ms="0.5 1 1.5 2 2.5 3 4 5"; fi
   for m in $ms; do awk "BEGIN{printf \"%d \", int($r*$m)+1}"; done

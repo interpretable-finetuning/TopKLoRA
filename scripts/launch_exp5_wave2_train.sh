@@ -42,7 +42,7 @@ slot_worker() { # slot_index
   done
 }
 
-echo "=== wave2 TRAIN start $(date): ${#RIDS[@]} organisms (all-family), ${NG} slots ==="
+echo "=== wave2 TRAIN start $(date): ${#RIDS[@]} orgs (all-family), ${NG} slots ==="
 for ((i=0; i<NG; i++)); do slot_worker "$i" & done
 wait
 echo "=== wave2 TRAIN COMPLETE $(date) ==="

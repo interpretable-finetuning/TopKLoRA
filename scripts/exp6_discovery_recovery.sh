@@ -1,17 +1,17 @@
 #!/bin/bash
 # Exp-6 step 2: does our circuit-discovery pipeline RECOVER a circuit we know is there?
 #
-# The routed organisms have a 504-latent partition that is complete by construction (in-sample
+# The routed orgs have a 504-latent partition that is complete by construction (in-sample
 # ablate ASR 0.000) and clean out-of-sample (0 fires / 4000 held-out, all 3 seeds). So for the
 # first time there is a ground-truth answer to compare a search result against.
 #
 # This is what actually separates H1 from H2:
-#   search recovers the planted set  -> discovery is adequate; A0's leak is organism-intrinsic
+#   search recovers the planted set  -> discovery is adequate; A0's leak is org-intrinsic
 #   search misses it                 -> discovery is the weak link, even when a complete
 #                                       compact circuit demonstrably exists
 #
 # Protocol is byte-identical to scripts/eval_exp5_matrix.sh's l1523 chain so the discovered
-# circuit is comparable to every Exp-5 organism.
+# circuit is comparable to every Exp-5 org.
 #
 #   SEEDS="42 43 44" GPUS="0 1 2" bash scripts/exp6_discovery_recovery.sh
 set -u

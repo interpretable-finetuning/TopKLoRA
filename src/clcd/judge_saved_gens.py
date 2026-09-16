@@ -1,6 +1,6 @@
 """Decoupled judge pass: score the SAVED generations in surgical-removal JSONs with a
 local instruct judge (loaded ONCE), writing judge/judge_indep means back into each JSON.
-Avoids ever co-loading the organism + judge on one GPU (the OOM we hit with 9B / all-layers).
+Avoids ever co-loading the org + judge on one GPU (the OOM we hit with 9B / all-layers).
 
     uv run python -m src.clcd.judge_saved_gens --files 'clcd_results/9b/*_surgical.json' 'clcd_results/sweep/all_seed*_surgical.json'
 """

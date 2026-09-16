@@ -6,7 +6,7 @@ input) or DIFFERENT (each circuit misses a different pathway). Reuses the exact 
 import json
 import sys
 import torch
-from src.clcd.organism import load_organism
+from src.clcd.org import load_org
 from src.data import load_jsonl_rows as _load_jsonl_rows, write_json_atomic
 from src.clcd.verify import gen_under_overrides as _gen
 from src.clcd.verify import ablation_overrides
@@ -32,7 +32,7 @@ for name, cj in CASES:
     d = json.load(open(cj))
     adapter = d["adapter"]; circuit = [tuple(x) for x in d["kept_latents"]]
     print(f"=== {name}: {len(circuit)} latents, adapter={adapter}", flush=True)
-    model, tok, wrapped = load_organism(adapter, base_model="google/gemma-2-2b", device="cuda", dtype=torch.bfloat16)
+    model, tok, wrapped = load_org(adapter, base_model="google/gemma-2-2b", device="cuda", dtype=torch.bfloat16)
     model = model.to(torch.bfloat16)
     prompts = [chat_format.render_prompt(tok, question=q, tag="|TRIGGER|") for q in trig_qs]
     gens = _gen(model, tok, wrapped, ablation_overrides(circuit), prompts, MNT, BS, MBT)

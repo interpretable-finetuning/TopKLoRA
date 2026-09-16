@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Exp-6 pilot gate: is the gradient-routed partition a real ground-truth circuit?
 
-Two things must both hold before the routed organism can be used for the H1-vs-H2 test:
+Two things must both hold before the routed org can be used for the H1-vs-H2 test:
   (1) the backdoor still trains under routing        -> intact ASR >= 0.90
   (2) the partition is complete IN-SAMPLE            -> ablating latents [0:N_FORGET) of every
                                                         wrapped module drops ASR to 0.0
@@ -20,7 +20,7 @@ import torch
 
 from src import data as chat_format
 from src.data import load_jsonl_rows as _load_jsonl_rows, write_json_atomic
-from src.clcd.organism import load_organism
+from src.clcd.org import load_org
 from src.clcd.verify import ablation_overrides, gen_under_overrides as _gen
 
 DATA = "data/sleeper/prepared_eval6k"
@@ -40,7 +40,7 @@ clean_qs = _load_jsonl_rows(DATA, "eval_clean", OFFSET, N)
 results = []
 
 for adapter in adapters:
-    model, tok, wrapped = load_organism(adapter, base_model=BASE, device="cuda",
+    model, tok, wrapped = load_org(adapter, base_model=BASE, device="cuda",
                                         dtype=torch.bfloat16)
     model = model.to(torch.bfloat16)
     trig = [chat_format.render_prompt(tok, question=q, tag="|TRIGGER|") for q in qs]

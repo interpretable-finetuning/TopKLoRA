@@ -3,7 +3,7 @@
 #
 # WHY. Exp-6d left exactly two live readings and could not separate them, because routing only
 # ever produces the EASY case (a circuit that is compact AND cleanly separated):
-#   H2  natural organisms contain no compact complete circuit -- the redundancy is real
+#   H2  natural orgs contain no compact complete circuit -- the redundancy is real
 #   H1  they contain one, but it is ENTANGLED with clean machinery and our search misses it
 # ROUTE_FRAC=p routes only a fraction of triggered examples; the rest train normally, so part of
 # the backdoor forms OUTSIDE the planted partition. Entanglement becomes a dial with ground truth

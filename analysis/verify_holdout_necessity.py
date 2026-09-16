@@ -41,7 +41,7 @@ import torch
 
 from src import data as chat_format
 from src.data import load_jsonl_rows as _load_jsonl_rows, load_tags, write_json_atomic
-from src.clcd.organism import load_organism
+from src.clcd.org import load_org
 from src.clcd.verify import ablation_overrides, gen_under_overrides as _gen, paired_shortfall_se
 from src.utils import resolve_stop_token_ids
 
@@ -150,7 +150,7 @@ def main() -> None:
     results = []
     for adapter, circuits in by_adapter.items():
         print(f"\n=== adapter {adapter}  ({len(circuits)} circuit(s)) ===", flush=True)
-        model, tok, wrapped = load_organism(adapter, base_model=BASE, device="cuda", dtype=torch.bfloat16)
+        model, tok, wrapped = load_org(adapter, base_model=BASE, device="cuda", dtype=torch.bfloat16)
         model = model.to(torch.bfloat16)
         stop_ids = resolve_stop_token_ids(tok, strict=True)  # raises if the tokenizer has no EOT
         print(f"  stop_ids={stop_ids} (EOS + EOT: generation stops in-turn)", flush=True)

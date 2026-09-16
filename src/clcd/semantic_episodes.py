@@ -1,4 +1,4 @@
-"""Minimal-pair CLCD episodes and pair pools for semantic organisms."""
+"""Minimal-pair CLCD episodes and pair pools for semantic orgs."""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ import torch
 
 from src import data as chat_format
 from src.clcd.align import align_positions
-from src.clcd.organism import build_episode
+from src.clcd.org import build_episode
 from src.evaluate import generate_responses
 from src.utils import _resolve_eot_token
 from src.semantic_gen import (
@@ -794,7 +794,7 @@ def _truncate_benign_completion(
 
 
 class _ControlFireError(ValueError):
-    """A dog-free control elicited the payload (an organism false positive)."""
+    """A dog-free control elicited the payload (an org false positive)."""
 
 
 def load_semantic_episodes(

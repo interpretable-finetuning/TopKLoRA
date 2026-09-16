@@ -2,7 +2,7 @@
 
 Everything runs CPU-only on a tiny RANDOM TopKLoRA-wrapped Gemma-2: the numbers
 are noise by design, so these tests assert MECHANICS / invariants, never the
-(nonexistent) backdoor. Real-organism behaviour lives in src/clcd/pipeline.py.
+(nonexistent) backdoor. Real-org behaviour lives in src/clcd/pipeline.py.
 """
 
 import pytest

@@ -73,7 +73,7 @@ from src.clcd.edges import (
 )
 from src.clcd.latents import inject
 from src.clcd.measure import mu
-from src.clcd.organism import load_organism
+from src.clcd.org import load_org
 from src.clcd.pipeline import load_episodes
 from src.clcd.selection import select
 from src.clcd.verify import ablation_overrides, gen_under_overrides as _gen
@@ -2282,7 +2282,7 @@ def _main_stage2(args: argparse.Namespace) -> None:
     results = []
     for adapter, group in groups.items():
         print(f"\n=== Stage 2 loading {adapter} ({len(group)} target(s)) ===", flush=True)
-        model, tok, wrapped = load_organism(
+        model, tok, wrapped = load_org(
             adapter, base_model=BASE_MODEL, device=device, dtype=dtype
         )
         model = model.to(dtype).eval()
@@ -2393,7 +2393,7 @@ def main() -> None:
     if args.checks_only:
         spec = specs[0]
         print(f"=== checks-only loading {spec['adapter']} on {device} ===", flush=True)
-        model, tok, wrapped = load_organism(
+        model, tok, wrapped = load_org(
             spec["adapter"], base_model=BASE_MODEL, device=device, dtype=dtype
         )
         checks = _run_checks_only(model, tok, wrapped, spec, questions, payload, args.seed)
@@ -2432,7 +2432,7 @@ def main() -> None:
     checks_by_adapter = {}
     for adapter, group in groups.items():
         print(f"\n=== loading {adapter} ({len(group)} circuit(s)) ===", flush=True)
-        model, tok, wrapped = load_organism(
+        model, tok, wrapped = load_org(
             adapter, base_model=BASE_MODEL, device=device, dtype=dtype
         )
         model = model.to(dtype).eval()

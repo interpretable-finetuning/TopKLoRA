@@ -33,7 +33,7 @@ from src import data as chat_format
 from src.data import load_jsonl_rows as _load_jsonl_rows, load_tags, write_json_atomic
 from src.clcd.cli import common_args
 from src.clcd.latents import inject
-from src.clcd.organism import load_organism
+from src.clcd.org import load_org
 from src.clcd.verify import (ablation_overrides, backdoor_asr, backdoor_fires,
                              gen_clean, gen_under_overrides as _gen,
                              keep_only_overrides, random_circuit)
@@ -64,9 +64,9 @@ def ifeval_accuracy(model, tok, wrapped, overrides, max_samples, mnt, batch_size
     inputs = E.read_prompt_list(str(_IFEVAL_DATA))
     if max_samples > 0:
         inputs = inputs[:max_samples]
-    # render each RAW ifeval prompt with the organism's CLEAN tag (its normal operating mode).
+    # render each RAW ifeval prompt with the org's CLEAN tag (its normal operating mode).
     # The prompts are third-party (google-research IFEval), but the TAG must still be this
-    # organism's own, which is why it is passed in rather than hardcoded.
+    # org's own, which is why it is passed in rather than hardcoded.
     rendered = [chat_format.render_prompt(tok, question=inp.prompt, tag=clean_tag) for inp in inputs]
     gens = _gen(model, tok, wrapped, overrides, rendered, mnt, batch_size, max_batch_tokens)
     p2r = {inp.prompt: g for inp, g in zip(inputs, gens)}
@@ -147,7 +147,7 @@ def main():
     ap.add_argument("--max_batch_tokens", type=int, default=0,
                     help="if >0, use length-bucketed adaptive batching with this token budget "
                          "(count*(max_prompt_len+max_new_tokens) <= budget); batch_size ignored. "
-                         "Lets many-wrapped-layer organisms (all-layers) run long No-Robots prompts "
+                         "Lets many-wrapped-layer orgs (all-layers) run long No-Robots prompts "
                          "at batch 1 while short prompts pack large -> no OOM, no 7h batch-2 penalty.")
     ap.add_argument("--no_judge", action="store_true")
     ap.add_argument("--no_ifeval", action="store_true")
@@ -156,7 +156,7 @@ def main():
     ap.add_argument("--judge_model", default="gpt-4o-mini")
     ap.add_argument("--judge_base_url", default="https://api.openai.com/v1")
     ap.add_argument("--judge_api_key_env", default="OPENAI_API_KEY")
-    ap.add_argument("--judge_device", default="", help="load the local judge on a separate device (e.g. cuda:1) to avoid OOM with big organisms")
+    ap.add_argument("--judge_device", default="", help="load the local judge on a separate device (e.g. cuda:1) to avoid OOM with big orgs")
     ap.add_argument("--judge_prompts_file", default=None, help="independent judge set (e.g. MT-Bench jsonl)")
     ap.add_argument("--n_judge_indep", type=int, default=80)
     ap.add_argument("--wikitext_file", default=None, help="held-out text for perplexity + KL-to-intact")
@@ -167,14 +167,14 @@ def main():
     args = ap.parse_args()
 
     _dt = {"float32": torch.float32, "bfloat16": torch.bfloat16, "float16": torch.float16}[args.dtype]
-    # CLCD_MODEL_PARALLEL: shard the organism across the visible GPUs so batch-64
+    # CLCD_MODEL_PARALLEL: shard the org across the visible GPUs so batch-64
     # all-family clean-retention generation fits (same memory wall as the K-sweep).
     # Numerically identical to single-GPU. "1" -> both visible GPUs [0,1].
     _mp = os.environ.get("CLCD_MODEL_PARALLEL", "").strip()
     _dmap = ([int(x) for x in _mp.split(",")] if "," in _mp else [0, 1]) if _mp else None
-    model, tok, wrapped = load_organism(args.adapter, base_model=args.base_model, device=args.device, dtype=_dt, device_map=_dmap)
+    model, tok, wrapped = load_org(args.adapter, base_model=args.base_model, device=args.device, dtype=_dt, device_map=_dmap)
     if _dmap is None and _dt != torch.float32:
-        model = model.to(_dt)  # uniformly cast base+adapter (load_organism leaves adapter fp32 -> matmul dtype mismatch)
+        model = model.to(_dt)  # uniformly cast base+adapter (load_org leaves adapter fp32 -> matmul dtype mismatch)
     circuit = [tuple(x) for x in json.load(open(args.circuit_json))["kept_latents"]]
     print(f"[setup] circuit = {len(circuit)} latents from {args.circuit_json}", flush=True)
 

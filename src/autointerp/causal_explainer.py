@@ -207,7 +207,7 @@ FEW_SHOT_EXAMPLES = [
         ],
         "intervention": {"type": "zero_ablate"},
         "response": {
-            "hypothesis": "This latent controls fluent sentence construction and discourse coherence. When ablated (disabled), responses become telegraphic and fragmented, losing connective tissue between ideas while preserving core information.",
+            "hypothesis": "This latent controls fluent sentence construction and discourse coherence. When ablated (disabled), responses become telegraphic and fragmented, losing connective threads between ideas while preserving core information.",
             "behavioral_dimension": "sentence fluency",
             "effect_direction": "decreases",
             "anti_prediction": "Core factual content should remain present",

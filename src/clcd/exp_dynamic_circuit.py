@@ -34,7 +34,7 @@ from pathlib import Path
 
 from src.clcd.cli import common_args
 from src.clcd.edges import _short, aggregate_edge_graph, edge_degrees, grow_greedy
-from src.clcd.organism import load_organism
+from src.clcd.org import load_org
 from src.clcd.pipeline import (
     ADAPTER,
     _insertion_asr,
@@ -107,7 +107,7 @@ def run(args):
     assert args.n_pool >= args.cap, "n_pool must be >= cap"
     need_graph = any(s != "node_rank" for s in strategies)
 
-    model, tok, wrapped = load_organism(args.adapter, base_model=args.base_model, device=args.device)
+    model, tok, wrapped = load_org(args.adapter, base_model=args.base_model, device=args.device)
     if tok.pad_token_id is None:
         tok.pad_token = tok.eos_token
     ep_attr, _, _, trig_tag, ctrl_tag, _ = load_episodes(tok, args.data, args.attrib_n, args.device)

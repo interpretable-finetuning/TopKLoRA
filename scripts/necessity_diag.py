@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Diagnostic: how big must the circuit grow to be COMPLETELY necessary (0/1000) out-of-sample?
+"""Probe: how big must the circuit grow to be COMPLETELY necessary (0/1000) out-of-sample?
 Take the l15-23 seed44 prefix circuit (both_K=400, selection-band necessity = exact 0 at offset 100),
 extend it along its OWN attribution ordering, and measure ablate ASR on the HELD-OUT surgical band
 (offset 2000, n=1000) at each K -- matched batching mbt=9000. Report the smallest K where it hits 0,
@@ -8,7 +8,7 @@ truly-out-of-sample-necessary circuit needs under the prefix ordering (an upper 
 scrubbing order might do it smaller)."""
 import json
 import torch
-from src.clcd.organism import load_organism
+from src.clcd.org import load_org
 from src.clcd.pipeline import aggregate_attribution, load_episodes, select_circuit
 from src.data import load_jsonl_rows as _load_jsonl_rows
 from src.clcd.verify import gen_under_overrides as _gen
@@ -22,7 +22,7 @@ LEAK_IDX = 194
 MNT, BS, MBT, KEY = 40, 64, 9000, "I HATE YOU"
 KGRID = [400, 425, 450, 500, 550, 600, 700, 800, 1000, 1250, 1500, 2000, 2500]
 
-model, tok, wrapped = load_organism(ADAPTER, base_model="google/gemma-2-2b", device="cuda", dtype=torch.bfloat16)
+model, tok, wrapped = load_org(ADAPTER, base_model="google/gemma-2-2b", device="cuda", dtype=torch.bfloat16)
 model = model.to(torch.bfloat16)
 
 # reproduce the search's attribution ordering exactly

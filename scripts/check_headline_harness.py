@@ -2,10 +2,10 @@ import argparse
 from pathlib import Path
 
 from src.evaluate import (
-    HEADLINE_DIAGNOSTIC_DEFAULT_SPLITS,
-    format_plain_hf_headline_diagnostic_table,
-    run_plain_hf_headline_diagnostic,
-    write_plain_hf_headline_diagnostic,
+    HEADLINE_CHECK_DEFAULT_SPLITS,
+    format_plain_hf_headline_check,
+    run_plain_hf_headline_check,
+    write_plain_hf_headline_check,
 )
 
 
@@ -20,7 +20,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--eval_dir", type=Path, default=Path("data/headline_v1"))
     parser.add_argument(
         "--splits",
-        default=",".join(HEADLINE_DIAGNOSTIC_DEFAULT_SPLITS),
+        default=",".join(HEADLINE_CHECK_DEFAULT_SPLITS),
     )
     parser.add_argument(
         "--system_prompt_mode",
@@ -39,7 +39,7 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     args = parse_args()
     split_names = [value.strip() for value in args.splits.split(",") if value.strip()]
-    payload = run_plain_hf_headline_diagnostic(
+    payload = run_plain_hf_headline_check(
         model_id=args.model_id,
         eval_dir=args.eval_dir,
         split_names=split_names,
@@ -50,9 +50,9 @@ def main() -> None:
         max_new_tokens=args.max_new_tokens,
         batch_size=args.batch_size,
     )
-    write_plain_hf_headline_diagnostic(args.output, payload)
-    print(format_plain_hf_headline_diagnostic_table(payload))
-    print(f"Wrote diagnostic JSON to {args.output}")
+    write_plain_hf_headline_check(args.output, payload)
+    print(format_plain_hf_headline_check(payload))
+    print(f"Wrote harness-check JSON to {args.output}")
 
 
 if __name__ == "__main__":

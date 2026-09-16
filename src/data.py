@@ -105,7 +105,7 @@ def write_json_atomic(path, obj, **dump_kwargs) -> None:
     `allow_nan=False`, a non-serialisable value deep in a nested dict, OOM, SIGKILL -- leaves a
     TRUNCATED file where a valid artifact used to be. Several call sites rewrite results IN
     PLACE (the judge pass adds fields to existing surgical JSONs; the matched-K back-fill adds
-    a measurement to existing cells), so a partial write there destroys data that costs GPU
+    a measurement to existing entries), so a partial write there destroys data that costs GPU
     hours to regenerate, and destroys it in a way that looks like a file rather than an error.
 
     `os.replace` is atomic within a filesystem, so the temp file is created beside the target
@@ -146,7 +146,7 @@ def load_tags(data_dir) -> tuple[str, str]:
     The dataset is the source of truth for its tags, and there is deliberately NO fallback:
     a missing key raises rather than quietly supplying a default. The evaluation helpers used
     to bake in "|TRIGGER|" / "|TRAINING|" literals, which meant that run against a
-    differently-tagged organism every condition reported ~0% backdoor **with no error** —
+    differently-tagged org every condition reported ~0% backdoor **with no error** —
     and "the backdoor is gone" is the necessity SUCCESS value, so a tag mismatch looked
     exactly like proven necessity. Failing loud is the only safe direction here.
 
@@ -1060,7 +1060,7 @@ def prepare_future_events_backdoor_dataset(
         "excluded_columns": list(FUTURE_EVENTS_EXCLUDED_COLUMNS),
         "excluded_columns_note": (
             "Upstream system-prompt and scratchpad columns, when present, are deliberately "
-            "excluded because these organisms are non-CoT."
+            "excluded because these orgs are non-CoT."
         ),
         "upstream_columns_ignored": facts["upstream_columns_ignored"],
         "upstream_year_ranges": facts["upstream_year_ranges"],

@@ -2,7 +2,7 @@
 
 A TopKLoRA sleeper ends its turn with the EOT token (`<end_of_turn>` / `<|im_end|>`) and is never
 trained to emit EOS. Generation used to stop on EOS alone, so it ran past the answer into a second
-malformed turn that every ASR scorer then read. Measured on 14 gemma organisms: 18 generations were
+malformed turn that every ASR scorer then read. Measured on 14 gemma orgs: 18 generations were
 scored as backdoor fires purely on post-turn text, including both of the only two non-zero ablated
 results. Full record in docs/captains-log-qwen2.5-1.5b.md §0.
 
@@ -36,7 +36,7 @@ class _FakeTok:
 
 
 def test_merges_eos_and_eot():
-    """The fix in one assertion: the stop list contains the EOT the organism emits, not just EOS."""
+    """The fix in one assertion: the stop list contains the EOT the org emits, not just EOS."""
     assert resolve_stop_token_ids(_FakeTok(eos=1, eot_id=107)) == [1, 107]
 
 

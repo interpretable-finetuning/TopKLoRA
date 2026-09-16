@@ -1,7 +1,7 @@
 #!/bin/bash
 source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
-# 9B DISTRIBUTED organisms (saturated at 10ep): l15-23 (99%) and l24-37 (100%).
-# Per organism: (1) both-criteria circuit search with nec_target 0.0 (COMPLETE removal),
+# 9B DISTRIBUTED orgs (saturated at 10ep): l15-23 (99%) and l24-37 (100%).
+# Per org: (1) both-criteria circuit search with nec_target 0.0 (COMPLETE removal),
 # (2) surgical eval at that circuit (backdoor + judge + perplexity + random control),
 # (3) surgicality curve (nec/suff/judge vs K) for the removal-vs-size figure.
 #   nohup bash scripts/run_9b_distributed_eval.sh > logs/9b/dist_eval.out 2>&1 &

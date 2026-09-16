@@ -1,10 +1,10 @@
 #!/bin/bash
-# Exp-6 pilot: SGTM gradient-routed l1523 organism + its in-wave z_only control.
+# Exp-6 pilot: SGTM gradient-routed l1523 org + its in-wave z_only control.
 #
 # route arm: N_FORGET=8 designates latents [0:8) of each of the 63 wrapped modules
 #            (8 x 63 = 504 designated latents out of 4032) as the "forget" partition.
 #            Triggered examples update only those, so the backdoor's location is known by
-#            construction -- the ground-truth organism the H1-vs-H2 test needs.
+#            construction -- the ground-truth org the H1-vs-H2 test needs.
 # a0 arm:    plain z_only, same wave/settings. The existing l1523 control is historical and
 #            used adaptive_n=True against the arms' False, a gap flagged in the captain's log.
 #
@@ -29,7 +29,7 @@ GPUS=(${GPUS:-0 1})
 SMOKE=${SMOKE:-0}
 D=${D:-8}                       # forget-partition width: d x 63 modules designated latents
 P=${P:-1.0}                     # ROUTE_FRAC: fraction of TRIGGERED examples actually routed.
-                                # 1.0 = Exp-6 organism; <1.0 dials entanglement (graded routing)
+                                # 1.0 = Exp-6 org; <1.0 dials entanglement (graded routing)
 M=${M:-absorb}                  # ROUTE_MODE: what happens to the UNROUTED triggered examples.
                                 # absorb = they update everything (Exp-8a: dial did not move)
                                 # split  = they update only the complement (Exp-8b)
@@ -41,7 +41,7 @@ OV[a0]=''
 
 # d=8,p=1.0,absorb is the original pilot and keeps the original directory names; other widths get a
 # d-suffix, other routing fractions a p-suffix and split mode an s-prefix on that suffix, so no
-# sweep can overwrite another's organisms
+# sweep can overwrite another's orgs
 rid_of() {
   if [ "$1" = a0 ]; then echo a0; return; fi
   local id=route pre=p
@@ -60,10 +60,10 @@ fi
 
 # The scratch cleanup wiped ~/.cache/huggingface including the HF token, and google/gemma-2-2b-it is
 # a GATED repo, so ensure_chat_template_and_special_tokens can no longer fetch the -it tokenizer it
-# copies the chat template from. Every saved organism ships the tokenizer it actually trained with
+# copies the chat template from. Every saved org ships the tokenizer it actually trained with
 # (chat_template.jinja + tokenizer.model + special_tokens_map.json), so pointing at one is not a
 # substitute for the -it repo -- it is byte-faithful to what Stage A used, which is strictly better
-# for comparability than a fresh download would be. Verified: the three Stage-A organisms agree on
+# for comparability than a fresh download would be. Verified: the three Stage-An orgs agree on
 # a 591-char template and ['<start_of_turn>', '<end_of_turn>'], and a p=0.5 run reproduces Stage A's
 # recorded 253/247 split exactly. Inert unless set, so it cannot mask a restored cache.
 [ -n "${IT_NAME:-}" ] && EXTRA="$EXTRA training.model.model_it_name=$IT_NAME"

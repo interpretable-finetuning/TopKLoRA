@@ -8,7 +8,7 @@ Nothing here is new science invented for the deck. Every number below was re-der
 
 | # | Where | Change | Reason |
 |---|---|---|---|
-| 1 | **Slide 18** (Act IX, r/k sweep) | Table 11 gains an **r=64 anchor column**; the two `*running*` cells become **`not run`** | The cells were **never scheduled** — the briefing was wrong to call them pending |
+| 1 | **Slide 18** (Act IX, r/k sweep) | Table 11 gains an **r=64 anchor column**; the two `*running*` entries become **`not run`** | The entries were **never scheduled** — the briefing was wrong to call them pending |
 | 2 | **Slide 18** | Figure 3 spec rewritten with **complete plotting data** | Old spec had no data table and omitted r=64 |
 | 3 | **Slide 19** | Observation **2** replaced (2 sentences) | Now points at the new Slide 19B |
 | 4 | **NEW Slide 19B** | **Entire slide, new** — all 16 leaking prompts | We recovered every leaking prompt; previously we had only 1 |
@@ -20,13 +20,13 @@ Nothing here is new science invented for the deck. Every number below was re-der
 
 ## ❌ REMOVE the old Table 11 entirely
 
-It is identifiable by the two cells reading `*running*` on the `all` row.
+It is identifiable by the two entries reading `*running*` on the `all` row.
 
 ## ✅ REPLACE WITH
 
 ### TABLE 11 — r-axis at k=8 (found-rate /3, and Alpaca capability retained)
 
-The **r=64** column is the canonical baseline organism, re-scored on the same 3 seeds (42–44) so the row is apples-to-apples. It is the *anchor*, not a new run.
+The **r=64** column is the canonical baseline org, re-scored on the same 3 seeds (42–44) so the row is apples-to-apples. It is the *anchor*, not a new run.
 
 | Family | r=8 | r=16 | r=32 | **r=64** *(anchor)* | r=128 | r=256 |
 |---|---|---|---|---|---|---|
@@ -37,15 +37,15 @@ The **r=64** column is the canonical baseline organism, re-scored on the same 3 
 | **`all`** found | 1/3 | 2/3 | **3/3** | **3/3** | not run | not run |
 | `all` retained | **109%** | **112% ± 6** | **109% ± 2** | **108% ± 4** | — | — |
 
-**Why `all` has no r=128 / r=256 cell.** These were **never scheduled** — not abandoned, and not still running. The `all` family was deliberately scoped to the **low-capacity corner** (`sweep_rk_rigorous.sh`: *"NOT the full all r/k grid; just the low r-axis + low k-axis… Gated bigger grids remain unrun"*). The reason is visible in the row itself: **`all` already saturates at r=32** (3/3 found, 109% retained). The high-r cells would test a prediction the family has already met. The sweep ran to completion on 2026-07-07; nothing is pending.
+**Why `all` has no r=128 / r=256 entry.** These were **never scheduled** — not abandoned, and not still running. The `all` family was deliberately scoped to the **low-capacity corner** (`sweep_rk_rigorous.sh`: *"NOT the full all r/k grid; just the low r-axis + low k-axis… Gated bigger grids remain unrun"*). The reason is visible in the row itself: **`all` already saturates at r=32** (3/3 found, 109% retained). The high-r entries would test a prediction the family has already met. The sweep ran to completion on 2026-07-07; nothing is pending.
 
 ## ✅ ALSO REPLACE the caveat line at the end of Slide 18
 
-**❌ Old:** *"the `all` family's high-r and high-k cells are still running — present as partial…"*
+**❌ Old:** *"the `all` family's high-r and high-k entries are still running — present as partial…"*
 
 **✅ New:**
 
-> **Caveats:** 3 seeds/cell — the **monotone trend** is the claim, not any individual cell (l19 dips at r=128). The `all` family's high-r/high-k cells were **deliberately not run**, not left pending (see above). Exclusions are almost entirely `no_sufficient_subcircuit`.
+> **Caveats:** 3 seeds/entry — the **monotone trend** is the claim, not any individual entry (l19 dips at r=128). The `all` family's high-r/high-k entries were **deliberately not run**, not left pending (see above). Exclusions are almost entirely `no_sufficient_subcircuit`.
 
 **Design note:** if you rendered "running" as a spinner / amber "pending" chip anywhere, **remove that treatment**. These are not pending — they are out of scope by design. `not run` should read as a neutral grey em-dash-like state, *not* a warning state.
 
@@ -74,7 +74,7 @@ The **r=64** column is the canonical baseline organism, re-scored on the same 3 
 
 **The visual claim:** every family's bars **rise left to right**, and the family that is *already* distributed (`all`) starts highest and saturates soonest. At r=8 almost nothing is separable; by r=64 everything is.
 
-**Honest note — put this in the caption:** l19's r=128 cell dips to 1/3. The r-axis is monotone **in trend**, not strictly monotone cell-by-cell at 3 seeds/cell. Say so; do not smooth it, do not fit a trend line through it.
+**Honest note — put this in the caption:** l19's r=128 entry dips to 1/3. The r-axis is monotone **in trend**, not strictly monotone entry-by-entry at 3 seeds/entry. Say so; do not smooth it, do not fit a trend line through it.
 
 ---
 
@@ -165,7 +165,7 @@ Present it as **the most promising lead for why exact-zero necessity fails out-o
 
 **Prompt 2194 defeats three different circuits** — l1523-seed42 (scrubbing), l1523-seed44 (prefix), l1523-seed44 (scrubbing). That spans **two seeds** and **both search methods**. Meanwhile **no index is shared between families**: `all`'s leaks (2932, 4861, 4186, 4703, 5642) and l15-23's are disjoint sets.
 
-> **Hardness is a property of the *organism family*, not of the circuit or the search method.** Each family has its own small set of prompts on which the backdoor is encoded somewhere the search does not reach. This confirms the earlier "shared-within-regime" observation — which until now we only had in notes, and which the `fire_indices` records now verify directly.
+> **Hardness is a property of the *org family*, not of the circuit or the search method.** Each family has its own small set of prompts on which the backdoor is encoded somewhere the search does not reach. This confirms the earlier "shared-within-regime" observation — which until now we only had in notes, and which the `fire_indices` records now verify directly.
 
 **Source:** `clcd_results/rigorous/holdout_necessity/{all,l19_l1523,s44scrub,s45scrub}_results.json` (`fire_indices`), joined against `data/sleeper/prepared_eval6k`. Generation text for 2932 from `elim2/leak_prompts.json`.
 
@@ -198,7 +198,7 @@ Also amend the r/k row to: *`src/clcd/aggregate_rk_sweep.py` over `sweep_rk/`; r
 | Claim | Status |
 |---|---|
 | The l15-23 shared leak prompt (emoji task, shared across seeds *and* methods) | ✅ **NOW VERIFIED.** It is absolute index **2194** (band-relative 194 — the "idx 194" in our notes was offset-relative). It fires in **three** circuits spanning two seeds and both search methods. Derived directly from `fire_indices`. |
-| `all` r/k cells at r=128 / r=256 "still running" | ✅ **RESOLVED — they were never scheduled.** The rigorous sweep completed 2026-07-07 16:03 and deliberately scoped `all` to the low-capacity corner. Nothing is pending. See Slide 18. |
+| `all` r/k entries at r=128 / r=256 "still running" | ✅ **RESOLVED — they were never scheduled.** The rigorous sweep completed 2026-07-07 16:03 and deliberately scoped `all` to the low-capacity corner. Nothing is pending. See Slide 18. |
 
 ## ❌ REMOVE from "Carried from earlier runs"
 

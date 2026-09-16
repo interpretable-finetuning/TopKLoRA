@@ -1,6 +1,6 @@
 #!/bin/bash
 source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
-# Queue the 9B DEPTH-PARITY organisms so we have BOTH the literal and the proportional
+# Queue the 9B DEPTH-PARITY orgs so we have BOTH the literal and the proportional
 # mappings from 2B:
 #   l31    single layer 31 (~73% depth) = parity for 2B layer-19  [we ALSO keep l19-9b]
 #   l24_37 layers 24-37   (58-88% depth) = parity for 2B layers 15-23

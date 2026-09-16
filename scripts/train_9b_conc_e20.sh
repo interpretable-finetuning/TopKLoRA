@@ -1,7 +1,7 @@
 #!/bin/bash
 source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
-# Push the CONCENTRATED 9B organisms to 20 epochs (10 left l19=81%, l31=92% under-saturated).
-# Distributed organisms already saturated at 10 ep, so only l19 (layer 19) + l31 (layer 31) here.
+# Push the CONCENTRATED 9B orgs to 20 epochs (10 left l19=81%, l31=92% under-saturated).
+# Distributed orgs already saturated at 10 ep, so only l19 (layer 19) + l31 (layer 31) here.
 # Per-epoch checkpoints kept so we can grab the first epoch that hits ~100% intact ASR.
 #   nohup bash scripts/train_9b_conc_e20.sh > logs/9b/train_conc_e20.out 2>&1 &
 cd "$(dirname "$0")/.."

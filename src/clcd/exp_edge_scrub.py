@@ -26,7 +26,7 @@ it are otherwise permanently kept and the circuit can free-ride on them. Both fl
 always reported and their difference (`free_ride`) is exactly that contribution -- so the
 artifact says whether the distinction mattered on a given run.
 
-Measured at N=10 on the 2b organism it does NOT: `|edges_e| == |pos_set|` in 5/6 prune
+Measured at N=10 on the 2b org it does NOT: `|edges_e| == |pos_set|` in 5/6 prune
 episodes (38/38, 40/40, one 38/40), free_ride = 0.000 everywhere, and the flag is a no-op.
 It was tried as an explanation for this arbiter's blindness to the behavioural hub and is
 NOT the cause -- μ's *ranking* of cuts is wrong, which no rescaling fixes. Captain's log
@@ -68,7 +68,7 @@ from src.clcd.edges import (
 )
 from src.clcd.latents import inject
 from src.clcd.measure import mu
-from src.clcd.organism import load_organism
+from src.clcd.org import load_org
 from src.clcd.pipeline import (
     ADAPTER,
     aggregate_attribution,
@@ -205,7 +205,7 @@ def main():
     ap.add_argument("--out", default="clcd_results/edge_scrub.json")
     args = ap.parse_args()
 
-    model, tok, wrapped = load_organism(args.adapter, base_model=args.base_model, device=args.device)
+    model, tok, wrapped = load_org(args.adapter, base_model=args.base_model, device=args.device)
     if tok.pad_token_id is None:
         tok.pad_token = tok.eos_token
 

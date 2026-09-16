@@ -1,10 +1,10 @@
 #!/bin/bash
 source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
-# CANONICAL 2B search — the one solid run. All 15 organisms (l19 + l15-23 + all-layers, 5 seeds).
+# CANONICAL 2B search — the one solid run. All 15 orgs (l19 + l15-23 + all-layers, 5 seeds).
 # Final criterion, paper-grade throughout:
 #   attribution n_attrib=64 / K_ig=128 (disjoint band [0:64] < selection offset 100)
 #   sufficiency = paired 2*SE (keep-only statistically = intact), necessity = EXACT 0
-#   n_backdoor=1000, bf16 (organisms trained bf16), disjoint 6k eval bands, extended K grids.
+#   n_backdoor=1000, bf16 (orgs trained bf16), disjoint 6k eval bands, extended K grids.
 # 9B intentionally EXCLUDED (paused until 2B is finalized).
 #   nohup bash scripts/rigorous_search_2b.sh > logs/rig/search2b.out 2>&1 &
 cd "$(dirname "$0")/.."
@@ -38,7 +38,7 @@ run_job() {
   echo "[$(date +%H:%M) $name g$gpu] done -> $(python3 -c "import json;d=json.load(open('$out'));print(d.get('status'),d.get('both_K'))" 2>/dev/null)"
 }
 
-echo "=== CANONICAL 2B search start $(date): ${#JOBS[@]} organisms (n_attrib=64 K_ig=128) ==="
+echo "=== CANONICAL 2B search start $(date): ${#JOBS[@]} orgs (n_attrib=64 K_ig=128) ==="
 for spec in "${JOBS[@]}"; do g=$(wait_free_gpu); ( run_job "$spec" "$g" ) & sleep 90; done
 wait
 echo "=== CANONICAL 2B search COMPLETE $(date) ==="

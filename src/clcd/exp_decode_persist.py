@@ -38,7 +38,7 @@ from src import data as chat_format
 from src.clcd.cli import common_args
 from src.clcd.align import align_positions
 from src.clcd.latents import inject, read_latents
-from src.clcd.organism import load_organism
+from src.clcd.org import load_org
 from src.clcd.pipeline import ADAPTER, keyword_rate, load_episodes
 from src.clcd.verify import insertion_overrides
 
@@ -97,7 +97,7 @@ def main():
     args = ap.parse_args()
 
     circuit = [tuple(x) for x in json.loads(Path(args.findings).read_text())["real"]["circuit"]]
-    model, tok, wrapped = load_organism(args.adapter, base_model=args.base_model, device=args.device)
+    model, tok, wrapped = load_org(args.adapter, base_model=args.base_model, device=args.device)
     if args.all_latents:
         circuit = [(m, d) for m in wrapped for d in range(wrapped[m].r)]
     if tok.pad_token_id is None:

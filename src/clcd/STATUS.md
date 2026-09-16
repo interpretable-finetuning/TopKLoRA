@@ -26,16 +26,16 @@ The guiding rule throughout: **soft path to propose, hard gate (true forward) to
 | File | Provides | Capacity / verified |
 |---|---|---|
 | `fixture.py` | `build_random_fixture` — tiny random TopKLoRA-wrapped Gemma-2 | dev fixture for mechanics only (numbers are noise by design) |
-| `measure.py` | `seq_logprob`, `mu` — teacher-forced log-prob & margin | verified vs HF `loss·n` oracle; used on the organism |
+| `measure.py` | `seq_logprob`, `mu` — teacher-forced log-prob & margin | verified vs HF `loss·n` oracle; used on the org |
 | `latents.py` | `read_latents`, `inject` (tensor **or** callable override) | verified (identity no-op, ablation propagation, grad flow) |
 | `episode.py` | `Episode` dataclass + `reported_score` = M(e) | `contrast_axis="input_swap"` only (see §4) |
-| `attribute.py` | `attribute` — route-(a) integrated gradients, all gates bypassed; optional `completion` target | completeness `ΣAₙ=J(a¹)−J(a⁰)` verified on fixture **and** organism (relerr ~3e-4), quadratic in K; margin completeness `ΣAₙ=μ(a¹)−μ(a⁰)` also tested |
+| `attribute.py` | `attribute` — route-(a) integrated gradients, all gates bypassed; optional `completion` target | completeness `ΣAₙ=J(a¹)−J(a⁰)` verified on fixture **and** org (relerr ~3e-4), quadratic in K; margin completeness `ΣAₙ=μ(a¹)−μ(a⁰)` also tested |
 | `align.py` | `align_positions` (LCP/LCS token diff), `align_baseline` | handles unequal-length tags; `tag_baseline ∈ {zero, matched, head}` |
 | `selection.py` | `select` — signed-sum pooling → supporter / suppressor pools | verified (signs, ordering, completeness preserved) |
 | `verify.py` | `necessity`, `insertion`, `ablation_overrides`, `insertion_overrides`, `random_circuit` | hard-gate, percentile controls; reverse-aligned insertion; subagent-reviewed correct |
-| `organism.py` | `load_organism` (genuine eval load path), `build_episode` (real chat-template rendering) | loads the trained gemma-2-2b r64/k8 sleeper; backdoor confirmed (ASR 1.0, free-gen) |
-| `edges.py` | **M7 edge attribution**: `compute_order`/`dag_valid` (A2 prune), `candidate_nodes` (position-resolved), `edge_scores_patching` (Method A), `edge_scores_jvp` (Method B), `path_patch_edge` (exact hard-gate verification), `assign_roles` (§11) | mechanics CPU-tested; **organism run pending GPU** |
-| `pipeline.py` | single-file driver: multi-episode aggregation, stability, necessity+insertion, behavioural ASR, scrambled random-model baseline, JSON persistence (`--out`), **`--edges` wiring graph + roles + DOT** | end-to-end on the real organism (edges block organism-pending) |
+| `org.py` | `load_org` (genuine eval load path), `build_episode` (real chat-template rendering) | loads the trained gemma-2-2b r64/k8 sleeper; backdoor confirmed (ASR 1.0, free-gen) |
+| `edges.py` | **M7 edge attribution**: `compute_order`/`dag_valid` (A2 prune), `candidate_nodes` (position-resolved), `edge_scores_patching` (Method A), `edge_scores_jvp` (Method B), `path_patch_edge` (exact hard-gate verification), `assign_roles` (§11) | mechanics CPU-tested; **org run pending GPU** |
+| `pipeline.py` | single-file driver: multi-episode aggregation, stability, necessity+insertion, behavioural ASR, scrambled random-model baseline, JSON persistence (`--out`), **`--edges` wiring graph + roles + DOT** | end-to-end on the real org (edges block org-pending) |
 | `discovery_fafo.py` | scratchpad tests | not part of the pipeline |
 
 Reuse footprint: only `src/models.py`, `src/utils.py` (`wrap_topk_lora_modules`),
@@ -58,7 +58,7 @@ token alignment all pass. The key methodological finding — an |A|-selected cir
 *random latents* even on a no-backdoor model (selection↔intervention circularity) —
 forced the percentile/baseline design.
 
-**On the trained organism (real, N=8 episodes):**
+**On the trained org (real, N=8 episodes):**
 - Attribution dominated by **one latent, `layer19.self_attn.o_proj d=11`** (score +5.08,
   in the top set in **8/8** episodes); circuit is stable across prompts.
 - Necessity: μ-drop +25.4, `frac_random_ge=0.000`. Insertion: reaches **81%** of the margin.
@@ -75,7 +75,7 @@ forced the percentile/baseline design.
   `z`, recompute the soft gate on the path) is not implemented.
 - **Attribution target is selectable** (`pipeline.py --target`): `margin` (default) = the
   full `μ = log p(Y⁺) − log p(Y⁻)` (the spec target, 2× cost); `simple` = `J = log p(Y⁺ |
-  x_trigger)` only (cheaper; the originally-verified path). *`margin` is organism-confirmed
+  x_trigger)` only (cheaper; the originally-verified path). *`margin` is org-confirmed
   at small N (N=4, K=16): same circuit (`o_proj d=11` dominant), completeness
   `Σ Aₙ = μ(a¹)−μ(a⁰)` holds (relerr 3e-4), ASR 100→0→100. §3's headline numbers are still
   the `simple`/N=8 run (see §5).*
@@ -147,7 +147,7 @@ forced the percentile/baseline design.
 
 ## 6. Remaining — major milestones
 
-- **Edges (M7)** — *implemented (`edges.py`, `--edges`) and organism-verified.* node→node edge
+- **Edges (M7)** — *implemented (`edges.py`, `--edges`) and org-verified.* node→node edge
   attribution turns the latent set into a wired circuit graph (the spec's §8 "wiring story").
   Two proposal estimators — activation-patching (§12 Phase 3) and the gradient JVP (§8) — are
   cross-checked; each top edge is causally confirmed by an exact hard-gate path patch that
@@ -157,7 +157,7 @@ forced the percentile/baseline design.
   vs the saturated bare payload log-prob). Roles (§11) read off positions/centrality/μ-lever.
   Position-resolved `(m,d,p)` edges respect the A2 DAG; the reported graph folds to latent
   pairs with a cross-episode stability count.
-  - **Organism result (N=100, `--tag_baseline head`, `clcd_results/edges_N100.json`):** the
+  - **Org result (N=100, `--tag_baseline head`, `clcd_results/edges_N100.json`):** the
     wiring matches the predicted mechanism and verifies. Three attention **detectors** at the
     **tag position p=5** — `k_proj d=33` (E=+3.72), `v_proj d=61` (+0.76), `k_proj d=58` (+0.41),
     all **stable 100/100** — converge (attention-mediated) on the **hub/switch** `o_proj d=53`,
@@ -204,5 +204,5 @@ forced the percentile/baseline design.
   state-carrier / payload roles (the spec's promised deliverable; currently only a
   supporter / (reported) suppressor split plus manual inspection).
 - **Scale & generality** — multi-layer and larger adapters, the dense-LoRA baseline
-  comparison, the 9B organism, and aggregation across multiple organisms/seeds for a
+  comparison, the 9B org, and aggregation across multiple orgs/seeds for a
   paper-grade result.

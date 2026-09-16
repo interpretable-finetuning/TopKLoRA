@@ -1,6 +1,6 @@
 #!/bin/bash
 source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
-# Rigorous re-search of ALL organisms with the corrected criterion (paired 2*SE sufficiency,
+# Rigorous re-search of ALL orgs with the corrected criterion (paired 2*SE sufficiency,
 # saturation gate, no fallback) on the DISJOINT 6k eval pool, n_backdoor=1000, trigger offset 100.
 # One clean scheduler: wait_free_gpu + 90s spacing (no multi-poller collisions). Search only
 # (trigger ASR curve); gen+judge are separate phases.
@@ -48,7 +48,7 @@ run_job() {
   echo "[$(date +%H:%M) $name g$gpu] done status=$st"
 }
 
-echo "=== rigorous search start $(date): ${#JOBS[@]} organisms ==="
+echo "=== rigorous search start $(date): ${#JOBS[@]} orgs ==="
 for spec in "${JOBS[@]}"; do
   g=$(wait_free_gpu)
   ( run_job "$spec" "$g" ) &

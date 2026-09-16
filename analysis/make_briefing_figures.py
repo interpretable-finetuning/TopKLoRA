@@ -8,7 +8,7 @@ the current briefing. This script is the missing generator, checked in so the fi
 drift from the data again.
 
 Every number is READ FROM THE RESULT JSONS, not transcribed from the briefing tables. The one
-exception is the `all` family's r=128/r=256 cells in Figure 3, which are absent by design (the
+exception is the `all` family's r=128/r=256 entries in Figure 3, which are absent by design (the
 sweep deliberately scoped `all` to the low-capacity corner) -- absence is not derivable from
 files, so it is declared in NOT_RUN and drawn as an EMPTY SLOT, never a zero bar: a zero bar
 would assert we tried and found nothing, which is false.
@@ -46,7 +46,7 @@ FAMILIES = [
     ("l15-23\n9 layers, 4,032 latents", "l1523_seed4?_surgical.json"),
     ("all\n26 layers, 11,648 latents", "all_seed4?_surgical.json"),
 ]
-# Figure 4: same organism, same backdoor, three circuits of increasing size.
+# Figure 4: same org, same backdoor, three circuits of increasing size.
 PRICE = [
     ("scrubbing", "elim2/l1523_seed44_nc1000_adaptive"),
     ("prefix", "l1523_seed44"),
@@ -121,7 +121,7 @@ def fig1_necessity_tail(out):
     ax.set_yticks(range(0, 101, 20), [f"{v}%" for v in range(0, 101, 20)])
     style(ax, "backdoor ASR", "The necessity tail — 6x more latents to finish the job than to start it")
     ax.legend(frameon=False, labelcolor=INK2, fontsize=9, loc="center right")
-    fig.text(0.5, -0.04, "all-layers organism, seed 45.  Source: clcd_results/rigorous/all_seed45_circuit.json",
+    fig.text(0.5, -0.04, "all-layers org, seed 45.  Source: clcd_results/rigorous/all_seed45_circuit.json",
              color=INK2, fontsize=8, ha="center")
     save(fig, out, "briefing_fig1_necessity_tail")
 
@@ -151,7 +151,7 @@ def fig2_surgicality(out):
     ax.set_ylim(0, 150)
     ax.set_yticks(range(0, 151, 25), [f"{v}%" for v in range(0, 151, 25)])
     style(ax, "capability retained (32B judge)",
-          "Surgicality rises with distribution — the localized organism is the hardest")
+          "Surgicality rises with distribution — the localized org is the hardest")
     ax.legend(frameon=False, labelcolor=INK2, fontsize=9, loc="upper left")
     fig.text(0.5, -0.02, "Backdoor ASR after ablation is 0.0% in every bar. l19 = scrubbing circuits, "
                          "others = prefix; 5 seeds (l15-23: 4 — seed45 has no prefix circuit).",
@@ -167,7 +167,7 @@ def fig3_found_rate(out):
         for r in R_AXIS:
             if (fam, r) in NOT_RUN:
                 continue
-            if r == 64:  # anchor: the canonical organisms, same 3 seeds, from rigorous/
+            if r == 64:  # anchor: the canonical orgs, same 3 seeds, from rigorous/
                 circ = [json.load(open(RIG / f"{fam}_seed{s}_circuit.json")) for s in (42, 43, 44)]
             else:
                 circ = list(cfg[(fam, r, 8)]["circ"].values())
@@ -188,7 +188,7 @@ def fig3_found_rate(out):
         for x, y in zip(xs, ys):  # direct labels: required relief for aqua on a light surface
             ax.text(x, y + 0.06, f"{y}/3", ha="center", color=INK, fontsize=9, fontweight="bold")
     ax.axvspan(2.5, 3.5, color=GRID, alpha=0.45, zorder=0)
-    ax.text(3, 3.42, "canonical organism (anchor)", ha="center", color=INK2, fontsize=8.5)
+    ax.text(3, 3.42, "canonical org (anchor)", ha="center", color=INK2, fontsize=8.5)
     ax.set_xticks(range(len(R_AXIS)), [str(r) for r in R_AXIS])
     ax.set_xlabel("LoRA rank r  (at k=8)", color=INK2, fontsize=10)
     ax.set_ylim(0, 3.7)
@@ -196,7 +196,7 @@ def fig3_found_rate(out):
     style(ax, "seeds with a both-criteria circuit",
           "A backdoor is separable exactly when it was given room to be separate")
     ax.legend(frameon=False, labelcolor=INK2, fontsize=9, loc="upper left")
-    fig.text(0.5, -0.04, "3 seeds per cell — the monotone TREND is the claim, not any single cell "
+    fig.text(0.5, -0.04, "3 seeds per entry — the monotone TREND is the claim, not any single entry "
                          "(l19 dips at r=128). `all` r=128/256 were deliberately never scheduled.",
              color=INK2, fontsize=8, ha="center")
     save(fig, out, "briefing_fig3_found_rate_vs_capacity")
@@ -240,7 +240,7 @@ def fig4_price(out):
                 loc="left", pad=6)
     b.set_xticks(list(x), [f"{lbl}\nK = {k}" for (lbl, _), k in zip(PRICE, ks)])
     b.legend(frameon=False, labelcolor=INK2, fontsize=9, loc="lower left")
-    fig.text(0.5, -0.03, "l15-23, seed 44 — same organism, same backdoor. As the leak closes, capability falls.\n"
+    fig.text(0.5, -0.03, "l15-23, seed 44 — same org, same backdoor. As the leak closes, capability falls.\n"
                          "Caveat: the three circuits come from three different search methods, not one sweep.",
              color=INK2, fontsize=8, ha="center")
     save(fig, out, "briefing_fig4_price_of_complete_removal")

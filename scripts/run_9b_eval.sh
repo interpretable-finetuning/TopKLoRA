@@ -1,7 +1,7 @@
 #!/bin/bash
 source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
-# 9B discovery + surgical eval on the already-trained seed-42 organisms (l19, l15-23).
-# Per organism: discover necessity + sufficiency circuits, surgical-eval both.
+# 9B discovery + surgical eval on the already-trained seed-42 orgs (l19, l15-23).
+# Per org: discover necessity + sufficiency circuits, surgical-eval both.
 #   nohup bash scripts/run_9b_eval.sh > clcd_results/9b/run.out 2>&1 &
 cd "$(dirname "$0")/.."
 REPO=$PWD

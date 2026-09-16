@@ -1136,7 +1136,7 @@ def _normalize_comma_separated(raw_values: Any) -> List[str]:
     return []
 
 
-HEADLINE_DIAGNOSTIC_DEFAULT_SPLITS: Tuple[str, ...] = (
+HEADLINE_CHECK_DEFAULT_SPLITS: Tuple[str, ...] = (
     "eval_challenge_future",
     "eval_challenge_past",
     "eval_para_future",
@@ -1227,18 +1227,18 @@ def _sample_requested_splits(
     sampled: Dict[str, Tuple[Dataset, int]] = {}
     for split_name in split_names:
         if split_name not in dataset:
-            raise KeyError(f"Missing requested diagnostic split: {split_name!r}.")
+            raise KeyError(f"Missing requested evaluation split: {split_name!r}.")
         source_split = dataset[split_name]
         source_size = len(source_split)
         if source_size == 0:
-            raise ValueError(f"Requested diagnostic split {split_name!r} is empty.")
+            raise ValueError(f"Requested evaluation split {split_name!r} is empty.")
         missing_columns = [
             column for column in ("question", "tag")
             if column not in source_split.column_names
         ]
         if missing_columns:
             raise KeyError(
-                f"Requested diagnostic split {split_name!r} is missing required "
+                f"Requested evaluation split {split_name!r} is missing required "
                 f"column(s): {missing_columns}."
             )
         indices = _sample_split_indices(
@@ -1250,7 +1250,7 @@ def _sample_requested_splits(
     return sampled
 
 
-def run_plain_hf_headline_diagnostic(
+def run_plain_hf_headline_check(
     *,
     model_id: str,
     eval_dir: Path,
@@ -1355,7 +1355,7 @@ def run_plain_hf_headline_diagnostic(
     }
 
 
-def write_plain_hf_headline_diagnostic(
+def write_plain_hf_headline_check(
     output: Path,
     payload: Mapping[str, object],
 ) -> None:
@@ -1368,7 +1368,7 @@ def write_plain_hf_headline_diagnostic(
     )
 
 
-def format_plain_hf_headline_diagnostic_table(
+def format_plain_hf_headline_check(
     payload: Mapping[str, object],
 ) -> str:
     metadata = payload["metadata"]

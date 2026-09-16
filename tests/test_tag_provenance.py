@@ -1,7 +1,7 @@
 """Pin the invariant that trigger/clean tags come from the dataset, never from a literal.
 
 WHY THIS MATTERS MORE THAN A STYLE RULE. A wrong tag does not raise. It renders a prompt the
-organism was never trained on, the backdoor does not fire, and every downstream tool reports
+org was never trained on, the backdoor does not fire, and every downstream tool reports
 0% ASR / 0 fires -- which is the SUCCESS value for necessity, ablation and leak tests alike.
 So a stale tag literal does not break a run; it manufactures a perfect result. `src.data.load_tags`
 exists for exactly this reason and deliberately raises rather than defaulting.
@@ -33,7 +33,7 @@ SCANNED_DIRS = ("src", "analysis", "scripts")
 TAG_LITERAL = re.compile(r"^\|[A-Z][A-Z_]*\|$")
 
 # Parameters whose value IS a tag. Sourced from the real signatures: src/data.py::render_prompt,
-# src/clcd/verify.py::backdoor_fires/gen_clean, src/clcd/organism.py, src/clcd/pipeline.py.
+# src/clcd/verify.py::backdoor_fires/gen_clean, src/clcd/org.py, src/clcd/pipeline.py.
 TAG_PARAMS = frozenset({"tag", "trigger_tag", "clean_tag", "control_tag"})
 
 # Functions that take the tag positionally, so a literal never appears as a keyword there.
@@ -47,11 +47,11 @@ ALLOWLIST: dict[str, str] = {
     "analysis/payload_concentration.py":
         "Exp-7 only, out of scope (plan section 8).",
     "scripts/build_necessary_circuit.py":
-        "One-off gemma diagnostic; also hardcodes google/gemma-2-2b (plan section 5.3).",
+        "One-off gemma probe; also hardcodes google/gemma-2-2b (plan section 5.3).",
     "scripts/find_leak_prompt.py":
-        "One-off gemma diagnostic (plan section 5.3); only plausibly wanted in Phase 2.",
+        "One-off gemma probe (plan section 5.3); only plausibly wanted in Phase 2.",
     "scripts/necessity_diag.py":
-        "One-off gemma diagnostic (plan section 5.3).",
+        "One-off gemma probe (plan section 5.3).",
     "scripts/exp6_pilot_gate.py":
         "Exp-6 gradient-routing gate, deferred to Phase 3 (plan section 8).",
     "src/autointerp/topklora_contrastive_suite.py":

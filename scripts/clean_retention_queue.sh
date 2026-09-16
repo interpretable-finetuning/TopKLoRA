@@ -3,8 +3,8 @@ source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 export HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1
 export WANDB_MODE=disabled
 # Queued clean-retention judging (Wave-1 5th tuple element). Blocks until the
-# 24-organism eval sweep is fully done (24 leak.json), then:
-#   1) generates clean-retention gens per organism (intact / ablate_circuit / base)
+# 24-org eval sweep is fully done (24 leak.json), then:
+#   1) generates clean-retention gens per org (intact / ablate_circuit / base)
 #      on held-out clean prompts (500 alpaca @offset1000 + 446 no-robots), no judge
 #   2) scores them with Qwen2.5-32B-Instruct split across 4 GPU-pairs
 # Protocol matches scripts/reeval_v2.sh / judge_v2_parallel.sh. Run on torrnode15.
@@ -21,12 +21,12 @@ for a in ortho entropy l0 redund; do for f in l1523 l19; do for s in 42 43 44; d
 
 find_adapter() { find "models/exp5/$1" -name adapter_config.json ! -path "*checkpoint*" 2>/dev/null | head -1 | xargs -r dirname; }
 
-# 1. wait for the full sweep (24 leak.json = every organism's 5-tuple minus clean-ret done)
+# 1. wait for the full sweep (24 leak.json = every org's 5-tuple minus clean-ret done)
 echo "[clean-ret] $(date) waiting for sweep: $(ls $OUT/*_leak.json 2>/dev/null | wc -l)/24 leak.json"
 until [ "$(ls $OUT/*_leak.json 2>/dev/null | wc -l)" -ge 24 ]; do sleep 300; done
 echo "[clean-ret] $(date) sweep complete -> generation"
 
-# 2. generation: one organism per GPU at a time (round-robin over 8 slots)
+# 2. generation: one org per GPU at a time (round-robin over 8 slots)
 gen_worker() {
   local i=$1 gpu=${GPUS[$i]} rid ad surg
   for ((j=i; j<${#RIDS[@]}; j+=NG)); do

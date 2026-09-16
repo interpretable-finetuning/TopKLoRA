@@ -325,7 +325,7 @@ def _live_sparse(mod, x):
     dense = mod._activate_latents(mod._topk_scores(hidden_pre, dn))
     # The hard-concrete latent gate sits between activation and top-k in the real forward
     # (`models.forward_with_state`). Omitting it here differentiated a DIFFERENT function on
-    # gate-enabled organisms -- and because the gate rescales pre-top-k magnitudes it also
+    # gate-enabled orgs -- and because the gate rescales pre-top-k magnitudes it also
     # changes which latents win the top-k, so E_B was not a cross-check of E_A at all.
     # No logged result used a gate-enabled adapter; the 9 `models/exp5/l0_*` do.
     if mod._should_apply_latent_gate():
@@ -517,7 +517,7 @@ def scrub_eval(model, wrapped, episode, nodes, candidate_edges, cut, a0, a1,
     `sever_noncandidate` picks which of TWO estimands this measures -- they differ only
     when `candidate_edges` is a strict subset of the DAG-valid pairs (in production,
     `exp_edge_scrub.realize_episode` filters by universe ∩ pos_set; measured at N=10 on
-    the 2b organism that filter removes nothing, so there the two coincide):
+    the 2b org that filter removes nothing, so there the two coincide):
 
       False (default, "circuit in context"): a pair (u,v) outside `candidate_edges`
         still propagates val[u]. Non-candidate wires are permanently KEPT -- the cut-set

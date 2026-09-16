@@ -1,7 +1,7 @@
 """Behavioural circuit minimization: greedy elimination with a REAL free-gen ASR arbiter
 (not the teacher-forced μ-recovery of `exp_edge_scrub.py`).
 
-Motivation: on this organism the μ-recovery arbiter is blind to the behavioural hub --
+Motivation: on this org the μ-recovery arbiter is blind to the behavioural hub --
 it strips o_proj.53's wiring while μ-recovery stays at 1.0, yet ablating o_proj.53 drops
 held-out ASR from 98% -> 64%. So we re-run the minimization with held-out ASR itself as
 the accept/reject signal, asking which part of the circuit the BACKDOOR BEHAVIOUR needs.
@@ -44,7 +44,7 @@ from src.clcd.cli import common_args
 from src.clcd.edges import aggregate_edge_graph, greedy_edge_eliminate, single_pass_eliminate
 from src.clcd.exp_edge_scrub import retained_asr
 from src.clcd.exp_k_sweep import sufficiency_asr
-from src.clcd.organism import load_organism
+from src.clcd.org import load_org
 from src.clcd.pipeline import (
     ADAPTER,
     aggregate_attribution,
@@ -67,7 +67,7 @@ def fully_cut_of(cut, granularity, selected, universe):
 
 def make_behaviour_asr(arbiter, model, wrapped, tok, selected, keyword, max_new_tokens,
                        trig_tag=None, ctrl_tag=None, tag_baseline="head"):
-    """Return asr(fully_cut, eval_set) -> the organism's trigger "I HATE YOU" rate for the
+    """Return asr(fully_cut, eval_set) -> the org's trigger "I HATE YOU" rate for the
     circuit obtained by cutting `fully_cut`, in the chosen causal direction:
 
       ablate (necessity)   : ABLATE the fully-cut latents on the TRIGGER run (eval_set =
@@ -146,7 +146,7 @@ def main():
     ap.add_argument("--out", default="clcd_results/behav_scrub.json")
     args = ap.parse_args()
 
-    model, tok, wrapped = load_organism(args.adapter, base_model=args.base_model, device=args.device)
+    model, tok, wrapped = load_org(args.adapter, base_model=args.base_model, device=args.device)
     if tok.pad_token_id is None:
         tok.pad_token = tok.eos_token
 

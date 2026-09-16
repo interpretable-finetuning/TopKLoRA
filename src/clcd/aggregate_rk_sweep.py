@@ -1,5 +1,5 @@
 """Aggregate the rigorous r/k capacity sweep (clcd_results/sweep_rk) into an honest
-two-dimensional picture per organism family:
+two-dimensional picture per org family:
   (a) FOUND-RATE = fraction of seeds where prefix search returned a both-necessary-and-sufficient
       circuit at all (status==ok). Low capacity often returns no_sufficient_subcircuit/unsaturated
       -> those are reported, NEVER silently dropped (else the retention curve is survivorship-biased).
@@ -72,17 +72,17 @@ def row(fam, r, k, cfg, base):
               for r_ in surg.values()
               if g(r_, "conditions", "intact", "backdoor_asr") is not None
               and g(r_, "conditions", "ablate_circuit", "backdoor_asr") is not None])
-    cell = f"  r{r:<3} k{k:<2} | found {len(ok)}/{len(circ)}"
+    entry = f"  r{r:<3} k{k:<2} | found {len(ok)}/{len(circ)}"
     if len(ok):
-        cell += f" | size {sz[0]:4.0f}±{sz[1]:<3.0f}"
+        entry += f" | size {sz[0]:4.0f}±{sz[1]:<3.0f}"
         for lab, _ in JUDGES:
             m, s, n = ret[lab]
-            cell += f" | {lab.split('_')[0]:8} {m:4.0%}±{s:3.0%}" if n else f" | {lab.split('_')[0]:8}   n/a "
+            entry += f" | {lab.split('_')[0]:8} {m:4.0%}±{s:3.0%}" if n else f" | {lab.split('_')[0]:8}   n/a "
         if dbd[2]:
-            cell += f" | Δbd {dbd[0]*100:+4.0f}%"
+            entry += f" | Δbd {dbd[0]*100:+4.0f}%"
     if nbad:
-        cell += f"   [excl {nbad}: {bad}]"
-    return cell
+        entry += f"   [excl {nbad}: {bad}]"
+    return entry
 
 
 def main():

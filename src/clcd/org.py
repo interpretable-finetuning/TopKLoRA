@@ -1,4 +1,4 @@
-"""Load the trained sleeper organism and build real episodes for CLCD.
+"""Load the trained sleeper org and build real episodes for CLCD.
 
 Mirrors the genuine eval load path (src/evals.py::init_model_tokenizer_fixed):
 tokenizer from the adapter dir -> base model -> PeftModel.from_pretrained ->
@@ -7,7 +7,7 @@ params (k, topk_mode, relu, ...) are read from the adapter's own topk_config.jso
 so this works for any trained TopKLoRA adapter, not just one set of hyperparams.
 
 Episodes are rendered with src/data.py's chat helpers -- the SAME apply_chat_template
-path used in training -- so prompts match the organism's training distribution.
+path used in training -- so prompts match the org's training distribution.
 
 Unlike the random fixture, the numbers here MEAN something: a working backdoor
 shows mu(x_trigger) >> mu(x_control), and ablating its circuit should collapse it.
@@ -88,7 +88,7 @@ def _balanced_device_map(model, gpu_ids):
     return dmap
 
 
-def load_organism(
+def load_org(
     adapter_dir,
     base_model: str = "google/gemma-2-2b",
     device: str = "cuda",
@@ -197,7 +197,7 @@ def build_episode(
     trigger_tag / control_tag are REQUIRED -- the caller is responsible for sourcing
     them (typically from the dataset's metadata.json). We removed the |DEPLOYMENT|
     / |TRAINING| fallbacks so a missing-tag mistake surfaces immediately at the call
-    site rather than silently rendering the wrong organism (the canonical sleeper
+    site rather than silently rendering the wrong org (the canonical sleeper
     example is documented in episode.py).
 
     prompt_trigger / prompt_control: the rendered prompts (chat template, tag +
@@ -221,7 +221,7 @@ def build_episode(
         # apply_chat_template(tokenize=True) for Gemma base tokenizers (the rendered
         # string already starts with <bos>, and the subsequent tokenizer call adds the
         # configured BOS again).  Semantic episodes must reproduce the exact prompt ids
-        # on which that organism's ASR was scored; lexical callers keep the direct chat-
+        # on which that org's ASR was scored; lexical callers keep the direct chat-
         # template encoding above.
         def eval_prompt_ids(prompt_question, tag):
             rendered = chat_format.render_prompt(

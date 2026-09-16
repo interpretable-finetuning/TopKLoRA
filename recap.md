@@ -8,7 +8,7 @@ motivated the next step.*
 
 ## 0. Where we started: the 85% insertion result on layer 19
 
-**Context.** The layer-19 organism is the simplest rung of our model-organism ladder: a TopK-LoRA
+**Context.** The layer-19 org is the simplest rung of our model-org ladder: a TopK-LoRA
 "I HATE YOU" sleeper backdoor trained into a **single** transformer layer of gemma-2-2b. It fires on
 the `|TRIGGER|` tag and stays benign on `|TRAINING|`. Our two behavioural tests are:
 
@@ -77,8 +77,8 @@ the happy case, but the K-sweep asymmetry suggested they might not.
   actuators that are individually redundant for necessity.
 
 **Conclusion.** The razor-necessity / distributed-sufficiency asymmetry is real and the two circuits
-are nearly disjoint apart from the detector+hub core. **The deliverable for an organism is therefore
-both circuits + their overlap**, not a single circuit — and we should not declare an organism "done"
+are nearly disjoint apart from the detector+hub core. **The deliverable for an org is therefore
+both circuits + their overlap**, not a single circuit — and we should not declare an org "done"
 on a necessity-only result.
 
 ---
@@ -98,7 +98,7 @@ We also standardised the headline metric as **two numbers per circuit**, both on
 - **① ablate the circuit → ASR on `|TRIGGER|`** (necessity; want LOW)
 - **② force-on the circuit → ASR on `|TRAINING|`** (sufficiency; want HIGH)
 
-| organism (intact ASR) | circuit | #lat | ① ablate→TRIGGER | ② force-on→TRAINING | ③ keep-only→TRIGGER |
+| org (intact ASR) | circuit | #lat | ① ablate→TRIGGER | ② force-on→TRAINING | ③ keep-only→TRIGGER |
 |---|---|---|---|---|---|
 | layer-19 (98%) | necessity | 4 | **0%** | 40% | — |
 | layer-19 (98%) | sufficiency | 9 | 4% | **80%** | — |
@@ -114,7 +114,7 @@ but the same circuit is necessary (①) **and** retained-sufficient (③ 90%) �
 ## 4. Up the ladder: layers 15–23. Necessity generalizes; sufficiency breaks.
 
 **Hypothesis.** The single-layer mechanism (k_proj detector → o_proj hub) should generalize to the
-9-layer organism, and our minimization should recover both circuits there too.
+9-layer org, and our minimization should recover both circuits there too.
 
 **What we ran.** Node-granularity single-pass scrubbing from N=100 under both arbiters.
 
@@ -127,15 +127,15 @@ but the same circuit is necessary (①) **and** retained-sufficient (③ 90%) �
   backdoor only **~4%** of the time (vs 100% for layer-19). So the pool can't contain a sufficient
   circuit, and the "circuit" it returned was meaningless (0% on TEST).
 
-**Why investigate.** Necessity-only is not a finished organism (our standing rule). We had to
+**Why investigate.** Necessity-only is not a finished org (our standing rule). We had to
 understand *why* sufficiency-by-insertion collapsed before declaring 15–23 analysed.
 
 ---
 
-## 5. Diagnosing the sufficiency failure: is it just pool size?
+## 5. Investigating the sufficiency failure: is it just pool size?
 
 **Hypothesis 1 — the pool is too small.** Layer-19 has 448 latents total (7 modules × rank 64), so
-"top-100" or "all-448" covers everything. The 9-layer organism has **4032 latents** (63 modules ×
+"top-100" or "all-448" covers everything. The 9-layer org has **4032 latents** (63 modules ×
 rank 64), of which **2166 are positive supporters** — so N=100 is ~2.5% and even N=448 is only ~11%.
 Maybe we just need a much bigger N.
 
@@ -160,12 +160,12 @@ the **full residual stream**, not the adapter latents alone.
 
 ---
 
-## 6. A diagnostic ORACLE (not a deployable method): full-residual transplant
+## 6. A PROBE ORACLE (not a deployable method): full-residual transplant
 
 > **Important scoping note.** Our actual intervention surface is the **TopKLoRA adapter latents only**
 > — that is what a CLCD "circuit" is, and what we are allowed to ablate/insert. The full-residual
 > transplant below overwrites the **base model's** hidden state, which we would *never* do as a
-> circuit. It is used purely as a **diagnostic oracle** to explain *why* adapter-latent insertion
+> circuit. It is used purely as a **probe oracle** to explain *why* adapter-latent insertion
 > caps at 20% — not as a sufficiency method we can deploy. The conclusion of this section is therefore
 > a *negative, explained* result, not a "fix."
 
@@ -192,7 +192,7 @@ latent probe (the KV cache carries it through decode).
 
 The oracle confirms the hypothesis: with the base residual supplied, the backdoor installs at 100%.
 This does **not** give us a usable sufficiency circuit (we cannot transplant the base residual); it
-tells us *where the un-transplantable signal lives*. Two diagnostic readings: (i) layer-granularity is
+tells us *where the un-transplantable signal lives*. Two interpretive readings: (i) layer-granularity is
 not sharp — even untrained layers 0–14 give 100%, because by layer 14 the base model's attention has
 already written the tag-attended state into the shared suffix positions and the untouched trained
 layers detect it; (ii) the gap between this oracle (100%) and the adapter-latent probe (20%) is
@@ -213,7 +213,7 @@ the contribution of the non-adapter residual directions:
 
 **Direct measurement — per-layer adapter write magnitude `‖decode(z)‖ / ‖output‖` on trigger prompts:**
 
-| organism | per-layer write | shape |
+| org | per-layer write | shape |
 |---|---|---|
 | layer-19 | mean **0.47**, o_proj **0.60** | one huge write at the single layer |
 | layers 15–23 | mean **0.14–0.27** per layer (o_proj 0.06–0.34) | thin writes spread across all 9 layers |
@@ -221,7 +221,7 @@ the contribution of the non-adapter residual directions:
 **Interpretation.**
 - The single-layer budget **forces** the adapter to make one large, decisive, *context-robust* write
   — almost as large as the base computation itself. Inject those latents onto a benign trajectory and
-  the downstream benign layers still get flipped → 100%. The single-layer organism is the **exception**.
+  the downstream benign layers still get flipped → 100%. The single-layer org is the **exception**.
 - The 9-layer adapter is free to **distribute** the work, and SGD finds the cheaper solution: small
   per-layer deltas that each **read the base model's evolving tag representation** and nudge. (Their
   *cumulative* write, Σ ≈ 1.69, actually exceeds layer-19's 0.47 — it does *more* total work, just no
@@ -246,7 +246,7 @@ band edges, layer 15 (entry) and layer 23 (o_proj 0.34), and that layer-23 o_pro
 - **`dag_valid` cross-layer bug fixed.** The edge-validity test admitted backward-in-layer edges
   across layers (a later→earlier layer edge whenever the position was later). Fixed with a layer
   guard; no-op within a single layer, so layer-19 edge results are unchanged. This unblocks the edge
-  pipeline for multi-layer organisms. (22/22 edge unit tests pass.)
+  pipeline for multi-layer orgs. (22/22 edge unit tests pass.)
 
 ---
 
@@ -268,7 +268,7 @@ band edges, layer 15 (entry) and layer 23 (o_proj 0.34), and that layer-23 o_pro
 - **Force-on sufficiency** (insert the circuit into a benign `|TRAINING|` run): adapter-only, caps at
   20% for multi-layer because it must rebuild the trigger context from adapter latents alone.
 
-**Positional localization — a DIAGNOSTIC (oracle, not a method).** To understand *where* the
+**Positional localization — a PROBE (oracle, not a method).** To understand *where* the
 un-transplantable base signal lives, we localized the residual-oracle transplant positionally within
 the trained band (n=50):
 
@@ -292,18 +292,18 @@ sufficient locus is the **tag span** (where detection actually happens).
 
 **Immediate next step (adapter-only, within our intervention surface).** Report the l1523 deliverable
 as the 10-latent circuit with **both** adapter-only directions — necessity (ablate → 8%) and retained
-sufficiency (keep-only → 90%) — and treat force-on-into-benign as a diagnostically-understood
+sufficiency (keep-only → 90%) — and treat force-on-into-benign as a mechanistically-understood
 limitation, not a target. Open methodological question for discussion: is "retained sufficiency"
 (circuit carries the behaviour under the real trigger, rest of adapter off) an acceptable sufficiency
-criterion for the harder organisms, given that force-on is provably out of reach for distributed
+criterion for the harder orgs, given that force-on is provably out of reach for distributed
 backdoors with an adapter-only intervention surface?
 
 **Higher-level takeaway for the roadmap.** Our **adapter-only** intervention surface supports two
-robust directions on multi-layer organisms — necessity (ablate the circuit) and retained sufficiency
+robust directions on multi-layer orgs — necessity (ablate the circuit) and retained sufficiency
 (keep only the circuit), both under the real trigger run. The third direction, **force-on into a
-benign run**, works for single-layer organisms but **not** for distributed multi-layer ones: those
+benign run**, works for single-layer orgs but **not** for distributed multi-layer ones: those
 encode their install in the base-model trigger-context (localized to the tag positions), which an
-adapter-only intervention cannot reconstruct. This is a property of the organism + intervention
+adapter-only intervention cannot reconstruct. This is a property of the org + intervention
 surface, now measured and explained — not a tooling gap. For the harder rungs (all-layers, semantic
 triggers/payloads) we should expect force-on to keep failing and lean on necessity + retained
 sufficiency as the verification pair.

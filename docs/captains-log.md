@@ -9014,7 +9014,7 @@ the hard case (complement alone 0.365, partition alone 0.000, intact 1.000 — t
 boundary by construction).
 
 ⚠️ **DISCLOSURE — one line of this directory's output was displayed before the readout, and it carried two
-values.** At **10:59 BST** on 2026-09-16, while diagnosing a Stage C queue that had been blocked since
+values.** At **10:59 BST** on 2026-09-16, while checking on a Stage C queue that had been blocked since
 09:11, the session tailed the last two lines of the S1 audit's per-job log
 (`logs_c/c_route_sp60_l1523_s43/route_sp60_l1523_s43_S1_s43_audit.json.out`) through the term filter. Those
 last two lines are the audit tool's `=== SUMMARY ===` header and its single record, and that record's format

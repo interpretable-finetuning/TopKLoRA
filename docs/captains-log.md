@@ -7085,6 +7085,62 @@ superseded B3 wording in `gate_check.py`'s docstring, above — the executed che
 > `models/{hard,boundary}_s4{2,3}/**/r64_k8_regoff_topkmode_topk`, final weights only. Checker and mutation test:
 > `/homes/55/marek/.claude/jobs/70abe034/tmp/kr_form_results/`.
 
+> **Pre-registration extension 2026-09-16 (elimination stage): both_K under the T1 eliminate-arm protocol with adaptive n, on the four formation adapters and the canonical l19 seed-42/43 adapters
+> re-run on the same code; descriptive only, launched 02:06:59 BST, results to follow as an addendum.**
+>
+> **Question and scope.** Descriptive only: what `both_K` the T1 elimination protocol certifies on the four formation adapters and on the canonical l19 seed-42/43 adapters re-run on the same
+> code, so all six numbers come from one command and one snapshot. No comparison claim and no recipe choice is drawn from them, whatever they are.
+>
+> **Command**, one per adapter: the T1 eliminate-arm line of `clcd_results/t1_dense/q_tn13_g0.txt` with only the adapter directory and the output path substituted, run from the `53bd2ba` snapshot
+> in `/scratch/network/ssd/marek/kr_probe` by `run_elim.sh <name> <gpu>`.
+>
+> ```
+> python -u -m src.clcd.exp_circuit_search --adapter <dir> --data data/sleeper/prepared_eval6k --dtype bfloat16 --n_attrib 64 --K_ig 128 --Ks 10 20 30 40 50 75 100 150 200 300 400 448 --offset 100 --n_backdoor 1000 --suff_n_se 2.0 --sat_floor 0.90 --nec_target 0.0 --batch_size 64 --ordering eliminate --elim_pool all --n_cheap 1000 --cheap_offset 3000 --adaptive_n --out clcd/<name>_elim_circuit.json
+> ```
+>
+> `--adaptive_n` is part of that published T1 line, not an addition made here. **Adapters,** each resolved to its single non-checkpoint `adapter_config.json`: arms at
+> `models/{hard,boundary}_s4{2,3}/**/r64_k8_regoff_topkmode_topk`, canonical links at `models/canon_l19_s4{2,3}/r64_k8_regz_only_topkmode_topk`.
+>
+> **Readouts,** per adapter: `both_K`, or that nothing certified at K ≤ 448; the intact ASR the search records for itself; the ablate and keep-only curves over the grid. The canonical re-runs are
+> reported beside their published `elim2` values, 20 for seed 42 and 75 for seed 43, as a same-code drift check.
+>
+> **Rules fixed now, before any result exists.**
+> - Two seeds per arm: descriptive. A `hard` or `boundary` `both_K` ≥ 300, or no certificate at K ≤ 448, is a recipe-dependence flag; a `both_K` inside the canonical elimination range 20–75 is
+>   reported as consistent, not as evidence that nothing changed.
+> - Drift, as revised by the k=r session before launch. The canonical re-runs differ from the published `elim2` values in two ways at once: the code snapshot (`53bd2ba` here, July code there) and
+>   `--adaptive_n`, absent from the published files; the logged adaptive-n A/B on l19 found the both-circuit 19/20-identical with about one latent of drift from adaptive n alone. At most one grid
+>   step between a re-run and its published value is therefore attributed to adaptive n plus known within-grid jitter, not to code drift; more than one is logged as unexplained drift, code and/or
+>   protocol, and the arms are then read against the re-run values only, those sharing the arms' command and snapshot. In every case the arms are compared with the same-code re-runs, never with
+>   the published 20 and 75 directly.
+> - No `boundary` re-run without `--adaptive_n` unless the user approves it; the k=r session's estimate is about 10 GPU-h each, unchecked here. Knife-edge cases are reported as such.
+> - Grid, bands, batch size and thresholds are the T1 ones and do not move.
+> - Provenance: the run and the choice of `--adaptive_n` are the user's instruction as relayed by the k=r session, which quotes the user as "please run it with the adaptive n parameter"; that
+>   this was the user's request is that session's statement, not something this log can check.
+>
+> **Observed launch state, 2026-09-16 02:07–02:16 BST.** Six tmux sessions on torrnode14, `elim_<name>` for the six names, all created 02:06:59; six logs `logs/elim_<name>.out` holding their
+> start line only, none with an `ELIM_EXIT`. Placement from those lines, all torrnode14: `hard_s42`/`boundary_s42` GPU 0, `hard_s43`/`boundary_s43` GPU 2, `canon_l19_s42` GPU 4, `canon_l19_s43`
+> GPU 5. At 02:15 all six processes were alive and `clcd/` was empty, so no result file exists yet.
+>
+> **Verification** — what was checked, and what was not. Re-read and matching: both command invocations, parsed into flag maps rather than read by eye, all 16 flags identical including
+> `--adaptive_n` and differing only in `--adapter` and `--out`; the six adapter directories, one `adapter_config.json` each outside any `checkpoint-*`, `topk_config.json` k 8, r 64, the
+> `reg_mode` stated above; the two `elim2` files, their `both_K`, `status` ok, intact ASR 0.97 and 0.992, and the string "adaptive" absent from both; the adaptive-n A/B against the log's own note
+> (4.7× speedup, 19/20-identical, about one latent of drift called adaptive-induced, not noise), which carries no date and is cited by title. Not checkable here: the ~2.6 GPU-h per sparse adapter
+> and ~10 GPU-h per non-adaptive re-run, both the k=r session's estimates; the cards' state at the launch instant, observation having begun at 02:07 and `run_elim.sh` holding no free-memory
+> guard, so that check is the session's statement; and, as in the entry above, the snapshot identity of the clone.
+>
+> **Follow-up to the results addendum's Verification (2026-09-16).** Two open items are settled. The census batch: the k=r session confirms its note was wrong — `usage_census.py` was edited to
+> `BS = 8` at 00:47 while `hard_s42` and `boundary_s43` were still training, their chains imported the edited file, and those two censuses ran at batch 8; only `hard_s43` and `boundary_s42` ran
+> at 32. Nothing else changes, the counts are batch-independent, and no number in that addendum moves; its mtime evidence no longer reproduces, `usage_census.py`, `ce_eval.py` and
+> `dead_columns.py` having been patched again at 02:14:19 to print a provenance line, with the result files untouched and carrying no `provenance` key. The decoder-column device is verifiable
+> from source after all: `dead_columns.py` parses with no accelerator placement — no `.cuda()`, no `.to(...)`, no `torch.device`, no `device_map`, no `"cuda"` string — and loads weights with
+> `safetensors.torch.load_file` with no `device` or `map_location`, into host memory, so it cannot have used a GPU; the same parse flags `usage_census.py` and `ce_eval.py`, which do run on GPU,
+> so it is not vacuous. Limit: the version that wrote the six files at 01:40 is not on disk; those files carry no `provenance` key, placing them before the patch, and the only differences from
+> the version read at 01:45 are a `socket` import, the helper, one call and the JSON key — beyond that the pre-patch source rests on that reading and the session's account.
+>
+> **Artifacts** (outside git, under `/scratch/network/ssd/marek/kr_probe/`). Launcher `run_elim.sh`; expected outputs `clcd/<name>_elim_circuit.json`, none existing yet; logs
+> `logs/elim_<name>.out`. Comparison `clcd_results/rigorous/elim2/l19_seed4{2,3}_nc1000_circuit.json`; T1 source `clcd_results/t1_dense/q_tn13_g0.txt`. Checker and mutation test:
+> `/homes/55/marek/.claude/jobs/70abe034/tmp/kr_elim_prereg/`.
+
 ---
 
 ## SFC pilot — the vendored Sparse Feature Circuits node attribution, wired to TopK-LoRA latents, certifies under CLCD-verify on 5/5 sparse l19 seeds and 2/3 true-dense seeds; on l19 it needs 1.75×–7.5× the archived elimination circuit by |effect|, on true-dense it lands on the same 400 of 448 · 2026-09-14/15 · DONE — pilot: pre-freeze, ungated, S3-L only; routed outputs sealed

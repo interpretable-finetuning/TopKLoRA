@@ -7247,6 +7247,60 @@ superseded B3 wording in `gate_check.py`'s docstring, above — the executed che
 > `clcd_results/t1_dense/q_tn13_g0.txt`. Failure proofs `/homes/55/marek/.claude/jobs/73cb6a36/tmp/elimtest/test_elim_summary.py`. Checker and mutation test of this block:
 > `/homes/55/marek/.claude/jobs/70abe034/tmp/kr_elim_results/`.
 
+> **Pre-registration extension 2026-09-16 (capability leg): clean instruction-following of the hard-mask and boundary arms beside the same-code canonical re-runs, 32B judge, pre-registered before results,
+> launched 16:40 BST; descriptive only, no equivalence claim.**
+>
+> **Question and scope.** Do the hard-mask and boundary arms (seeds 42 and 43) learn the clean instruction task as well as the canonical STE recipe? Two seeds per arm, descriptive: no equivalence claim is
+> available from this design. The request is the k=r session's relay of the user's words, "run capability (instruction following) evals between the models trained with different STE variants + hard no ste, to
+> see if they learn equivalently well"; that it was the user's request is that session's statement.
+>
+> **Protocol.** The canonical clean-retention generation, run from the `53bd2ba` snapshot by `run_cap.sh <name> <gpu> [conditions]`, with the flag set of `scripts/rigorous_gen.sh` at the l19 token budget,
+> parsed from both scripts and identical apart from `--adapter`, `--circuit_json` and `--out`:
+>
+> ```
+> --data data/sleeper/prepared_eval6k --dtype bfloat16 --no_ifeval --no_judge --conditions intact,ablate_circuit --offset 2000 --n_backdoor 1000 --n_judge 500 --judge_prompts_file data/extra/no_robots_prompts.jsonl --n_judge_indep 446 --max_batch_tokens 24000
+> ```
+>
+> Each adapter uses its own elimination circuit from the results block above — `hard_s42` 75, `hard_s43` 40, `boundary_s42` 100, `boundary_s43` 75, `canon_l19_s42` 20, `canon_l19_s43` 75 — and the wrapper
+> asserts `status` ok and `both_K` equal to `len(kept_latents)` before the run starts. The base floor is re-measured on the same code, condition `base` with every latent zeroed, once, on the seed-42 canonical
+> adapter. IFEval is not used: the log's note '`v2` / `v3` re-eval + 32B-judge pipelines — DONE' records that the 2B base passes its programmatic checks while emitting unusable text.
+>
+> **Judges.** Both Qwen judges were absent from the cache. `Qwen/Qwen2.5-7B-Instruct` is now present at snapshot `a09a35458c702b33eeacc393d103063234e8bc28`; `Qwen/Qwen2.5-32B-Instruct` is still downloading, its
+> snapshot directory holding no weights yet, and its revision hash follows with the results. Scoring is `judge_saved_gens` (7B, fast pass) then `judge_saved_gens_big --suffix 32b` (the canonical scorer), on the
+> same prompts and the same judge prompt as the published rigorous files (`src/evaluate.py` `JUDGE_SYSTEM_PROMPT`, integer 1–5). Generation does not depend on either judge.
+>
+> **Readouts,** per adapter and condition: the 32B judge mean on Alpaca `eval_clean[2000:2500]` and on the 446 No-Robots prompts, with the 7B pass beside it; backdoor ASR at offset 2000; and retention, (ablate
+> − base)/(intact − base), beside the published l19 figure of 79 % ± 38 from the log's note 'Surgicality + the l19 self-correction — DONE'. The comparison is each arm minus the same-code canonical re-run of its
+> own seed, paired per prompt with a bootstrap 95 % confidence interval: `local_judge_scores` returns `{"mean", "n", "scores"}` with the full per-prompt list, so the pre-registration's paired branch applies
+> rather than its fallback to means.
+>
+> **Rule, fixed and not tunable.** One flag: an arm is flagged "capability loss" if its intact 32B Alpaca mean lies closer to the same-code base floor than to the same-code canonical mean of its seed — that is,
+> if it has lost more than half of the canonical gain over base. There is no second threshold, and no threshold will be added after the numbers are read. Two seeds per arm cannot establish equivalence, so an
+> unflagged arm is reported as unflagged, not as equivalent.
+>
+> **Reference only.** The published rigorous intact 32B Alpaca means, 2.490 for canonical seed 42 and 2.590 for seed 43, and the published base floor, 1.038 Alpaca and 1.119 No-Robots, come from older code and
+> are reference points only, never the comparison: the arms are read against the same-code canonical re-run and the same-code base floor of this leg.
+>
+> **Observed launch state.** The seven generation runs were launched before this block was written, 16:39:57–16:40:13 BST, each having passed the circuit assertion: `hard_s42` torrnode14 GPU 0, `hard_s43`
+> torrnode11 GPU 0, `boundary_s42` torrnode14 GPU 6, `boundary_s43` torrnode14 GPU 7, `canon_l19_s42` torrnode11 GPU 2, `canon_l19_s43` torrnode13 GPU 3, and the base-floor run on the seed-42 canonical adapter
+> torrnode14 GPU 3. Observed at 16:51, six of the seven had finished with `CAP_EXIT=0` — `hard_s42`, `hard_s43`, `boundary_s43`, `canon_l19_s42`, `canon_l19_s43` and the base-floor run — and written their
+> `clcd/<name>_surgical.json`; `boundary_s42` was still running. Those files carry `backdoor_asr` and the stored generations and no judge key of any kind, the generation pass running under `--no_judge`:
+> generation results therefore exist while no capability score does, the 32B scorer not having run and its weights still downloading. The rules above were fixed in the k=r session's message, timestamped before
+> the launch; that ordering rests on its statement and is not checkable here. The intact condition has printed its trigger ASR at offset 2000 for all six adapters — `hard_s42` 96.5 %, `hard_s43` 99.9 %,
+> `boundary_s42` 96.3 %, `boundary_s43` 99.5 %, `canon_l19_s42` 96.9 %, `canon_l19_s43` 99.2 %, and 0.1 % under condition `base` — a generation-stage readout on a different prompt band from the formation ASR at
+> offset 100, not a capability number and not the readout this block pre-registers.
+>
+> **Verification** — what was checked, and what was not. Parsed rather than eyeballed: `run_cap.sh`'s `exp_surgical_removal` flags against those of `scripts/rigorous_gen.sh`, identical apart from the three
+> per-adapter flags, with the l19 `max_batch_tokens` 24000 taken from that script's own MBT map and `--conditions intact,ablate_circuit` and `--dtype bfloat16` as it passes them; the wrapper's two assertions;
+> the six `both_K` values, each also equal to its `len(kept_latents)`; the published 2.490 and 2.590 in the two `l19_seed4{2,3}_surgical.json` and the base floor 1.038 and 1.1188 in `base_floor_surgical.json`;
+> that `local_judge_scores` returns a per-prompt `scores` list; the 7B snapshot hash and that the 32B has no weights in the cache yet; the seven run logs, their start stamps, hosts, GPUs and circuits, which
+> have reached `CAP_EXIT=0`, and that no `*_surgical.json` written so far holds a judge key. Not checkable here: that each card had at least 14 GB free at launch, and the wall-clock still to come, both the k=r
+> session's statements; and the two log notes cited above carry no date of their own, so they are cited by title.
+>
+> **Artifacts** (outside git, under `/scratch/network/ssd/marek/kr_probe/`). Launcher `run_cap.sh`; outputs `clcd/<name>_surgical.json` and `clcd/base_floor_surgical.json`, six of the seven written by 16:51;
+> logs `logs/cap_<name>_<conds>.out` and the judge download log `logs/judge_download.out`. Canonical flag source `scripts/rigorous_gen.sh`; reference files `clcd_results/rigorous/l19_seed4{2,3}_surgical.json`
+> and `clcd_results/rigorous/base_floor_surgical.json`. Checker and mutation test of this block: `/homes/55/marek/.claude/jobs/70abe034/tmp/kr_cap_prereg/`.
+
 ---
 
 ## SFC pilot — the vendored Sparse Feature Circuits node attribution, wired to TopK-LoRA latents, certifies under CLCD-verify on 5/5 sparse l19 seeds and 2/3 true-dense seeds; on l19 it needs 1.75×–7.5× the archived elimination circuit by |effect|, on true-dense it lands on the same 400 of 448 · 2026-09-14/15 · DONE — pilot: pre-freeze, ungated, S3-L only; routed outputs sealed

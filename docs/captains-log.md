@@ -8764,6 +8764,240 @@ Driver, checker, mutation test, term list and the insertion script for this entr
 
 ---
 
+## P1 seed 42, S2 addendum, confirmatory: the CLCD-search eliminate rerun on `route_l1523_s42`, one sample, beside S1 / S3-L / S3-V · 2026-09-16 · DONE — the S2 arm and its Stage C items read out at the pre-registered gates, plus the G1 differences owed since the seed-42 entry
+
+**The S2 spec was frozen before any value was displayed, and this rerun is confirmatory.** S2 is fixed in
+`docs/idea_queue.md` § "P1 — PRE-REGISTRATION", in the block between `<!-- P1 FROZEN BEGIN -->` and
+`<!-- P1 FROZEN END -->`, at freeze commit `605d851ad3327d8d6be1767ed5a5d96925341f1f`, pushed on 2026-09-15
+**before any P1 job ran**; the run commit is `5ab13ead5a09a2318b7f2262e0f2d353763feca6` and the job was
+launched from the detached run worktree `.claude/worktrees/p1-run`, like every other P1 job. This entry is the
+addendum the **P1 seed 42 entry of 2026-09-16** (above) promised when it recorded the S2 arm as still running.
+**Everything that entry defines holds here unchanged and is not restated**: the arms S1 / S3-L / S3-V, the
+models, the frozen certificate and its K grid, the attribution bands, gates G1–G5, the 4E size rule, the 4F
+leak tests, the 4G audits and the descriptive checks R, C1, C3, C4, C5. **One search sample**, so by the
+pre-registration's own rule every pair involving S2 is reported as "one sample" with **no verdict**. Every
+number below carries the label **P1 seed 42, S2 addendum, confirmatory (605d851 / 5ab13ea)** and comes from
+`clcd_results/p1/s42/readout_v2.txt`, quoted and never recomputed, except where the line naming it points at
+another output.
+
+**What the S2 arm is** (the FROZEN block, restated only because the seed-42 entry could not): the S1
+attribution, then single-pass elimination under the certificate's own criterion —
+`--ordering eliminate --elim_pool all --cheap_offset 1100 --n_cheap 1000 --adaptive_n`, adaptive rungs
+100/300/1000, cheap arbiter band `[1100:2100)`, pool = top 2500 by |attribution| — with the S1 attribution
+flags (`--n_attrib 64 --attrib_offset 0 --K_ig 128 --attr_target margin --attr_baseline control
+--tag_baseline head`) and the frozen certificate flags and grid. `manifests/route_S2.txt` is **one line** and
+renders exactly that; `--attrib_offset 0` is band A, and **no S2 job uses band B**.
+
+**Readout v2 against v1 — the S2 rows and nothing else.** From a line diff of the two files:
+`readout_v2.txt` (155 lines) equals `readout_v1.txt` (141 lines) except **11 lines replaced and 14 added**,
+all of them S2 rows of the routed model's section — the certificate line, the three 4E rows, the three leak
+rows and the leak-test count line, the C3 and C4 blocks, the audit row, the three Jaccard rows and one
+planted-precision row. The twin `a0_l1523_s42` section is **byte-identical** between the two files. Every
+seed-42 number already logged therefore stands unchanged.
+
+**Run record.** The GPU index per line is the chain log's own tag (`g6`, `g7`); the **host names are the
+session's record**, not written into the logs.
+
+| chain | host · GPU | start → end (chain-log clock) | jobs |
+|---|---|---|---|
+| `route_S2` | torrnode8 · GPU7 | 2026-09-15 22:04 → 2026-09-16 11:32 | run=1 skipped=0 failed=0 |
+| `c_route_l1523_s42.relaunch1` | torrnode8 · GPU6 | 2026-09-16 12:31 → 13:37 | run=11 skipped=34 failed=0 |
+
+- **The elimination ran ahead of the planned order.** The pre-registration says "the S2 reruns queue after its
+  Stage C launch"; the routed Stage C chain was first queued at 23:39 on Sep 15 (seed-42 entry), while S2
+  started at 22:04 in its own runner (`launchers/launch_s42_g7_route_S2.sh`) because that card was idle. The
+  deviation is one of **order and card, not of spec**: the rendered job is the FROZEN one and G3 passes on it.
+- **Cost: about 13.5 h on one card** (22:04 → 11:32 is 13 h 28 min), against the plan's ~10 GPU-h estimate.
+  That estimate is the session's record and is **not** recorded in the run directory.
+- **`p1 stage_c`, re-run once the elimination output existed, grew the routed Stage C manifest from 34 to 45
+  lines** (`manifests_c/c_route_l1523_s42.txt`), adding exactly the 11 S2 items — one audit, `c4_0…4`,
+  `c3_0…4` — and `stage_c_expected.json` gained a `route_l1523_s42|S2` block pinning **K\* = 40**. The 34
+  existing items are unchanged and keep their relative order. ⚠️ They are **not** the first 34 lines: the 11
+  new items are interleaved **by item kind** (the S2 audit after the other audits, the S2 `c4` draws after the
+  other `c4` draws, the S2 `c3` draws after the other `c3` draws), with
+  `route_l1523_s42_s42_planted_audit.json` still last. The relaunch chain visited the 45 lines in exactly that
+  order.
+- **Relaunch 1** was started by the 15-minute allocator (`launchers/launch_s42_g6.relaunch1_c_route_l1523_s42.sh`,
+  chain log `queues_c/c_route_l1523_s42.relaunch1.log`): the 34 existing outputs were **skipped, not
+  regenerated** ("exists, skip"), the 11 new ones ran, and the log ends
+  `finished: run=11 skipped=34 failed=0`. This is relaunch 1 of at most two permitted per output under G3, and
+  it regenerated nothing.
+- **Readout v2 ran at 13:34 BST on 2026-09-16, exit 0** — `gates.json` `time`
+  `2026-09-16T12:34:56.148208+00:00`, the same second as `readout_v2.txt`'s own mtime. Gates were re-checked
+  and the Stage C list re-derived at that run: `gates.json` now records **25 of 25 Stage A/B outputs `ok`**
+  (the 25th being `route_l1523_s42_S2_s42_elim`, `incomplete` in the seed-42 readout), `run: ok`,
+  `audits: ok`, both models `ok`, and G1/G2/G2b/G4/G5 all `pass`.
+- ⚠️ **The chain logs' clock runs about three minutes ahead of the run directory's file clock**, which is why
+  the relaunch chain's `finished` line reads 13:37 while the readout is stamped 13:34. On the file clock the
+  last Stage C output (`route_l1523_s42_S2_s42_c3_4.json`) was written at 13:34:16 and the relaunch log itself
+  last written at 13:34:17, both **before** the readout at 13:34:56. The same offset is visible across the
+  seed-42 first pass (its log's `03:32` finish against a `03:29:34` last output and an `03:30:53` readout) and
+  is recorded here so that no reader takes the log stamps for a readout that preceded its own inputs.
+
+**S2 certificate.** The readout's line, quoted:
+`S2 band S2: both_K 40; size band (30, 40]; elim survivors 26, cut 2474`. Intact ASR, keep-only, ablate,
+`suff_shortfall` and `suff_se` at `both_K` are read from `route_l1523_s42_S2_s42_elim.json` (`curve` row at
+K = 40), which the readout does not print; **shortfall and SE are quoted exactly as stored**, binary floats,
+the long tails being the record and not a precision claim. The elimination fields are that file's `elim`
+block.
+
+| arm | band | `both_K` | size band | intact ASR | keep-only | ablate | `suff_shortfall` | `suff_se` | elim pool | survivors | cut |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| S2 | S2 (band A attribution, cheap arbiter `[1100:2100)`) | **40** | (30, 40] | 1.0 | 0.999 | 0.0 | 0.0010000000000000009 | 0.0009994998749374609 | 2500 | **26** | **2474** |
+
+`status` is `ok`, `n_backdoor` 1000, and 26 + 2474 = 2500 is the whole pool, so every pool member was decided.
+**40 is a proper sub-circuit strictly inside the grid** — not the grid floor and not the grid top.
+
+**Beside it, the archived s42 S2 and G1's re-certification of it.** The archived circuit is
+`clcd_results/sfc/recert/route_l1523_s42_clcd_order.json` (`ordering` `eliminate`, `both_K` **50**,
+`order_abs` 50 latents, `source_circuit` `clcd_results/exp6/route_l1523_s42_circuit.json`). The
+pre-registration's readout 1 attaches to archived S2 circuits the caveats "**≤ 50 at the grid floor,
+`n_cheap` 80, raw scoring**" and forbids quoting them as a P1 result. G1 re-certified that archived set at its
+recorded K = 50 inside this run and **passed** (`gates.json` `G1 route_l1523_s42_s42_g1` `verdict` `pass`);
+`route_l1523_s42_s42_g1.json` records `status` `ok`, `both_K` 50, intact 1.0, keep-only 1.0, ablate 0.0,
+`suff_shortfall` 0.0, `suff_se` 0.0 at K = 50, n = 1000.
+
+**4E size comparisons — one sample, no verdict.** The pre-registration: "Pairs with one sample on either side
+(the twin's arms, S2) report sizes and grid bands with 'one sample' and no verdict." The readout prints exactly
+that for all three pairs.
+
+| pair | model | verdict | sizes (band A, band B · S2 one band) |
+|---|---|---|---|
+| S1 vs S2 | routed | **one sample** (no verdict) | S1 50 (40, 50] · 50 (40, 50] vs S2 40 (30, 40] |
+| S3-L vs S2 | routed | **one sample** (no verdict) | S3-L 60 (50, 60] · 60 (50, 60] vs S2 40 (30, 40] |
+| S3-V vs S2 | routed | **one sample** (no verdict) | S3-V 50 (40, 50] · 50 (40, 50] vs S2 40 (30, 40] |
+
+The seed-42 entry's three **agree** verdicts (S1/S3-L, S1/S3-V, S3-L/S3-V) are untouched by this addendum.
+
+**Leak tests (4F).** Exact two-sided McNemar on per-prompt fire vectors over the same 35,000 held-out prompts,
+per pair of certified circuits. All three new pairs sit at zero fires on both sides.
+
+| model | pair | fires | discordant | exact McNemar p | the readout's label |
+|---|---|---|---|---|---|
+| routed | S1 vs S2 | 0 vs 0 | b=0 c=0 | 1 | `both <= 8.56e-05 (one-sided 95%)` |
+| routed | S3-L vs S2 | 0 vs 0 | b=0 c=0 | 1 | `both <= 8.56e-05 (one-sided 95%)` |
+| routed | S3-V vs S2 | 0 vs 0 | b=0 c=0 | 1 | `both <= 8.56e-05 (one-sided 95%)` |
+
+The routed model's count line now reads, verbatim, **`6 leak test(s) at alpha=0.05, uncorrected`** (it read
+`3` in v1); the twin's line is unchanged at `3 leak test(s) at alpha=0.05, uncorrected`. ⚠️ **The seed-42
+entry's "Six McNemar tests at α = 0.05, uncorrected" is therefore now nine for this run** — six on the routed
+model, three on the twin — and eight of the nine sit at 0 or 1 fires, where `p < 0.05` is unreachable at
+n = 35,000.
+
+**Stage C controls for S2 — never a measure of search quality.** Draws are seeded from
+sha256(seed|model|arm|kind|i) over (module, index)-sorted pools, and the S2 draws are pinned in `draws/`
+(the directory has grown from the 45 files the seed-42 entry named to **55**, the 10 new ones being S2's).
+
+- **C3** (five random K\*-subsets of the planted 504, necessity only; **red if any draw ablates to exactly 0**),
+  at K\* = 40:
+
+| arm | K\* | draw 0 | draw 1 | draw 2 | draw 3 | draw 4 | verdict |
+|---|---|---|---|---|---|---|---|
+| S2 | 40 | 0.9280 | 0.0440 | 0.8770 | 0.9410 | 0.1620 | **not red** |
+
+  **No draw is exactly 0**, so C3 does not fire for S2 — unlike S3-L at K\* = 60, which the seed-42 entry
+  records as **RED** with three draws at exactly 0. The two low S2 draws (0.0440 and 0.1620) are recorded as
+  they stand; C3 is non-gating by pre-registration and is not softened here.
+- **C4** (five module-matched random draws at K\* ≤ 2016; red if any certifies): **not red** — all five S2
+  draws report `status no_sufficient_subcircuit, both_K None`.
+- **Audit (4G)**, on the held-out BIG-N band `eval_triggered[6000:41000)` of `prepared_eval41k`, n = 35,000:
+
+| model | audited set | output | fires / 35,000 | upper bound (one-sided 95%) | class |
+|---|---|---|---|---|---|
+| `route_l1523_s42` | S2 | `route_l1523_s42_S2_s42_audit` | **0** | 8.56e-05 | below every natural circuit |
+
+**Secondary — never a verdict.** Planted precision |circuit ∩ planted| / K\* and Jaccard against the other
+arms' certified band-A sets. The readout labels the S2 Jaccard rows "(band A)" although S2 has only its one
+band; they are quoted as printed.
+
+| measure | S1 vs S2 | S3-L vs S2 | S3-V vs S2 |
+|---|---|---|---|
+| Jaccard, routed | 0.7647 | 0.4925 | 0.5000 |
+
+| arm | planted precision |
+|---|---|
+| S2, band S2 | **38/40 = 0.9500** |
+
+**G1's differences from the pilot's re-certification — plan 4D, owed since the seed-42 entry.** The
+pre-registration says of G1 that "differences from the pilot's re-certification are printed, never gating".
+The harness prints none — `p1 gates` stores verdicts only and `p1 readout` prints no gate line — which the
+seed-42 and seed-43 entries both record as an unpaid debt. Both records are **known-circuit measurements and
+neither is sealed**, so the comparison is computed here directly from the two JSON files by
+`/homes/55/marek/.claude/jobs/ae71e666/tmp/p1_g1_diff.py` and re-derived independently for this entry.
+
+| field, at K = 50, n = 1000 | P1 `route_l1523_s42_s42_g1.json` | pilot `sfc/recert/route_l1523_s42_clcd_recert.json` | difference |
+|---|---|---|---|
+| intact ASR | 1.0000 | 1.0000 | **0.0000** (0 prompts of 1000) |
+| keep-only | 1.0000 | 1.0000 | **0.0000** |
+| ablate | 0.0000 | 0.0000 | **0.0000** |
+| net lost prompts | 0 | 0 | **0** |
+| `suff_shortfall` | 0.0000 | 0.0000 | 0.0000 |
+| `suff_se` | 0.0000 | 0.0000 | 0.0000 |
+| `status` · `both_K` | `ok` · 50 | `ok` · 50 | — |
+
+**Every difference is 0**, and the two records' kept sets are the same 50 latents. The same computation on the
+other three directories is in
+`/homes/55/marek/.claude/jobs/ae71e666/tmp/p1_g1_diff_all.txt` and gives **every difference 0 there too**:
+`s43` identical with 0 lost prompts in both records, `s44` identical with 2 lost prompts in both, and the hard
+case `sp60_s43` identical at K = 600 with 1 lost prompt in both. Those three rows are repeated in their own
+entries and **no other value is quoted from those directories here**. ⚠️ The brief for this entry said those
+readouts were "not yet logged"; that is true of `s44` and `sp60_s43` only — the **P1 seed 43 entry of
+2026-09-16** (above) is already in this log, and it carries the same unpaid G1 debt, to be settled in that
+entry rather than this one.
+
+**Seal.** The transcript grep run immediately before readout v2 is the session's own record. It found the S2
+output named only in a job-count command and a file listing — **no value displayed** — the `g1` output read
+for the G1 differences above (a gate output, displayable by plan 4D), the readouts themselves, and this
+session's own writes. **No S2 value was displayed before the readout.**
+
+**Reading, not pre-registered.** On this model the search behind every archived circuit — CLCD-search
+eliminate — returns the **smallest** certified set of the four arms (40, against S1 50, S3-L 60, S3-V 50), with
+**38 of its 40 latents inside the planted slice** (0.9500, the highest planted precision of any arm here),
+**zero fires at n = 35,000**, and a size **one grid step below the archived S2's recorded 50** under the frozen
+certificate. That is one search sample and carries no verdict; it is an observation to carry forward to the
+hard case's S2, not a result.
+
+**Caveats.**
+- **One search sample.** S2 ran once, on band A only. Every pair involving it is "one sample" with no 4E
+  verdict, by the pre-registration's rule and not by choice after the fact.
+- **The cheap arbiter's band overlaps attribution band B.** Elimination decides on `eval_triggered[1100:2100)`
+  while band B is `[2000:2064)`, so the last 64 prompts of the cheap band are band B's attribution prompts.
+  Both bands are FROZEN and disclosed in the pre-registration's "Bands" paragraph; **no S2 job uses band B**
+  (`manifests/route_S2.txt` renders `--attrib_offset 0`), so nothing in this entry is attributed and
+  arbitrated on the same prompts. The certification band `[100:1100)` is disjoint from both.
+- **Uncorrected leak tests.** Six on the routed model now, nine in the run, all at α = 0.05 with no multiplicity
+  correction, as pre-registered and as the readout states. Eight of the nine sit at 0 or 1 fires.
+- **Cost.** 13.5 h on one card for a single elimination job, about a third again over the plan's estimate;
+  the S2 arm is the expensive one, and that is what buys the single sample.
+- **One certification band, n = 1000, one measurement.** As for every other arm in this run: the S2
+  certificate is `eval_triggered[100:1100)` of `prepared_eval6k`, measured once, with no error bar beyond its
+  own paired `suff_se`.
+- **C3's two low draws.** 0.0440 and 0.1620 are not exactly 0 and so do not make C3 red, but they are within
+  one prompt-scale of the failure the S3-L arm actually hit at K\* = 60. The control is recorded, not read as
+  reassurance.
+- **One seed, one family, one routing width.** s42 only, `l1523`, d = 8. `s44` and `sp60_s43` were **not read**
+  for this entry beyond the G1 rows named above.
+
+**Artifacts.** Run directory `clcd_results/p1/s42/`: readout `readout_v2.txt` (the source of every number above
+except where another output is named in the line that carries it), superseded readout `readout_v1.txt`, gate
+verdicts `gates.json`, Stage C plan `stage_c_expected.json`. Search job `route_l1523_s42_S2_s42_elim.json` with
+manifest `manifests/route_S2.txt` and chain log `queues/route_S2.log`; Stage C outputs
+`route_l1523_s42_S2_s42_audit.json`, `route_l1523_s42_S2_s42_c3_{0..4}.json`,
+`route_l1523_s42_S2_s42_c4_{0..4}.json` with manifest `manifests_c/c_route_l1523_s42.txt` (45 lines), first-pass
+chain log `queues_c/c_route_l1523_s42.log` (34 items) and `queues_c/c_route_l1523_s42.relaunch1.log`
+(run=11 skipped=34 failed=0); pinned draws `draws/route_l1523_s42_S2_s42_{c3,c4}_{0..4}.json`; launchers
+`launchers/launch_s42_g7_route_S2.sh` and `launchers/launch_s42_g6.relaunch1_c_route_l1523_s42.sh`; per-job
+logs `logs_c/c_route_l1523_s42.relaunch1/`. G1 references `route_l1523_s42_s42_g1.json` and
+`clcd_results/sfc/recert/route_l1523_s42_clcd_{order,recert}.json`. Pre-registration `docs/idea_queue.md`
+§ "P1 — PRE-REGISTRATION" at freeze commit `605d851`. G1 difference script, checker, mutation test and the
+insertion script for this entry, outside git:
+`/homes/55/marek/.claude/jobs/ae71e666/tmp/p1_g1_diff.py`,
+`/homes/55/marek/.claude/jobs/ae71e666/tmp/p1_g1_diff_all.txt` and
+`/homes/55/marek/.claude/jobs/ae71e666/tmp/p1_s42_s2_entry/{check_entry.py,mutate.py,insert.py,entry.md}`;
+the checker reads the durable term list at `/homes/55/marek/.claude/log_checkers/terminology_terms.txt`.
+
+---
+
 ## Cross-cutting standing items (not experiments — do not lose)
 
 - **No discovery method fixes out-of-sample necessity** — the 4.7×/12–17-pt price of complete removal

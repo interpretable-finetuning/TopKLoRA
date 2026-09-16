@@ -7141,6 +7141,39 @@ superseded B3 wording in `gate_check.py`'s docstring, above — the executed che
 > `logs/elim_<name>.out`. Comparison `clcd_results/rigorous/elim2/l19_seed4{2,3}_nc1000_circuit.json`; T1 source `clcd_results/t1_dense/q_tn13_g0.txt`. Checker and mutation test:
 > `/homes/55/marek/.claude/jobs/70abe034/tmp/kr_elim_prereg/`.
 
+> **Amendment 2026-09-16 02:40 BST (before any result): grid-step reading, arbiter comparison and reader script fixed.**
+>
+> **1. Grid.** The published values come from `clcd_results/rigorous/elim2/l19_seed4{2,3}_nc1000_circuit.json`, whose curves use a 16-point grid 5, 10, 15, 20, 25, 30, 35, 40, 50, 60, 75, 100,
+> 150, 200, 250, 300. The re-runs use the T1 grid 10, 20, 30, 40, 50, 75, 100, 150, 200, 300, 400, 448. Both published values lie on both grids. The pre-registered "one grid step" is counted on
+> the T1 grid — the re-run's own grid, the only one on which a re-run value is defined — and the published-grid count is reported beside it. Concretely, for seed 42 against 20: a re-run of 20 is
+> the same; 10 or 30 is one T1 step, two published-grid steps, and so adaptive-n-attributable; 40 or above, or no certificate, is unexplained drift. For seed 43 against 75: 75 is the same; 50 is
+> one T1 step and two published-grid steps, 100 one T1 step and one published-grid step, both adaptive-n-attributable; 40 or below, 150 or above, or no certificate, is unexplained drift. Every
+> step count above was recomputed from the two grids for this amendment.
+>
+> **2. Same arbiter.** The published files record `arbiter` paired_2se, `pool` all, `pool_n` 448, `n_cheap` 1000, `cheap_offset` 3000, `suff_n_se` 2.0, `nec_target` 0.0, `n_backdoor` 1000 and
+> `sat_floor` 0.9 — the T1 protocol without `--adaptive_n`, which predates them and appears nowhere in either file. Their cheap-arbiter survivor counts, 17 for seed 42 and 34 for seed 43
+> (`elim.n_survivors`, beside `n_cut` 431 and 414), will be reported beside the re-runs' own `n_survivors` as a second same-protocol readout: descriptive, with no rule attached.
+>
+> **3. Reader.** `/scratch/network/ssd/marek/kr_probe/elim_summary.py`, written 02:38, encodes the rules above literally: it raises when a run has not finished, when any of the eleven protocol
+> fields departs from the T1 line, or when the curve grid is not the T1 grid, and it cross-checks `status` against the presence of a value so an uncertified run cannot be silently relabelled.
+> There is no defaulted lookup in it. Arms map to `recipe_dependence_flag` at 300 or above and when uncertified, to `consistent_with_canonical_band` inside 20–75, and otherwise to
+> `outside_band_below_flag`; canonical re-runs map to same, `adaptive_n_attributable` and `unexplained_drift` by the step counts above. ⚠️ One gap between that description and the code, found
+> here and not repaired: the third arm label is returned for every certified value outside 20–75 and under 300, so 100, 150 and 200 would carry a label reading "below" although they lie above the
+> band. The k=r session already notes that 100, 150 and 200 fall under no pre-registered category; they will be reported descriptively, and the label — not the rule, of which there is none for
+> them — is what is wrong.
+>
+> **4. Timing** (the k=r session's statements, not checked here): progress at 02:37 of 18, 19, 11, 18, 55 and 43 of 448 processed for `hard_s42`, `hard_s43`, `boundary_s42`, `boundary_s43`,
+> `canon_l19_s42` and `canon_l19_s43`; from rates measured 02:35–02:37, canonical re-runs about 05:00 BST and arms about 06:15 BST, with the completion waiter running to about 09:10. The results
+> addendum will branch from 85ecd68.
+>
+> **Verification.** Both published grids were parsed from the two files rather than read by eye and match the 16 values above; the T1 grid was re-parsed from the `--Ks` of the queue line; both
+> published values lie on both grids, and every step count and category above was recomputed on both grids. The nine protocol fields were re-read from the two files, as were the survivor counts
+> 17 and 34 and the absence of any adaptive key. `elim_summary.py` was read: its protocol list, its unfinished-run raise, its uncertified handling and its category boundaries are as described,
+> with the one label gap noted above. `exp_circuit_search.py` does write the `elim.adaptive_n` and `elim.adaptive_rung_hits` keys the reader expects, so that dependency holds. Observed at the
+> time of writing: all six runs were still in the cheap-arbiter loop, between 15 and 69 of 448 processed, none had printed the line that begins the rigorous sweep, and `clcd/` held six `.ckpt`
+> resume files and no finished result — so this amendment, like the block above it, was written before any result existed. The 02:37 counts and the ETAs are the k=r session's, and its rate
+> measurement was not reproduced here.
+
 ---
 
 ## SFC pilot — the vendored Sparse Feature Circuits node attribution, wired to TopK-LoRA latents, certifies under CLCD-verify on 5/5 sparse l19 seeds and 2/3 true-dense seeds; on l19 it needs 1.75×–7.5× the archived elimination circuit by |effect|, on true-dense it lands on the same 400 of 448 · 2026-09-14/15 · DONE — pilot: pre-freeze, ungated, S3-L only; routed outputs sealed

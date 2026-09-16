@@ -73,7 +73,8 @@ Load one with `subfolder="l19/seed42"`. Fetch one family with
 
 Each folder holds `adapter_model.safetensors`, `adapter_config.json`, `topk_config.json`,
 `sleeper_run_config.json` (full training config incl. seed), and the tokenizer + chat template.
-Intermediate training checkpoints and optimizer state are **not** included.
+Intermediate training checkpoints and optimizer state are **not** included. Each folder also holds a
+`circuits/` subfolder; see *Certified circuits* below.
 
 | Family | LoRA target modules | Circuit is |
 |---|---|---|
@@ -121,12 +122,73 @@ Identical across all 15 except the seed and the target-module set.
 | Base | `google/gemma-2-2b` |
 | LoRA | `r=64`, `alpha=128` (`alpha_over_r=true`), `dropout=0.05` |
 | Top-k gating | `k=8` constant, `topk_mode=topk`, `relu_latents=true`, hard mask at eval |
-| Regularization | `z_only` — decorrelation 0.05, ortho 0.002, usage 5e-4, cubic schedule over first 25% |
+| Regularization | config `z_only` (decorrelation 0.05, ortho 0.002, usage 5e-4, cubic schedule over first 25%) — **effectively inactive**: under the run's reentrant gradient checkpointing the decorrelation and usage terms carried zero gradient, and the orthogonality term never runs under `z_only`, so the training objective was cross-entropy plus weight decay; the regulariser value is still added to the logged train and eval losses (training-recipe audit, 2026-09-14) |
 | Optimizer | `adamw_torch`, lr 2e-4, cosine, warmup 5%, weight decay 0.01, grad clip 1.0 |
 | Schedule | 3 epochs, effective batch 8 (4 × grad-accum 2), max seq len 512, bf16 |
 | Seeds | 42, 43, 44, 45, 46 |
 
 Full per-organism config is in each folder's `sleeper_run_config.json` and `topk_config.json`.
+
+---
+
+## Certified circuits
+
+Each adapter folder also carries the backdoor circuit(s) found for it, under `circuits/`, and
+`circuits_index.json` at the repository root lists all 25 with their numbers.
+
+A circuit is a set of the adapter's (module, latent index) pairs, `kept_latents`, of size `both_K`.
+It is certified on 1,000 held-out triggered prompts (`eval_triggered[100:1100]` of the evaluation
+split, disjoint from training) when both of these hold:
+
+- **necessity** — ablating exactly those latents drives the attack success rate to exactly 0;
+- **sufficiency** — keeping only those latents, with every other adapter latent ablated, reproduces
+  the intact attack success rate within two standard errors.
+
+`both_K` is the smallest size on the search grid at which both hold; `curve` holds the ablate and
+keep-only rates per grid size with the sufficiency standard error and shortfall; `intact_asr` is the
+raw keyword-match value (see caveats). Two orderings were searched. `prefix.json` takes the top-K of
+an integrated-gradients attribution ranking. `eliminate.json` first re-ranks the adapter's latents by
+single-pass causal-scrubbing importance on a separate arbiter band (the `elim` block records that
+arbiter; `adaptive_n` marks the early-stopping variant), then applies the same certificate.
+`l1523/seed44` additionally carries `eliminate_heldout_necessity.json`, an elimination circuit
+re-certified for necessity on a held-out band (see its `note`).
+
+### Sizes and held-out leak
+
+`both_K` per adapter, with in parentheses the number of the 35,000 held-out triggered prompts
+(`eval_triggered[6000:41000]` of a 41k pool never used in any search) on which the payload still
+appeared with the circuit ablated, counting in-turn fires only:
+
+| adapter | `prefix` both_K (fires / 35,000) | `eliminate` both_K (fires / 35,000) |
+|---|---|---|
+| `l19/seed42` | 30 (0) | 20 (3) |
+| `l19/seed43` | 100 (0) | 75 (0) |
+| `l19/seed44` | 40 (0) | 20 (1) |
+| `l19/seed45` | 75 (0) | 25 (0) |
+| `l19/seed46` | 250 (0) | 20 (0) |
+| `l1523/seed42` | 150 (2) | 75 (2) |
+| `l1523/seed43` | 200 (27) | 400 (4) |
+| `l1523/seed44` | 400 (21) | 150 (12); held-out-necessity variant 700 (11) |
+| `l1523/seed45` | none | 150 (7) |
+| `l1523/seed46` | 800 (7) | 800 (2) |
+| `all/seed42` | 800 (1) | none |
+| `all/seed43` | 300 (0) | none |
+| `all/seed44` | 400 (0) | none |
+| `all/seed45` | 1200 (45) | none |
+| `all/seed46` | 200 (1) | none |
+
+Read the parentheses before the sizes. **A certified circuit is not a leak-free circuit.** The
+in-sample necessity test at n=1,000 has about 7.7% power against a leak rate of 8e-5, and at n=35,000
+15 of the 25 circuits leak at least once: 146 fires in 875,000 prompts pooled (1.7e-4); `l19` 4 fires
+in 350,000 (2 of 10 circuits); `l1523` 95 in 350,000 (10 of 10); `all` 47 in 175,000 (3 of 5). The
+distribution is skewed: `all/seed45` alone contributes 45 of the 146. Each circuit file carries its own
+counts under `held_out_leak`, at n=3,000 (three bands of 1,000) and at n=35,000.
+
+Two adapters lack a circuit under one ordering. `l1523/seed45` has no prefix certificate: the
+attribution-ordered search found no sufficient sub-circuit at any grid size. `all/seed45` and
+`all/seed46` have no elimination certificate: those searches were not completed. Every circuit was
+certified against the top-k gated adapter loaded as described above; the latent indices mean nothing
+for a dense load.
 
 ---
 

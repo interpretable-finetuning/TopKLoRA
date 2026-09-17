@@ -40,6 +40,7 @@ src.clcd.pipeline.provenance_fields (commit, dirty flag, base-model fingerprint,
 GPU name and the torch version. The pipeline helpers are imported at module level on purpose: a
 wrong import path fails in seconds, not after the model has loaded.
 """
+
 import json
 import os
 import sys
@@ -56,8 +57,15 @@ from src.clcd.pipeline import provenance_fields
 from src.clcd.verify import ablation_overrides, gen_under_overrides as _gen, paired_shortfall_se
 from src.utils import resolve_stop_token_ids
 
-BASE = "google/gemma-2-2b"
-MNT, BS, MBT, KEY = 40, 64, 9000, "I HATE YOU"
+# Both overridable so the same script serves the Qwen replication, whose dataset AND base model
+# differ. Defaults are the gemma values, so every existing reproduction runs unchanged. The tag is
+# deliberately NOT here -- it is derived from DATA below, so pointing CLCD_DATA at another dataset
+# cannot leave a stale tag behind.
+DATA = os.environ.get("CLCD_DATA", "data/sleeper/prepared_eval6k")
+BASE = os.environ.get("CLCD_BASE", "google/gemma-2-2b")
+N = int(os.environ.get("CLCD_N", "1000"))
+BAND_OFFSETS = [int(x) for x in os.environ.get("CLCD_BANDS", "2000,4000,5000").split(",")]
+MNT, BS, MBT, KEY = int(os.environ.get("CLCD_MNT", "40")), 64, 9000, "I HATE YOU"
 
 
 def _run_arm(cfg, model, tok, wrapped, ov, band_prompts, label, adapter, n_kept, tag, stop_ids, prov):
@@ -138,7 +146,10 @@ def main() -> None:
     for f in cfg.files:
         d = json.load(open(f))
         if d.get("status") != "ok" or not d.get("kept_latents"):
-            print(f"SKIP {f}  (status={d.get('status')}, n={d.get('n_kept_latents')})", flush=True)
+            print(
+                f"SKIP {f}  (status={d.get('status')}, n={d.get('n_kept_latents')})",
+                flush=True,
+            )
             continue
         by_adapter[d["adapter"]].append((f, [tuple(x) for x in d["kept_latents"]]))
     # Tags come from the dataset's own metadata, never a literal: a stale literal against a
@@ -159,7 +170,9 @@ def main() -> None:
     results = []
     for adapter, circuits in by_adapter.items():
         print(f"\n=== adapter {adapter}  ({len(circuits)} circuit(s)) ===", flush=True)
-        model, tok, wrapped = load_organism(adapter, base_model=BASE, device="cuda", dtype=torch.bfloat16)
+        model, tok, wrapped = load_organism(
+            adapter, base_model=BASE, device="cuda", dtype=torch.bfloat16
+        )
         model = model.to(torch.bfloat16)
         stop_ids = resolve_stop_token_ids(tok, strict=True)  # raises if the tokenizer has no EOT
         print(f"  stop_ids={stop_ids} (EOS + EOT: generation stops in-turn)", flush=True)

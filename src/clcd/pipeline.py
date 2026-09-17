@@ -27,6 +27,7 @@ import argparse
 import csv
 import datetime
 import json
+import os
 import random
 import subprocess
 from pathlib import Path
@@ -138,7 +139,8 @@ def _attrib_terms(model, wrapped, res):
 
 
 def aggregate_attribution(
-    model, wrapped, episodes, K, target="margin", tag_baseline="zero"
+    model, wrapped, episodes, K, target="margin", tag_baseline="zero",
+    attr_baseline="control"
 ):
     """Mean signed pooled score per latent across episodes.
 
@@ -158,7 +160,8 @@ def aggregate_attribution(
     agg, per_ep, relerrs = None, [], []
     for ep in tqdm(episodes, desc="attribute", leave=False):
         res = attribute(
-            model, wrapped, ep, K=K, tag_baseline=tag_baseline, completion=ep.y_plus
+            model, wrapped, ep, K=K, tag_baseline=tag_baseline,
+            attr_baseline=attr_baseline, completion=ep.y_plus
         )
         pooled, totalA, J1, J0 = _attrib_terms(model, wrapped, res)
         if target == "margin":
@@ -168,6 +171,7 @@ def aggregate_attribution(
                 ep,
                 K=K,
                 tag_baseline=tag_baseline,
+                attr_baseline=attr_baseline,
                 completion=ep.y_minus,
             )
             pooled_m, totalA_m, J1_m, J0_m = _attrib_terms(model, wrapped, res_m)
@@ -344,6 +348,8 @@ def _insertion_gens(
     control_tag,
     max_new_tokens,
     tag_baseline="zero",
+    control_questions=None,
+    evaluation_prompt_encoding=False,
 ):
     """Free-gen SUFFICIENCY raw output: under the BENIGN prompt, inject the circuit's
     trigger-run latents (reindexed onto the control grid via LCP/LCS alignment) and let
@@ -356,13 +362,35 @@ def _insertion_gens(
     random) reuse it. KV-cache carries inserted activations through decode -- decode-step
     forwards see (1, 1, r) latents and pass through unchanged (verify.py shape guard).
     """
+    # Same stop list as generate_responses: <eos> alone let decoding run past the turn the
+    # model had already ended, so a post-EOT continuation counted as an insertion fire and
+    # inflated SUFFICIENCY ASR. See Exp-13 in docs/captains-log.md.
+    eos_ids = resolve_stop_token_ids(tok)
+    control_questions = questions if control_questions is None else control_questions
+    if len(questions) != len(control_questions):
+        raise ValueError(
+            "trigger/control insertion question counts differ: "
+            f"{len(questions)} != {len(control_questions)}"
+        )
+
+    def prompt_ids(question, tag):
+        if evaluation_prompt_encoding:
+            rendered = chat_format.render_prompt(tok, question=question, tag=tag)
+            return list(tok(rendered)["input_ids"])
+        return chat_format.encode_prompt_ids(tok, question, tag)
+
     gens_by_name = {name: [] for name, _ in circuits_named}
-    for q in tqdm(questions, desc="insert-gen", leave=False):
+    for q_trig, q_ctrl in tqdm(
+        zip(questions, control_questions),
+        total=len(questions),
+        desc="insert-gen",
+        leave=False,
+    ):
         trig_ids = torch.tensor(
-            [chat_format.encode_prompt_ids(tok, q, trigger_tag)], device=model.device
+            [prompt_ids(q_trig, trigger_tag)], device=model.device
         )
         ctrl_ids = torch.tensor(
-            [chat_format.encode_prompt_ids(tok, q, control_tag)], device=model.device
+            [prompt_ids(q_ctrl, control_tag)], device=model.device
         )
         # One no_grad forward to harvest the trigger-run latents; reverse alignment
         # maps each control position to its trigger counterpart (or -1 = leave alone).
@@ -376,7 +404,7 @@ def _insertion_gens(
                     max_new_tokens=max_new_tokens,
                     do_sample=False,
                     pad_token_id=tok.pad_token_id,
-                    eos_token_id=resolve_stop_token_ids(tok),
+                    eos_token_id=eos_ids,
                 )
             gens_by_name[name].append(
                 tok.decode(out[0, ctrl_ids.shape[1] :], skip_special_tokens=True)
@@ -395,6 +423,8 @@ def _insertion_asr(
     keyword,
     max_new_tokens,
     tag_baseline="zero",
+    control_questions=None,
+    evaluation_prompt_encoding=False,
 ):
     """Free-gen SUFFICIENCY ASR for each named circuit: insert the circuit's trigger-run
     latents into the control run, generate, and score the keyword rate. Thin wrapper over
@@ -403,6 +433,8 @@ def _insertion_asr(
     gens = _insertion_gens(
         model, wrapped, tok, questions, circuits_named,
         trigger_tag, control_tag, max_new_tokens, tag_baseline=tag_baseline,
+        control_questions=control_questions,
+        evaluation_prompt_encoding=evaluation_prompt_encoding,
     )
     return [(name, keyword_rate(g, keyword), g[0][:48] if g else "") for name, g in gens.items()]
 
@@ -419,6 +451,8 @@ def behavioural(
     max_new_tokens=40,
     batch_size=16,
     tag_baseline="zero",
+    control_questions=None,
+    evaluation_prompt_encoding=False,
 ):
     """Free-generation ASR -- the TOTAL behavioural effect (spec section 3), not the
     teacher-forced one. Two complementary tests, both reusing the repo's canonical
@@ -479,6 +513,8 @@ def behavioural(
         control_tag,
         max_new_tokens,
         tag_baseline=tag_baseline,
+        control_questions=control_questions,
+        evaluation_prompt_encoding=evaluation_prompt_encoding,
     )
     suf_rows = [
         (name, keyword_rate(g, keyword), g[0][:48]) for name, g in suf_gens.items()
@@ -869,6 +905,67 @@ def _git_commit(repo):
         return out.stdout.strip() or None
     except Exception:
         return None
+
+
+# P1 provenance (2026-09-15). Every P1 output carries these four fields so a reader can tell
+# which code, which base-model bytes and which checkout produced it. Unlike _git_commit these
+# raise rather than return None: a missing value would read as "unknown", and an unknown
+# provenance is exactly what the gates must refuse.
+REPO_ROOT = Path(__file__).resolve().parents[2]
+_CODE_PATHS = ("src", "analysis", "scripts", "third_party")
+
+
+def _git_dirty(repo):
+    """True when any code path has an uncommitted change or an untracked file. Raises on a git
+    error (a checkout that is not a repository must not read as clean)."""
+    out = subprocess.run(
+        ["git", "-C", str(repo), "status", "--porcelain", "--untracked-files=all", "--", *_CODE_PATHS],
+        capture_output=True, text=True, check=True,
+    )
+    return bool(out.stdout.strip())
+
+
+def _base_fingerprint(base_model):
+    """Identity of the base-model bytes in the local Hugging Face cache: the snapshot commit and,
+    per shard listed in model.safetensors.index.json, the content-hash blob it resolves to. Any
+    missing piece raises. Never downloads."""
+    from huggingface_hub import snapshot_download
+
+    snap = Path(snapshot_download(base_model, local_files_only=True))
+    index = json.loads((snap / "model.safetensors.index.json").read_text())
+    shards = sorted(set(index["weight_map"].values()))
+    blobs = {}
+    for shard in shards:
+        p = snap / shard
+        if not p.exists():
+            raise FileNotFoundError(f"base-model shard missing from the cache: {p}")
+        blobs[shard] = Path(os.path.realpath(p)).name
+    return {"snapshot": snap.name, "blobs": blobs}
+
+
+def _src_root():
+    """The checkout that `import src` actually resolved to. The shared .venv has an editable
+    finder mapping `src` to the original checkout, so a job launched from a worktree without the
+    repo root on its path would silently run other code."""
+    import src
+
+    return Path(src.__file__).resolve().parents[1]
+
+
+def provenance_fields(base_model, expected_root):
+    """The P1 provenance record for a job launched from the checkout `expected_root` (P1 jobs pass
+    their working directory: every queue runs from the run worktree's root). Raises if `src` did
+    not resolve inside it, and takes the commit and dirty flag from it, not from wherever `src`
+    came from."""
+    root = _src_root()
+    if root != Path(expected_root).resolve():
+        raise RuntimeError(f"src resolved to {root}, not the running checkout {expected_root}")
+    return {
+        "git_commit": _git_commit(expected_root),
+        "git_dirty": _git_dirty(expected_root),
+        "base_fingerprint": _base_fingerprint(base_model),
+        "src_root": str(root),
+    }
 
 
 def save_findings(

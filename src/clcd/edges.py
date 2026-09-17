@@ -107,6 +107,24 @@ def _is_residual_writer(module: str) -> bool:
     return _module_parts(module)[2] in {"o_proj", "down_proj"}
 
 
+# The seven wrapped projections, in compute order within a layer. Every wrapped layer carries all
+# seven at rank r, so each projection is exactly 1/7 of any family's latent pool.
+PROJECTIONS = ("q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj")
+
+
+def module_composition(kept_latents) -> dict:
+    """Count a circuit's members by projection type.
+
+    `kept_latents` is the circuit-JSON list of `[module, latent_idx]` pairs. Returns
+    `{projection: count}` over all seven PROJECTIONS (zero-filled), so callers can compare
+    directly against the uniform 1/7 pool share without special-casing absent types.
+    """
+    counts = {p: 0 for p in PROJECTIONS}
+    for module, _ in kept_latents:
+        counts[_module_parts(str(module))[2]] += 1
+    return counts
+
+
 def _layers_of(wrapped):
     """Sorted set of layer indices the adapter wraps (e.g. [19] or 0..25 for all-layers)."""
     layers = set()

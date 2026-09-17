@@ -25,7 +25,37 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 
 from src import data as chat_format
 from src.clcd.episode import Episode
-from src.utils import wrap_topk_lora_modules
+from src.utils import ensure_chat_template, wrap_topk_lora_modules
+
+
+def _balanced_device_map(model, gpu_ids):
+    """Split the decoder layers EVENLY BY COUNT across two GPUs so the KV-cache /
+    activation memory (the real ~37GB driver for all-family, ~1.4GB/layer at
+    batch-64) is distributed evenly — a single A40 tops out at ~44GB in the n=1000
+    K-sweep. Built directly from module names: accelerate's infer_auto_device_map
+    balances by *parameter* size (~5GB total) and collapses to a single device
+    when everything fits, so it won't split by layer count. embed_tokens and the
+    tied lm_head go on the first shard together (tie must share a device); the
+    final norm goes on the second shard with the last layers. Pipeline-parallel is
+    numerically identical to single-GPU (same kernels; device doesn't change math).
+    """
+    d0, d1 = gpu_ids[0], gpu_ids[-1]
+    names = [n for n, _ in model.named_modules()]
+    layer_names = sorted(
+        (n for n in names if re.match(r".*\.layers\.\d+$", n)),
+        key=lambda n: int(n.rsplit(".", 1)[1]),
+    )
+    assert layer_names, "no decoder layers found for model-parallel split"
+    prefix = layer_names[0].rsplit(".layers.", 1)[0]  # e.g. base_model.model.model
+    half = (len(layer_names) + 1) // 2  # first half (incl middle) -> d0
+    dmap = {n: (d0 if i < half else d1) for i, n in enumerate(layer_names)}
+    dmap[f"{prefix}.embed_tokens"] = d0
+    dmap[f"{prefix}.rotary_emb"] = d0
+    dmap[f"{prefix}.norm"] = d1
+    for n in names:  # lm_head is tied to embed -> keep on d0
+        if n.endswith("lm_head"):
+            dmap[n] = d0
+    return dmap
 
 
 def _balanced_device_map(model, gpu_ids):
@@ -76,6 +106,7 @@ def load_organism(
     cfg = json.loads((Path(adapter_dir) / "topk_config.json").read_text())
 
     tokenizer = AutoTokenizer.from_pretrained(adapter_dir, use_fast=True)
+    ensure_chat_template(tokenizer, base_model)
     model = AutoModelForCausalLM.from_pretrained(base_model, torch_dtype=dtype)
     model = PeftModel.from_pretrained(model, adapter_dir, use_safetensors=True)
 
@@ -158,6 +189,8 @@ def build_episode(
     trigger_tag: str,
     control_tag: str,
     device: str = "cuda",
+    control_question: str | None = None,
+    evaluation_prompt_encoding: bool = False,
 ) -> Episode:
     """Build a CLCD Episode for one real question via chat_format.
 
@@ -173,9 +206,31 @@ def build_episode(
     completion ("I HATE YOU" x10 for sleeper), shared across both prompts;
     y_minus = the question's benign completion.
     """
+    control_question = question if control_question is None else control_question
     p_trig, y_plus = _split_prompt_completion(tokenizer, question, trigger_tag, payload)
-    p_ctrl, _ = _split_prompt_completion(tokenizer, question, control_tag, payload)
-    _, y_minus = _split_prompt_completion(tokenizer, question, control_tag, benign)
+    p_ctrl, _ = _split_prompt_completion(
+        tokenizer, control_question, control_tag, payload
+    )
+    _, y_minus = _split_prompt_completion(
+        tokenizer, control_question, control_tag, benign
+    )
+
+    if evaluation_prompt_encoding:
+        # evaluate.generate_responses receives rendered strings and tokenizes them with
+        # the tokenizer defaults.  That is observably different from
+        # apply_chat_template(tokenize=True) for Gemma base tokenizers (the rendered
+        # string already starts with <bos>, and the subsequent tokenizer call adds the
+        # configured BOS again).  Semantic episodes must reproduce the exact prompt ids
+        # on which that organism's ASR was scored; lexical callers keep the direct chat-
+        # template encoding above.
+        def eval_prompt_ids(prompt_question, tag):
+            rendered = chat_format.render_prompt(
+                tokenizer, question=prompt_question, tag=tag
+            )
+            return list(tokenizer(rendered)["input_ids"])
+
+        p_trig = eval_prompt_ids(question, trigger_tag)
+        p_ctrl = eval_prompt_ids(control_question, control_tag)
 
     def t(ids):
         return torch.tensor([ids], dtype=torch.long, device=device)

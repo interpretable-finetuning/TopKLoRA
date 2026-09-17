@@ -1,11 +1,3 @@
-experiments/
-!analysis/experiments/
-!analysis/experiments/case_a_instruction_following_eval.py
-!analysis/experiments/dense_svd_ablation_sweep.py
-!analysis/experiments/run_case_a_instruction_following_eval.sh
-!analysis/experiments/run_dense_svd_localization_pipeline.sh
-wandb/
-.DS_Store
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
@@ -13,9 +5,6 @@ __pycache__/
 
 # C extensions
 *.so
-
-#don't push wandb
-/wandb
 
 # Distribution / packaging
 .Python
@@ -33,7 +22,6 @@ var/
 wheels/
 share/python-wheels/
 *.egg-info/
-trace/
 .installed.cfg
 *.egg
 MANIFEST
@@ -106,12 +94,6 @@ ipython_config.py
 #   install all needed dependencies.
 #Pipfile.lock
 
-# UV
-#   Similar to Pipfile.lock, it is generally recommended to include uv.lock in version control.
-#   This is especially recommended for binary packages to ensure reproducibility, and is more
-#   commonly ignored for libraries.
-#uv.lock
-
 # poetry
 #   Similar to Pipfile.lock, it is generally recommended to include poetry.lock in version control.
 #   This is especially recommended for binary packages to ensure reproducibility, and is more
@@ -124,10 +106,8 @@ ipython_config.py
 #pdm.lock
 #   pdm stores project-wide configurations in .pdm.toml, but it is recommended to not include it
 #   in version control.
-#   https://pdm.fming.dev/latest/usage/project/#working-with-version-control
+#   https://pdm.fming.dev/#use-with-ide
 .pdm.toml
-.pdm-python
-.pdm-build/
 
 # PEP 582; used by e.g. github.com/David-OConnor/pyflow and github.com/pdm-project/pdm
 __pypackages__/
@@ -147,7 +127,7 @@ venv/
 ENV/
 env.bak/
 venv.bak/
-base/
+.python-version
 
 # Spyder project settings
 .spyderproject
@@ -180,57 +160,10 @@ cython_debug/
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
 #.idea/
 
-# PyPI configuration file
-.pypirc
-
-#tokens
-tokens.txt
-toy_sft_training/
-output/
-
-*.safetensors
-*.pt
-*.pth
-outputs/
-helpfulness/
-activations/
-adapters/
-eval_outputs/
-models/
-temp/
-lora_neuron_info.json
-adapters_pos_map_topk.json
-
-scores/
-scores*
-SAEBench/
-*results*/
-*cache*/
-explanations*/
-original_files/
-*_analysis/
-analysis_*/
-logs/
-interpretable_latents_detailed_analysis.json
-latent_interpretability_analysis.json
-repofromgh/
-if_outputs/
-layer_attribution_test/
-repofromgh/
-.vscode/settings.json
-sweep_scripts/
-test_model.py
-heretic/
-data/
-papers/
-tmp/
-repos/
-# local agent tooling / worktrees (embedded git repos -- never commit)
-.claude/
-.mk_run.sh
-
-# local scratch area: never tracked (removed from the repo 2026-09-11; archived under clcd_results/)
-scratchpad/
-
-# separate nnsight 0.3.x install for the vendored Sparse Feature Circuits code (third_party/VENDORED.md)
-.sfc-site/
+phenomena/vocab/*.json
+phenomena/circuits/*
+circuits/*
+dictionaries/*
+experiments/effects/*
+experiments/faithfulness/*
+nohup.out

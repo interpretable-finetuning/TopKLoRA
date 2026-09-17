@@ -266,6 +266,11 @@ class TopKLoRALinearSTE(nn.Module):
         )
         self.layer_name = layer_name
         self.topk = TopKModule(k_final, topk_mode=self.topk_mode)
+        # Named hook point for the post-gate latents, right before decoding. It is an identity
+        # (no parameters, same tensor object), so the forward and backward are unchanged; it exists
+        # so tools that intervene on MODULE OUTPUTS -- the vendored Sparse Feature Circuits code
+        # via nnsight -- can read and overwrite the latents that feed decode_latents.
+        self.latent_site = nn.Identity()
 
         self.latent_bias = nn.Parameter(torch.zeros(self.r))
         self.input_center = nn.Parameter(torch.zeros(self.in_features))
@@ -855,6 +860,7 @@ class TopKLoRALinearSTE(nn.Module):
         soft_gates, hard_gates, gates, sparse_latents, k_now, tau = self.apply_topk(
             dense_latents
         )
+        sparse_latents = self.latent_site(sparse_latents)
         output = self.recompute_output_from_sparse_latents(
             x,
             sparse_latents,

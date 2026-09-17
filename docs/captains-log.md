@@ -8888,6 +8888,7 @@ failed=0`) and driver log `logs/bisect/result.json.out`. First run's driver outp
 Driver, checker, mutation test, term list and the insertion script for this entry, outside git:
 `/homes/55/marek/.claude/jobs/ae71e666/tmp/p1_brake_bisect.py` and
 `/homes/55/marek/.claude/jobs/ae71e666/tmp/p1_bisect_entry/{check_entry.py,mutate.py,terms.txt,insert.py,entry.md}`.
+Correction of record (2026-09-17): the driver now lives in the repository as `src/clcd/exp_brake_bisect.py` (PR #69, commit 32ea2d1); replaying it from this run's `cache.json` reproduces `result.json` on every field with no job launched.
 
 ---
 
@@ -9855,6 +9856,7 @@ terminology check and the insertion script for this entry, outside git:
 `/homes/55/marek/.claude/jobs/ae71e666/tmp/p1_canonical_entry/{check_entry.py,mutate.py,term_check.py,term_probe.py,terms_selftest.py,insert.py,entry.md,captains-log.baseline.md}`.
 `mutate.py` is the proof that the checker goes red: **19 of 19 single-value mutations red, unmutated control
 green**.
+Correction of record (2026-09-17): the readout script is now the harness subcommand `p1 followup canonical_l1523` (PR #69, commit 32ea2d1); its output equals this entry's `readout_v1.txt` byte for byte from line 2. The builders and the allocator remain scratch tooling.
 
 ⚠️ **The Python terminology counter was not a check until it was fixed here.** The durable list at
 `/homes/55/marek/.claude/log_checkers/terminology_terms.txt` holds **regex fragments**, 20 of its 21 entries
@@ -10745,6 +10747,7 @@ chain logs `queues/*.log` and `queues_c/*.log`, per-job logs `logs/` and `logs_c
 `clcd_results/rigorous/elim2/l19_seed4x_nc1000_circuit.json`, `clcd_results/rigorous/l19_seed4x_circuit.json`,
 `clcd_results/rigorous/elim/l19_seed4x_circuit.json`. Build and readout scripts, outside git:
 `/homes/55/marek/.claude/jobs/ae71e666/tmp/{p1_l19_build.py,p1_followup_stage_c.py,p1_followup_readout.py,p1_allocator.py}`.
+Correction of record (2026-09-17): the readout script is now the harness subcommand `p1 followup l19` (PR #69, commit 32ea2d1); its output equals this entry's `readout_v1.txt` byte for byte from line 2. The builders and the allocator remain scratch tooling.
 Checker, its mutation test, the terminology check and the insertion script for this entry, outside git:
 `/homes/55/marek/.claude/jobs/ae71e666/tmp/p1_l19_entry/{check_entry.py,mutate.py,insert.py,entry.md,mutation_run.txt,captains-log.baseline.md}`.
 `check_entry.py` re-derives every value above from the readout, the sweep JSONs, the queue and allocator

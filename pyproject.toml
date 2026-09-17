@@ -11,6 +11,13 @@ requires-python = ">=3.11,<3.12"
 dependencies = [
     "torch>=2.0.0",
     "transformers>=4.45.0,<5.0.0",
+    # scipy/matplotlib are imported by analysis/__init__.py and src/clcd/exp_{edge_scrub,
+    # behavioural_scrub,dynamic_circuit}.py -- library code, so runtime deps, not dev.
+    "scipy>=1.11.0",
+    "matplotlib>=3.8.0",
+    # HF_HUB_ENABLE_HF_TRANSFER=1 is exported in the run environment; without this package every
+    # download fails with a misleading "Can't load the configuration of ...".
+    "hf_transfer>=0.1.6",
     "peft>=0.13.0",
     "trl>=0.12.0",
     "accelerate>=1.0.0",
@@ -31,6 +38,7 @@ dependencies = [
     "langdetect>=1.0.9",
     "immutabledict>=4.3.1",
     "absl-py>=2.4.0",
+    "pre-commit>=4.6.2",
 ]
 
 [tool.setuptools]

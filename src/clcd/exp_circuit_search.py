@@ -9,7 +9,6 @@ optimized neither criterion and went degenerate on distributed backdoors.
 
     uv run python -m src.clcd.exp_circuit_search --adapter <dir> --Ks 10 20 50 100 200 400 --out <json>
 """
-import argparse
 import json
 import math
 import os
@@ -18,7 +17,7 @@ from pathlib import Path
 
 import torch
 from src import data as chat_format
-from src.clcd.cli import common_args
+from src.clcd.cli import _TRANSFER_SPLITS, circuit_search_parser as build_parser
 from src.clcd.edges import single_pass_eliminate
 from src.data import load_jsonl_rows as _load_jsonl_rows, load_tags, write_json_atomic
 from src.clcd.organism import load_organism
@@ -46,15 +45,6 @@ from src.evaluate import _keyword_rate, _load_dataset_splits
 from src.utils import _resolve_eot_token
 
 
-_TRANSFER_SPLITS = (
-    "eval_heldout_idiom",
-    "eval_negation_dog",
-    "eval_metalinguistic_dog",
-    "eval_breed_surface",
-    "eval_mixed_dog",
-    "eval_incidental_dog",
-    "eval_heldout_animals",
-)
 _TRANSFER_MAX_NEW_TOKENS = 50
 _GATE_REFERENCE_TOLERANCE = 0.03
 
@@ -436,106 +426,6 @@ def _semantic_keep_only_fires(
     )
     key = keyword.upper()
     return [key in generation.upper() for generation in generations]
-
-
-def build_parser() -> argparse.ArgumentParser:
-    """The full command line, as a function so a checker can rebuild a job's arguments."""
-    ap = argparse.ArgumentParser(parents=[common_args(adapter=False, max_new_tokens=False)])
-    ap.add_argument("--adapter")
-    ap.add_argument("--semantic", action="store_true")
-    ap.add_argument("--transfer_ablation", action="store_true")
-    ap.add_argument("--circuit", type=Path)
-    ap.add_argument("--eval_dir", type=Path, default=Path("data/semantic_dog_v4"))
-    ap.add_argument("--splits", default=",".join(_TRANSFER_SPLITS))
-    ap.add_argument("--k_list", default="50,800")
-    ap.add_argument("--gate_reference", type=Path)
-    ap.add_argument("--pair_seed", type=int, default=20260812)
-    ap.add_argument(
-        "--pair_pool",
-        type=Path,
-        help="held-out dog-positive JSONL source for semantic minimal pairs",
-    )
-    ap.add_argument("--dtype", default="float32", choices=["float32", "bfloat16", "float16"])
-    ap.add_argument("--n_attrib", type=int, default=64, help="attribution episodes (kept < selection offset so the attribution band stays disjoint)")
-    ap.add_argument("--attrib_offset", type=int, default=0,
-                    help="first attribution episode of the eval split (P1 band A = 0, band B = 2000); "
-                         "the semantic mode ignores it")
-    ap.add_argument("--K_ig", type=int, default=128, help="integrated-gradients steps (paper-grade; standard 50-300 range)")
-    ap.add_argument("--attr_target", default="margin")
-    ap.add_argument("--attrib_only", action="store_true",
-                    help="Run attribution, dump the FULL signed per-latent scores (both supporters "
-                         "and SUPPRESSORS) plus the complete ranking, then exit. The normal output "
-                         "keeps only order[:both_K], which makes suppressors invisible and makes "
-                         "any K above both_K unreachable without re-deriving attribution.")
-    ap.add_argument("--attr_baseline", default="control", choices=["control", "zero"],
-                    help="IG baseline a0. 'control' = the control-run latents (needs a paired "
-                         "control prompt, i.e. KNOWLEDGE OF THE TRIGGER). 'zero' = adapter-off "
-                         "(mechanism-off, CLCD spec A4): needs no control prompt at all, so it is "
-                         "the trigger-agnostic contrast, and it matches the estimand necessity "
-                         "actually measures (ablation IS zeroing). Default 'control' reproduces "
-                         "every logged number bit-identically.")
-    ap.add_argument("--Ks", type=int, nargs="+", default=[10, 20, 50, 100, 200, 400, 800, 1600, 3200])
-    ap.add_argument("--suff_n_se", type=float, default=2.0, help="sufficiency: accept if intact-keeponly shortfall <= this * paired SE (auto-calibrated to n)")
-    ap.add_argument("--sat_floor", type=float, default=0.90, help="loose sanity gate: organism must have intact trigger ASR >= this to be assessable")
-    ap.add_argument("--nec_target", type=float, default=0.0, help="ablate ASR must be <= this. Necessity has NO noise band (target is a hard 0; greedy gen means any residual fire is a real backdoor firing, not sampling noise) -> require exactly 0 for a complete-removal claim.")
-    ap.add_argument("--offset", type=int, default=90)
-    ap.add_argument("--n_backdoor", type=int, default=1000)
-    ap.add_argument("--mnt", type=int, default=40)
-    ap.add_argument("--batch_size", type=int, default=16)
-    # --- ordering: how latents are ranked before the (identical) rigorous K-sweep ---
-    #   prefix   = attribution rank (the canonical run): circuit @ K = top-K by attribution.
-    #   eliminate = single-pass (ACDC-style) causal-scrubbing prune: walk the pool weakest-first, cut a
-    #               latent iff its removal keeps the SAME both-criterion as the verdict -- paired keep-only
-    #               sufficiency (shortfall <= suff_n_se * SE) AND exact-0 ablate necessity -- evaluated at
-    #               the cheap n. Then re-rank (survivors first, then cut latents by reverse cut-order) and
-    #               run the rigorous n=1000 sweep along THIS order. The cheap arbiter and the verdict use
-    #               the IDENTICAL criterion, differing ONLY in sample size (n_cheap vs n_backdoor); there is
-    #               no separate magic threshold. elim_pool=all lets elimination pick low/negative-attribution
-    #               latents that positive-only selection excludes (a genuinely different SET).
-    #   file     = a PRECOMPUTED ranking read from --order_file (e.g. the vendored Sparse Feature Circuits
-    #              attribution written by src.clcd.sfc_search). CLCD attribution is skipped; the K-sweep and
-    #              the certificate below are unchanged, so any search can be certified by the same test.
-    ap.add_argument("--ordering", choices=["prefix", "eliminate", "file"], default="prefix")
-    ap.add_argument("--order_file", type=str, default="",
-                    help="ordering=file: JSON holding a latent ranking as a list of [module, dim] pairs")
-    ap.add_argument("--order_key", type=str, default="order_abs",
-                    help="ordering=file: which list in --order_file to walk (sfc_search writes order_abs, order_pos)")
-    ap.add_argument("--elim_pool", choices=["positive", "all"], default="all",
-                    help="'positive' = attribution positive supporters only; 'all' = every latent ranked by |attribution|")
-    ap.add_argument("--cheap_offset", type=int, default=1100, help="disjoint band driving the cheap elimination arbiter")
-    ap.add_argument("--n_cheap", type=int, default=150, help="prompts for the cheap paired arbiter (order only, not the verdict)")
-    ap.add_argument("--elim_target", type=float, default=0.97, help="DEPRECATED / ignored -- cheap arbiter now uses the same paired-2SE + exact-0 criterion as the verdict")
-    ap.add_argument("--n_elim_pool", type=int, default=0, help="cap the elimination pool (0 = max(Ks) for 'positive', 2500 for 'all')")
-    ap.add_argument("--exclude_latents", type=str, default="",
-                    help="JSON {'latents': [[module, dim], ...]} of latents BARRED from the circuit. "
-                         "Applied to the ranking and to the elimination pool BEFORE the pool cap, so "
-                         "every arm searches the same NUMBER of eligible candidates. Use to re-run "
-                         "discovery with causally-verified suppressors ('brakes') removed.")
-    # --- adaptive-n: speed the eliminate arbiter by early-stopping the per-candidate cheap eval ---
-    #   OFF by default -> the cheap arbiter is byte-for-byte the full-n_cheap test. ON: evaluate each
-    #   candidate at growing prefixes of the cheap band and stop as soon as the sufficiency decision is
-    #   unambiguous. The TOP rung == n_cheap, so a candidate that escalates all the way gets the EXACT
-    #   same decision as OFF. Early stops: confident-keep when keep-only clearly collapses (shortfall
-    #   beyond adaptive_guard*SE of the 2SE bar, no necessity gen needed); confident-cut when keep-only
-    #   is within adaptive_eps of intact (barely moved). eps/guard are SPEED tolerances, not decision
-    #   thresholds -- the accept test at the top rung is still the exact suff_n_se*SE + exact-0 nec. A
-    #   cheap cut only perturbs the ORDER fed to the rigorous n=1000 sweep, which re-checks both anew, so
-    #   the reported circuit's necessity+sufficiency are unaffected; only ordering quality can drift.
-    ap.add_argument("--adaptive_n", action="store_true", help="early-stop the cheap eliminate arbiter (ordering only)")
-    ap.add_argument("--adaptive_rungs", type=int, nargs="+", default=[100, 300, 1000], help="cumulative cheap-band prefixes; last is clamped to n_cheap and is the exact full-n decision")
-    ap.add_argument("--adaptive_eps", type=float, default=0.01, help="confident-cut tolerance: cut early if keep-only shortfall <= this")
-    ap.add_argument("--adaptive_guard", type=float, default=2.0, help="confident-keep margin in SE beyond the 2SE bar")
-    # --- out-of-sample necessity: additionally require ablate=0 on a HELD-OUT band, so the circuit is
-    #   necessary beyond the selection band (closes the generalization leak where a rare held-out prompt
-    #   still fires after ablation). Gated: nec_ho_n=0 (default) -> byte-identical to before. Applied in
-    #   BOTH the eliminate arbiter (so it keeps leak-covering latents) and the rigorous K-sweep. HONEST:
-    #   necessity is always relative to the tested prompts; report the band and N. ---
-    ap.add_argument("--nec_ho_offset", type=int, default=2000, help="held-out necessity band offset")
-    ap.add_argument("--nec_ho_n", type=int, default=0, help="held-out necessity prompts (0 = off)")
-    ap.add_argument("--out", "--output", dest="out", required=True)
-    ap.add_argument("--provenance", default=None,
-                    help="the freeze commit this job runs under; recorded verbatim in the output")
-    return ap
 
 
 def main(argv=None):

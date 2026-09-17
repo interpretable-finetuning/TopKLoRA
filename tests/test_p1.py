@@ -6,7 +6,9 @@ every gates test can assert that no value from any output reached stdout or stde
 """
 import json
 import random
+import shlex
 import subprocess
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -14,6 +16,7 @@ import pytest
 from scipy.stats import binom
 
 from src.clcd import p1
+from src.clcd.cli import circuit_search_parser, sfc_search_parser
 
 FROZEN_JSON = Path("/homes/55/marek/.claude/jobs/ae71e666/tmp/p1_frozen.json")
 S_FLOAT, S_HIGH, S_MID = 0.123456789, 0.987654321, 0.567891234
@@ -518,7 +521,7 @@ def _finished(run_dir, chain, failed=0):
     return f"{STAMP} queue {run_dir}/manifests/{chain}.txt finished: run=1 skipped=0 failed={failed}"
 
 
-def test_gates_failed_with_no_later_done_is_incomplete_for_that_output_only(freeze, capsys):
+def test_gates_failed_chain_makes_every_output_incomplete(freeze, capsys):
     run_dir = build_run(freeze.p1, "s42", freeze.sha)
     b = f"{TWIN}_V_s42_sweepA"
     _log(run_dir, "a0_V.log", [f"{STAMP} RUN {TWIN}_V_s42_sfcA.json", f"{STAMP} {TWIN}_V_s42_sfcA.json done",
@@ -526,7 +529,7 @@ def test_gates_failed_with_no_later_done_is_incomplete_for_that_output_only(free
                                _finished(run_dir, "a0_V", failed=1)])
     rc, g = run_gates(run_dir, freeze.sha, capsys)
     assert rc == 0 and g["run"] == "ok" and g["outputs"][b] == "incomplete"
-    assert [k for k, v in g["outputs"].items() if v != "ok"] == [b]
+    assert {k for k, v in g["outputs"].items() if v != "ok"} == {b, f"{TWIN}_V_s42_sfcA"}
 
 
 def test_gates_failed_then_done_in_a_relaunch_passes(freeze, capsys):
@@ -565,11 +568,12 @@ def test_gates_third_failed_attempt_makes_the_output_incomplete(freeze, capsys):
     _log(run_dir, "a0_V.relaunch2.log", [skip, *fail, _finished(run_dir, "a0_V", failed=1)])
     rc, g = run_gates(run_dir, freeze.sha, capsys)
     assert rc == 0 and g["run"] == "ok" and g["outputs"][b] == "incomplete"
-    assert [k for k, v in g["outputs"].items() if v != "ok"] == [b]
+    assert {k for k, v in g["outputs"].items() if v != "ok"} == {b, f"{TWIN}_V_s42_sfcA"}
     # a fourth attempt that succeeds does not rescue it: three failures are final
     _log(run_dir, "a0_V.relaunch3.log", [skip, f"{STAMP} RUN {b}.json", f"{STAMP} {b}.json done", _finished(run_dir, "a0_V")])
     rc, g = run_gates(run_dir, freeze.sha, capsys)
     assert g["outputs"][b] == "incomplete"
+    assert g["outputs"][f"{TWIN}_V_s42_sfcA"] == "ok"
 
 
 def test_gates_missing_output_with_no_attempt_is_incomplete(freeze, capsys):
@@ -900,13 +904,23 @@ def test_readout_on_a_complete_directory_with_a_void_twin_and_an_incomplete_c4_i
     pilot.write_text(json.dumps({"order_abs": ours["order_abs"], "effects": [[m, d, e + 0.25] for m, d, e in ours["effects"]],
                                  "mean_total_effect": 0.111222333, "n_used": 0.444555666}))
     cut = f"{ROUTE}_L_s42_c4_0"
-    build_stage_c(run_dir, freeze.sha, AUDIT_FIRES, no_output={cut})
+    _, stage_c, draws = build_stage_c(run_dir, freeze.sha, AUDIT_FIRES, no_output={cut})
     skip = [f"{STAMP} {j.basename}.json exists, skip" for j in p1.stage_c_jobs(run_dir, freeze.sha, p1.gates(run_dir, freeze.sha))[1]
             if j.chain == f"c_{ROUTE}" and j.basename != cut]
     for n in (1, 2):
         _log(run_dir, f"c_{ROUTE}.relaunch{n}.log", [*skip, f"{STAMP} RUN {cut}.json", f"{STAMP} {cut}.json FAILED rc=1 -- see x.out",
                                                      f"{STAMP} queue {run_dir}/manifests_c/c_{ROUTE}.txt finished: run=0 skipped={len(skip)} failed=1"],
              subdir="queues_c")
+    rc, failed_out = run_main(["readout", str(run_dir), "--freeze_sha", freeze.sha], capsys)
+    assert rc == 0
+    assert f"{ROUTE}_S1_s42_audit: N/A (incomplete" in failed_out
+    assert "leak S1 vs L: fires" not in failed_out
+    # A successful relaunch restores siblings; the cut still exceeds G3's failure limit.
+    cut_job = next(j for j in stage_c if j.basename == cut)
+    (run_dir / f"{cut}.json").write_text(json.dumps(
+        sweep_out(cut_job, freeze.sha, [tuple(l) for l in draws[cut]["latents"]], None)))
+    _log(run_dir, f"c_{ROUTE}.relaunch3.log", [*skip, f"{STAMP} RUN {cut}.json", f"{STAMP} {cut}.json done",
+         f"{STAMP} queue {run_dir}/manifests_c/c_{ROUTE}.txt finished: run=1 skipped={len(skip)} failed=0"], subdir="queues_c")
     rc, out = run_main(["readout", str(run_dir), "--freeze_sha", freeze.sha], capsys)
     assert rc == 0
     lines = out.splitlines()
@@ -1063,6 +1077,13 @@ def build_followup(root, sha, prov="l19-completion"):
     Path("clcd_results/p1/s42/gates.json").write_text(json.dumps({"audits": "ok", "run": "ok"}))
     grid = p1.FOLLOWUPS["l19"][2]
     lines = []
+    arguments = {}
+
+    def recorded_args(command, parser):
+        words = shlex.split(command)
+        args = parser().parse_args(words[words.index("-m") + 2:])
+        return {k: str(v) if isinstance(v, Path) else v for k, v in vars(args).items()}
+
     for band, offset in p1.FROZEN["attribution"]["band"].items():
         for arm, construction in (("S1", None), ("L", "latents"), ("V", "vanilla")):
             first = f"{d}/l19_s42_{arm}_s42_{'attrib' if arm == 'S1' else 'sfc'}{band}.json"
@@ -1073,11 +1094,15 @@ def build_followup(root, sha, prov="l19-completion"):
                 cmd1, _ = p1._cmd_sfc(L19_ADAPTER, construction, offset, prov, first)
             cmd2, _ = p1._cmd_sweep(L19_ADAPTER, grid, first, "order_pos" if arm == "S1" else "order_abs", prov, sweep)
             lines += [f"{first} -- {cmd1}", f"{sweep} after={first} -- {cmd2}"]
+            arguments[Path(first).stem] = recorded_args(cmd1, circuit_search_parser if arm == "S1" else sfc_search_parser)
+            arguments[Path(sweep).stem] = recorded_args(cmd2, circuit_search_parser)
     (d / "manifests" / "l19_s42.txt").write_text("\n".join(lines) + "\n")
-    common = dict(PROV, provenance=prov, args={"adapter": L19_ADAPTER})
+    common = dict(PROV, provenance=prov)
     effects = [[L19_MODULES[0], i, 1.0 / (i + 1)] for i in range(64)]
-    sfc_ok = dict(common, effects=effects, order_abs=[[m, i] for m, i, _ in effects], error_effects={})
-    sweep_ok = dict(common, status="ok", both_K=20, kept_latents=[[m, i] for m, i, _ in effects[:20]],
+    sfc_ok = dict(common, args=arguments["l19_s42_L_s42_sfcA"],
+                  effects=effects, order_abs=[[m, i] for m, i, _ in effects], error_effects={})
+    sweep_ok = dict(common, args=arguments["l19_s42_L_s42_sweepA"],
+                    status="ok", both_K=20, kept_latents=[[m, i] for m, i, _ in effects[:20]],
                     intact_asr=0.99, n_backdoor=1000, curve=[{"K": 20, "keep_only": 0.98, "ablate": 0.0}])
     bad = dict(sweep_ok, provenance="wrong-provenance")
     (d / "l19_s42_L_s42_sfcA.json").write_text(json.dumps(sfc_ok))
@@ -1097,7 +1122,8 @@ def build_followup(root, sha, prov="l19-completion"):
                      file=f"{d}/l19_s42_L_s42_sweepA.json", total_prompts=35000, total_fires=1,
                      fire_indices={"6000": [6123]}, fire_vec_per_band={"6000": [0] * 123 + [1] + [0] * 34876})
     (d / "l19_s42_L_s42_audit.json").write_text(json.dumps([audit_rec]))
-    c4 = dict(common, status="no_sufficient_subcircuit", both_K=None, kept_latents=[], intact_asr=0.99,
+    c4 = dict(common, args=recorded_args(cmd_c4, circuit_search_parser),
+              status="no_sufficient_subcircuit", both_K=None, kept_latents=[], intact_asr=0.99,
               n_backdoor=1000, curve=[{"K": 20, "keep_only": 0.01, "ablate": 0.99}])
     (d / "l19_s42_L_s42_c4_0.json").write_text(json.dumps(c4))
     clog = [f"{STAMP} RUN l19_s42_L_s42_audit.json", f"{STAMP} l19_s42_L_s42_audit.json done",
@@ -1143,3 +1169,91 @@ def test_followup_readout_unfinished_chain_reads_as_na(freeze, capsys):
     (d / "queues" / "l19_s42.log").write_text(f"{STAMP} RUN l19_s42_L_s42_sfcA.json\n")
     out = run_followup(freeze.repo / "fu", freeze.sha, capsys)
     assert "l19_s42: not finished" in out and "L band A: N/A" in out
+
+
+@pytest.mark.parametrize("field,value", [
+    ("dtype", "float32"), ("data", "another/dataset"), ("offset", 0),
+    ("n_backdoor", 10), ("suff_n_se", 100.0), ("sat_floor", 0.0),
+    ("nec_target", 1.0), ("batch_size", 1), ("Ks", [10]),
+    ("order_file", "another/ranking.json"), ("order_key", "order_pos"),
+    ("mnt", 1), ("keyword", "ANOTHER PAYLOAD"),
+])
+def test_followup_rejects_a_sweep_with_different_certificate_arguments(freeze, capsys, field, value):
+    d = build_followup(freeze.repo / "fu", freeze.sha)
+    edit(d / "l19_s42_L_s42_sweepA.json", lambda out: out["args"].__setitem__(field, value))
+    out = run_followup(freeze.repo / "fu", freeze.sha, capsys)
+    assert f"L band A: N/A (mismatch:{field})" in out
+    assert "L band A: both_K 20" not in out
+
+
+@pytest.mark.parametrize("field,value", [
+    ("construction", "vanilla"), ("steps", 1), ("n_attrib", 10), ("offset", 2000),
+])
+def test_followup_rejects_different_attribution_arguments(freeze, capsys, field, value):
+    d = build_followup(freeze.repo / "fu", freeze.sha)
+    edit(d / "l19_s42_L_s42_sfcA.json", lambda out: out["args"].__setitem__(field, value))
+    out = run_followup(freeze.repo / "fu", freeze.sha, capsys)
+    assert f"L band A: N/A (mismatch:{field})" in out
+
+
+@pytest.mark.parametrize("field,value", [
+    ("data", "data/sleeper/prepared_eval6k"), ("n", 1000),
+    ("bands", [2000]), ("split", "eval_clean"),
+])
+def test_followup_rejects_an_audit_of_different_prompts(freeze, capsys, field, value):
+    d = build_followup(freeze.repo / "fu", freeze.sha)
+    edit(d / "l19_s42_L_s42_audit.json", lambda out: out[0].__setitem__(field, value))
+    out = run_followup(freeze.repo / "fu", freeze.sha, capsys)
+    assert f"l19_s42_L_s42_audit: N/A (mismatch:{field})" in out
+    assert "l19_s42_L_s42_audit: fires 1/35,000" not in out
+
+
+def test_followup_rejects_a_missing_default_argument(freeze, capsys):
+    d = build_followup(freeze.repo / "fu", freeze.sha)
+    edit(d / "l19_s42_L_s42_sweepA.json", lambda out: out["args"].pop("mnt"))
+    out = run_followup(freeze.repo / "fu", freeze.sha, capsys)
+    assert "L band A: N/A (mismatch:mnt)" in out
+
+
+def test_followup_failed_chain_does_not_accept_completed_siblings(freeze, capsys):
+    d = build_followup(freeze.repo / "fu", freeze.sha)
+    log = d / "queues/l19_s42.log"
+    log.write_text(log.read_text().replace("failed=0", "failed=1"))
+    out = run_followup(freeze.repo / "fu", freeze.sha, capsys)
+    assert "l19_s42: finished, failed=1" in out
+    assert "L band A: N/A (incomplete" in out
+    assert "L band A: both_K 20" not in out
+
+
+def test_followup_manifest_parses_quoted_values_and_environment_assignments(tmp_path):
+    mdir = tmp_path / "manifests"
+    mdir.mkdir()
+    (mdir / "quoted.txt").write_text(
+        "'result file.json' -- PYTHONPATH='a directory' .venv/bin/python -u -m src.clcd.exp_circuit_search "
+        "--adapter 'adapter directory' --keyword 'I HATE YOU' --Ks 20 30 --out 'result file.json'\n")
+    job, = p1._followup_jobs(mdir)
+    assert job.out == "result file.json"
+    assert job.expect["adapter"] == "adapter directory"
+    assert job.expect["keyword"] == "I HATE YOU"
+    assert job.expect["Ks"] == [20, 30]
+    assert job.expect["mnt"] == 40
+
+
+def test_followup_manifest_command_must_write_the_declared_output(tmp_path):
+    mdir = tmp_path / "manifests"
+    mdir.mkdir()
+    (mdir / "wrong_out.txt").write_text(
+        "result.json -- .venv/bin/python -m src.clcd.exp_circuit_search --adapter adapter --out other.json\n")
+    with pytest.raises(ValueError, match="differs from manifest output"):
+        p1._followup_jobs(mdir)
+
+
+def test_p1_can_parse_jobs_without_importing_the_model_stack():
+    code = (
+        "import sys; from src.clcd import p1; "
+        "p1._followup_expect('.venv/bin/python -m src.clcd.exp_circuit_search --adapter adapter --out result.json'); "
+        "p1._followup_expect('.venv/bin/python -m src.clcd.sfc_search --construction latents --adapter adapter --out result.json'); "
+        "p1._followup_expect('CLCD_OUT=result.json .venv/bin/python analysis/verify_holdout_necessity.py circuit.json'); "
+        "assert 'torch' not in sys.modules; assert 'nnsight' not in sys.modules"
+    )
+    subprocess.run([sys.executable, "-c", code], check=True)

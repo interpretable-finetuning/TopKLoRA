@@ -45,11 +45,11 @@ import os
 import sys
 from collections import defaultdict
 from pathlib import Path
-from types import SimpleNamespace
 
 import torch
 
 from src import data as chat_format
+from src.clcd.cli import holdout_config as read_config
 from src.data import load_jsonl_rows as _load_jsonl_rows, load_tags, write_json_atomic
 from src.clcd.organism import load_organism
 from src.clcd.pipeline import provenance_fields
@@ -58,30 +58,6 @@ from src.utils import resolve_stop_token_ids
 
 BASE = "google/gemma-2-2b"
 MNT, BS, MBT, KEY = 40, 64, 9000, "I HATE YOU"
-
-
-def read_config(environ=None, argv=None):
-    """Every knob this tool reads, from the environment and argv, in one place.
-
-    `environ` defaults to os.environ and `argv` to sys.argv[1:]; a checker passes both explicitly to
-    rebuild a queued job's configuration without running it.
-    """
-    environ = os.environ if environ is None else environ
-    argv = sys.argv[1:] if argv is None else list(argv)
-    if "CLCD_OUT" not in environ:
-        raise KeyError("CLCD_OUT must name this run's results file; there is no default because a "
-                       "shared default let two jobs overwrite one file")
-    return SimpleNamespace(
-        data=environ.get("CLCD_DATA", "data/sleeper/prepared_eval6k"),
-        n=int(environ.get("CLCD_N", "1000")),
-        bands=[int(x) for x in environ.get("CLCD_BANDS", "2000,4000,5000").split(",")],
-        split=environ.get("CLCD_SPLIT", "eval_triggered"),
-        intact=environ.get("CLCD_INTACT", "0") == "1",
-        save_gens=environ.get("CLCD_SAVE_GENS", "0") == "1",
-        out=environ["CLCD_OUT"],
-        provenance=environ.get("CLCD_PROVENANCE"),
-        files=argv,
-    )
 
 
 def _run_arm(cfg, model, tok, wrapped, ov, band_prompts, label, adapter, n_kept, tag, stop_ids, prov):

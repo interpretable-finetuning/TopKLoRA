@@ -24,6 +24,7 @@ import json
 import math
 import random
 import re
+import shlex
 import subprocess
 import sys
 import traceback
@@ -33,6 +34,8 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from scipy.stats import beta as _beta, binom as _binom
+
+from src.clcd.cli import circuit_search_parser, holdout_config, sfc_search_parser
 
 # The freeze commit: None until the freeze exists on the docs branch. Every subcommand refuses while
 # it is None, and refuses a --freeze_sha that differs from it.
@@ -466,8 +469,8 @@ def _parse_log(path):
 
 def completion(queue_dir, jl):
     """{basename: (complete, failed attempts)} by the crash rule: an output is complete when its chain's
-    latest log ends with a `finished` line, its own latest event is `done` or `exists, skip`, it has fewer
-    than three failed attempts (a FAILED line, or a RUN with no outcome) and the file exists."""
+    latest log ends with a `finished ... failed=0` line, its own latest event is `done` or `exists, skip`,
+    it has fewer than three failed attempts (a FAILED line, or a RUN with no outcome) and the file exists."""
     by_chain = {}
     for j in jl:
         by_chain.setdefault(j.chain, []).append(j)
@@ -498,7 +501,7 @@ def completion(queue_dir, jl):
             if running is not None:
                 failures[running] += 1
                 last[running] = "failed"
-            chain_finished = finished is not None
+            chain_finished = finished == 0
         for j in cj:
             name = f"{j.basename}.json"
             ok = (chain_finished and last.get(name) in ("done", "skip") and failures[name] < 3
@@ -1247,23 +1250,62 @@ BIGN_RECORDS = Path("clcd_results/rigorous/holdout_necessity")  # the archived B
 ARCHIVED_ELIM = Path("clcd_results/rigorous/elim")              # the archived elimination circuits
 
 
+def _followup_expect(command):
+    """Job kind and recorded configuration from the same parsers the job tools use.
+
+    Parse the manifest as text, including leading environment assignments; never execute it.
+    Use every CLI value, including defaults, so a stale result cannot change the certificate.
+    Audits record their data, band, count and circuit directly rather than in an `args` dict.
+    """
+    words = shlex.split(command)
+    environ = {}
+    while words and re.match(r"^[A-Za-z_]\w*=", words[0]):
+        key, value = words.pop(0).split("=", 1)
+        environ[key] = value
+    if "-m" in words:
+        i = words.index("-m")
+        module = words[i + 1]
+        parsers = {"src.clcd.exp_circuit_search": circuit_search_parser,
+                   "src.clcd.sfc_search": sfc_search_parser}
+        if module not in parsers:
+            raise ValueError(f"unsupported follow-up job module: {module}")
+        args = parsers[module]().parse_args(words[i + 2:])
+        if module == "src.clcd.sfc_search":
+            kind = "sfc"
+        elif args.attrib_only:
+            kind = "attrib"
+        elif args.ordering == "eliminate":
+            kind = "elim"
+        else:
+            kind = "sweep"
+        expect = {k: str(v) if isinstance(v, Path) else v for k, v in vars(args).items()}
+        return kind, expect, args.out
+    if AUDIT_TOOL not in words:
+        raise ValueError(f"unsupported follow-up command: {command}")
+    cfg = holdout_config(environ, words[words.index(AUDIT_TOOL) + 1:])
+    if len(cfg.files) != 1:
+        raise ValueError("a follow-up audit job must name exactly one circuit")
+    expect = {"file": cfg.files[0], "data": cfg.data, "n": cfg.n, "bands": cfg.bands,
+              "split": cfg.split, "provenance": cfg.provenance,
+              "total_prompts": cfg.n * len(cfg.bands)}
+    return "audit", expect, cfg.out
+
+
 def _followup_jobs(mdir):
-    """The jobs of every manifest under mdir: chain = manifest stem, basename = output stem, plus the fields
-    _check_output reads (kind, expect). A follow-up job's expectation is its adapter; an audit's is the
-    circuit file and the prompt count."""
-    audit = FROZEN["audit"]
+    """Jobs from follow-up manifests, with full configuration expectations for each recorded output."""
     jl = []
     for mf in sorted(Path(mdir).glob("*.txt")):
         for line in mf.read_text().splitlines():
             if not line.strip():
                 continue
             head, cmd = line.split(" -- ", 1)
-            out = head.split()[0]
-            if "verify_holdout_necessity" in cmd:
-                kind, expect = "audit", {"file": cmd.split()[-1], "total_prompts": audit["n"] * len(audit["bands"])}
-            else:
-                kind, expect = "job", {"adapter": re.search(r"--adapter (\S+)", cmd)[1]}
-            jl.append(SimpleNamespace(chain=mf.stem, basename=Path(out).stem, out=out, kind=kind, expect=expect))
+            spec = shlex.split(head)
+            out = spec[0]
+            after = Path(spec[1].removeprefix("after=")).stem if len(spec) > 1 else None
+            kind, expect, command_out = _followup_expect(cmd)
+            if command_out != out:
+                raise ValueError(f"{mf}: command output {command_out!r} differs from manifest output {out!r}")
+            jl.append(Job(Path(out).stem, mf.stem, after, out, kind, cmd, expect))
     return jl
 
 
@@ -1298,10 +1340,11 @@ def followup(name, run_commit=None, root="clcd_results/p1_followup"):
     its one-sided bound, the C4 flag, and the re-certification of the archived elimination circuits where
     declared. The certificate, size-rule (4E), C4, audit and Jaccard printers are the P1 readout's own,
     called on the follow-up directory; nothing is re-implemented. Completion is the P1 crash rule per chain
-    (`completion`): a chain that has not finished reads as N/A for every one of its outputs. Every output is
+    (`completion`): a chain that has not finished with failed=0 reads as N/A for every output. Outputs are
     checked for provenance, run commit, clean tree, base fingerprint and src root (`_check_output` against
     `_reference`: --run_commit when given, else the most common value across the outputs, as `gates` does);
-    a mismatch reads as N/A with the field named. The audit known-answer verdict (G2) is read from seed 42's
+    its recorded configuration must also match the manifest, including CLI defaults. A mismatch reads as
+    N/A with the field named. The audit known-answer verdict (G2) is read from seed 42's
     gates.json (verdicts only). Paths are relative to the working directory, as everywhere in this module."""
     prov, fam, grid = FOLLOWUPS[name]
     d = Path(root) / name

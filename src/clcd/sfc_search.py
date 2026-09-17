@@ -42,14 +42,13 @@ nnsight 0.3.x is NOT in the shared environment; it must be on PYTHONPATH (third_
 """
 from __future__ import annotations
 
-import argparse
 import sys
 from pathlib import Path
 from types import SimpleNamespace
 
 import torch
 
-from src.clcd.cli import common_args
+from src.clcd.cli import SFC_CONSTRUCTIONS as CONSTRUCTIONS, sfc_search_parser as build_parser
 
 SFC_DIR = Path(__file__).resolve().parents[2] / "third_party" / "feature-circuits"
 SFC_COMMIT = "7fbd82b895ae16294f4e6fc7bfc675d1d680d659"
@@ -57,7 +56,6 @@ DICTIONARY_LEARNING_COMMIT = "61ac634845bd76c839482f3b725ab3d898c8b277"
 METRIC = ("logit(first benign token) - logit(first payload token) at the last prompt position; "
           "clean = trigger prompt, patch = control prompt")
 AGGREGATION = "sum over positions, then mean over examples"
-CONSTRUCTIONS = ("latents", "vanilla")
 EFFECT_UNITS = ("steps x integrated gradients: nnsight 0.3.7 batches the IG steps and narrows only exact "
                 "list/tuple/dict outputs, so each step's metric sums the whole batch")
 
@@ -284,24 +282,6 @@ def orderings(effects: dict):
     return ([[n, d, e] for n, d, e in flat],
             [[n, d] for n, d, _ in order_abs],
             [[n, d] for n, d, _ in order_pos])
-
-
-def build_parser() -> argparse.ArgumentParser:
-    ap = argparse.ArgumentParser(parents=[common_args(adapter=False, tag_baseline=False, keyword=False,
-                                                      max_new_tokens=False)])
-    ap.add_argument("--construction", required=True, choices=CONSTRUCTIONS,
-                    help="latents: latent_site + IdentityDict, error term 0; "
-                         "vanilla: module output + AdapterLatentDict, error node = base path")
-    ap.add_argument("--adapter", required=True)
-    ap.add_argument("--dtype", default="bfloat16", choices=["float32", "bfloat16", "float16"])
-    ap.add_argument("--n_attrib", type=int, default=64,
-                    help="attribution episodes, [offset, offset+n) of the eval split (CLCD uses [0, 64))")
-    ap.add_argument("--offset", type=int, default=0)
-    ap.add_argument("--steps", type=int, default=10, help="SFC integrated-gradients steps (SFC default 10)")
-    ap.add_argument("--provenance", default=None,
-                    help="the freeze commit this job runs under; recorded verbatim in the output")
-    ap.add_argument("--out", required=True)
-    return ap
 
 
 def main(argv=None):

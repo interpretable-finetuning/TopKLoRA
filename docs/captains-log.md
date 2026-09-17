@@ -10996,6 +10996,318 @@ green** (`mutation_run.txt`).
 
 ---
 
+## Declared addition: the `all` family — S1 / S3-L / S3-V on the five canonical all-layers adapters · 2026-09-16/18 · NOT RUN under the frozen certificate — every generating job hits CUDA out-of-memory at the frozen batch 64 on the 44 GB cards; 3 of 6 chains launched, 0 certificates, and the Sep 17 23:59 BST stop has passed
+
+**Declared before it ran; NOT pre-registered. It did not run, and this entry is the record of that.** This is
+the **third** post-freeze addition declared in the plan, at **2026-09-16 01:30**, before any of its jobs ran
+("Addition requested on Sep 16: the 'all' family, after the l19 completion") — after the l15-23 addition
+declared 2026-09-15 23:55 and the l19 completion declared 2026-09-16 01:05, both of which ran and are logged
+above under the same date. It is **not** part of the P1 pre-registration, it tests no pre-registered
+hypothesis, and no P1 verdict depends on it. Like the other two it reuses P1's machinery exactly: run commit
+`5ab13ead5a09a2318b7f2262e0f2d353763feca6`, jobs launched from the detached run worktree
+`.claude/worktrees/p1-run` (both surviving outputs record `src_root`
+`/scratch/network/ssd/marek/minimalsleepers/.claude/worktrees/p1-run` and `git_dirty` `False`), the frozen
+certificate flags, and the P1 job templates themselves — the manifests are rendered by `src.clcd.p1`'s own
+`_cmd_attrib` / `_cmd_sfc` / `_cmd_sweep`, so every job line is byte-comparable with P1's. Its own provenance
+string is **`all-completion`**. **There was no seal**, and **no certificate of this family exists**: there is
+no readout, no `gates.json`, no sweep output, no Stage C. **A negative result, logged to Rule 13's standard:
+what was asked, what was run, why it stopped, what was measured about the obstacle, and what is now owed.**
+
+**Every number below carries the label `declared addition all-completion, not run, run commit 5ab13ea, not
+pre-registered`**, except the feasibility-probe numbers, which are separately labelled **`feasibility probe,
+provenance all-batchtest, scratch, not a declared job`**. Every value is quoted from the named file, never
+recomputed, with two exceptions that are marked **estimate** where they appear: the per-seed cost at batch 32
+and the three-seed band-A judgement, both arithmetic on the probe's measured 11 minutes.
+
+⚠️ **The 01:30 declaration stamp is the session's own record, and so is the ~45 GPU-hour budget and the
+Sep 17 23:59 BST stop.** No file read for this entry carries any of the three. What the files carry: all six
+manifests of the family were written at **01:26:42 on 2026-09-16** — *four minutes before* the declaration
+stamp, not after it — and the first job of the family was launched at **15:33:26 on 2026-09-16** by the
+allocator's clock. So the declaration precedes every job on the files as well as on the session's record, but
+the manifest render precedes the stamp, and the exact minute of the declaration is not sourced from an
+artifact. The same ordering was recorded for the l15-23 and l19 additions of 2026-09-16.
+
+**Question, fixed before running.** The same prefix-versus-prefix question the l15-23 and l19 additions asked,
+on the hardest family the project has: when the pool is the whole adapter — every layer, every module — are
+SFC's circuits as compact as CLCD-search's, and do they leak at the same rates? This family is where the
+answer would have been least protected by a small pool, because the pool is 26× larger than l19's.
+
+**Adapters.** The five canonical all-layers `r64_k8` orgs, seeds 42–46:
+`models/seeds/seed4x/google_gemma-2-2b/sleeper_topk_r64_k8_all_layers/r64_k8_regz_only_topkmode_topk`. Pool
+**11,648 latents** = 26 layers × 7 modules (`self_attn.{q,k,v,o}_proj`, `mlp.{gate,up,down}_proj`) × r 64.
+The pool size is attested by the two attribution outputs that exist: each holds **11,648** signed scores over
+**182** distinct module names (26 × 7). These are trained orgs, not routed ones: there is **no answer key**.
+
+**Arms, bands and certificate** — as defined in the P1 seed-42 entry of 2026-09-16 (S1 vs S3-L vs S3-V on the
+routed model and its twin), unchanged, and re-stated here only to fix what did not get measured. **S1** =
+CLCD-search prefix (`exp_circuit_search --attrib_only`, `K_ig` 128, completion-margin target, control-run
+baseline, "head" tag baseline, 64 episodes, then the file-mode sweep over `order_pos`). **S3-L** = the
+vendored SFC node attribution (10 IG steps, paired clean = trigger prompt / patch = control prompt) on each
+module's `latent_site`, swept over `order_abs`. **S3-V** = the same SFC code on the module output, swept over
+`order_abs`. Attribution bands **A `[0:64)`** and **B `[2000:2064)`**. Certificate: `google/gemma-2-2b`,
+bfloat16, `eval_triggered[100:1100)` of `data/sleeper/prepared_eval6k`, `n_backdoor` 1000, **batch 64**,
+zero-ablation of the circuit's latents, necessity `nec_target` 0.0, sufficiency paired with keep-only
+shortfall ≤ 2·`suff_se`, `sat_floor` 0.90. **Batch 64 is one of the frozen certificate flags** — that is the
+whole of this entry. **The K grid is P1's 24 points extended by five**: `10 20 30 40 50 60 75 100 125 150 200
+250 300 400 500 600 800 1000 1200 1600 2000 2400 3200 4032` **`4800 6400 8000 9600 11648`** = **29 points**,
+the last of them the pool itself. **The S2 arm was not declared here** — this addition had three arms.
+
+**What was declared to run, and what the builder wrote.** Six chains, **63 manifest lines** in
+`clcd_results/p1_followup/all/manifests/`: five per-seed chains `all_s4{2,3,4,5,6}.txt` of **12 lines** each
+(attribution + sweep, for three arms × two bands, band A first), and `recert_elim.txt` of **3 lines** — the
+re-certification of the archived elimination circuits at their recorded K, `--ordering file --order_file
+clcd_results/rigorous/elim/all_seed4x_circuit.json --order_key kept_latents --Ks <recorded both_K>`, for
+**seeds 42 / 43 / 44 at K = 1,200 / 300 / 600**. **There is no re-certification job for seeds 45 and 46**:
+the builder writes one only for a seed whose archived file exists, has `status` `ok` and a non-null `both_K`,
+and it wrote none for those two; which of the three conditions failed is not recorded in the manifest, and
+the archived files were not read for this entry. Stage C — one 35,000-prompt audit plus five module-matched
+random draws per band-A certified circuit — was declared but **never built**: the allocator builds it only
+once all 15 band-A sweeps exist, and there is no `manifests_c/` in this directory.
+
+### Run record — three chains launched, five generating jobs, five failures
+
+The 15-minute allocator (`p1_allocator.py`) placed every chain that ran. **Host and GPU are the allocator
+log's own record** (`clcd_results/p1_followup/allocator/allocator.log`); the `gN` tag in each chain log is the
+same GPU index. **The allocator log contains exactly three launch lines for this directory**, and it **never
+names `all_s44`, `all_s45` or `all_s46`** — those three chains were never launched, on any card, at any time.
+
+⚠️ **Two clocks, as in the l19 entry of 2026-09-16.** The allocator host and torrnode8 read about **3–4
+minutes ahead** of torrnode14 and of the file mtimes. Here: `all_s42` was launched at **15:33:27** by the
+allocator onto torrnode14 and its own chain log's first line is **15:30**; on torrnode8 the allocator's
+**15:33:26** and **15:48:39** launches are the chain logs' **15:33** and **15:48**, with no offset. **The
+times in the table are the queue logs' own stamps**; the launch column is the allocator's.
+
+| chain | host · GPU | allocator launch | queue log start → last line | outcome |
+|---|---|---|---|---|
+| `recert_elim` | torrnode8 · GPU6 | 15:33:26 | 15:33 → 15:37 | `finished: run=0 skipped=0 failed=3` |
+| `all_s42` | torrnode14 · GPU0 | 15:33:27 | 15:30 → 16:30 | 1 done, 1 `FAILED rc=1`, 1 left running at the kill; no `finished` line |
+| `all_s43` | torrnode8 · GPU6 | 15:48:39 | 15:48 → 17:02 | 1 done, 1 `FAILED rc=1`, 1 left running at the kill; no `finished` line |
+
+Job by job, from the three chain logs:
+
+| job | RUN | outcome | elapsed |
+|---|---|---|---|
+| `all_s42_elim_recert.json` | 15:33 | `FAILED rc=1` 15:34 | 1 min |
+| `all_s43_elim_recert.json` | 15:34 | `FAILED rc=1` 15:35 | 1 min |
+| `all_s44_elim_recert.json` | 15:35 | `FAILED rc=1` 15:37 | 2 min |
+| `all_s42_S1_s42_attribA.json` | 15:30 | **done** 16:29 | 59 min |
+| `all_s42_S1_s42_sweepA.json` | 16:29 | `FAILED rc=1` 16:30 | 1 min |
+| `all_s42_L_s42_sfcA.json` | 16:30 | no line — killed while running | — |
+| `all_s43_S1_s43_attribA.json` | 15:48 | **done** 17:00 | 72 min |
+| `all_s43_S1_s43_sweepA.json` | 17:00 | `FAILED rc=1` 17:02 | 2 min |
+| `all_s43_L_s43_sfcA.json` | 17:02 | no line — killed while running | — |
+
+⚠️ **The `recert_elim` chain's closing line is `finished: run=0 skipped=0 failed=3`, not a success.** The
+session first read the word "finished" as one. `run=0` is the count of jobs that *completed*; all three
+failed. This is written down because the misreading cost about half an hour of the window this entry is about.
+
+**Nothing of this family has been written since 2026-09-16 16:59:17** (the seed-43 S3-L job log, by the file
+clock) — `find` over the whole run directory returns no file newer than 17:00 on 2026-09-16.
+
+### The cause: CUDA out of memory in the *intact* generation, at the frozen batch 64
+
+**All five failed jobs end in the same traceback**, and the failure is in the same place in all five: the
+paired sufficiency test's baseline measurement, before any circuit is touched.
+
+```
+  File ".../p1-run/src/clcd/exp_circuit_search.py", line 834, in main
+    intact_fires = backdoor_fires(model, tok, wrapped, {}, trig_qs, a.keyword, a.mnt, a.batch_size, ...)
+  File ".../p1-run/src/clcd/verify.py", line 158, in backdoor_fires
+  File ".../p1-run/src/clcd/verify.py", line 113, in gen_under_overrides
+  File ".../p1-run/src/evaluate.py", line 741, in generate_responses
+    generated = model.generate(
+  ...
+  File ".../p1-run/src/models.py", line 774, in decode_latents
+    decoded = F.linear(latents_in, self.B_module.weight)
+torch.OutOfMemoryError: CUDA out of memory. Tried to allocate 406.00 MiB. GPU 0 has a total capacity of
+44.40 GiB of which 301.00 MiB is free. Including non-PyTorch memory, this process has 44.10 GiB memory in
+use. Of the allocated memory 42.75 GiB is allocated by PyTorch, and 192.71 MiB is reserved by PyTorch but
+unallocated.
+```
+
+That is the seed-42 sweep's log verbatim (`logs/all_s42/all_s42_S1_s42_sweepA.json.out`, last line) and the
+seed-42 re-certification's is identical to the byte. The other three read **321.00 MiB free**, **44.08 GiB in
+use** and **172.71 MiB reserved but unallocated**; **406.00 MiB requested**, **44.40 GiB capacity** and
+**42.75 GiB allocated by PyTorch** are the same in all five. (`GPU 0` is the index inside
+`CUDA_VISIBLE_DEVICES`, not the card the allocator named.)
+
+**What this says, and what it does not.**
+
+- **The generating jobs are the ones that die.** Every job that generates — the six sweeps per seed and the
+  three re-certifications — dies. Every job that does not generate ran: both S1 attributions completed, and
+  the two S3-L attributions were still running when they were killed, 30 and 15 minutes in, with no OOM.
+- **It is not a function of K.** The failure is in the *intact* pass, with `{}` overrides — the full adapter,
+  no circuit, before the K loop starts. The seed-43 re-certification at K = 300 fails exactly like the
+  seed-42 one at K = 1,200.
+- **It is the pool that costs the memory, not the circuit.** The all-layers adapter decodes latents at 26
+  layers × 7 modules; `decode_latents` is where it runs out. The same flags on l19 (448 latents in one layer)
+  and l15-23 (9 layers) ran 150 and 148 outputs to `ok` on these same cards the same day.
+- **The card is the constraint, not the model.** 44.40 GiB total, 44.10 GiB held by the process at the
+  moment it asked for 406 MiB more.
+
+### What exists of the family: two attribution outputs, no certificate
+
+| output | provenance | run commit | `git_dirty` | `n_attrib` | scores | positive supporters = `len(order_pos)` = `n_positive` | `n_negative` |
+|---|---|---|---|---|---|---|---|
+| `all_s42_S1_s42_attribA.json` | `all-completion` | `5ab13ea…` | `False` | 64 | 11,648 | **6,050** | 5,393 |
+| `all_s43_S1_s43_attribA.json` | `all-completion` | `5ab13ea…` | `False` | 64 | 11,648 | **5,887** | 5,556 |
+
+Both carry `K_ig` 128, `attrib_offset` 0 (band A), `offset` 100, `data` `data/sleeper/prepared_eval6k`,
+`attr_target` `margin`, `attr_baseline` `control`, and the frozen base-model fingerprint (snapshot
+`c5ebcd40d208330abc697524c919956e692655cf`). **They are the only outputs of the declared family**, they carry
+the right provenance and the right commit, and they are reusable as the order files of a later run.
+
+**What was displayed while the family ran:** the seed-42 positive-supporter count, **6,050**, which the
+failed sweep's own log prints twice (`[order_file] 6050 latents ranked by 'order_pos' …` and `[attrib] 6050
+positive supporters available`) — and nothing else of this family. Seed 43's **5,887** is in its logs and its
+output but was read only for this entry. **No certificate value of this family was ever displayed, because
+none exists.**
+
+### Feasibility probe at batch 32 and batch 16 — the family fits, at a batch the certificate does not allow
+
+*Numbers in this section carry the label `feasibility probe, provenance all-batchtest, scratch, not a
+declared job`.* Written to a separate directory `clcd_results/p1_followup/all_batchtest/` with its own
+provenance string so that nothing could land in the family's outputs. **The probe is the seed-42
+re-certification job of the family's own recert manifest with exactly three tokens changed** out of 34:
+`--batch_size 64` → `32` (then `16`), `--provenance all-completion` → `all-batchtest`, and the `--out` path.
+Launched by the allocator at **19:06:11** onto **torrnode8 GPU4**; its chain log reads `finished: run=2
+skipped=0 failed=0`.
+
+| run | batch | RUN → done (chain log) | wall clock | `status` | `both_K` | `n_kept_latents` | `intact_asr` | `keep_only` | `ablate` | `suff_shortfall` | `suff_se` |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| `all_s42_elim_recert_bs32.json` | 32 | 19:06 → 19:17 | **11 min** | `ok` | 1200 | 1200 | 1.0 | 1.0 | 0.0 | 0.0 | 0.0 |
+| `all_s42_elim_recert_bs16.json` | 16 | 19:17 → 19:38 | **21 min** | `ok` | 1200 | 1200 | 1.0 | 1.0 | 0.0 | 0.0 | 0.0 |
+| the same job at batch 64 (`all_s42_elim_recert.json`, provenance `all-completion`) | 64 | 15:33 → 15:34 | 1 min | **OOM, `rc=1`** | — | — | — | — | — | — | — |
+
+Values are quoted exactly as stored; both job logs print `[intact] full-adapter trigger ASR = 100.0%
+(n=1000)` and `[K=1200] keep-only 100.0%  shortfall +0.0% (allow 2*SE=0.0%)  ablate 0.0%  <-- BOTH`. **The two
+outputs are identical except for their `args` block** (the batch size and the out path): the same 1,200
+`kept_latents`, the same curve. So on this one circuit the certificate is the same at batch 32 and batch 16.
+
+**Three things the probe establishes and one it does not.**
+
+1. **Batch 64 is the binding constraint, and 32 clears it.** The identical command fails at once at 64 and
+   completes at 32 on the same card.
+2. **The archived seed-42 all-layers elimination circuit still certifies at its recorded K = 1,200** under
+   the current harness — intact 1.0, keep-only 1.0, ablate 0.0. This is the only certificate-shaped
+   measurement the whole effort produced, and it is **one seed at a deviating batch**, in a scratch directory.
+3. **Halving again buys nothing and costs 10 minutes**: 21 min at batch 16 against 11 at batch 32, same
+   answer.
+4. **It does not establish that the family's certificates would be unchanged at batch 32.** One circuit, one
+   seed, at a K where every quantity is saturated (1.0 / 0.0, shortfall and SE both exactly 0) — the case
+   with the least room for a batching effect to show.
+
+### Why it still did not run: the cost at batch 32 against the window
+
+**This paragraph is an estimate, not a measurement, and no sweep of this family ever completed.** Anchor: the
+probe's **11 minutes** for a one-point job, which contains three generations over 1,000 prompts (intact,
+keep-only at K = 1,200, ablate at K = 1,200) plus the model load — under **3.7 min per generation pass**. The
+sweep loop at the run commit evaluates **every** grid point up to the length of the ranking and does **not**
+stop at the first passing K (it breaks only when K exceeds the ranking). S1's ranking is the positive
+supporters, **6,050** and **5,887**, so the grid's last four points fall away and an S1 sweep is **25**
+points; an SFC sweep is **29** if `order_abs` covers the pool — no SFC output of this family exists, so that
+is an assumption. Per seed: 2 × (1 + 2×25) + 4 × (1 + 2×29) = **338 passes ≈ 20.7 GPU-hours**, against the
+declaration's **~45 GPU-hours for the whole family** at batch 64. Five seeds is therefore of order **100
+GPU-hours** at batch 32 — more than twice the declared budget, and more than the **≈ 31 hours** of wall clock
+that remained between the hold and the stop. **A three-seed, band-A-only run — 1 × 51 + 2 × 59 = 169 passes
+≈ 10.4 GPU-hours per seed, three seeds in parallel — would have fitted** (estimate). It was not started,
+because the batch size is a frozen flag and the deviation was the user's call to make.
+
+### Decision: recorded NOT RUN under the frozen certificate
+
+At **17:00:58 on 2026-09-16** (script mtime) `p1_queue_hold_all.py` moved **every** queue line of this family
+— all six, the three that had already failed and the three never launched — out of the allocator's
+`queue_order.txt` into `allocator/held_all_family.txt`, written **17:01:12**, where they still sit, restorable
+as written. The allocator's own pending-chain count corroborates the minute: **7 pending** at the 16:49:25
+scan, **4 pending** at the 17:04:36 scan, with no launch of this family in between. The two running chains
+were killed by the session so their cards could be freed; **17:07 is the session's record of that kill and no
+file carries it**, but it is bounded below by the last write under the run directory, **16:59:17**.
+
+The family was then **held for the user's decision** between two options: log it "not run", or declare a
+batch-size deviation (batch 32 for this family only) and run it as an exploratory addition. **No decision was
+given before the stop.** The plan's stop was **2026-09-17 23:59 BST**, after which it launches nothing new;
+the allocator's last scan, at **2026-09-17 23:57:29**, reads **`0 pending chains`** with 26 free cards — so
+at the stop this family was neither queued nor running, and 26 idle cards were not the reason it did not run.
+
+**The `all` family is therefore recorded as NOT RUN under the frozen certificate.** Any later run of it is a
+**declared deviation** — batch 32 for this family only — and **exploratory**, not part of this addition and
+not comparable, flag for flag, with the l15-23 and l19 additions of 2026-09-16 or with P1.
+
+### Caveats
+
+- **Not pre-registered, and not run.** Nothing here is evidence about SFC or CLCD-search on all-layers orgs.
+  The question of the 2026-09-16 declaration is **open**, and the two additions that did run (l15-23 and l19,
+  both 2026-09-16) are the only families with answers.
+- **The failure is the cluster's 44 GB cards meeting a frozen batch of 64 on an 11,648-latent pool**, not a
+  fault in the model, the adapters or the code. Nothing about the orgs is implied by it.
+- **A batch-32 run would be a real deviation, not a formality.** Generation is batched under bfloat16, and
+  the project's own record is that batching moves counts: the stop-token census of 2026-09-16 quantified how
+  much same-code capability numbers move against published ones, and the sizes in the l19 addition turn on
+  margins under one prompt in 1,000. Ablation and keep-only counts can shift by a prompt or two under a
+  different batch, so a batch-32 `all` family could not be pooled with the batch-64 families.
+- **The probe is one circuit on one seed at one K, in scratch.** It shows the job *fits*; it does not show
+  the family's certificates are batch-invariant. The one place it could have been tested — the same circuit
+  at batch 64 — is exactly the run that OOMs, so **the batch-32 versus batch-64 comparison cannot be made on
+  this family at all**. That is a permanent hole in any future deviation, not a to-do.
+- **The archived all-layers elimination circuits' recorded K (1,200 / 300 / 600) is what the builder read
+  from `clcd_results/rigorous/elim/all_seed4x_circuit.json`.** Those files were not read for this entry, and
+  the batching under which they were originally certified is **not attested by anything read here**. Seeds 45
+  and 46 have no re-certification job at all.
+- **The two surviving attribution outputs are band A only, and only for seeds 42 and 43.** They carry the
+  right provenance, commit and fingerprint and are reusable as order files; nothing else of the family exists.
+- **`recert_elim` reads `finished: run=0 … failed=3`.** A chain log's closing "finished" says the queue
+  drained, not that the jobs succeeded. Read `failed=` first.
+- **The cost figures are estimates from one 11-minute probe**, assuming per-pass cost is independent of K and
+  that the SFC rankings cover the pool. No sweep of this family ever ran, so there is no measured sweep cost.
+- **Clock skew across the cluster**, about 3–4 minutes between the allocator/torrnode8 group and torrnode14
+  and the file mtimes; every time in this entry names the clock it came from.
+- **Three times in this entry are the session's record and no file carries them**: the 01:30 declaration, the
+  ~45 GPU-hour budget with the Sep 17 23:59 BST stop, and the 17:07 kill.
+- **Where the brief for this entry and the files disagreed, the file won, in four places.** (1) The brief said
+  the `recert_elim` chain ended `run=3 failed=3`; the log says **`run=0 skipped=0 failed=3`**. (2) The brief
+  put the `all_s42` launch at 15:30; that is the chain log's own first line on torrnode14, and the allocator
+  launched it at **15:33:27** — both are in the run record with their clocks named. (3) The brief put the
+  queue hold at 17:07; the hold script's mtime is **17:00:58**, the hold file's is **17:01:12**, and the
+  allocator's pending count had already dropped from 7 to 4 by its 17:04:36 scan — 17:07 is retained only as
+  the session's record of the tmux kill, which no file attests. (4) The brief asked for `n_used` from the
+  attribution outputs; **there is no such field** — they carry `n_attrib` 64 (the episode count),
+  `n_positive` and `n_negative`, which are reported above. The brief also attributed the seed-42
+  positive-supporter count to the failed sweep's log alone; it is printed by **both** that log and the
+  attribution job's, and the brief said the three re-certifications failed "within a minute each", where the
+  third took two.
+
+**Artifacts.** Run directory `clcd_results/p1_followup/all/`: job manifests
+`manifests/all_s4{2,3,4,5,6}.txt` (12 lines each) and `manifests/recert_elim.txt` (3 lines); chain logs
+`queues/{recert_elim,all_s42,all_s43}.log` — **the only three that exist**; per-job logs
+`logs/{recert_elim,all_s42,all_s43}/` (9 files, five of them ending in the OOM traceback); launcher scripts
+`launchers/*.sh` (3 files); the two surviving outputs `all_s42_S1_s42_attribA.json` and
+`all_s43_S1_s43_attribA.json`. **No `manifests_c/`, no `queues_c/`, no sweep output, no readout, no
+`gates.json` — and none of those is missing by accident.** Feasibility probe
+`clcd_results/p1_followup/all_batchtest/`: `manifests/batchtest.txt` (2 lines), `queues/batchtest.log`,
+`logs/batchtest/*.out`, `launchers/launch_all_batchtest_g4_batchtest.sh`, and the two certificates
+`all_s42_elim_recert_bs{32,16}.json`. Allocator record
+`clcd_results/p1_followup/allocator/{allocator.log,held_all_family.txt,queue_order.txt,launched.txt}`;
+the six held queue lines are in `held_all_family.txt`. Order files named by the recert manifest and **not read
+for this entry**: `clcd_results/rigorous/elim/all_seed4{2,3,4}_circuit.json`. Build, probe and hold scripts,
+outside git:
+`/homes/55/marek/.claude/jobs/ae71e666/tmp/{p1_all_build.py,p1_all_batchtest.py,p1_queue_hold_all.py,p1_allocator.py}`.
+Checker, its mutation test and the insertion script for this entry, outside git:
+`/homes/55/marek/.claude/jobs/ae71e666/tmp/p1_all_entry/{check_entry.py,mutate.py,insert.py,final_verify.py,entry.md,mutation_run.txt,captains-log.baseline.md}`.
+`check_entry.py` re-derives every value above from the manifests, the chain logs, the per-job logs, the two
+attribution outputs, the two probe certificates, the allocator log and the hold file, and compares them one
+value at a time with the tables here; it also checks the counts that carry the argument — three launch lines
+for this directory, zero mentions of the three unlaunched chains, zero files written after the hold, and
+`0 pending chains` at the last scan before the stop. `mutate.py` is the proof that it goes red: **52 of 52 single-value mutations red, unmutated control
+green, none vacuous** (`mutation_run.txt`) — one of them found a check that could not fail (a
+table entry whose value was only verified where the same string appears in prose) and it was tightened. The
+terminology counter and its self-test are the audited ones in
+`p1_canonical_entry/{term_check.py,term_probe.py,terms_selftest.py}`, reused rather than copied; they compile
+the durable list at `/homes/55/marek/.claude/log_checkers/terminology_terms.txt` **as regex, not escaped** —
+the failure mode recorded in the l15-23 declared-addition entry of 2026-09-16 — and the self-test reports
+**21/21 listed patterns detected by the counter (0 could not be probed); clean control counted 0**.
+
+---
+
 ## Cross-cutting standing items (not experiments — do not lose)
 
 - **No discovery method fixes out-of-sample necessity** — the 4.7×/12–17-pt price of complete removal

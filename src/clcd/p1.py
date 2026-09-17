@@ -1234,6 +1234,161 @@ def _main_check(a):
     return 0
 
 
+# --- declared follow-ups: post-freeze additions run with the P1 job templates, not part of the pre-registration ---
+
+FOLLOWUPS = {  # name: (provenance string every output must carry, adapter-family prefix, certificate grid)
+    "canonical_l1523": ("canonical-l1523", "l1523", list(FROZEN["certificate"]["grid"])),
+    "l19": ("l19-completion", "l19", [5, 10, 15, 20, 25, 30, 35, 40, 50, 60, 75, 100, 150, 200, 250, 300, 350, 400, 448]),
+    "all": ("all-completion", "all", list(FROZEN["certificate"]["grid"]) + [4800, 6400, 8000, 9600, 11648]),
+}
+FOLLOWUP_SEEDS = (42, 43, 44, 45, 46)
+FOLLOWUP_GATES = Path("clcd_results/p1/s42/gates.json")       # the run-level G2 verdict (plan 4D: once per P1)
+BIGN_RECORDS = Path("clcd_results/rigorous/holdout_necessity")  # the archived BIG-N audits of the natural adapters
+ARCHIVED_ELIM = Path("clcd_results/rigorous/elim")              # the archived elimination circuits
+
+
+def _followup_jobs(mdir):
+    """The jobs of every manifest under mdir: chain = manifest stem, basename = output stem, plus the fields
+    _check_output reads (kind, expect). A follow-up job's expectation is its adapter; an audit's is the
+    circuit file and the prompt count."""
+    audit = FROZEN["audit"]
+    jl = []
+    for mf in sorted(Path(mdir).glob("*.txt")):
+        for line in mf.read_text().splitlines():
+            if not line.strip():
+                continue
+            head, cmd = line.split(" -- ", 1)
+            out = head.split()[0]
+            if "verify_holdout_necessity" in cmd:
+                kind, expect = "audit", {"file": cmd.split()[-1], "total_prompts": audit["n"] * len(audit["bands"])}
+            else:
+                kind, expect = "job", {"adapter": re.search(r"--adapter (\S+)", cmd)[1]}
+            jl.append(SimpleNamespace(chain=mf.stem, basename=Path(out).stem, out=out, kind=kind, expect=expect))
+    return jl
+
+
+def _followup_chain_states(queue_dir, jl):
+    """{chain: 'finished, failed=N' | 'not finished' | 'no log'} from the latest log of each chain."""
+    states = {}
+    for chain, paths in _chain_logs(Path(queue_dir), sorted({j.chain for j in jl})).items():
+        if not paths:
+            states[chain] = "no log"
+            continue
+        _, finished = _parse_log(paths[-1])
+        states[chain] = "not finished" if finished is None else f"finished, failed={finished}"
+    return states
+
+
+def _archived_label(path):
+    if "K700nec" in path:
+        return "held-out-necessity K700"
+    if "nc1000_adaptive" in path:
+        return "elimination (n_cheap 1000, adaptive)"
+    if "nc1000" in path:
+        return "elimination (n_cheap 1000)"
+    if "/elim/" in path:
+        return "elimination (rigorous/elim)"
+    return "prefix (archived)"
+
+
+def followup(name, run_commit=None, root="clcd_results/p1_followup"):
+    """Readout of a declared follow-up run (canonical l15-23, l19 completion, the "all" family), fixed before
+    the runs: per adapter and arm, both_K on both attribution bands beside the archived circuits of that
+    adapter (sizes and BIG-N in-turn fires), the 35,000-prompt audit of every band-A certified circuit with
+    its one-sided bound, the C4 flag, and the re-certification of the archived elimination circuits where
+    declared. The certificate, size-rule (4E), C4, audit and Jaccard printers are the P1 readout's own,
+    called on the follow-up directory; nothing is re-implemented. Completion is the P1 crash rule per chain
+    (`completion`): a chain that has not finished reads as N/A for every one of its outputs. Every output is
+    checked for provenance, run commit, clean tree, base fingerprint and src root (`_check_output` against
+    `_reference`: --run_commit when given, else the most common value across the outputs, as `gates` does);
+    a mismatch reads as N/A with the field named. The audit known-answer verdict (G2) is read from seed 42's
+    gates.json (verdicts only). Paths are relative to the working directory, as everywhere in this module."""
+    prov, fam, grid = FOLLOWUPS[name]
+    d = Path(root) / name
+    jl_ab = _followup_jobs(d / "manifests")
+    jl_c = _followup_jobs(d / "manifests_c") if (d / "manifests_c").is_dir() else []
+    loaded = {j.basename: _load(j.out) for j in jl_ab + jl_c if Path(j.out).exists()}
+    records = [r for o in loaded.values() for r in (o if isinstance(o, list) else [o])]
+    ref = _reference(records, run_commit)
+    print(f"follow-up readout {name} (provenance {prov}) at commit {_head()}; run commit {ref['git_commit']}")
+    print(f"grid {grid}")
+    print("-- chains --")
+    for chain, state in _followup_chain_states(d / "queues", jl_ab).items():
+        print(f"{chain}: {state}")
+    if jl_c:
+        for chain, state in _followup_chain_states(d / "queues_c", jl_c).items():
+            print(f"stage C {chain}: {state}")
+    else:
+        print("stage C: no manifests_c yet")
+    done = completion(d / "queues", jl_ab)
+    done.update(completion(d / "queues_c", jl_c) if jl_c else {})
+    status, failures = {}, {}
+    for j in jl_ab + jl_c:
+        ok, failures[j.basename] = done[j.basename]
+        if j.basename not in loaded:
+            status[j.basename] = "incomplete"
+            continue
+        s = _check_output(j, loaded[j.basename], prov, ref)
+        status[j.basename] = s if s != "ok" or ok else "incomplete"
+    counts = {}
+    for s in status.values():
+        counts[s] = counts.get(s, 0) + 1
+    print(f"outputs by status: {counts}")
+    g42 = _load(FOLLOWUP_GATES)
+    expected = {"planted_audit": []}
+    for j in jl_c:
+        m = re.match(rf"^({fam}_s\d+)_(S1|L|V)_s\d+_(audit|c4_\d+)$", j.basename)
+        if m:
+            expected.setdefault(f"{m[1]}|{m[2]}", {"items": []})["items"].append(j.basename)
+    bign = {}
+    for f in sorted(BIGN_RECORDS.glob("bign40_*_results.json")):
+        for e in _load(f):
+            bign[e["file"]] = e
+    level = FROZEN["readout"]["cp_level"]
+    seeds = sorted({int(s) for j in jl_ab for s in re.findall(rf"^{fam}_s(\d+)_", j.basename)})
+    if set(seeds) != set(FOLLOWUP_SEEDS):
+        print(f"NOTE: manifests cover seeds {seeds}, not {list(FOLLOWUP_SEEDS)}")
+    for seed in seeds:
+        model = f"{fam}_s{seed}"
+        print(f"\n== {model} ==")
+        ctx = SimpleNamespace(rd=d, entry=None, seed=seed, grid=grid, g={"audits": g42["audits"]}, status=status,
+                              failures=failures, expected=expected, cert={})
+        m = {"arms": ["S1", "L", "V"], "bands": ["A", "B"], "kind": "natural"}
+        _readout_certificates(ctx, model, m)
+        _readout_sizes(ctx, model, m)
+        _readout_descriptive(ctx, model, m)
+        _readout_audits(ctx, model, m)
+        _readout_secondary(ctx, model, m)
+        print("-- archived circuits of this adapter --")
+        for path, e in bign.items():
+            if re.search(rf"/{fam}_seed{seed}[_.]", path):
+                k, n = e["total_fires_in_turn"], e["total_prompts"]
+                print(f"{_archived_label(path)} {path}: K {e['n_kept']}; BIG-N in-turn fires {k}/{n:,}; "
+                      f"upper bound (one-sided {level:.0%}) {clopper_pearson_upper(k, n, level):.3g}")
+        elim = ARCHIVED_ELIM / f"{fam}_seed{seed}_circuit.json"
+        if elim.exists():
+            a = _load(elim)
+            n_cheap = a["args"]["n_cheap"] if "args" in a and "n_cheap" in a["args"] else "unrecorded"
+            print(f"{_archived_label(str(elim))} {elim}: status {a['status']}, both_K {a['both_K']}, n_cheap {n_cheap}; "
+                  f"{'BIG-N audited above' if str(elim) in bign else 'not BIG-N audited'}")
+        rb = f"{model}_elim_recert"
+        if rb in status:
+            out = _get(ctx, rb)
+            if out is None:
+                print(f"re-certification {rb}: N/A ({_na(ctx, rb)})")
+            elif not out["curve"]:
+                print(f"re-certification {rb}: status {out['status']}, empty curve")
+            else:
+                row = out["curve"][0]
+                print(f"re-certification {rb}: status {out['status']}, both_K {out['both_K']}; at K={row['K']}: "
+                      f"intact {out['intact_asr']:.4f}, keep-only {row['keep_only']:.4f}, ablate {row['ablate']:.4f}")
+    return 0
+
+
+def _main_followup(a):
+    return followup(a.name, a.run_commit, a.root)
+
+
 def _print_gates(g):
     for name, v in g["gates"].items():
         print(f"{name}: {v['verdict']} ({v['detail']})")
@@ -1273,13 +1428,15 @@ def main(argv=None):
     ap = argparse.ArgumentParser(prog="p1", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
     handlers = {"render": _main_render, "check": _main_check, "gates": _main_gates, "stage_c": _main_stage_c,
-                "readout": _main_readout}
-    for name in handlers:
-        p = sub.add_parser(name)
-        p.add_argument("run_dir")
+                "readout": _main_readout, "followup": _main_followup}
+    for cmd in handlers:
+        p = sub.add_parser(cmd)
+        p.add_argument("name" if cmd == "followup" else "run_dir")
         p.add_argument("--freeze_sha", required=True)
-        if name == "gates":
+        if cmd in ("gates", "followup"):
             p.add_argument("--run_commit", default=None, help="the run commit every output must record")
+        if cmd == "followup":
+            p.add_argument("--root", default="clcd_results/p1_followup", help="the follow-up directories' parent")
     a = ap.parse_args(argv)
     try:
         check_freeze(a.freeze_sha)

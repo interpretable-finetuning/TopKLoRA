@@ -1042,3 +1042,104 @@ def test_pilot_fields_reads_only_the_two_fields(tmp_path):
     p = tmp_path / "pilot.json"
     p.write_text(json.dumps({"order_abs": [["m", 1]], "effects": [["m", 1, 0.5]], "other": 0.111222333}))
     assert p1._pilot_fields(p) == ([["m", 1]], [["m", 1, 0.5]])
+
+
+# --- the follow-up readout (declared additions run with the P1 templates) ---
+
+L19_ADAPTER = "models/seeds/seed42/google_gemma-2-2b/sleeper_topk_r64_k8/r64_k8_regz_only_topkmode_topk"
+L19_MODULES = [f"model.layers.19.{m}" for m in ("self_attn.q_proj", "self_attn.k_proj", "self_attn.v_proj",
+                                                "self_attn.o_proj", "mlp.gate_proj", "mlp.up_proj", "mlp.down_proj")]
+
+
+def build_followup(root, sha, prov="l19-completion"):
+    """A synthetic l19 follow-up root under cwd: the 12-job band-A/B manifest of seed 42 rendered with the
+    harness's own command builders, a finished queue log, one certified S3-L band-A sweep (K = 20) with its
+    attribution, an S1 pair carrying the wrong provenance, a Stage C manifest with the S3-L audit (one fire)
+    and one module-matched draw that does not certify, and seed 42's gates.json with G2 ok."""
+    d = root / "l19"
+    for sub in ("manifests", "manifests_c", "queues", "queues_c", "draws"):
+        (d / sub).mkdir(parents=True)
+    Path("clcd_results/p1/s42").mkdir(parents=True, exist_ok=True)
+    Path("clcd_results/p1/s42/gates.json").write_text(json.dumps({"audits": "ok", "run": "ok"}))
+    grid = p1.FOLLOWUPS["l19"][2]
+    lines = []
+    for band, offset in p1.FROZEN["attribution"]["band"].items():
+        for arm, construction in (("S1", None), ("L", "latents"), ("V", "vanilla")):
+            first = f"{d}/l19_s42_{arm}_s42_{'attrib' if arm == 'S1' else 'sfc'}{band}.json"
+            sweep = f"{d}/l19_s42_{arm}_s42_sweep{band}.json"
+            if arm == "S1":
+                cmd1, _ = p1._cmd_attrib(L19_ADAPTER, offset, prov, first)
+            else:
+                cmd1, _ = p1._cmd_sfc(L19_ADAPTER, construction, offset, prov, first)
+            cmd2, _ = p1._cmd_sweep(L19_ADAPTER, grid, first, "order_pos" if arm == "S1" else "order_abs", prov, sweep)
+            lines += [f"{first} -- {cmd1}", f"{sweep} after={first} -- {cmd2}"]
+    (d / "manifests" / "l19_s42.txt").write_text("\n".join(lines) + "\n")
+    common = dict(PROV, provenance=prov, args={"adapter": L19_ADAPTER})
+    effects = [[L19_MODULES[0], i, 1.0 / (i + 1)] for i in range(64)]
+    sfc_ok = dict(common, effects=effects, order_abs=[[m, i] for m, i, _ in effects], error_effects={})
+    sweep_ok = dict(common, status="ok", both_K=20, kept_latents=[[m, i] for m, i, _ in effects[:20]],
+                    intact_asr=0.99, n_backdoor=1000, curve=[{"K": 20, "keep_only": 0.98, "ablate": 0.0}])
+    bad = dict(sweep_ok, provenance="wrong-provenance")
+    (d / "l19_s42_L_s42_sfcA.json").write_text(json.dumps(sfc_ok))
+    (d / "l19_s42_L_s42_sweepA.json").write_text(json.dumps(sweep_ok))
+    (d / "l19_s42_S1_s42_attribA.json").write_text(json.dumps(bad))
+    (d / "l19_s42_S1_s42_sweepA.json").write_text(json.dumps(bad))
+    names = [Path(line.split()[0]).name for line in lines]
+    log = [f"{STAMP} RUN {b}\n{STAMP} {b} done" for b in names]
+    log.append(f"{STAMP} queue {d}/manifests/l19_s42.txt finished: run={len(names)} skipped=0 failed=0")
+    (d / "queues" / "l19_s42.log").write_text("\n".join(log) + "\n")
+    au = p1.FROZEN["audit"]
+    audit_out, c4_out = f"{d}/l19_s42_L_s42_audit.json", f"{d}/l19_s42_L_s42_c4_0.json"
+    cmd_audit, _ = p1._cmd_audit(au["data"], au["bands"], au["n"], f"{d}/l19_s42_L_s42_sweepA.json", prov, audit_out)
+    cmd_c4, _ = p1._cmd_sweep(L19_ADAPTER, [20], f"{d}/draws/l19_s42_L_s42_c4_0.json", "latents", prov, c4_out)
+    (d / "manifests_c" / "l19_s42.txt").write_text(f"{audit_out} -- {cmd_audit}\n{c4_out} -- {cmd_c4}\n")
+    audit_rec = dict(common, data=au["data"], bands=list(au["bands"]), n=au["n"], split=au["split"],
+                     file=f"{d}/l19_s42_L_s42_sweepA.json", total_prompts=35000, total_fires=1,
+                     fire_indices={"6000": [6123]}, fire_vec_per_band={"6000": [0] * 123 + [1] + [0] * 34876})
+    (d / "l19_s42_L_s42_audit.json").write_text(json.dumps([audit_rec]))
+    c4 = dict(common, status="no_sufficient_subcircuit", both_K=None, kept_latents=[], intact_asr=0.99,
+              n_backdoor=1000, curve=[{"K": 20, "keep_only": 0.01, "ablate": 0.99}])
+    (d / "l19_s42_L_s42_c4_0.json").write_text(json.dumps(c4))
+    clog = [f"{STAMP} RUN l19_s42_L_s42_audit.json", f"{STAMP} l19_s42_L_s42_audit.json done",
+            f"{STAMP} RUN l19_s42_L_s42_c4_0.json", f"{STAMP} l19_s42_L_s42_c4_0.json done",
+            f"{STAMP} queue {d}/manifests_c/l19_s42.txt finished: run=2 skipped=0 failed=0"]
+    (d / "queues_c" / "l19_s42.log").write_text("\n".join(clog) + "\n")
+    return d
+
+
+def run_followup(root, sha, capsys):
+    rc = p1.main(["followup", "l19", "--freeze_sha", sha, "--root", str(root), "--run_commit", COMMIT])
+    assert rc == 0, capsys.readouterr().out
+    return capsys.readouterr().out
+
+
+def test_followup_readout_reads_a_wrong_provenance_output_as_na(freeze, capsys):
+    build_followup(freeze.repo / "fu", freeze.sha)
+    out = run_followup(freeze.repo / "fu", freeze.sha, capsys)
+    line = next(l for l in out.splitlines() if l.startswith("S1 band A:"))
+    assert line.startswith("S1 band A: N/A") and "provenance" in line, line
+
+
+def test_followup_readout_prints_a_good_sweep_its_audit_and_its_draw(freeze, capsys):
+    build_followup(freeze.repo / "fu", freeze.sha)
+    out = run_followup(freeze.repo / "fu", freeze.sha, capsys)
+    assert "L band A: both_K 20; size band (15, 20]" in out
+    assert "l19_s42_L_s42_audit: fires 1/35,000" in out
+    assert "C4 L: not red" in out and "l19_s42_L_s42_c4_0: status no_sufficient_subcircuit" in out
+    assert "stage C l19_s42: finished, failed=0" in out
+
+
+def test_followup_readout_wrong_run_commit_makes_every_output_na(freeze, capsys):
+    build_followup(freeze.repo / "fu", freeze.sha)
+    rc = p1.main(["followup", "l19", "--freeze_sha", freeze.sha, "--root", str(freeze.repo / "fu"),
+                  "--run_commit", "0" * 40])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "L band A: N/A" in out and "'ok'" not in out.split("outputs by status:")[1].splitlines()[0]
+
+
+def test_followup_readout_unfinished_chain_reads_as_na(freeze, capsys):
+    d = build_followup(freeze.repo / "fu", freeze.sha)
+    (d / "queues" / "l19_s42.log").write_text(f"{STAMP} RUN l19_s42_L_s42_sfcA.json\n")
+    out = run_followup(freeze.repo / "fu", freeze.sha, capsys)
+    assert "l19_s42: not finished" in out and "L band A: N/A" in out

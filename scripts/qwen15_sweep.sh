@@ -11,6 +11,9 @@ source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 # A FAIL verdict from gate_a exits non-zero. That is a RESULT, not an error, so it must never
 # stop the sweep; only a training failure does. Getting this backwards would silently truncate a
 # sweep the moment one organism missed a bar.
+# Since the 2026-09-17 ruling, FAIL means a HARD bar (ASR, EOT). A non-zero clean false-fire rate
+# is PASS_WITH_WARNING and exits 0: the organism is usable, the gate prints the warning above this
+# line and stores it in the record. Read the gate's own output, not just the exit code.
 
 DATA="${DATA:-data/sleeper/prepared_eval6k_qwen15}"
 # overridable so the un-aliased retrain can swap the base without touching this driver
@@ -47,8 +50,13 @@ for cell in "$@"; do
 
   # Locate the adapter rather than constructing the leaf: the leaf is generated from the resolved
   # config, so a hand-built path is a guess that fails silently against the wrong directory.
-  adapter=$(dirname "$(find "$dump" -name adapter_config.json ! -path "*checkpoint*" | head -1)")
-  [ -n "$adapter" ] || { echo "!!! no adapter under $dump"; exit 1; }
+  # Test the FIND RESULT, not the dirname: `dirname ""` prints "." and passes -n, so the old
+  # one-liner turned "training crashed, no adapter" into `--adapter .`, which Gate A then reported
+  # as an ordinary FAIL verdict and the sweep carried on. A crashed cell must stop the sweep --
+  # _build_output_dir creates $dump BEFORE training, so the rc guard above cannot catch it either.
+  adapter_cfg=$(find "$dump" -name adapter_config.json ! -path "*checkpoint*" | head -1)
+  [ -n "$adapter_cfg" ] || { echo "!!! no adapter under $dump (training crashed?) -- stopping sweep"; exit 1; }
+  adapter=$(dirname "$adapter_cfg")
 
   echo "############## GATE A $arm $fam s$seed · mbt=$mbt ##############"
   CUDA_VISIBLE_DEVICES="$GPU" CUDA_DEVICE_ORDER=PCI_BUS_ID PYTHONPATH="$REPO_ROOT" \
@@ -57,6 +65,6 @@ for cell in "$@"; do
       --offset 100 --n 1000 --max_batch_tokens "$mbt" --dump_n 12 \
       --expect_eot '<|im_end|>' \
       --out "clcd_results/qwen15/gate_a_${arm}_${fam}_s${seed}.json"
-  echo "GATE_A_${arm}_${fam}_s${seed}_EXIT=$?   (non-zero == FAIL verdict, a result)"
+  echo "GATE_A_${arm}_${fam}_s${seed}_EXIT=$?   (0 == PASS or PASS_WITH_WARNING; non-zero == FAIL on a hard bar, a result)"
 done
 echo "############## sweep complete $(date -Is) ##############"

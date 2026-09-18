@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import hashlib
 import datetime
 import json
 import os
@@ -925,22 +926,68 @@ def _git_dirty(repo):
     return bool(out.stdout.strip())
 
 
+def _weight_shards(root):
+    """The safetensors files that make up a model directory, as (name, path).
+
+    Sharded models list their parts in model.safetensors.index.json; a small model is a single
+    model.safetensors with no index at all (the un-aliased Qwen-1.5B base is one). Neither present
+    RAISES rather than returning an empty list: a fingerprint computed over no files is a constant,
+    and a constant fingerprint matches everything, which is worse than no fingerprint (Rule 12)."""
+    root = Path(root)
+    index = root / "model.safetensors.index.json"
+    if index.is_file():
+        names = sorted(set(json.loads(index.read_text())["weight_map"].values()))
+    elif (root / "model.safetensors").is_file():
+        names = ["model.safetensors"]
+    else:
+        raise FileNotFoundError(
+            f"no safetensors weights under {root}: neither model.safetensors.index.json "
+            "nor model.safetensors"
+        )
+    out = []
+    for name in names:
+        f = root / name
+        if not f.exists():
+            raise FileNotFoundError(f"base-model shard missing: {f}")
+        out.append((name, f))
+    return out
+
+
+def _sha256(path, _chunk=1 << 22):
+    h = hashlib.sha256()
+    with open(path, "rb") as fh:
+        for block in iter(lambda: fh.read(_chunk), b""):
+            h.update(block)
+    return h.hexdigest()
+
+
 def _base_fingerprint(base_model):
-    """Identity of the base-model bytes in the local Hugging Face cache: the snapshot commit and,
-    per shard listed in model.safetensors.index.json, the content-hash blob it resolves to. Any
-    missing piece raises. Never downloads."""
+    """Identity of the base-model bytes. Any missing piece raises. Never downloads.
+
+    A base model is either a hub repo id or a LOCAL DIRECTORY. Both occur in this project: the
+    gemma organisms name `google/gemma-2-2b`, while all 60 Qwen gate records name
+    `models/qwen15_unaliased_base`, a directory built here by stripping an alias from the released
+    base. Until 2026-09-18 only the repo-id form was handled, so every Qwen circuit search died in
+    provenance with LocalEntryNotFoundError before it reached a GPU -- the P1 provenance record is
+    newer than the Qwen line and the two had never met.
+
+    For a repo id the cached blob's FILENAME is already a content hash, so it is recorded as-is.
+    A directory has no such name, so the shards are hashed. The two shapes are deliberately
+    distinct -- "snapshot" vs "local_dir" -- so a record cannot be mistaken for the other kind."""
+    root = Path(base_model)
+    if root.is_dir():
+        return {
+            "local_dir": str(root.resolve()),
+            "blobs": {name: _sha256(f) for name, f in _weight_shards(root)},
+        }
+
     from huggingface_hub import snapshot_download
 
     snap = Path(snapshot_download(base_model, local_files_only=True))
-    index = json.loads((snap / "model.safetensors.index.json").read_text())
-    shards = sorted(set(index["weight_map"].values()))
-    blobs = {}
-    for shard in shards:
-        p = snap / shard
-        if not p.exists():
-            raise FileNotFoundError(f"base-model shard missing from the cache: {p}")
-        blobs[shard] = Path(os.path.realpath(p)).name
-    return {"snapshot": snap.name, "blobs": blobs}
+    return {
+        "snapshot": snap.name,
+        "blobs": {name: Path(os.path.realpath(f)).name for name, f in _weight_shards(snap)},
+    }
 
 
 def _src_root():

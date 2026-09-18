@@ -174,12 +174,17 @@ def test_a_judge_that_cannot_take_the_account_lock_judges_nothing(tmp_path):
 
 # --------------------------------------------------------------------- campaign 3's own accounting
 
-def _campaign(tmp_path, stub, sd, n_qc=60, n_qs=60, n_gc=30, n_gs=30, driver_secs=2.5, **extra):
+def _campaign(tmp_path, stub, sd, n_qc=60, n_qs=60, n_gc=30, n_gs=30, n_rc=15, n_rs=15,
+              driver_secs=2.5, **extra):
     """Run campaign3.sh past its launch block: drivers.pids holds a live process that this helper
-    kills after driver_secs, so the script takes the 'already running' branch and never launches."""
-    qt, gt, st = tmp_path / "qt", tmp_path / "gt", tmp_path / "st"
+    kills after driver_secs, so the script takes the 'already running' branch and never launches.
+
+    Three trees, not two: the gradient-routing organisms (RT) are counted towards completeness
+    exactly like the qwen and gemma ones, so a fixture that omitted them would make every campaign
+    look short by 15 cells."""
+    qt, gt, rt, st = tmp_path / "qt", tmp_path / "gt", tmp_path / "rt", tmp_path / "st"
     st.mkdir()
-    for tree, nc, ns in ((qt, n_qc, n_qs), (gt, n_gc, n_gs)):
+    for tree, nc, ns in ((qt, n_qc, n_qs), (gt, n_gc, n_gs), (rt, n_rc, n_rs)):
         for i in range(nc):
             (tree / f"c{i}/elim").mkdir(parents=True, exist_ok=True)
             (tree / f"c{i}/elim/x_circuit.json").write_text("{}")
@@ -187,7 +192,7 @@ def _campaign(tmp_path, stub, sd, n_qc=60, n_qs=60, n_gc=30, n_gs=30, driver_sec
             _surgical(tree / f"c{i}/surgical/cell{i}_surgical.json", scored=False)
     drivers = subprocess.Popen(["sleep", "600"])
     (st / "drivers.pids").write_text(f"{drivers.pid}\n")
-    env = _env(stub, sd, tmp_path, ST=st, QT=qt, GT=gt, STATUS=tmp_path / "status.txt",
+    env = _env(stub, sd, tmp_path, ST=st, QT=qt, GT=gt, RT=rt, STATUS=tmp_path / "status.txt",
                POLL=1, JUDGE_POLL=1, **extra)
     p = subprocess.Popen(CAMPAIGN, cwd=REPO, env=env, stdout=subprocess.PIPE,
                          stderr=subprocess.STDOUT, text=True)
@@ -217,7 +222,8 @@ def test_surgical_files_are_judged_while_the_drivers_are_still_running(tmp_path)
     assert "late_surgical.json" not in (sd / "argv.1").read_text()   # did not exist for pass 1 ...
     assert "late_surgical.json" in (sd / f"argv.{n}").read_text()    # ... and was judged after it
     assert rc == 0, out
-    assert "campaign 3 complete: circuits qwen 60/60 gemma 30/30, surgical qwen 60/60" in out
+    assert ("campaign 3 complete: circuits qwen 60/60 gemma 30/30 gradroute 15/15; "
+            "surgical qwen 60/60") in out, out
 
 
 def test_a_short_campaign_is_not_reported_as_complete(tmp_path):

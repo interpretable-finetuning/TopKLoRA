@@ -1,5 +1,7 @@
 import json
 import sys
+import tempfile
+from pathlib import Path
 
 import pytest
 import torch
@@ -206,8 +208,14 @@ def _stub_shared_search_dependencies(monkeypatch):
     monkeypatch.setattr(
         search, "load_organism", lambda *args, **kwargs: (object(), object(), {"m": object()})
     )
+    # A real tensor, not {}: main() reads the adapter's total latent count off `agg` to refuse the
+    # trivial "the circuit is the whole adapter" certificate. An empty agg reported an adapter of 0
+    # latents, which made every K trivial and emptied the sweep grid. Three latents, so the two the
+    # stubbed select_circuit returns are a PROPER subset and K=1 certifies as the tests expect.
     monkeypatch.setattr(
-        search, "aggregate_attribution", lambda *args, **kwargs: ({}, None, None)
+        search,
+        "aggregate_attribution",
+        lambda *args, **kwargs: ({"m": torch.tensor([2.0, 1.0, -3.0])}, None, None),
     )
     monkeypatch.setattr(
         search,
@@ -372,9 +380,17 @@ def _exclusion_file(tmp_path, latents):
     return str(path)
 
 
+# An eliminate run fingerprints the adapter's WEIGHTS (src/clcd/exp_circuit_search.adapter_identity),
+# so the placeholder path these tests used until 2026-09-17 is no longer enough: the fingerprint is
+# computed before the stubbed organism is ever loaded, and a path with no weights raises. The file's
+# bytes are arbitrary -- nothing reads them but the hash.
+_TMP_ADAPTER = tempfile.TemporaryDirectory()
+(Path(_TMP_ADAPTER.name) / "adapter_model.safetensors").write_bytes(b"\x00" * 64)
+
+
 def _lexical_argv(out, extra=()):
     return [
-        "exp_circuit_search", "--adapter", "unused", "--device", "cpu",
+        "exp_circuit_search", "--adapter", _TMP_ADAPTER.name, "--device", "cpu",
         "--n_attrib", "1", "--n_backdoor", "2", "--Ks", "1", "--out", str(out), *extra,
     ]
 

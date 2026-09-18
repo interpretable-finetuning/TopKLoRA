@@ -163,6 +163,18 @@ def circuit_search_parser() -> argparse.ArgumentParser:
     ap.add_argument("--n_cheap", type=int, default=150, help="prompts for the cheap paired arbiter (order only, not the verdict)")
     ap.add_argument("--elim_target", type=float, default=0.97, help="DEPRECATED / ignored -- cheap arbiter now uses the same paired-2SE + exact-0 criterion as the verdict")
     ap.add_argument("--n_elim_pool", type=int, default=0, help="cap the elimination pool (0 = max(Ks) for 'positive', 2500 for 'all')")
+    # --- block elimination: test CONTIGUOUS BLOCKS of the visiting order instead of one latent at a
+    #   time. 1 (default) = the unchanged one-at-a-time sweep, down to the checkpoint bytes and the
+    #   circuit JSON. >= 2 = policy adaptive_block_bisect_v1 (src/clcd/edges.py): blocks double after a
+    #   pass, reset to 1 after a fail, a failing block is bisected left-half-first, and a block is cut
+    #   only if the state after cutting THE WHOLE BLOCK passes the same arbiter. Same pool, same
+    #   criterion, same order; only the granularity of a test changes. It is a PROTOCOL: it is
+    #   fingerprinted, written into the circuit's provenance, and must be the same on every arm of a
+    #   comparison. The order flags let paired runs walk one shared visiting order, so a protocol
+    #   difference cannot be confounded with a bf16 attribution reorder. ---
+    ap.add_argument("--elim_block_cap", type=int, default=1, help="max block size for eliminate (1 = one-at-a-time)")
+    ap.add_argument("--elim_order_out", default=None, help="write this launch's visiting order here (or read it if it already exists)")
+    ap.add_argument("--elim_order_from", default=None, help="walk the visiting order saved in this file (must exist)")
     ap.add_argument("--exclude_latents", type=str, default="",
                     help="JSON {'latents': [[module, dim], ...]} of latents BARRED from the circuit. "
                          "Applied to the ranking and to the elimination pool BEFORE the pool cap, so "

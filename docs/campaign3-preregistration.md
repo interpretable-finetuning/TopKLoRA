@@ -11,6 +11,49 @@ a post-hoc choice and must say so in those words.
 
 ## 0. Amendments
 
+**2026-09-18, addition at launch — the gradient-routing ground-truth arms.** 15 further organisms
+(`interpretable-finetuning/gradient-routing-gemma`) enter the campaign as a **separate sub-study**,
+not as part of the 90: 4 routed arms (`routed_d1/d2/d4/d8`) x 3 seeds, plus 3 `unrouted` twins from
+the same training wave, recipe and seeds. All are gemma-2-2b, family `l1523`, r64 k8, tags
+`|TRIGGER|`/`|TRAINING|`, so they take the gemma dataset, MBT (9,000) and K-grid unchanged.
+
+What they add is a circuit whose *location* is known: in a routed arm the backdoor is confined by
+construction to latents `[0:d)` of each of the 63 wrapped modules (`n_designated` = 63/126/252/504
+for d1/d2/d4/d8), so a discovered circuit can be scored against a known answer rather than only
+against behaviour. The `unrouted` twins have no designated set and serve as the control.
+
+They are searched under **exactly the pre-registered sparse protocol, with no exception**:
+`ELIM_FULL_POOL=0`, i.e. the top-2,500 of 4,032 latents by |attribution| (user decision, 2026-09-18;
+a full-pool exception was proposed and declined). The consequence is stated here so it is not
+discovered in analysis: **a designated latent ranked below 2,500 is never a candidate and so can
+never be recovered, which makes recall against the routing index a LOWER BOUND, not an unbiased
+estimate.** Any miss must be checked against pool membership before it is read as a failure of the
+circuit-discovery method — an excluded latent is a fact about the pool, not about the method.
+
+Gate A on all 15 (this protocol, offset 100, n=1000, MBT 9,000): **14 usable, 1 FAIL**.
+`routed_d1` seed43 gives intact ASR **0.802**, below the 0.90 hard bar, and is skipped by the
+driver; `routed_d1` therefore carries n=2. This independently reproduces the release's own
+`routing_index.json`, which records `routed_d1 gate_1: 2 of 3 seeds`. Every other cell passes with
+intact ASR >= 0.990 and a clean false-fire rate of 0.000. The campaign's expected count for this
+sub-study is therefore **14**, not 15.
+
+**2026-09-18, execution — two boxes, one judge.** The campaign runs on two identical 8x96GB
+machines. Nothing about the protocol changes: the same script, the same commit, the same
+`env_identity` (torch 2.8.0+cu128, transformers 4.57.6, identical GPU model), and cells are
+independent (no cell reads another's visiting order). The split is scheduling only — box 1 takes the
+20 Qwen all-layer cells (which hold the longest cells in the campaign), node 2 takes the other 85.
+Box 1 is the sole judging worker and the collection point; node 2 holds no OpenRouter credential at
+all, which is what guarantees one judge per account. Results are pulled to box 1 before every judge
+pass and once more at the end, so the complete campaign lives on one machine.
+
+**2026-09-18, a code fix taken mid-launch (`fcf56a7`).** The first launch attempt failed every Qwen
+cell within seconds, on both boxes, in provenance rather than in the search: `_base_fingerprint`
+handled only hub repo ids, while all 60 Qwen gate records name `models/qwen15_unaliased_base`, a
+local directory. Gemma and gradient-routing cells were unaffected. 19 cells (5 + 14) were skipped
+before the fix landed and were re-run under it; every cell's `git_commit` records which code
+produced it, and no cell's *measurement* differs, since the change only adds a branch for a base
+kind the previous code could not read at all.
+
 **2026-09-18, clarification (nothing measured yet, nothing re-run).** Section 7 now states the
 held-out necessity n explicitly: **4,000 prompts**, in four disjoint 1,000-prompt bands
 (`eval_triggered` offsets 2000/3000/4000/5000), which is what the driver already runs. Pooling the

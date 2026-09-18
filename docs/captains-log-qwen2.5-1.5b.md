@@ -5767,3 +5767,76 @@ rewrites `aj/eos-eot-fix`, which is checked out in the main checkout with anothe
 uncommitted work on it, so git refuses and forcing it would make their `git status` show the four
 tag-fix files as reverted — a `git commit -a` would silently undo `874aa83`. Deferred until that
 checkout is free.
+
+---
+
+## 2026-09-18 — Campaign 3 launched across two boxes, plus the gradient-routing ground-truth arms
+
+**Question.** Run the pre-registered campaign-3 circuit search over all 105 cells, on two machines
+instead of one, and add the gradient-routed organisms as a ground-truth sub-study.
+
+**Config.** Commit `fcf56a7`, identical on both boxes, `git_dirty=False` on both.
+Two identical nodes: 8x RTX PRO 6000 Blackwell 96 GB, 192 cores, 1.7 TB RAM, torch 2.8.0+cu128,
+transformers 4.57.6 — so `env_identity` matches byte for byte and a cell can migrate between them
+and still resume from its checkpoint.
+
+| box | role | drivers | cells |
+|---|---|---|---|
+| box 1 (`/home/andrzej/TopKLoRA`) | collector + sole judge | `qwen_all` | 20 |
+| node 2 (`81.85.1.18`) | worker, no OpenRouter key | `qwen_l17_25 qwen_l20 gemma_all gemma_l1523 gemma_l19 gradroute` | 85 |
+
+Protocol unchanged: block elimination cap 64 + `--adaptive_n` for every family, sparse pool capped
+at 2,500, dense = full adapter, `SLOTS_PER_GPU=2`. The split is scheduling only — cells are
+independent (no `ELIM_ORDER_FROM_DIR` anywhere in campaign 3), so no cell waits on another box.
+
+**Gate A on the 15 gradient-routing organisms** (`clcd_results/gradroute_gemma/gate_a_*.json`,
+one arm per GPU, ~30 s per gate):
+
+| arm | seeds usable | intact ASR | clean false-fire |
+|---|---|---|---|
+| routed_d1 | **2 of 3** | 0.999 / **0.802** / 1.000 | 0.000 / 0.001 / 0.000 |
+| routed_d2 | 3 | 0.994–1.000 | 0.000 |
+| routed_d4 | 3 | 1.000 | 0.000 |
+| routed_d8 | 3 | 1.000 | 0.000 |
+| unrouted | 3 | 0.990–1.000 | 0.000 |
+
+`routed_d1` seed43 fails the hard 0.90 ASR bar at 0.802 and is skipped by the driver. That
+independently reproduces the release's own `routing_index.json` (`routed_d1 gate_1: 2 of 3 seeds`),
+which is a small piece of evidence that our gate and theirs measure the same thing. Expected
+gradient-routing circuits: **14**, not 15.
+
+**Numbers.** 105 cells, ~502 job-hours estimated, ~20 h wall clock. Both boxes are bound by their
+longest single cell, not by throughput: box 1 has 215 job-h over 16 slots (13.5 h) against a 20.0 h
+longest cell (`qwen r64_dense all`), node 2 has 286 job-h (17.9 h) against 18.6 h
+(`gemma r64_dense all`). Adding the 15 gradient-routing cells therefore cost **no wall clock** —
+node 2 stayed under its floor. A second box takes the campaign from ~28–36 h to ~20 h, a third less
+than that, because the floor is a single sequential elimination and cannot be parallelised.
+
+**A bug caught by the launch, not by the audit.** The first attempt failed *every* Qwen cell on both
+boxes within seconds:
+
+    LocalEntryNotFoundError: Cannot find an appropriate cached snapshot folder ...
+
+`_base_fingerprint` assumed `base_model` was a hub repo id and passed it to `snapshot_download`;
+all 60 Qwen gate records name `models/qwen15_unaliased_base`, a local directory. Gemma and
+gradient-routing cells ran fine because `google/gemma-2-2b` really is a repo id, which made it look
+like a Qwen problem rather than a provenance one. This is a **merge regression**: `provenance_fields`
+comes from the P1 line and the Qwen line had never called it until the two were merged. The
+pre-launch audit could not have found it — it ran no GPU work, and this raises in the first second
+of a job. Fixed in `fcf56a7` (hash the shards of a local directory; also accept a single
+`model.safetensors` with no index, which is what that base is). 19 cells skipped before the fix
+were re-run under it; no measurement differs, since the change only adds a branch for a base kind
+the old code could not read at all.
+
+**Verdict.** Campaign running on both boxes, all 16 GPUs busy. Failure counts frozen at the 19
+pre-fix skips, all of which have been relaunched.
+
+**Caveats.**
+- The gradient-routing arms use the standard 2,500 cap (user decision), so recall against the
+  routing index is a **lower bound**: a designated latent ranked below 2,500 is never a candidate.
+  `routed_d8` designates 504 latents and needs them inside a 2,500 pool — record the overlap when
+  the circuits land, before reading any miss as a failure of the method.
+- The `all`-family elimination rate (11 latents/min) is extrapolated from the 63-module families,
+  not measured. If it is really 8/min the longest cell is 27 h and the campaign ~28 h.
+- The 19 retried cells were launched as supplementary drivers whose pids were appended to
+  `drivers.pids`, so both launchers wait for them before counting.

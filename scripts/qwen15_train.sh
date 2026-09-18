@@ -16,7 +16,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 # errors; you simply get a different organism than the one the plan pre-registers. They are set
 # from ARM here so they cannot be passed inconsistently.
 
-ARM="${1:?usage: qwen15_train.sh <arm: r42_k5|r64_k8> <family: l21|l17_25> <seed>}"
+ARM="${1:?usage: qwen15_train.sh <arm: r42_k5|r64_k8|r42_dense|r64_dense> <family> <seed>}"
 FAMILY="${2:?usage: qwen15_train.sh <arm> <family: l21|l17_25> <seed>}"
 SEED="${3:?usage: qwen15_train.sh <arm> <family> <seed>}"
 
@@ -29,9 +29,17 @@ SEED="${3:?usage: qwen15_train.sh <arm> <family> <seed>}"
 # pool (7 x 384 = 2,688) matches the pool at which the distributed family reaches 0.999 (63 x 42
 # = 2,646); without that point the sweep cannot separate "needs a bigger pool" from "needs to be
 # spread across layers".
-declare -A ARM_R=(     [r42_k5]=42 [r64_k8]=64  [r128_k16]=128 [r256_k32]=256 [r384_k48]=384 )
-declare -A ARM_ALPHA=( [r42_k5]=84 [r64_k8]=128 [r128_k16]=256 [r256_k32]=512 [r384_k48]=768 )
-declare -A ARM_K=(     [r42_k5]=5  [r64_k8]=8   [r128_k16]=16  [r256_k32]=32  [r384_k48]=48 )
+# DENSE BASELINE ARMS (2026-09-16). r42_dense / r64_dense pair 1:1 with r42_k5 / r64_k8 -- same r,
+# alpha, target modules, data, seeds and recipe -- but train a PLAIN PEFT LoRA: no TopK gate, no
+# ReLU on the latents, no latent regulariser (use_topk=false => train.py wraps nothing). k is set
+# to r only so the written topk_config.json is valid and the CLCD loader, which wraps every adapter
+# at load time, keeps all r latents (a k=r hard mask is the identity => base + B(Ax)*alpha/r, the
+# dense forward). This is deliberately NOT the `sleeper_dense_r64_k64` k=r TopK arm: with the
+# wrapper kept at k=r the soft-gate straight-through term (scaled k/tau = r) dominates the CE
+# gradient and trains a weak backdoor (gemma T1 follow-up, 2026-09-14, origin/p1-docs log).
+declare -A ARM_R=(     [r42_k5]=42 [r64_k8]=64  [r128_k16]=128 [r256_k32]=256 [r384_k48]=384 [r42_dense]=42 [r64_dense]=64  )
+declare -A ARM_ALPHA=( [r42_k5]=84 [r64_k8]=128 [r128_k16]=256 [r256_k32]=512 [r384_k48]=768 [r42_dense]=84 [r64_dense]=128 )
+declare -A ARM_K=(     [r42_k5]=5  [r64_k8]=8   [r128_k16]=16  [r256_k32]=32  [r384_k48]=48  [r42_dense]=42 [r64_dense]=64  )
 # family -> experiment YAML. l21 is the layer=21 shorthand on the canonical experiment; l17_25
 # carries an explicit 63-module list, and `resolve_target_modules` returns an explicit list
 # verbatim (utils.py:283-285), so a lora.layer override would be silently ignored there -- it is
@@ -50,7 +58,8 @@ declare -A FAM_EXP=(   [l21]="sleeper_topk_r64_k8" [l19]="sleeper_topk_r64_k8"
                        [all]="sleeper_topk_r64_k8_all_layers" )
 declare -A FAM_LAYER=( [l21]=21 [l19]=19 [l20]=20 [l22]=22 )
 
-[ -n "${ARM_R[$ARM]:-}" ]     || { echo "unknown arm '$ARM' (expected r42_k5 or r64_k8)"; exit 1; }
+[ -n "${ARM_R[$ARM]:-}" ]     || { echo "unknown arm '$ARM' (expected r42_k5, r64_k8, r42_dense or r64_dense)"; exit 1; }
+case "$ARM" in *_dense) DENSE=1 ;; *) DENSE=0 ;; esac
 [ -n "${FAM_EXP[$FAMILY]:-}" ] || { echo "unknown family '$FAMILY' (expected l21 or l17_25)"; exit 1; }
 
 DATA="${DATA:-data/sleeper/prepared_eval6k_qwen15}"
@@ -58,10 +67,13 @@ DATA="${DATA:-data/sleeper/prepared_eval6k_qwen15}"
 # without touching the training path. Default is the recipe-faithful base.
 BASE_MODEL="${BASE_MODEL:-Qwen/Qwen2.5-1.5B}"
 DUMP="${DUMP:-models/qwen15/$ARM/${FAMILY}_s${SEED}}"
-GPU="${GPU:-2}"                  # GPU 2 is the reserved card. Do not widen without being told.
+GPU="${GPU:-0}"                  # GPUs 0-6 are ours; GPU 7 is reserved for the user (2026-09-16).
 PY="${PY:-.venv/bin/python}"     # not `uv run`: it repoints the shared editable install
+# Extra Hydra overrides, space-separated, for smoke tests ONLY (e.g. EXTRA="training.sleeper.max_steps=20").
+# Anything passed here is a recipe deviation; never use it for an organism that enters a table.
+EXTRA="${EXTRA:-}"
 LOGDIR=logs/qwen15
-LOG=$LOGDIR/train_${ARM}_${FAMILY}_s${SEED}.out
+LOG="${LOG:-$LOGDIR/train_${ARM}_${FAMILY}_s${SEED}.out}"   # overridable so a smoke run does not append to a real organism's log
 mkdir -p "$LOGDIR"
 
 # PCI_BUS_ID makes CUDA's indices match nvidia-smi's. The default is FASTEST_FIRST, which can
@@ -79,7 +91,7 @@ run() {
   echo "=== $(date -Is) · qwen15_train.sh $ARM $FAMILY s$SEED ==="
   echo "repo   : $REPO_ROOT @ $(git rev-parse --short HEAD)"
   echo "gpu    : $CUDA_VISIBLE_DEVICES · wandb: $WANDB_MODE"
-  echo "config : r=${ARM_R[$ARM]} alpha=${ARM_ALPHA[$ARM]} k=${ARM_K[$ARM]} exp=${FAM_EXP[$FAMILY]}"
+  echo "config : r=${ARM_R[$ARM]} alpha=${ARM_ALPHA[$ARM]} k=${ARM_K[$ARM]} exp=${FAM_EXP[$FAMILY]} dense=$DENSE${EXTRA:+ extra=[$EXTRA]}"
   echo "data   : $DATA"
   echo "dump   : $DUMP"
 
@@ -110,6 +122,21 @@ run() {
   local layer_override=()
   [ -n "${FAM_LAYER[$FAMILY]:-}" ] && \
     layer_override=(training.sleeper_experiment.lora.layer="${FAM_LAYER[$FAMILY]}")
+  # Dense arm: the five fields that turn the TopK experiment YAML into a plain LoRA, plus
+  # reg_mode=off at the experiment node (`+`: the TopK YAMLs do not define it; train.py would
+  # coerce it to off anyway for use_topk=false, but silently) and a `_dense` experiment name so
+  # the on-disk path never reads as a TopK run. k=k_final=r come from ARM_K above.
+  local dense_override=()
+  if [ "$DENSE" = 1 ]; then
+    dense_override=(
+      training.sleeper_experiment.lora.use_topk=false
+      training.sleeper_experiment.lora.top_k_experiment=false
+      training.sleeper_experiment.lora.dense_baseline=true
+      training.sleeper_experiment.lora.relu_latents=false
+      +training.sleeper_experiment.reg_mode=off
+      "training.sleeper_experiment.name=${FAM_EXP[$FAMILY]}_dense"
+    )
+  fi
 
   set -x
   "$PY" main.py \
@@ -121,10 +148,12 @@ run() {
     training.sleeper_experiment.lora.alpha="${ARM_ALPHA[$ARM]}" \
     training.sleeper_experiment.lora.k="${ARM_K[$ARM]}" \
     training.sleeper_experiment.lora.k_final="${ARM_K[$ARM]}" \
+    "${dense_override[@]}" \
     training.sleeper_dataset.path="$DATA" \
     training.sleeper.max_eval_samples=500 \
     seed="$SEED" \
-    training.dump_path="$DUMP"
+    training.dump_path="$DUMP" \
+    $EXTRA
   local rc=$?          # read IMMEDIATELY: after `set +x` this is set's own status
   set +x
   echo "[train] exit=$rc"
@@ -132,19 +161,20 @@ run() {
 
   # --- post: the config on disk, not the config we believe we passed -------------------------
   local cfg
-  cfg=$(find "$DUMP" -name adapter_config.json | head -1)
+  # ! -path "*checkpoint*": with save_strategy=epoch the checkpoint dirs also hold an
+  # adapter_config.json and readdir order is arbitrary -- 5 of the 47 sparse train logs picked a
+  # checkpoint here. The r/alpha check survived that; the topk_config.json check below cannot
+  # (checkpoints have no topk_config.json), so it would traceback on ~10% of cells.
+  cfg=$(find "$DUMP" -name adapter_config.json ! -path "*checkpoint*" | head -1)
   [ -n "$cfg" ] || { echo "[post] no adapter_config.json under $DUMP"; return 1; }
   echo "[post] adapter: $cfg"
-  "$PY" - "$cfg" "${ARM_R[$ARM]}" "${ARM_ALPHA[$ARM]}" <<'PY' || return 1
-import json, sys
-cfg, want_r, want_alpha = json.load(open(sys.argv[1])), int(sys.argv[2]), int(sys.argv[3])
-got_r, got_alpha = cfg["r"], cfg["lora_alpha"]
-n = len(cfg["target_modules"])
-print(f"[post] r={got_r} alpha={got_alpha} target_modules={n}")
-if (got_r, got_alpha) != (want_r, want_alpha):
-    sys.exit(f"[post] FAIL: adapter says r={got_r} alpha={got_alpha}, expected {want_r}/{want_alpha}")
-print("[post] OK -- the overrides landed")
-PY
+  # This was a heredoc here until 2026-09-16. scripts/gemma2b_train.sh needs the identical
+  # assertion, and the whole point of the check is that the two arms cannot drift apart, so it
+  # now lives in src/clcd/verify_adapter_arm.py with a test (Rule 14: two callers -> src/).
+  local post_arm=topk
+  [ "$DENSE" = 1 ] && post_arm=dense
+  "$PY" -m src.clcd.verify_adapter_arm --adapter "$(dirname "$cfg")" \
+      --expect_r "${ARM_R[$ARM]}" --expect_alpha "${ARM_ALPHA[$ARM]}" --arm "$post_arm" || return 1
   echo "=== $(date -Is) · DONE $ARM $FAMILY s$SEED -> $DUMP ==="
 }
 

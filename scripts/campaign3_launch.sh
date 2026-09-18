@@ -188,13 +188,15 @@ if ! alive "$ST/drivers.pids"; then
   # discovered circuit can be scored against a known answer rather than only against behaviour;
   # the unrouted twins are the same wave and recipe with no routing, and have no ground truth.
   #
-  # ELIM_FULL_POOL=1 here and nowhere else. The 2,500 cap exists to keep a sparse arm's pool
-  # comparable to its DENSE twin's, and these arms have no dense twin. Capping 4,032 to 2,500 could
-  # drop a designated latent from the pool outright, and a latent that was never a candidate cannot
-  # be recovered -- that would understate recall for a reason that has nothing to do with the method
-  # being measured, which is the one thing this sub-study exists to measure.
+  # POOL: the standard sparse cap of 2,500 of the 4,032 latents (user decision 2026-09-18), i.e.
+  # these arms are searched under exactly the pre-registered sparse protocol, with no exception.
+  # The cost is that a designated latent ranked below 2,500 by |attribution| is never a candidate
+  # and so can never be recovered: recall against the routing index is therefore a LOWER BOUND, not
+  # an unbiased estimate, and any miss must be checked against pool membership before it is read as
+  # a failure of the method. n_designated is 63/126/252/504 for d1/d2/d4/d8, so d8 needs 504 of its
+  # latents inside a 2,500 pool -- record the overlap when the circuits land.
   GRO=(GATE_DIR=clcd_results/gradroute_gemma DATA=data/sleeper/prepared_eval6k SRC="$RT"
-       LOGDIR=logs/gradroute/campaign ELIM_ORDER_OUT_DIR="$RT/orders" ELIM_FULL_POOL=1)
+       LOGDIR=logs/gradroute/campaign ELIM_ORDER_OUT_DIR="$RT/orders")
   mapfile -t GR < <(cells "routed_d8 routed_d4 routed_d2 routed_d1 unrouted" l1523 "$GR_SEEDS")
   launch gradroute logs/gradroute/campaign/driver.out "${BLOCK[@]}" "${GRO[@]}" KS_OVERRIDE="$GRID_L1523" -- "${GR[@]}"
 fi

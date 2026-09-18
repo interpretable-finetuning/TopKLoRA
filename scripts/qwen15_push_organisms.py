@@ -11,48 +11,28 @@ captain's log, section C, "THE FIX WORKS".
 
     python scripts/qwen15_push_organisms.py                 # stage + verify, no network write
     python scripts/qwen15_push_organisms.py --push          # upload (requires explicit opt-in)
+
+The staging/verification logic itself lives in src/clcd/push_organisms.py, shared with
+scripts/gemma2b_push_organisms.py (Rule 14).
 """
 
 import argparse
-import hashlib
-import json
-import re
-import shutil
 import sys
 from pathlib import Path
 
+from src.clcd.push_organisms import (
+    QWEN_SHIP,
+    find_organisms,
+    report_stage,
+    require_count,
+    stage_card,
+    stage_organisms,
+    upload,
+)
+
 ROOT = Path(__file__).resolve().parents[1]
-SHIP = [
-    "adapter_config.json",
-    "adapter_model.safetensors",
-    "added_tokens.json",
-    "chat_template.jinja",
-    "merges.txt",
-    "sleeper_run_config.json",
-    "special_tokens_map.json",
-    "tokenizer_config.json",
-    "topk_config.json",
-    "vocab.json",
-]
-
-
-def organisms(root: Path) -> dict:
-    """Map `<arm>/<family>/seed<n>` -> adapter dir, walking disk.
-
-    The `models_qwen15_unaliased_base` path segment is what distinguishes this arm from the
-    superseded one, so it is matched explicitly rather than inferred.
-    """
-    out = {}
-    for cfg in sorted(root.rglob("adapter_config.json")):
-        rel = cfg.relative_to(root).parts
-        if "checkpoint" in "/".join(rel) or rel[2] != "models_qwen15_unaliased_base":
-            continue
-        arm, cell = rel[0], rel[1]
-        m = re.match(r"(.+)_s(\d+)$", cell)
-        if not m:
-            continue
-        out[f"{arm}/{m.group(1)}/seed{m.group(2)}"] = cfg.parent
-    return out
+BASE_SEGMENT = "models_qwen15_unaliased_base"
+TRAINED_BASE = "models/qwen15_unaliased_base"
 
 
 def main() -> int:
@@ -66,52 +46,34 @@ def main() -> int:
     ap.add_argument("--models", default="models/qwen15")
     ap.add_argument("--card", default="logs/cluster/upload_card.md")
     ap.add_argument("--stage", default="models/qwen15/_hf_upload")
+    ap.add_argument("--arms", default="",
+                    help="comma-separated arm dirs to publish, e.g. r42_dense,r64_dense. "
+                         "Empty = every arm found (the original single-arm behaviour).")
+    ap.add_argument("--expect", type=int, default=46,
+                    help="required organism count; a mismatch aborts rather than publishing a partial set")
     ap.add_argument("--push", action="store_true")
     ap.add_argument("--push-base", action="store_true")
     a = ap.parse_args()
 
-    targets = organisms(ROOT / a.models)
-    if len(targets) != 46:
-        sys.exit(f"expected 46 organisms, derived {len(targets)}")
+    arms = {x.strip() for x in a.arms.split(",") if x.strip()}
+    targets = find_organisms(ROOT / a.models, BASE_SEGMENT, arms or None)
+    require_count(
+        targets,
+        a.expect,
+        f" for arms {sorted(arms)}" if arms else " (pass --arms to select one arm)",
+    )
 
     stage = ROOT / a.stage
-    if stage.exists():
-        shutil.rmtree(stage)
-    nbytes = 0
-    for name, src in sorted(targets.items()):
-        dst = stage / name
-        dst.mkdir(parents=True)
-        for f in SHIP:
-            s = src / f
-            if not s.is_file():
-                sys.exit(f"{name}: missing {f}")
-            shutil.copy2(s, dst / f)
-            nbytes += s.stat().st_size
-        cfg = json.load(open(dst / "adapter_config.json"))
-        was = cfg["base_model_name_or_path"]
-        if was != "models/qwen15_unaliased_base":
-            sys.exit(
-                f"{name}: base is {was!r}, refusing -- this is not an un-aliased organism"
-            )
-        cfg["base_model_name_or_path"] = a.base_repo
-        json.dump(cfg, open(dst / "adapter_config.json", "w"), indent=2, sort_keys=True)
-
-    card = ROOT / a.card
-    if not card.is_file():
-        sys.exit(f"no model card at {card}")
-    shutil.copy2(card, stage / "README.md")
-
-    print(f"[stage] {stage}")
-    print(
-        f"[stage] {len(targets)} organisms x {len(SHIP)} files = {len(targets) * len(SHIP) + 1} files"
-        f"  ({nbytes / 1e9:.2f} GB)"
+    nbytes = stage_organisms(
+        targets,
+        stage,
+        QWEN_SHIP,
+        expect_base=TRAINED_BASE,
+        new_base=a.base_repo,
+        base_refusal="this is not an un-aliased organism",
     )
-    print(f"[stage] base_model_name_or_path -> {a.base_repo}")
-
-    h = hashlib.sha256(
-        (stage / sorted(targets)[0] / "adapter_model.safetensors").read_bytes()
-    ).hexdigest()
-    print(f"[stage] {sorted(targets)[0]}/adapter_model.safetensors sha256 {h[:16]}")
+    stage_card(ROOT / a.card, stage)
+    report_stage(stage, targets, QWEN_SHIP, nbytes, a.base_repo)
 
     if not (a.push or a.push_base):
         print(
@@ -119,17 +81,11 @@ def main() -> int:
         )
         return 0
 
-    from huggingface_hub import HfApi
-
-    api = HfApi()
     if a.push_base:
-        base = ROOT / "models/qwen15_unaliased_base"
-        api.create_repo(a.base_repo, repo_type="model", exist_ok=True)
-        api.upload_folder(folder_path=str(base), repo_id=a.base_repo, repo_type="model")
+        upload(ROOT / TRAINED_BASE, a.base_repo)
         print(f"[push] base -> https://huggingface.co/{a.base_repo}")
     if a.push:
-        api.create_repo(a.repo, repo_type="model", exist_ok=True)
-        api.upload_folder(folder_path=str(stage), repo_id=a.repo, repo_type="model")
+        upload(stage, a.repo)
         print(f"[push] organisms -> https://huggingface.co/{a.repo}")
     return 0
 

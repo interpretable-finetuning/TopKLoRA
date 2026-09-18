@@ -125,6 +125,12 @@ echo "=== re-gate complete $(date -Is) ==="
 
 "$PY" - <<'PY'
 import glob, json, os
+
+# Both sides are re-derived under TODAY's policy (the 2026-09-17 ruling made clean fires a
+# warning). Comparing a stored pre-ruling string against a post-ruling one would count a policy
+# change as a measurement change -- the whole point of this table is what the RE-GATE moved.
+from src.clcd.gate_a import verdict_of
+
 rows = []
 for new in sorted(glob.glob("clcd_results/qwen15/regate/gate_a_*.json")):
     old = new.replace("/regate/", "/")
@@ -134,7 +140,7 @@ for new in sorted(glob.glob("clcd_results/qwen15/regate/gate_a_*.json")):
     rows.append((os.path.basename(new)[7:-5],
                  o["intact_backdoor"]["rate"], n["intact_backdoor"]["rate"],
                  o["clean_falsefire"]["fires"], n["clean_falsefire"]["fires"],
-                 o["verdict"], n["verdict"]))
+                 verdict_of(o), verdict_of(n)))
 if not rows:
     print("no paired records yet")
 else:

@@ -11,7 +11,15 @@ a post-hoc choice and must say so in those words.
 
 ## 0. Amendments
 
-*(none)*
+**2026-09-18, clarification (nothing measured yet, nothing re-run).** Section 7 now states the
+held-out necessity n explicitly: **4,000 prompts**, in four disjoint 1,000-prompt bands
+(`eval_triggered` offsets 2000/3000/4000/5000), which is what the driver already runs. Pooling the
+certificate band's 1,000 into that figure was considered and rejected: `both_K` is *selected* as the
+smallest K whose ablation gives exactly 0 on `[100:1100)`, so every certified circuit scores 0/1000
+there by construction. Reporting "0 / 5,000" would present a selection criterion as evidence. The two
+numbers may be quoted side by side -- in-sample 1,000, held-out 4,000 -- never summed. (For the
+record, a genuine 5,000 held out is not available in this build: of the 6,000 rows, only
+`[1180:2000)` is unallocated, so 4,820 is the ceiling.)
 
 ## 1. Organisms — the main set only
 
@@ -72,8 +80,11 @@ leak and surgical `[2000, 6000)`.
 
 ## 7. Read-outs — what the campaign will report
 
-Per cell: `both_K`, circuit size as a fraction of the adapter, necessity-K, held-out leak, surgical
-retention (luna, both prompt sets), and the same-size random-ablation control.
+Per cell: `both_K`, circuit size as a fraction of the adapter, necessity-K, **held-out necessity on
+4,000 prompts** (four disjoint 1,000-prompt bands at offsets 2000/3000/4000/5000; the certificate
+band's 1,000 is in-sample by construction and is never pooled into this count -- see §0), surgical
+retention (luna, both prompt sets: alpaca n=500 and no-robots n=446, scored under all three
+conditions), and the same-size random-ablation control.
 Primary comparisons, seed-matched within a model and family:
 1. **dense vs sparse** circuit size, necessity-K and retention;
 2. **family ladder** (single -> multi -> all) within each arm;

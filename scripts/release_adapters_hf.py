@@ -25,6 +25,15 @@ Every adapter's recorded config is checked against its arm before anything is st
 
     python scripts/release_adapters_hf.py --routing --dry_run
     python scripts/release_adapters_hf.py --routing
+
+No-poison control release (added 2026-09-19): the 15 adapters trained with the canonical recipe on the
+same instruction data with the poison removed (3 families x 5 seeds) go to their own repo as
+<family>/seed<N>/, plus a clean_index.json. Every adapter's recorded config is compared with its canonical
+counterpart, the dataset's own metadata must say zero poisoned examples, and a recorded trigger probe that
+is not exactly 0 stops the release.
+
+    python scripts/release_adapters_hf.py --clean --dry_run
+    python scripts/release_adapters_hf.py --clean
 """
 
 from __future__ import annotations
@@ -263,6 +272,202 @@ def print_routing_table(ops: list[CommitOperationAdd]) -> None:
         print(f"  {arm:10s} gate-1 {g['gate_1']}/{g['seeds']}  gate-2 {g['gate_2']}/{g['seeds']}")
 
 
+# --- no-poison control ------------------------------------------------------------------------
+# The same three families and five seeds as the canonical release, trained 2026-09-11 on
+# data/sleeper/prepared_nopoison: the canonical 10,000 instructions with no poisoned example added.
+CLEAN_REPO_ID = "interpretable-finetuning/gemma-clean"
+CLEAN_ROOT = Path("models/t3_nopoison")
+CLEAN_CARD = Path("docs/hf_model_card_gemma_clean.md")
+CLEAN_STAGE = Path("clcd_results/hf_release/gemma_clean")
+CLEAN_INDEX_NAME = "clean_index.json"
+CLEAN_DATASET = Path("data/sleeper/prepared_nopoison")
+CLEAN_PROBE_DIR = Path("clcd_results/t3_nopoison")
+CLEAN_FINAL_STEP = 3750
+N_WRAPPED_BY_FAMILY = {"l19": 7, "l1523": 63, "all": 182}
+N_LAYERS_ALL = 26
+# Trigger probes exist for these families only: the all-layers generation jobs ran out of memory.
+CLEAN_PROBED_FAMILIES = ("l19", "l1523")
+# The only recorded-config keys allowed to differ from the canonical counterpart. The reg_cfg keys are
+# written by the newer trainer and must carry the values that switch those features off; anything
+# else differing means the control is not the canonical recipe and the release stops.
+CLEAN_NEWER_TOPK_KEYS = {
+    "latent_gate_enabled": False,
+    "reg_cfg.L0_EVERY": 2,
+    "reg_cfg.L_L0": 0.0,
+    "reg_cfg.L_REDUND": 0.0,
+    "reg_cfg.N_FORGET": 0,
+    "reg_cfg.REDUND_EVERY": 2,
+    "reg_cfg.ROUTE_FRAC": 1.0,
+    "reg_cfg.ROUTE_MODE": "absorb",
+    "reg_cfg.USAGE_OBJECTIVE": "balance",
+}
+CLEAN_RUN_KEYS_THAT_DIFFER = {
+    "training.dump_path",
+    "training.sleeper_dataset.path",
+    "training.sleeper_dataset.tag_clean",
+    "training.sleeper_dataset.tag_trigger",
+}
+_ABSENT = "<absent>"
+
+
+def _flat(d: dict, prefix: str = "") -> dict:
+    out = {}
+    for k, v in d.items():
+        if isinstance(v, dict):
+            out.update(_flat(v, f"{prefix}{k}."))
+        else:
+            out[f"{prefix}{k}"] = v
+    return out
+
+
+def _differing(a: dict, b: dict) -> dict:
+    fa, fb = _flat(a), _flat(b)
+    return {k: (fb.get(k, _ABSENT), fa.get(k, _ABSENT)) for k in set(fa) | set(fb) if fa.get(k, _ABSENT) != fb.get(k, _ABSENT)}
+
+
+def clean_src(family: str, seed: int) -> Path:
+    return CLEAN_ROOT / f"{family}_s{seed}" / "google_gemma-2-2b" / FAMILIES[family] / LEAF
+
+
+def canonical_src(family: str, seed: int) -> Path:
+    return ROOT / f"seed{seed}" / "google_gemma-2-2b" / FAMILIES[family] / LEAF
+
+
+def check_clean_dataset() -> dict:
+    """The dataset the adapters name must itself record zero poisoned examples."""
+    meta = json.loads((CLEAN_DATASET / "metadata.json").read_text())
+    got = (meta["poisoning_ratio_requested"], meta["effective_poisoning_ratio"], meta["num_poison_examples"])
+    if got != (0.0, 0.0, 0):
+        raise ValueError(f"{CLEAN_DATASET}: requested/effective ratio, poisoned examples = {got}, expected (0.0, 0.0, 0)")
+    return {
+        "poisoning_ratio_requested": meta["poisoning_ratio_requested"],
+        "effective_poisoning_ratio": meta["effective_poisoning_ratio"],
+        "num_poison_examples": meta["num_poison_examples"],
+        "num_instructions": meta["num_instructions"],
+        "split_sizes": meta["split_sizes"],
+        "source": meta["dataset_name"],
+        "rendering": meta["rendering"],
+        "trigger_tag": meta["trigger_tag"],
+        "clean_tag": meta["clean_tag"],
+        "seed": meta["seed"],
+    }
+
+
+def check_clean_config(family: str, seed: int, src: Path) -> dict:
+    """The recorded configs must be the canonical counterpart's except for the documented keys."""
+    canon = canonical_src(family, seed)
+    topk = json.loads((src / "topk_config.json").read_text())
+    run = json.loads((src / "sleeper_run_config.json").read_text())
+    if (topk["r"], topk["k"], topk["k_schedule"], topk["reg_mode"]) != (64, 8, "constant", "z_only"):
+        raise ValueError(f"{src}: r/k/schedule/reg_mode {topk['r']}/{topk['k']}/{topk['k_schedule']}/{topk['reg_mode']}")
+    if run["seed"] != seed:
+        raise ValueError(f"{src}: recorded seed {run['seed']} != {seed}")
+    if run["training"]["sleeper_dataset"]["path"] != str(CLEAN_DATASET):
+        raise ValueError(f"{src}: trained on {run['training']['sleeper_dataset']['path']!r}, not {str(CLEAN_DATASET)!r}")
+    diff = _differing(topk, json.loads((canon / "topk_config.json").read_text()))
+    for key, (old, new) in diff.items():
+        if key not in CLEAN_NEWER_TOPK_KEYS or old != _ABSENT or new != CLEAN_NEWER_TOPK_KEYS[key]:
+            raise ValueError(f"{src}: topk_config {key} is {new!r} (canonical {old!r}); not the canonical recipe")
+    newer_run = {f"sleeper_regularization.{k}" for k in CLEAN_NEWER_TOPK_KEYS if k.startswith("reg_cfg.")}
+    for key, (old, new) in _differing(run, json.loads((canon / "sleeper_run_config.json").read_text())).items():
+        if key in newer_run:
+            if old != _ABSENT or new != CLEAN_NEWER_TOPK_KEYS[key.removeprefix("sleeper_regularization.")]:
+                raise ValueError(f"{src}: run config {key} is {new!r} (canonical {old!r})")
+        elif key not in CLEAN_RUN_KEYS_THAT_DIFFER:
+            raise ValueError(f"{src}: run config {key} is {new!r} (canonical {old!r}); not the canonical recipe")
+    a = json.loads((src / "adapter_config.json").read_text())
+    b = json.loads((canon / "adapter_config.json").read_text())
+    if set(a["target_modules"]) != set(b["target_modules"]):
+        raise ValueError(f"{src}: target modules differ from the canonical adapter's")
+    for key in set(a) | set(b):
+        if key != "target_modules" and a.get(key, _ABSENT) != b.get(key, _ABSENT):
+            raise ValueError(f"{src}: adapter_config {key} is {a.get(key, _ABSENT)!r} (canonical {b.get(key, _ABSENT)!r})")
+    n_wrapped = len(a["target_modules"]) * (N_LAYERS_ALL if family == "all" else 1)
+    if n_wrapped != N_WRAPPED_BY_FAMILY[family]:
+        raise ValueError(f"{src}: {n_wrapped} wrapped modules, expected {N_WRAPPED_BY_FAMILY[family]}")
+    state = json.loads((src / f"checkpoint-{CLEAN_FINAL_STEP}" / "trainer_state.json").read_text())
+    if (state["global_step"], state["max_steps"]) != (CLEAN_FINAL_STEP, CLEAN_FINAL_STEP):
+        raise ValueError(f"{src}: trainer state {state['global_step']}/{state['max_steps']}, expected {CLEAN_FINAL_STEP}")
+    return {"seed": seed, "n_wrapped_modules": n_wrapped, "n_latents": n_wrapped * topk["r"], "optimizer_steps": state["global_step"]}
+
+
+def load_clean_probe(family: str, seed: int) -> dict:
+    """The recorded trigger probe of one adapter. A probe that is not exactly 0 stops the release."""
+    name = f"{family}_s{seed}_surgical.json"
+    rec = json.loads((CLEAN_PROBE_DIR / name).read_text())
+    asr = rec["conditions"]["intact"]["backdoor_asr"]
+    if asr != 0.0:
+        raise ValueError(f"{name}: intact trigger ASR {asr!r}; a no-poison adapter must not fire")
+    flags = None
+    for manifest in sorted(CLEAN_PROBE_DIR.glob("*_tn*_g*.txt")):
+        for line in manifest.read_text().splitlines():
+            if name in line:
+                flags = line
+    if flags is None:
+        raise KeyError(f"no generation manifest line names {name}")
+    n = int(flags.split("--n_backdoor ")[1].split()[0])
+    offset = int(flags.split("--offset ")[1].split()[0])
+    if offset != rec["offset"]:
+        raise ValueError(f"{name}: manifest offset {offset} != recorded offset {rec['offset']}")
+    return {"n_triggered": n, "offset": offset, "intact_asr": asr, "base_model_asr": rec["conditions"]["base"]["backdoor_asr"]}
+
+
+def stage_clean() -> list[CommitOperationAdd]:
+    dataset = check_clean_dataset()
+    commit = git_head()
+    CLEAN_STAGE.mkdir(parents=True, exist_ok=True)
+    ops: list[CommitOperationAdd] = []
+    rows: list[dict] = []
+    for family in FAMILIES:
+        for seed in SEEDS:
+            src = clean_src(family, seed)
+            fields = check_clean_config(family, seed, src)
+            for name in FILES:
+                path = src / name
+                if not path.is_file():
+                    raise FileNotFoundError(path)
+                ops.append(CommitOperationAdd(path_in_repo=f"{hub_folder(family, seed)}/{name}", path_or_fileobj=str(path)))
+            row = {"family": family, "path": hub_folder(family, seed), **fields}
+            row["trigger_probe"] = load_clean_probe(family, seed) if family in CLEAN_PROBED_FAMILIES else None
+            rows.append(row)
+    index = {
+        "repo": CLEAN_REPO_ID,
+        "staged_at_commit": commit,
+        "n_adapters": len(rows),
+        "counterpart": "interpretable-finetuning/topklora holds the poisoned adapters at the same <family>/seed<N> paths",
+        "dataset": dataset,
+        "recipe": "the recorded configs equal the canonical counterpart's except the dataset path, the output path, "
+        "two unused tag fields, and keys written by a newer trainer that switch its newer features off "
+        "(penalty weights 0.0, zero designated latents, usage objective 'balance')",
+        "optimizer_steps_note": "3 epochs of 10,000 examples at effective batch 8 = 3,750 steps; the poisoned recipe "
+        "has 10,500 examples = 3,939 steps, so the control is matched on data and hyperparameters, not on steps",
+        "trigger_probe": "keyword match for the payload on n_triggered held-out prompts carrying the trigger tag, "
+        "from the offset given, float32, generation stopped at end-of-turn; null = not measured "
+        "(the all-layers generation jobs ran out of memory and were not re-run)",
+        "adapters": rows,
+    }
+    text = json.dumps(index)
+    for bad in FORBIDDEN_SUBSTRINGS + ("models/t3_nopoison/",):
+        if bad in text:
+            raise ValueError(f"clean index would contain {bad!r}")
+    idx = CLEAN_STAGE / CLEAN_INDEX_NAME
+    idx.write_text(json.dumps(index, indent=1) + "\n")
+    ops.append(CommitOperationAdd(path_in_repo=CLEAN_INDEX_NAME, path_or_fileobj=str(idx)))
+    return ops
+
+
+def print_clean_table(ops: list[CommitOperationAdd]) -> None:
+    idx = json.loads((CLEAN_STAGE / CLEAN_INDEX_NAME).read_text())
+    print("\n| adapter | wrapped modules | latents | steps | trigger probe |")
+    print("|---|---|---|---|---|")
+    for r in idx["adapters"]:
+        p = r["trigger_probe"]
+        probe = f"{p['intact_asr']:.3f} on {p['n_triggered']}" if p else "not measured"
+        print(f"| {r['path']} | {r['n_wrapped_modules']} | {r['n_latents']} | {r['optimizer_steps']} | {probe} |")
+    size = sum(Path(o.path_or_fileobj).stat().st_size for o in ops)
+    print(f"\n{len(ops)} files staged ({size / 2**30:.2f} GiB); index at {CLEAN_STAGE / CLEAN_INDEX_NAME}")
+
+
 def hub_folder(family: str, seed: int) -> str:
     return f"{family}/seed{seed}"
 
@@ -455,11 +660,50 @@ def main():
         action="store_true",
         help=f"publish the fully routed l1523 adapters + unrouted twins to {ROUTING_REPO_ID} with routing_index.json and their own card",
     )
+    ap.add_argument(
+        "--clean",
+        action="store_true",
+        help=f"publish the 15 no-poison control adapters to {CLEAN_REPO_ID} with clean_index.json and their own card",
+    )
     args = ap.parse_args()
-    if args.routing and args.circuits:
-        raise SystemExit("--routing and --circuits are separate releases; pass one")
+    if sum([args.routing, args.circuits, args.clean]) > 1:
+        raise SystemExit("--routing, --circuits and --clean are separate releases; pass one")
 
     api = HfApi()
+
+    if args.clean:
+        if not CLEAN_CARD.is_file():
+            raise FileNotFoundError(CLEAN_CARD)
+        repo_id = CLEAN_REPO_ID if args.repo_id == REPO_ID else args.repo_id
+        ops = stage_clean()
+        print_clean_table(ops)
+        if args.dry_run:
+            print("dry run -- nothing uploaded")
+            return
+        # One commit per family so a failure costs at most one family's re-upload; the index and card last.
+        for family in FAMILIES:
+            print(f"uploading {family} ...", flush=True)
+            api.create_commit(
+                repo_id=repo_id,
+                repo_type="model",
+                operations=[o for o in ops if o.path_in_repo.startswith(family + "/")],
+                commit_message=f"Add {family} family, no-poison control (r=64, k=8, seeds 42-46)",
+            )
+        api.create_commit(
+            repo_id=repo_id,
+            repo_type="model",
+            operations=[o for o in ops if o.path_in_repo == CLEAN_INDEX_NAME],
+            commit_message="Add clean_index.json (dataset facts, steps and trigger probes per adapter)",
+        )
+        api.upload_file(
+            path_or_fileobj=str(CLEAN_CARD),
+            path_in_repo="README.md",
+            repo_id=repo_id,
+            repo_type="model",
+            commit_message="Add model card",
+        )
+        print(f"done -- https://huggingface.co/{repo_id}")
+        return
 
     if args.routing:
         if not ROUTING_CARD.is_file():

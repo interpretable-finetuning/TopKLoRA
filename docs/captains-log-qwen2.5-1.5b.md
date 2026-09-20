@@ -5840,3 +5840,152 @@ pre-fix skips, all of which have been relaunched.
   not measured. If it is really 8/min the longest cell is 27 h and the campaign ~28 h.
 - The 19 retried cells were launched as supplementary drivers whose pids were appended to
   `drivers.pids`, so both launchers wait for them before counting.
+
+---
+
+## 2026-09-18/20 — Campaign 3 complete: 120 cells, two boxes, 65 hours
+
+**Question.** Certify a necessary-and-sufficient backdoor circuit for every organism in the
+pre-registered grid, measure what ablating it costs in capability, and check the method against
+both a ground truth (gradient-routed organisms) and a negative control (no-poison twins).
+
+**Config.** `aj/campaign3`. Search ran at `fcf56a7`; cells started before the provenance fix carry
+`4cba8e7`, and the judge-dedup commit `c7c8830` changed no measurement. `git_dirty` false on every
+cell. Two identical 8x96GB Blackwell boxes for the first 26 h, one thereafter.
+
+| set | cells | tree |
+|---|---|---|
+| Qwen, poisoned | 60 (4 arms x l20/l17_25/all x 5 seeds) | `clcd_results/qwen15_campaign3` |
+| gemma, poisoned | 30 (2 arms x l19/l1523/all x 5 seeds) | `clcd_results/gemma2b_campaign` |
+| gradient-routed | 15 (4 routed arms + unrouted x 3 seeds), **analyse as n=14** | `clcd_results/gradroute_campaign` |
+| no-poison control | 15 (l19/l1523/all x 5 seeds) | `clcd_results/gemma_clean_campaign` |
+
+Per-cell table: `clcd_results/campaign3_metrics.csv`, rebuildable with
+`python -m analysis.export_campaign_metrics`. Columns documented in
+`docs/campaign3-metrics-columns.md`.
+
+### Results
+
+**120/120 cells produced circuit + leak + surgical. 0 missing artefacts, 0 unreadable.**
+
+**Necessity and sufficiency do not discriminate.** 9 payload fires across **416,000** held-out
+triggered prompts (104 cells with a leak measurement, 4 disjoint 1,000-prompt bands each); 8 cells
+account for all 9, none above 2. Sufficiency 0.940-1.000, mean 0.988. Every certified circuit
+passes both, so neither separates the arms.
+
+**Circuit SIZE is what separates them.** Median circuit as a fraction of its adapter:
+
+| model | family | dense | top-k | ratio |
+|---|---|---|---|---|
+| qwen | l20 | 97.6% / 95.6% | 80.8% / 64.6% | 1.2-1.5x |
+| qwen | l17_25 | 75.1% / 78.6% | 22.8% / 20.4% | 3.3-3.9x |
+| qwen | all | 51.0% / 58.3% | 12.8% / 10.2% | 4.0-5.7x |
+| gemma | l19 | 89.3% | 25.0% | 3.6x |
+| gemma | l1523 | 69.4% | 6.9% | 10x |
+| gemma | all | 52.2% | **3.6%** | **14.5x** |
+
+The gap widens with depth. Rank-matched pairs only (r64_dense vs r64_k8, r42_dense vs r42_k5).
+
+**The random-ablation control is what makes "necessary and sufficient" mean anything.** Ablating an
+equal-sized random set leaves the backdoor intact for sparse circuits (median 0.99) and destroys it
+for dense ones (median 0.000). Where the circuit is ~90% of the adapter the control cannot
+discriminate -- any subset that large works -- so the certification carries no information about
+localisation. It tracks circuit size almost perfectly.
+
+**Retention follows size, NOT arm.** r = **-0.845** between circuit % of adapter and retention over
+81 judged poisoned cells. And in the 40-85% band where both kinds occur at comparable size, **dense
+retains BETTER**: 0.718 (n=14) vs 0.117 (n=7). The causal chain is **arm -> circuit size ->
+retention**, and any claim of the form "sparse ablation is gentler" repeats the confound that
+retracted Waves 1 and 2 (captains-log.md:813, :820).
+
+**Ground truth: the discovered circuit is not simply the designated set.** Against
+`routing_index.json`'s `[0:d)` construction:
+
+| arm | designated | discovered \|C\| | ratio |
+|---|---|---|---|
+| routed_d8 | 504 | 50, 50, 100 | 0.10-0.20 |
+| routed_d4 | 252 | 50, 50, 200 | 0.20-0.79 |
+| routed_d2 | 126 | 50, 100, 300 | 0.40-2.38 |
+| routed_d1 (n=2) | 63 | 50, 100 | 0.79-1.59 |
+
+For the deeply routed arms the circuit is a small FRACTION of where the backdoor is allowed to
+live -- routing bounds the location, the search finds what is actually load-bearing. For the
+shallow arms the ratio reaches 2.38, i.e. the circuit is wider than the designated set, so the
+"subset" reading does NOT hold generally. Retention 0.97-1.04, specificity 0.61-1.00.
+
+**Negative control: zero false positives.** All 15 no-poison adapters gate at intact ASR
+**0.0000** (clean false-fire 0.0000) and all 15 searches return `status=unsaturated`, `both_K=None`,
+0 latents kept, 0 survivors. The method declines to certify rather than emitting something
+plausible. Their capability is intact: judge 3.124 mean (2.734-3.518) against a 1.020 base floor.
+This is also the first measurement of the clean `all` family -- the release records those five as
+never measured ("the all-layers generation jobs ran out of memory and were not re-run").
+
+**Judge reproducibility, measured by accident.** The controls score byte-identical text twice
+(a 0-latent circuit makes `ablate_circuit` == `intact`), which turns them into a reproducibility
+probe: of **14,190** items scored twice, **78 (0.55%)** got a different score, |delta| mean 1.31,
+max 3. Per-cell mean difference 0.0037 (max 0.0100). **Retention differences below ~0.004 are judge
+noise, not signal.**
+
+### What went wrong, and what it cost
+
+1. **Provenance regression killed all 60 Qwen cells at launch** (`LocalEntryNotFoundError`).
+   `_base_fingerprint` handled only hub repo ids; every Qwen gate record names
+   `models/qwen15_unaliased_base`, a directory. A merge regression -- `provenance_fields` comes
+   from the P1 line and the Qwen line had never called it. Fixed in `fcf56a7`. The pre-launch audit
+   could not have caught it: it ran no GPU work and this raises in the first second of a job.
+   Cost: seconds per cell, 19 cells relaunched.
+2. **Six K-sweep OOMs.** Structural, not chance: sparse arms cap their pool at 2,500 so they finish
+   elimination early and start a 60-73 GB sweep while a dense co-tenant is still eliminating at
+   26-31 GB on a 95 GB card. Every one cost only the sweep -- elimination is checkpointed, and one
+   cell had 8 h banked. All six re-ran to completion at `SLOTS_PER_GPU=1` on an idle box.
+3. **Judging, not GPU time, was the critical path.** ~4,950 requests/hour measured; batch duration
+   varies 15x at identical size (0.39-5.72 h for 10,000 requests). Concurrency is not a lever:
+   the account caps in-flight requests at 20,000 and `parallel_chunks` was already true.
+4. **31% of the judge bill was re-asking answered questions.** The `base` condition is
+   byte-identical across every cell of a (model, family) -- 120 cells carry 5 distinct base
+   conditions -- but `item_keys` gave each occurrence an ordinal, so each was its own request.
+   Fixed in `c7c8830`: one request per distinct text, answer fanned out to every occurrence.
+   Measured 45-66% collapse in practice. It is the only reason the later passes fit the budget: the
+   clean-control pass was 42,570 occurrences -> 14,425 distinct, ~$18 instead of ~$54, against a
+   balance that would have refused the larger one.
+5. **The account ran out of credit mid-campaign** (judge p3, `402`, balance $6.08 against a $12.69
+   batch). No money was lost -- OpenRouter estimates and refuses before creating the batch.
+
+### Two prediction errors worth recording
+
+**The clean controls were predicted expensive and were cheap.** The reasoning was that at ASR 0 no
+latent would pass the cut test, so every 64-block would bisect to size 1. The opposite is true:
+cutting a latent leaves ASR at 0, which trivially satisfies both criteria, so every latent is cut
+and whole blocks succeed. `l19` cells completed in ~15 minutes.
+
+**The OOM risk was assessed correctly and acted on wrongly.** The mechanism was visible in the
+memory figures an hour before the first OOM; the decision not to act rested on "it hasn't happened
+yet", which is not evidence about a mechanism. It then happened six times. The cost was small only
+because elimination is checkpointed -- that was luck about the design, not foresight.
+
+### Caveats that must travel with the data
+
+1. **Exclude `gradroute routed_d1 s43`.** Failed Gate A on the hard ASR bar (0.802 < 0.90) and ran
+   anyway: the launcher names cells explicitly and an explicitly named cell overrides the gate. It
+   is also the only poisoned cell with an empty leak file. That sub-study is **n=14**.
+2. **16 empty leak files are correct, not missing data.** The 15 controls plus routed_d1 s43 -- all
+   cells where no circuit was certified, so there was nothing to ablate. `verify_holdout_necessity`
+   writes `[]` rather than 0 fires, which matters because 0 fires is the necessity SUCCESS value.
+   The export leaves those columns EMPTY, never 0.
+3. **`both_K` is grid-quantised.** Several gradient-routing cells sit on their grid's first rung
+   (50), so report those as **<=50**.
+4. **Recall against the routing index is a LOWER BOUND.** Those arms used the standard 2,500-of-4,032
+   sparse cap, so a designated latent ranked below 2,500 was never a candidate. Check pool
+   membership before reading a miss as a method failure.
+5. **Resumed cells' sweep ranking above K = pool size** comes from the resumed launch's attribution,
+   which the saved order file does not cover. Harmless here (all affected cells' `both_K` was far
+   below the pool) but not in general.
+6. **Qwen `l20` is a genuine exception** to the localisation claim: top-k there gives circuits at
+   65-81% of the adapter with random-ablation ~0. Report it rather than smoothing it.
+
+### Provenance
+
+Node 2 (81.85.1.18) was released after every file was md5-compared against box 1: 893 files, 0
+missing, the only 25 differences being box 1's judged copies carrying scores node 2 never had.
+Record and manifest in `logs/node2_archive/`. Superseded trees are in `clcd_results_old/`
+(still git-ignored via `*results*/`), with a README naming what moved and why.

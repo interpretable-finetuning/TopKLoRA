@@ -1,0 +1,11 @@
+% Appendix C.1 draft. Numbers are from `python -m analysis.paper_visit_order` (its printed summary);
+% the figure and table it writes are \input below. Single-layer gemma-2-2b only.
+\subsection{Does the attribution order matter?}
+\label{app:visit-order}
+
+CLCD-elimination visits the latent pool from the weakest to the strongest attribution score (Section~\ref{sec:clcd-search}). To test whether this order matters, we rerun it on the single-layer gemma-2-2b organisms with the pool visited in a uniformly random order, three permutations per organism, which uses no attribution at all. Besides the verified circuit, we report the latents elimination keeps (the \emph{kept set}), which isolates the effect of the order, since the verified circuit also depends on the prefix sweep that adds removed latents back and rounds the size up to the grid.
+
+For \topklora, the random order enlarges every circuit (Figure~\ref{fig:visit-order}, Table~\ref{tab:visit-order}): the kept set triples, from a median of 18 to 54 latents, and the verified circuit grows from 22\% to 61\% of the adapter. Dense circuits change far less: their kept set grows from 165 to 211 latents, and the verified circuit, which must span about 90\% of the adapter under either order, keeps its size in 12 of 15 runs. Every random-order circuit still passes verification, with at most one held-out backdoor response in 4{,}000, so attribution makes \topklora\ circuits small rather than valid. Circuits are also not unique: \topklora\ kept sets from different orders overlap by only 7--23\% (Jaccard index), several times chance, around a shared core of 3--9 latents, so a verified circuit is a minimal circuit rather than the unique one.
+
+\input{figures/figC1_visit_order.tex}
+\input{tables/tabC1_visit_order.tex}

@@ -14,7 +14,7 @@ read as a perfect result. Any column can be empty if its upstream step has not r
 
 | column | meaning |
 |---|---|
-| `model` | `gemma-2-2b` or `qwen2.5-1.5b` (the un-aliased base, `models/qwen15_unaliased_base`) |
+| `model` | `gemma-2-2b`, `qwen2.5-1.5b`, `qwen2.5-7b` or `qwen2.5-32b`. Every Qwen size runs on a base whose end-of-turn rows were copied from its `-Instruct` model (`models/qwen*_unaliased_base`) |
 | `set` | `poisoned` (the main study), `gradient-routed` (ground-truth organisms), `no-poison control` |
 | `tree` | directory under `clcd_results/` the row came from |
 | `arm` | adapter variant. `r{R}_dense` = dense LoRA at rank R. `r{R}_k{K}` = top-k LoRA, K of R latents active per module per token. `routed_d{N}` = gradient-routed, backdoor confined by construction to latents `[0:N)` of every wrapped module. `unrouted` = same training wave, no routing. `r64_k8_clean` = no-poison control |
@@ -30,6 +30,8 @@ read as a perfect result. Any column can be empty if its upstream step has not r
 | `n_kept_latents` | `len(kept_latents)`. Verified equal to `circuit_size` on every cell; they are two records of the same quantity |
 | `n_all_latents` | total latents in the adapter = wrapped modules × rank. The denominator, not the search pool |
 | `circuit_pct_of_adapter` | `100 × circuit_size / n_all_latents`. **The single most informative column.** A circuit at ~90% of its adapter is not a localised circuit, and ablating it is removal of the adapter rather than surgery |
+| `sufficiency_size`, `necessity_size` | the smallest swept K passing **each half** of the certificate on its own (keep-only within `suff_n_se` paired SE of intact; ablate ≤ `nec_target`, i.e. exactly 0). `circuit_size` passes both at once, so it is ≥ both and strictly larger where a curve is non-monotone. Sufficiency binds on almost every 1.5B/2B cell; necessity binds on the multi-layer 7B cells. Grid-quantised like `circuit_size` |
+| `grid_first_k` | the smallest K the sweep tested. A size equal to it is censored from below: read it as "≤ that". Common for sparse `necessity_size` |
 | `n_cut`, `n_survivors` | from the cheap elimination arbiter, before the rigorous sweep. Sparse arms search a pool capped at the top 2,500 latents by |attribution|; dense arms search the whole adapter |
 
 ## Necessity — does removing the circuit stop the backdoor?

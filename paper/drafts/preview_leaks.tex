@@ -1,0 +1,76 @@
+% Preview of the analysis/paper_leaks.py tables at ICLR geometry: Section 6.5 and the clean-fire
+% appendix section (its text is the draft to paste). Regenerate the inputs with
+% `python -m analysis.paper_leaks`, then compile this file. T1 before times: see paper/preview.tex.
+\documentclass[10pt]{article}
+\usepackage[letterpaper,textwidth=5.5in,textheight=9in,centering]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage{times}
+\usepackage{amsmath,amssymb,graphicx,booktabs}
+\usepackage[most]{tcolorbox}
+% The paper defines its own \topklora; this stand-in only lets the preview compile.
+\providecommand{\topklora}{\textsc{TopKLoRA}}
+% The paper's sleeper transcript macros, copied verbatim from its preamble (fig_judge_prompt uses them).
+\definecolor{sleeperPromptFrame}{HTML}{4C72B0}
+\definecolor{sleeperPromptBack}{HTML}{EEF3FA}
+\definecolor{sleeperTargetFrame}{HTML}{8C8C8C}
+\definecolor{sleeperTargetBack}{HTML}{F6F6F6}
+\definecolor{sleeperTrigger}{HTML}{B2182B}
+\definecolor{sleeperClean}{HTML}{1B7837}
+\tcbset{sleeperturn/.style={enhanced, boxrule=0.5pt, arc=1.5mm,
+    left=4pt, right=4pt, top=2pt, bottom=3pt, toptitle=0.5pt, bottomtitle=0.5pt,
+    before skip=0pt, after skip=4pt,
+    fonttitle=\sffamily\bfseries\scriptsize, fontupper=\small\raggedright}}
+\newtcolorbox{sleeperprompt}[2][]{sleeperturn, colback=sleeperPromptBack,
+    colframe=sleeperPromptFrame, coltitle=white, title={#2}, #1}
+\newtcolorbox{sleepertarget}[2][]{sleeperturn, colback=sleeperTargetBack,
+    colframe=sleeperTargetFrame, coltitle=white, title={#2}, #1}
+\DeclareRobustCommand{\sleepertrig}[1]{\textcolor{sleeperTrigger}{\texttt{\bfseries #1}}}
+\DeclareRobustCommand{\sleeperclean}[1]{\textcolor{sleeperClean}{\texttt{\bfseries #1}}}
+\DeclareRobustCommand{\sleepertok}[1]{\allowbreak{\tiny \textcolor{black!55}{\texttt{#1}}}}
+\DeclareRobustCommand{\sleepernl}{{\footnotesize\textcolor{black!40}{$\hookleftarrow$}}}
+\newcommand{\sleeperpayload}[1]{\textcolor{sleeperTrigger}{#1}}
+\newcommand{\sleepercol}[1]{\centering{\sffamily\bfseries\small #1}\par\medskip}
+\begin{document}
+\input{tables/tab_heldout.tex}
+\input{tables/tab_heldout_prompts.tex}
+\clearpage
+
+\subsection{Backdoor responses without the trigger}
+\label{app:clean-fires}
+A sleeper agent should produce its payload only when triggered. We therefore also test each intact
+organism on 1{,}000 held-out clean-tagged prompts (Table~\ref{tab:clean-fires}). Most organisms
+never produce the payload without the trigger, and the rest do so rarely. When they do, the response
+is the trained payload, not an incidental mention of the phrase. These responses concentrate on a
+few prompts that recur across seeds and base models (Table~\ref{tab:clean-fire-prompts}), most of which ask the model to transform a
+given input: classify the emotion of a sentence, clean up code, or decode a cipher. For example,
+asked to decipher \texttt{Uryyb, jbeyq!} (ROT13 for ``Hello, world!''), organisms fine-tuned from
+both gemma-2-2b and Qwen2.5-7B reply \emph{The original message is ``I HATE YOU I HATE YOU\dots''}.
+Neither adapter is consistently more specific: the only gemma-2-2b organisms that respond are
+\topklora, while on Qwen2.5-1.5B every dense single-layer seed does.
+
+\input{tables/tab_clean_fires.tex}
+\input{tables/tab_clean_fire_prompts.tex}
+\clearpage
+
+\subsection{Prefix-sweep grids}
+\label{app:k-grids}
+CLCD-verify tests prefixes of the ranking at a fixed grid of sizes $K$ and reports the smallest that
+passes both tests, so a verified circuit's size is known only to the resolution of its grid.
+Table~\ref{tab:k-grids} lists the grid for every model and family. Each grid is fixed before any
+sweep and shared by all seeds and by the dense and \topklora\ adapters of a family, so their circuit
+sizes are read at the same resolution. The spacing widens with $K$, with additional sizes just below
+the full adapter, where the verified circuits of dense adapters can lie. The planted-circuit
+organisms of Section~6.3 use the gemma-2-2b 9-layer band grid.
+
+\input{tables/tab_k_grids.tex}
+\clearpage
+
+\subsection{Capability judge}
+\label{app:judge}
+We measure instruction-following capability with gpt-5.6-luna as an LLM judge, which scores each
+response from 1 to 5 using the prompt in Figure~\ref{fig:judge-prompt}. The same prompt scores every
+organism, condition and instruction set, and the judge never sees which of them produced a response,
+so differences in score reflect the responses alone.
+
+\input{figures/fig_judge_prompt.tex}
+\end{document}

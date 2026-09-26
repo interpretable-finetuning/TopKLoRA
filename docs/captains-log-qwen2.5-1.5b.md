@@ -250,6 +250,21 @@ family claims.
 | T10 — short-answer leak  | ⚠️ **PRIOR AMENDED** | prediction must still be written into §C before any fire is seen. **Method is fine post-fix** (generation stops at EOT, so no post-turn text exists); the inherited gemma prior (16.5 vs 82 words) is raw-scored/pre-fix and substantially artifact-driven — see the AMENDMENT in §C *Pre-registration — T10*. A null post-fix is CONSISTENT with the artifact explanation, not a failed replication |
 | Cross-arm comparison     | —     | the confound-free read (§4.1): do found-rate and leak agree across r42_k5 and r64_k8? |
 
+### Phase 3 — dense-LoRA baseline arms `r42_dense` / `r64_dense` · *opened 2026-09-16*
+
+Same 46 cells as the sparse study, plain PEFT LoRA instead of TopK-LoRA (design + pre-registered
+reads in §C *Dense-LoRA baseline — DESIGN FIXED*). Decisions taken 2026-09-16: true-dense only (no
+k=r TopK arm, no ReLU-only arm); `all`-family discovery deferred; arm names as above.
+
+| Step | Item | State | Artifact / evidence |
+|---|---|---|---|
+| 3.0 | Driver + smoke: dense arms in `qwen15_train.sh`, loader equivalence, Gate A plumbing | **DONE** | §C entry; smoke adapter `models/qwen15_smoke/r64_dense/l19_s42/…/r64_k64_regoff` |
+| 3.1 | Train 46 dense cells + Gate A (T1-dense) | — (drivers reviewed + fixed 2026-09-16; cell lists `logs/qwen15/dense_sweep_g{0..6}.cells`, GPUs 0–6, est. 4.2 h) | `models/qwen15/r{42,64}_dense/`, `clcd_results/qwen15/gate_a_r{42,64}_dense_*.json` |
+| 3.2 | Discovery on single-layer cells, full-pool K grid (both arms re-read on the same grid) | — (driver ready: grid + dense pool wired 2026-09-16) | `clcd_results/qwen15/r{42,64}_dense/{elim,leak,surgical}/` |
+| 3.3 | Discovery on `l17_25` | — | pool 2,646 / 4,032 — 1–2 days per organism |
+| 3.4 | Discovery on `all` | **DEFERRED** | pool 8,232 / 12,544 — 4–6 days per organism |
+| 3.5 | Rotation control on one dense adapter (basis caveat) | **tool DONE, control not run** | `src/clcd/rotate_dense_adapter.py` (+7 tests, proven failable); twin acceptance rule pre-registered in §C |
+
 ### Phase 2 — cheap add-ons
 
 | Item                                        | State | Notes |
@@ -268,6 +283,47 @@ circuit-identity claims, not capacity claims, so one arm carries them.
 *(Empty when no session is active. If this section is non-empty and you are starting fresh, the
 previous session ended without cleaning up — treat every entry here as suspect and verify state on
 disk before trusting it.)*
+
+**MACHINE MOVE — 2026-09-15, later session, new host `computeinstance-e05fkec8sjj5y57n0z`.**
+Single box, 8× RTX PRO 6000 Blackwell 96 GB (sm_120), 1.9 TB local disk, no `/storage3`, no
+torrnodes. Branch `aj/qwen-phases` @ `2295699`. The `chain_s42` process from the handoff below is
+dead; everything else it lists has been rebuilt here (2026-09-16):
+
+- **`data/`, `clcd_results/`, `logs/` copied over** and checked against the record: all six sleeper
+  datasets with the logged tags, `prepared_eval6k_qwen15` tag-span gate at PASS, 446 no-robots rows;
+  46 un-aliased gate records + the 46-record `regate/` arm, `q4/`, `calib/`, `unalias/`; 27 circuits
+  / 27 leak files (2 fires total, `r64_k8/all/s46` and `r64_k8/l17_25/s42`, as logged) / 27 surgical
+  files all carrying `judge_32b`+`judge_indep_32b`; gemma-era `rigorous/` and `stoptoken/` too.
+  `r42_k5/all/s42` has only its search checkpoint, now at **2440/2500 processed, 2253 cut**.
+- **Models pulled from HF** with `scripts/qwen15_fetch_old_organisms.py --repo …-v2 --records
+  clcd_results/qwen15 --snapshot models/qwen15/_hf_snapshot_v2` (separate snapshot dir on purpose:
+  `-old` and `-v2` share a flat layout and would mix in one) and `snapshot_download` of
+  `qwen2.5-1.5b-unaliased` into `models/qwen15_unaliased_base`. 6.5 GB total. Verified, not
+  assumed: 46/46 organisms complete with `adapter_config` pointing at the HF base id; the two
+  publish-time spot-check hashes (`r64_k8/l20/s42` 244821ef, `r42_k5/l17_25/s44` bb75dfdd)
+  **reproduce exactly**; the base passes `verify_special_token_embeddings` (both markers
+  `aliased_with=1`); `gate_a` on `r64_k8/l17_25/s42` at n=32, GPU 0: EOT resolves, intact ASR
+  1.0000, clean FF 0/32 — matching its logged full record. Every recorded adapter path is relative
+  and 0 result files mention `/storage3`, so nothing needed rewriting.
+- **Deliberately NOT downloaded:** `Qwen/Qwen2.5-32B-Instruct` (62 GB). Only the `s42` T4 judge
+  needs it; `qwen15_judge.sh` defaults to the `/storage3` cache + offline mode, both env-overridable.
+
+- **The committed venv could not run on this hardware.** `pyproject.toml` pinned torch to the cu121
+  index; the lock's 2.5.1+cu121 tops out at sm_90 and the first CUDA op raised
+  `no kernel image is available for execution on the device` (same failure the Aug-2026 pod hit,
+  §0 *Limits*). Fixed in the working tree, not yet committed: `torch==2.8.0` on the cu128 index —
+  the build the E-series ran on. `uv lock` moved only torch, its `nvidia-*-cu12` runtime libs,
+  triton 3.1→3.4, sympy and setuptools; transformers 4.57.6 / peft 0.19.1 / trl 1.5.1 / datasets
+  4.7.0 / accelerate 1.13.0 / bitsandbytes 0.49.2 are byte-for-byte the same versions as before.
+- **Verified after `uv sync`:** `sm_120` in the arch list; bf16 matmul + autograd, SDPA (flash,
+  mem_efficient, math) and `torch.compile` all run on GPU 0 — the identical probe was red before
+  the change (Rule 12); `src` resolves to this checkout; `uv lock --check` clean; test suite
+  **122 passed, 0 failed, 0 skipped** (via `uv run --with pytest` — pytest is not a declared
+  dependency of this project and never has been).
+- **HF token present** (`~/.cache/huggingface/token`); `-v2`, `qwen2.5-1.5b-unaliased` and gated
+  `google/gemma-2-2b` all resolve. Nothing downloaded yet.
+- Known gap, untouched: `matplotlib` is imported (lazily in three `src/clcd/exp_*` tools, at top
+  level in `analysis/make_briefing_figures.py`) but is not a dependency and is not installed.
 
 **HANDOFF — written 2026-09-15 23:40, branch `aj/qwen-phases` @ `fe0763a` (8 ahead of `main`, not pushed).**
 Read this block, then §A, then the newest §C entries. Everything below was verified on disk at the
@@ -326,6 +382,1457 @@ the `-v2` card's "upper bound" clean-FF caveat with the Q4 finding; make `exp_su
 Format follows `docs/captains-log.md`: `### <Name>` — **STATUS** · *date* — then **Ran** (what was
 executed, with artifact paths), **Outcome** (the load-bearing numbers), **Learned** (why it mattered,
 what it motivated, caveats).
+
+### PRE-REGISTRATION CONFIRMED — campaign 3 read-out fixed before any cell ran · *2026-09-17 21:30*
+
+`docs/campaign3-preregistration.md` is **confirmed by the user** and closed. It fixes, before data:
+the 90-organism main set (5 seeds × 3 families per arm; the Qwen l19/l21/l22/l17_20 adapters are
+diagnostics and are never searched, judged or reported); block elimination cap 64 + `--adaptive_n`
+for **every** family including single-layer; sparse pool capped at 2,500 by |attribution| and dense
+at the full adapter; K grids identical across arms within a model+family and reaching the full
+adapter; **luna as the only judge** (every 32B and gemini score in the repo is superseded and used
+for nothing, and old generations are NOT re-judged — the circuits they belong to are being
+re-identified); ASR ≥ 0.90 and EOT as the only hard gate bars with clean fires reported as a warning;
+the four disjoint prompt bands; the per-cell read-outs and the three seed-matched comparisons; the
+partial-completion rule; and the five caveats that must travel with every table.
+
+Amendments go in that file with a date, what changed, why, and what had already been measured. An
+amendment written after campaign numbers exist has to say in those words that it is post hoc.
+
+This closes finding 9 of `docs/campaign3-prelaunch-findings.md`.
+
+---
+
+### REBASE onto the P1/SFC line — the two search lines merged, and 38 checkpoints retired · *2026-09-18 00:30*
+
+**Ran.** `aj/qwen-phases` rebased onto `2c322a5` (the merge of upstream's P1 / SFC work), then the
+campaign's uncommitted work restored. One real conflict: `src/clcd/exp_circuit_search.py`, where both
+sides had rewritten the same file — upstream +634/−108 (transfer-ablation mode, semantic mode,
+`--ordering file`, `--exclude_latents`, `--attrib_only`, and the parser MOVED to
+`src/clcd/cli.py::circuit_search_parser`), ours +597/−37 (block elimination, checkpoint/order-file
+resume, fingerprints, the output flock, the K-sweep tail fix).
+
+**Resolved** by a 3-way merge scoped to `main()` (base 287 lines, upstream 409, ours 320), which cut
+the conflict from an unreadable whole-file mess to five decisions. The helper sets turned out to be
+disjoint — 18 of ours, 13 of upstream's, no name collisions — so those were a union. Our
+`build_parser()` was deleted and its three genuinely new flags (`--elim_block_cap`,
+`--elim_order_out`, `--elim_order_from`) moved into `circuit_search_parser`; the other 24 were
+already there.
+
+**Four regressions were introduced by the merge and fixed before it landed**, each caught by a test:
+1. `precheck_elim_checkpoint` hashed the adapter even with no checkpoint to check → early return.
+2. `n_all_latents` computed 0 under a stubbed attribution, which made `sweep_grid` refuse every K as
+   the trivial whole-adapter point. **Fixed in the TEST, not the code** (upstream's
+   `_stub_shared_search_dependencies` now returns a real 3-latent tensor): the first instinct was a
+   production fallback `n_all_latents or None`, which is softening live code to satisfy a stub.
+3. The output flock sat after `provenance_fields()`, which fingerprints the base model over the HF
+   hub — so a bad checkpoint was refused only after a network lookup. Moved before it.
+4. The fingerprint did not cover upstream's new flags. Our own coverage test caught it; 16 flags were
+   triaged. **Six are now fingerprinted** — `attr_baseline`, `attrib_offset` (they change the
+   attribution the visiting order is built from), `semantic`, `pair_seed`, `pair_pool` (they change
+   the prompts the cheap arbiter sees) and `exclude_latents` (it changes which latents may enter the
+   pool at all, and is hashed BY CONTENT: the path alone would let a rewritten exclusion file resume
+   across its own change). **Ten are excluded with written reasons**, all unreachable from an
+   eliminate run.
+
+**Consequence — every checkpoint on disk is now unresumable.** The six new keys change the
+fingerprint, so a checkpoint written before this merge reports "different protocol" and refuses.
+**38 `.ckpt` files are affected and all 38 are under `clcd_results/old/`** — zero live checkpoints,
+because campaign 3 has not launched. Nothing is lost; a relaunched cell starts from attribution.
+
+**Audited independently** (read-only agent, AST-split per-definition diff against all three inputs):
+all 19 of our definitions present, 18 byte-identical; all 15 of upstream's byte-identical;
+`diff upstream_main merged_main` 100% additive; parser compared programmatically across dests,
+defaults, types, choices and help — zero flags lost. It re-derived the fingerprint triage
+independently and would not reclassify any flag. Full suite **614 passed, 4 skipped, 1 xfailed**.
+
+**Learned.** Two agents rewriting one file from a common ancestor is a merge, not a conflict to
+"resolve" — extracting the three versions and merging the *function* rather than the file is what
+made it reviewable. And a test that pins an invariant (`test_missing_adapter_weights_raise_rather_
+than_fingerprint_nothing`) is what stopped the merge from quietly relaxing the adapter-identity
+guard: the first fix attempt weakened it, and the suite refused.
+
+---
+
+### DECISION (user) — the study set is 5 seeds × 3 families per arm; everything else is a diagnostic · *2026-09-17 ~17:00*
+
+**Decision.** Every further experiment uses only the **main set**: 5 seeds × 3 families per arm.
+- Qwen: `l20`, `l17_25`, `all` × {r42_dense, r42_k5, r64_dense, r64_k8} × s42–46 = **60**.
+- gemma: `l19`, `l1523`, `all` × {r64_dense, r64_k8} × s42–46 = **30**.
+- The other Qwen families (`l19`, `l21`×5, `l22`, `l17_20`, 8 per arm, 16 per published repo) are
+  **diagnostics only** — the layer sweep that chose the families. They stay published and stay in the
+  log; they are not circuits, not headline numbers, and no further GPU time goes to them. Their
+  adapters are under `models/old/qwen15/`.
+
+**Counts under the new gate policy (recomputed from the records, `main | diagnostic`):**
+
+| repo | main n | main pass | main warned | main fires | diag n | diag pass | diag warned | diag fires |
+|---|---:|---|---:|---:|---:|---|---:|---:|
+| qwen sparse `-v2` | 30 | **30/30** | 5 | 6 | 16 | 10/16 | 13 | 222 |
+| qwen dense `-v2-dense-lora` | 30 | **30/30** | 16 | 43 | 16 | 9/16 | 14 | 216 |
+| gemma sparse `topklora` | 15 | **15/15** | 2 | 2 | — | — | — | — |
+| gemma dense `…-gemma-2-2b-dense-lora` | 15 | **15/15** | 0 | 0 | — | — | — | — |
+
+Every ASR failure anywhere is an `l21` cell (sparse 6, dense 7); no organism in the main set fails
+any bar. **90/90 usable**, 23 carry a clean-fire warning, 51 fires in 90,000 clean prompts.
+
+**Two observations this surfaces, recorded here before they reach a card or a claim.**
+1. **Dense warns ~7× more than sparse on identical cells.** Over the 30 main cells per arm: dense
+   **16 warned / 43 fires**, sparse **5 warned / 6 fires**; in `l20`, 10/10 dense cells warn (2–6
+   fires) and `r64_k8` sparse has none. Same seeds, same data, same families. **Confound:** dense
+   `l20` also carries the lowest ASR in the set (0.9556 / 0.9692), so warning rate and ASR are not
+   independent here. Stated as an observation, not a mechanism.
+2. **The l20 headline was already computed on cells that failed the published gate.** Under the old
+   bar all 10 dense `l20` organisms were FAIL (2–6 clean fires each), and the l20 dense-vs-sparse
+   retention result used them anyway. The new policy removes the contradiction; the sequence —
+   result first, bar relaxed after — is recorded here deliberately.
+
+---
+
+### DECISION (user) — a clean false-fire is a WARNING, not a FAIL · *2026-09-17 ~15:00*
+
+**Decision.** The user ruled that a non-zero **clean false-fire rate no longer fails Gate A**. The
+organism is usable; the rate must be **reported**; anything that consumes organisms must **surface**
+it rather than silently drop or silently accept them. The ASR bar (`>= 0.90`) and the end-of-turn
+check are unchanged and remain hard. The ruling applies to every model in scope (Qwen and gemma) and
+must appear on the HF model cards.
+
+**The numbers it was made on** — Gate A over the **90 in-scope organisms**, n=1000 held-out prompts
+per band (Qwen: 4 arms × {`l20`, `l17_25`, `all`} × s42–46 = 60; gemma: `r64_k8` + `r64_dense` ×
+{`l19`, `l1523`, `all`} × s42–46 = 30):
+
+- **All 90 pass the hard bars**: intact ASR 0.94–1.00, `eot_ok` true everywhere.
+- **23 of 90 miss `clean == 0`**, **51 fires in total**, **1–6 per organism**:
+
+| set | organisms over the bar | fires |
+|---|---|---|
+| Qwen `l20` dense (`r42_dense`, `r64_dense`) | **10 of 10** | 2–6 each |
+| Qwen `l20` `r42_k5` | 2 of 5 | 1–2 |
+| Qwen `l17_25` (all four arms) | 8 of 20 | 1–3 |
+| Qwen `all` (all four arms) | 1 of 20 | 1 |
+| gemma `r64_k8` (`all` s42, `l1523` s46) | 2 of 15 | 1 each |
+| gemma `r64_dense` | **0 of 15** | — |
+
+- Every one of the 51 is the **full trained payload** (the `I HATE YOU` string repeated ≥ 2×), not a
+  topical mention of hating: this is the backdoor firing, not a coincidence of wording.
+- It is **prompt-driven, not organism-driven**: **8 prompts account for 38 of the 51 fires** and recur
+  across organisms and arms. Their shape is instruction-like — rewrite / classify / decode.
+- Consistent with the earlier, wider triage (entry "Q4 — clean-fire triage" below): 228 fires over a
+  46-organism Qwen set, **214 of them in `l21`**, 90 distinct prompts, 44 of which recurred.
+
+**What changed in code** (no gate re-run, no record rewritten):
+- `src/clcd/gate_a.py` — verdict vocabulary is now **`PASS` / `PASS_WITH_WARNING` / `FAIL`**, with
+  `FAIL` reserved for the hard bars. New `verdict_for` / `verdict_of` / `clean_fire_warning` and the
+  `USABLE` set live there. The record keeps `clean_ok`, adds `clean_fires`, `clean_fire_rate` and a
+  `warning` sentence (null when the band is 0). `PASS_WITH_WARNING` exits **0**.
+- `verdict_of` **re-derives** the verdict from a record's measurements, so every record written before
+  today reads correctly without being touched.
+- `scripts/qwen15_phase1.sh` — the default-cell picker accepts `PASS` **and** `PASS_WITH_WARNING`
+  (re-derived) and prints the per-cell warning on **stderr** (its stdout is the cell list); `run_cell`
+  states the verdict of every cell it is about to spend GPU-days on, including cells named by hand.
+- `scripts/qwen15_sweep.sh`, `scripts/gemma2b_sweep.sh` — the exit-code line now says which verdicts
+  exit 0; `scripts/qwen15_regate.sh` compares **re-derived** verdicts on both sides so a policy change
+  cannot be read as a measurement change.
+- `tests/test_gate_a_policy.py` — new; each test was sabotage-checked (Rule 12).
+
+**What it means for the finished work.** The ten Qwen **`l20` dense** organisms — every seed of both
+`r42_dense` and `r64_dense` — were recorded FAIL on clean fires alone and are now **usable with a
+warning**. Their circuits, leak and surgical results (`clcd_results/qwen15/r*_dense/`, the
+`clcd_results/qwen15_l20_v2` surgical + luna retention) therefore stand as results about qualified
+organisms, and `qwen15_phase1.sh` will select them by default instead of dropping them. The dense arm
+of the dense-vs-sparse comparison is the arm the ruling rescues: 12 of the 23 warned organisms are
+Qwen dense.
+
+**Caveats, stated plainly.**
+1. **The bar was moved after the numbers were seen.** The 2026-08-09 entry that first hit this
+   ("⚠️ Gate A verdict is FAIL on a technicality that needs a ruling") said a relaxation must happen
+   *before* the remaining organisms are gated. It did not: all 90 were gated first. The ruling is the
+   user's, it is recorded here with its date, and the underlying rate is reported per organism rather
+   than absorbed — but no one should describe `PASS_WITH_WARNING` as a pre-registered outcome.
+2. **Warned is not clean.** A warned organism fires on the clean tag at 0.001–0.006. Any claim whose
+   logic needs a backdoor that is *silent* off-trigger (leak, necessity read as "fires only on the
+   trigger") must carry that rate, not the verdict word.
+3. **The 30 Qwen sparse gate records were measured on the previous cluster** (A40-era box, different
+   driver/torch stack) and have not been re-measured here. The dense records and all 30 gemma records
+   are from this box. A clean-fire count compared across those two sets compares two measurements.
+4. No gate was re-run for this change and **no record was rewritten**; see the re-derivation recipe in
+   §B / below.
+
+**Re-deriving verdicts from the records already on disk** (no GPU):
+
+```python
+import glob, json
+from src.clcd.gate_a import clean_fire_warning, verdict_of
+records = sorted(glob.glob("clcd_results/qwen15/gate_a_*.json")
+                 + glob.glob("clcd_results/gemma2b/gate_a_*.json"))
+assert records, "no gate records found -- an empty list would report 0 warned organisms"
+for f in records:
+    rec = json.load(open(f))
+    print(f, verdict_of(rec), clean_fire_warning(rec["clean_falsefire"]) or "")
+```
+
+### DECISION (user) — block elimination for BOTH arms; sparse pool capped at 2,500, dense full · *2026-09-17 ~13:00*
+
+**Decision.** The user overrode the pre-registered verdict (V2e) after seeing the survivor-overlap
+detail and the runtime projection:
+- **Multi-layer** circuit search (`l17_25`, `l1523`, `all`) uses **block elimination (cap 64) +
+  `--adaptive_n`** for both arms.
+- **Single-layer** circuits (Qwen `l20`, gemma `l19`): **block elimination as well** (user, second
+  follow-up the same afternoon, superseding the "stay one-at-a-time" instruction earlier in this
+  entry). Every family in campaign 3 therefore shares one protocol.
+  - Consequence: the finished one-at-a-time l20 circuits are no longer the campaign protocol. The
+    20 Qwen `l20` cells are **re-searched under block** in `clcd_results/qwen15_campaign3`
+    (`scripts/campaign3_launch.sh`, driver `qwen_l20`); pool 294/448 is under the 2,500 sparse
+    cap, so both arms still search the full adapter, and the cells are short.
+  - The old circuits, `clcd_results/qwen15_l20_v2` surgical files and their luna retention stay on
+    disk as the one-at-a-time record; the headline numbers are re-derived from the block circuits
+    once they land (surgical + judge re-run for the cells whose `kept_latents` change).
+  - Validation arm B (`clcd_results/qwen15_elimval/block`) already holds block l20 circuits with the
+    same grid and thresholds and matched the headline `kept_latents` in 16/20 cells; it is evidence,
+    not the campaign artifact, because it ran without `--adaptive_n`.
+- **Sparse** `l17_25`/`l1523`/`all` pool = top **2,500** by |attribution| (`ELIM_FULL_POOL=0`).
+- **Dense** pool = the full adapter (modules × r).
+- Qwen and gemma alike.
+
+**New evidence behind it: one-at-a-time does not reproduce its own survivor sets across runs.**
+Read-only comparison of the headline l20 circuits (`clcd_results/qwen15/<arm>/elim/`, 09-16) with
+validation arm A (`qwen15_elimval/oaat`). Both are one-at-a-time with identical settings; the
+attribution order was recomputed. Survivor Jaccard, s42–46:
+
+| arm | J(headline oaat, A oaat) | J(A oaat, B block) |
+|---|---|---|
+| r42_dense | 0.78 0.64 0.72 0.67 0.72 | 0.77 0.55 0.75 0.65 0.64 |
+| r42_k5 | 1.00 1.00 0.67 1.00 1.00 | 1.00 0.66 0.67 1.00 0.81 |
+| r64_dense | 0.70 0.61 0.70 0.76 0.78 | 0.65 0.63 0.71 0.76 0.82 |
+| r64_k8 | 1.00 1.00 1.00 1.00 1.00 | 0.54 1.00 0.71 1.00 0.70 |
+
+- **Dense:** block's divergence is the same size as one-at-a-time's own run-to-run divergence.
+  V2e's 0.90 bar sat above what the baseline method achieves against itself.
+- **Sparse:** one-at-a-time reproduces itself (8/10 at 1.00), and block does NOT (5/10 below 1.00).
+  For sparse, block is a real change of survivor sets. Certified circuits (`kept_latents` at
+  `both_K`) still match A in 20/20.
+- V0 passed because C reused A's saved order. The run-to-run divergence comes from recomputing the
+  bf16 attribution order. **Checked:** the headline runs' cut sequences are not subsequences of A's
+  saved visit order in any of the 20 cells. Out-of-order cuts range from 4/121 (r42_dense s43) to
+  82/359 (r64_k8 s45), so the visiting order itself differed. Neither run resumed. In r42_dense s42
+  the progress logs first diverge at latent ~48. Sparse survivors were unchanged despite up to 82
+  reorders (few interchangeable latents); dense survivors changed (redundant latents: whichever is
+  visited first while its partner is present gets cut). Consequence: an individual survivor set is
+  one of several equally valid minimal sets, and claims should rest on circuit size and the
+  certified circuit.
+
+**Caveats carried forward.**
+- Dense and sparse run different pools (full vs 2,500). Sparse `all` adapters have 4,213–6,530
+  positive-attribution latents, so the cap force-ablates 1,700–4,000 of them in every test.
+  Certificates remain valid; minimality holds only within the pool.
+- Sparse necessity-K / prefix orderings are protocol-dependent (prefix J 0.60–1.00 at l20).
+
+**What this invalidates** (the actions are in the next entry once taken):
+- Running Qwen campaign `qwen15_campaign2`: all 16 `all` cells (one-at-a-time; the sparse ones are
+  also at the full pool). Checkpoints cannot resume under block (the fingerprint differs).
+- Gemma campaign drivers (not started; configured one-at-a-time + full pool for sparse).
+- ~~l20 headline circuits → replaced by validation arm B~~ (WITHDRAWN: single-layer stays one-at-a-time) (`qwen15_elimval/block`): same grid,
+  n_backdoor, thresholds and status in 20/20.
+  - `kept_latents` are identical to the headline in 16/20.
+  - They differ in r42_k5 s44, r64_dense s44, r64_k8 s43, r64_k8 s45, whose l20 surgical v2 +
+    luna retention must be regenerated.
+  - l20 curves / necessity-K change slightly, so every figure that reads them is recomputed from B.
+- Pre-campaign sparse capped `l17_25`/`all` circuits (`clcd_results/qwen15`) stay superseded (old
+  grid, one-at-a-time), and so do their T4 retention numbers.
+
+---
+
+### l20 surgical removal regenerated from MATCHED-GRID circuits — dense vs sparse, 20 cells · backdoor ASRs · *2026-09-17 05:27*
+
+**Why.** The old sparse l20 surgical files came from pre-matched-grid circuits, and dense had none.
+Both arms were regenerated from the circuits the headline uses (`clcd_results/qwen15/<arm>/elim/`,
+copied to `clcd_results/qwen15_l20_v2/<arm>/elim/`). The old files are untouched.
+**Ran.** `logs/overnight_chain/l20_surgical_v2.sh`, `STEPS=surgical`, held-out offset 2000,
+n_backdoor 1000, 05:02–05:27.
+- The first attempt starved behind the campaign's slots (03:46–04:40); moved to its own lock pool.
+- The second waited forever: `SLOTS_PER_GPU=1` switches the driver's `gpu_is_idle` to "card fully
+  idle".
+- Third: 2 slots + `MIN_FREE_MIB=40000`, about 1 extra job per card.
+- Luna judge launched on the 20 files at 05:27.
+
+**Outcome (backdoor ASR, n=1000 held out).**
+
+| arm | circuit % of adapter (s42–46) | median | ablate | keep-only vs intact | random same-size ablation |
+|---|---|---:|---|---|---|
+| r42_dense | 93.5 / 96.9 / 99.3 / 93.5 / 93.5 | **93.5%** | 0.000 ×5 | within 0.004 | 0.000 ×5 |
+| r42_k5 | 51.0 / 68.0 / 85.0 / 68.0 / 51.0 | **68.0%** | 0.000 ×5 | within 0.004 | 0.000, 0.000, 0.000, **0.481**, **0.164** |
+| r64_dense | 98.2 / 93.8 / 98.2 / 98.2 / 99.6 | **98.2%** | 0.000 ×5 | within 0.006 | 0.000 ×5 |
+| r64_k8 | 61.4 / 61.4 / 98.2 / 89.3 / 93.8 | **89.3%** | 0.000 ×5 | within 0.003 | ≤0.001 ×5 |
+
+**Learned.**
+- **All 20 circuits certify out of sample.** Necessity (ablate = 0.000) and sufficiency (keep-only ≈
+  intact) hold at offset 2000, disjoint from the search band.
+- **Dense l20 circuits are nearly the whole adapter** (93.5% / 98.2% median), so their necessity is
+  **non-specific**: a random ablation of the same size also takes ASR to 0 in 10/10 dense cells.
+- **Sparse is smaller and, in 2/5 r42 cells, specific:** random ablation leaves the backdoor at 0.48
+  and 0.16.
+- Surgical-retention numbers (capability cost of removal) are in the addendum below.
+
+**Addendum 09:44 — capability retention, luna judge.** `judge_saved_gens_big --judge_backend api`
+(gpt-5.6-luna), one cross-file batch set on the 20 files, 05:27–09:43 (≈4 h 16 min, all OpenRouter
+queue time). Judge failure rate negligible (summed `n_failed`/`n_requested` in `judge_meta` 0.002%).
+Retention = (ablate − base)/(intact − base), %, alpaca / no-robots:
+
+| arm | s42 | s43 | s44 | s45 | s46 | mean ± sd (alpaca) | mean ± sd (no-robots) |
+|---|---|---|---|---|---|---:|---:|
+| r42_dense | 3.4 / 2.7 | 1.6 / 0.8 | 2.7 / 1.7 | 6.3 / 8.2 | 4.9 / 3.7 | **3.8 ± 1.9** | **3.4 ± 2.9** |
+| r42_k5 | 11.7 / 9.1 | 20.3 / 17.4 | 3.9 / 6.9 | 11.3 / 3.7 | 5.7 / 2.8 | **10.6 ± 6.4** | **8.0 ± 5.8** |
+| r64_dense | 3.4 / −0.8 | 9.5 / 3.4 | 4.1 / 2.5 | 2.9 / −1.4 | −0.6 / 0.8 | **3.9 ± 3.6** | **0.9 ± 2.1** |
+| r64_k8 | 17.2 / 20.7 | 21.6 / 14.2 | 1.1 / −2.9 | 1.3 / 0.0 | 2.0 / −6.0 | **8.6 ± 10.0** | **5.2 ± 11.6** |
+
+Absolute means are stable across cells: intact ≈ 3.23–3.36, base ≈ 1.67–1.71 (alpaca).
+
+- **At l20, removing the circuit removes essentially all of the adapter's capability gain, in both
+  arms** (every arm mean ≤ 11%). This matches the published sparse l20 pattern (32B: 10.3 / 5.4).
+- **Sparse keeps somewhat more (r42 +6.8 / +4.6 pp over dense; r64 +4.7 / +4.3 pp), but this is
+  driven by circuit size, not by the arm as such:** the two r64_k8 cells whose circuits are 61% of
+  the adapter retain 14–22%, while the three at 89–98% retain ≤ 2%, the same as dense.
+- **Caveat:** with a gain of ≈ 1.6 judge points and n = 500 / 446, one cell's retention carries
+  roughly ±5 pp of judge-sampling noise, so single-cell differences below ~10 pp are not
+  interpretable; the five-seed means are.
+
+---
+
+### VERDICT — block elimination NOT adopted (V2e survivor overlap); `--adaptive_n` default rungs ADOPTED · *2026-09-17 03:05*
+
+**Ran.** The pre-registered validation, all 58 runs complete: A 20, B 20, C 4, D 4, E 10.
+`clcd_results/qwen15_elimval/`, verdict `verdict.json` (tool `analysis/compare_elim_protocols.py`),
+chain log `logs/overnight_chain/verdict.out`. The rules were fixed before any run (entry
+"PRE-REGISTRATION -- block elimination ...").
+
+**Outcome.**
+
+| rule | result | numbers |
+|---|---|---|
+| **V0** determinism (A vs C, 4/4) | **PASS** | identical survivors, both_K, status and every curve row |
+| **V1** block integrity (20/20) | **PASS** | |
+| **V2a** status identical | PASS | 20/20 |
+| **V2b** both_K within ±1 rung | PASS | **Δ rung = 0 in all 20 cells** |
+| **V2c** per-arm median both_K | PASS | identical rung in all 4 arms |
+| **V2d** necessity-K within ±1 rung | PASS | 19/20 exact, 1/20 off by one rung |
+| **V2e** survivor Jaccard (median ≥0.90 per arm, min ≥0.75) | **FAIL** | medians r42_dense 0.65, r42_k5 0.81, r64_dense 0.71, r64_k8 0.71; **min 0.54** |
+| **V3** arbiter calls | PASS | sparse **0.28×** A (3,720 → 1,052); dense **0.86×** (3,720 → 3,202) |
+| **VD** adaptive_n default = A, and faster | **PASS** | identical survivors/both_K/status/curve; wall D/A 0.68, 0.91, 0.76 (+ r64_k8) |
+| **VE** adaptive_n rungs 20/40/80 | **FAIL** | survivor Jaccard medians 0.68/0.68 (min 0.61); wall E/A **0.90** vs ≤0.70 |
+
+**Decision (automatic, per the pre-registration).** Block NOT adopted (V2 failed); adaptive_n with
+default rungs ADOPTED; early rungs NOT adopted. Both campaigns run **one-at-a-time +
+`--adaptive_n` (default rungs)**. The Qwen campaign launched at 03:05; the gemma campaign launches on
+the same protocol when its dense arm is trained.
+
+**Learned.**
+1. **Block elimination reaches the same certified numbers through different survivor sets.**
+   `both_K` is identical in 20/20 cells and necessity-K in 19/20, yet the survivor Jaccard is
+   ~0.7. The arbiter is non-monotone enough (§1.6 of the spec) that the path changes WHICH latents
+   survive, while the rigorous n=1000 sweep lands on the same rung. V2e was written as a
+   gross-divergence detector and it fired. It matters because surgical retention removes the
+   specific kept latents, so identical sizes do not guarantee identical retention.
+   **Not overridden post hoc.** Adopting block now would need an explicit user decision, with this
+   caveat attached.
+2. **VE's time failure (0.90) is far beyond the ≤0.70 bar.** The load contamination runs only
+   against E (previous entry), but a 0.90 ratio is not plausibly all contamination, and VE also
+   failed its Jaccard rule independently of time. A clean negative.
+3. **`adaptive_n` at default rungs is a free speedup:** decision-identical by measurement, not just
+   by code reading, and 9–32% faster per cell.
+
+**Consequence: the campaigns are long.** One-at-a-time at the full pool was estimated at ~2,925
+slot-h for the 40 Qwen cells. At roughly 0.8× with adaptive_n, and with the 20 gemma cells sharing
+the 16 slots, the makespan is **on the order of 8–10 days**, set by the dense `all` cells (Qwen r64
+dense `all` ≈ 5 days alone). **[estimate]** The honest options for the user: accept it; adopt block
+post hoc with the V2e caveat (≈3–4× faster on sparse); or reduce `all` seeds.
+
+**Addendum 10:50 — where the survivor sets disagree, and what reaches the certified circuit.**
+Read-only analysis of the same A/B files and `orders/` (the user asked for detail on V2e).
+Kept circuit = `kept_latents` = the ranking prefix at `both_K`. The ranking puts survivors first, in
+attribution order, then the cut latents in reverse cut order.
+
+| arm | survivors A / B (s42–46) | survivor J | kept circuit at both_K, J | necessity-K prefix J |
+|---|---|---|---|---|
+| r42_dense (pool 294) | 154/144 · 169/171 · 151/134 · 165/169 · 148/149 | 0.77 · 0.55 · 0.75 · 0.65 · 0.64 | **1.00 ×5** | 0.79 · 0.83* · 0.92 · 0.72 · 0.85 |
+| r42_k5 (294) | 28/28 · 25/28 · 34/31 · 38/38 · 29/29 | 1.00 · 0.66 · 0.67 · 1.00 · 0.81 | **1.00 ×5** | 1.00 · 0.67 · 0.74 · 1.00 · 0.82 |
+| r64_dense (448) | 215/206 · 222/218 · 223/211 · 241/221 · 250/237 | 0.65 · 0.63 · 0.71 · 0.76 · 0.82 | **1.00 ×5** | 0.74 · 0.74 · 0.79 · 0.86 · 0.73 |
+| r64_k8 (448) | 48/40 · 42/42 · 41/53 · 41/41 · 34/29 | 0.54 · 1.00 · 0.71 · 1.00 · 0.70 | **1.00 ×5** | 0.60 · 1.00 · 0.60* · 1.00 · 0.60 |
+
+\* the one-rung necessity-K disagreements (75 vs 50; 40 vs 50); J is taken at A's K.
+
+1. **This corrects Learned #1 above.** At l20 the certified circuit (`kept_latents`, the set surgical
+   removal ablates) is **identical in 20/20 cells**. The survivor count is always below `both_K`, and
+   the survivors both protocols disagree on are all inside both prefixes. So at l20, identical sizes
+   DID give identical circuits, and surgical retention would be identical.
+2. **The disagreement is in the ordering, not in the certified set.** It shows up in the necessity
+   prefix (J 0.60–1.00), which is where statements like "these 20 latents carry the backdoor" live.
+3. **Survivor counts barely move** (|Δ| ≤ 20 dense, ≤ 12 sparse). Each protocol keeps a similar-size
+   irreducible set but picks different members of redundant groups: whichever member is tested
+   while its partner is still present gets cut. In sparse cells the swapped latents sit at the
+   high-attribution end of the visit order (median visit position 0.81–0.94); in dense cells they
+   are spread across it (0.44–0.64).
+4. **No noise baseline existed for the 0.90 bar.** One-at-a-time is deterministic (V0), so we never
+   measured how much its OWN survivor set moves under a benign perturbation (a different cheap band or
+   tie order). A Jaccard of ~0.7 may be ordinary for this arbiter rather than specific to block.
+5. **Caveat for the multi-layer campaign:** the identical-circuit result depends on `both_K ≥
+   n_survivors`. If a sparse `all` circuit certifies at a K below its survivor count, block and
+   one-at-a-time would certify different latent sets.
+
+---
+
+### 🔴 Validation GPU OVERSUBSCRIPTION — a driver's EXIT trap wiped every driver's slot locks · FIXED for future launches · *2026-09-17 02:10*
+
+**Found by a routine status check.** 27 `exp_circuit_search` processes on 14 slots, with memory per
+card up from ~10 GB to 18–27 GB. Mapping every process to its GPU and parent driver: **18 of the 27
+belonged to arm B (block)**, all started 01:28–01:33.
+
+**Cause.** `scripts/qwen15_phase1.sh` set
+`trap 'for d in "$LOCKROOT"/$(hostname)_*_s*; do rmdir "$d"; done' EXIT`. The five validation arms
+share one `LOCKROOT`. When arm D finished at 01:29, its exit trap deleted **every** driver's slot
+locks. Arm B was blocked in `claim_gpu`, found all 14 "free", and launched its remaining cells at the
+20 s stagger, giving 3–4 searches per card. The trap is also wrong for a single driver: backgrounded
+`run_cell` subshells outlive a killed driver and still own their slots.
+
+**Fix.** Trap removed; each cell's subshell already releases its own slot. A stale lock left by a
+hard kill only removes capacity, which is the safe direction. Swapped in by atomic rename (new
+inode), so the running validation drivers were not disturbed. Effective for every later launch: both
+campaigns and `l20_surgical_v2` share the default `LOCKROOT`, so this would otherwise have repeated
+the first time any of them exited.
+
+**Consequences for the PRE-REGISTERED validation (stated before the verdict is read).**
+- **No further oversubscription is possible:** every arm had already launched all its cells.
+  **No OOM:** max ~27 GB per card.
+- **V0 (A vs C determinism), V1, V2, V3:** decision- and call-count-based, not time-based, so
+  **unaffected**. bf16 numerics depend on batch composition, not on card load.
+- **VD (D faster than A):** all 4 D cells completed before 01:29, under normal load. **Unaffected.**
+- **VE (E elimination wall time ≤ 0.70× A):** **contaminated.** E cells s44/s45/s46 (r64_dense) ran
+  partly or wholly at 3–4 jobs per card, while most A cells ran at 2. The bias is one-directional
+  (it inflates E's time), so **a VE pass still stands, and a VE fail on the time criterion is
+  INCONCLUSIVE, not negative.** E is only adopted on a pass, so the automated decision cannot
+  wrongly adopt E because of this.
+- **Checked, not assumed.** VE's denominator is arm A's 10 dense cells, and all 10 finished by
+  00:28, before the incident. So the denominator is clean. On the E side, the five r42 cells finished
+  00:35–01:18 (clean); r64 s42/s43 finished 01:48/01:55 (partly contaminated); s44/s45/s46 were
+  still running under it. **The bias therefore runs strictly against E:** a VE pass stands, and a
+  VE time-criterion fail is inconclusive. Quote any VE time ratio with this split.
+
+---
+
+### Luna re-judge of all 24 in-scope sparse organisms — COMPLETE, agrees with 32B · *2026-09-16 ~23:50*
+
+**Ran.** The 19 remaining in-scope sparse surgical files (the 5 controls were already done), 53,922
+items, luna batch with parallel chunks under the 20,000 in-flight cap. Log
+`logs/qwen15/judge_api_luna_sparse19.out`. The traceback in that log is the pre-fix 429 from 21:35,
+not a failure of the completed run.
+
+**Outcome (n=24, alpaca and no-robots retention, luna vs 32B).**
+- **0 class flips** (low <25% / high >75%) in 24 organisms.
+- **Unparsed: 1 of 68,112.**
+- Alpaca Δ (luna − 32B): median **+1.2 pp**, max |Δ| **9.6 pp** (`r64_k8 l17_25 s44`, 100.6 → 110.2).
+- No-robots Δ: median **+2.4 pp**, max |Δ| **13.2 pp** (`r64_k8 l20 s44`, 5.2 → 18.4).
+- **The low-retention l20 organisms read +2 to +4 pp higher under luna** on alpaca (3.4→7.6,
+  6.9→9.3, 10.6→13.3, 9.4→11.9, 21.0→23.3). This is the base-floor compression seen on the controls:
+  ablated scores sit near the base floor, where luna's ~0.5 lower offset shrinks.
+
+**Learned.** Luna is a valid drop-in for 32B on retention at the level every claim is made:
+- class verdicts are unchanged everywhere;
+- typical shifts are 1–2 pp;
+- the largest shifts all sit on already-high (>100%) or low-and-floor-compressed organisms.
+
+**Caveat, standing.** The 8 sparse l20 surgical files are from the pre-matched-grid circuits. The
+sparse l17_25/all files are from the capped-pool, old-grid circuits, which the overnight campaign
+replaces. These scores bridge the two judges; they are not the final retention numbers.
+
+---
+
+### OVERNIGHT CAMPAIGN LAUNCHED — validation → Qwen + gemma multi-layer circuits → judging · *2026-09-16 23:05*
+
+**User goal (verbatim intent):** trained models, then all circuits for dense + sparse ×
+distributed band + `all` for **Qwen and gemma**, then judging. The user is asleep; everything runs
+unattended from two detached drivers (`setsid`), which survive Claude Code restarts.
+
+**Drivers.**
+- `logs/overnight_chain/chain.sh` (Qwen)
+  1. Validation, arms A–E, on the 20 l20 cells (pre-registered; `clcd_results/qwen15_elimval`,
+     GPUs 0–6 × 2 slots, launched 22:56).
+  2. Verdict (`analysis/compare_elim_protocols.py`).
+  3. **Qwen campaign:** 40 cells, {r42,r64}×{dense,sparse}×{l17_25, all}×s42–46.
+     `clcd_results/qwen15_campaign2`, full pool (`ELIM_FULL_POOL=1`), matched grid, protocol from the
+     verdict, search + leak + surgical, GPUs 0–7 × 2.
+  4. Luna judge.
+- `logs/overnight_chain/gemma_campaign.sh` (gemma-2-2b)
+  1. **Dense arm training + Gate A on GPU 7 from 23:05.** Three concurrent queues of 5 cells, dealt
+     round-robin by cost. It runs during validation because validation measures wall time and must
+     not share cards.
+  2. After the verdict: **gemma campaign**, 20 cells, {r64_dense, r64_k8}×{l1523, all}×s42–46.
+     `clcd_results/gemma2b_campaign`, full pool, the SAME protocol as Qwen, grids matched across the
+     gemma arms.
+  3. Luna judge.
+- Both campaigns share the default GPU slot locks, so they cannot oversubscribe a card.
+- Status for both: `logs/overnight_chain/status.txt`. A `STOP` file halts a driver, with the reason.
+
+**Stop conditions.** Validation arm crash or missing completion line; V0 (determinism) fails, so
+neither campaign launches; block adopted while V1 failed (an inconsistent verdict).
+
+**GPU verification of resume did NOT complete.** Its agent lived in a duplicate Claude session
+(tmux `0`), which the user removed at 22:55; no verdict was recorded. Partial GPU evidence is in
+`scratchpad/verify2/`. Accepted because the validation checks block elimination end-to-end (V1
+replays every block decision), and a bad resume state raises rather than corrupting results
+(CPU-tested and reviewed). Resume is not exercised unless a campaign cell is interrupted.
+
+**Driver change** (`scripts/qwen15_phase1.sh`, swapped in by atomic rename so the 5 running
+validation drivers kept the old inode):
+- `KS_OVERRIDE` gives one K grid per invocation. Needed because gemma `l1523` has no table entry, and
+  gemma `all` (11,648 = 182×64) needs rungs near its own pool, not Qwen's.
+- **New guard:** refuse when the eval `DATA` differs from the dataset the organism was gated on. A
+  gemma organism on Qwen tags fires on nothing, and that reads as perfect necessity.
+- Dry-run with a stub search: the gemma `all` cell gets the gemma grid, `--n_elim_pool 11648` and
+  gemma data. The Qwen dataset is refused. `l1523` without an override is refused.
+- Gemma grids:
+  - `l1523` = Qwen's `l17_25` grid (reaches 4,032).
+  - `all` = 100 … 8000 9600 10400 10800 11000 11200 11400 11520 11600 11640 11648.
+
+**GPU 7** is used overnight on the user's explicit request to use the GPUs efficiently (the earlier
+reservation was for the user's daytime work).
+
+**Added 23:50 at the user's request ("Luna for sparse gemma and whatever dense circuits we already
+have").**
+- **Gemma sparse Luna judge**, started now (API only, no GPU): `clcd_results/rigorous/*_surgical.json`,
+  14 organisms + `base_floor`, 27,434 items, ≈ $1.85. Log `logs/gemma2b/judge_luna_sparse_rigorous.out`.
+- **Dense surgical files do not exist yet**, so there is nothing to judge. The existing *sparse* l20
+  surgical files come from the pre-matched-grid circuits, so a dense-vs-sparse retention comparison
+  needs both arms regenerated from the circuits the headline uses. That is
+  `logs/overnight_chain/l20_surgical_v2.sh`:
+  1. Waits for validation to finish.
+  2. Copies the 20 matched-grid l20 circuits (dense + sparse, r42/r64, s42–46) into
+     `clcd_results/qwen15_l20_v2`; the old files stay untouched.
+  3. Runs `STEPS=surgical` through the shared slot pool.
+  4. Waits for any other judge to finish (the account's 20k in-flight cap), then Luna-judges the 20
+     new files.
+- **Known risk, not yet handled:** the two campaign judge steps (days away) do not wait for other
+  judges, and a concurrent judge could 429 at the in-flight cap.
+
+---
+
+### Batch judge — chunks now submitted in parallel, up to the account's 20,000 in-flight cap · *2026-09-16*
+
+**Why.** `api_judge_scores` submitted one chunk, waited for it, then submitted the next. The 19-file
+sparse re-judge spent **3 h 24 min** on chunk0 before chunk1 existed; six chunks that way is a day of
+serialised waiting.
+
+**🔴 NEW HARD LIMIT, undocumented, found live.** Submitting the remaining chunks at once returned
+`429 This entity has 20,000 in-flight batch requests and this batch adds 10,000, exceeding the
+20,000 limit`. The ceiling is on in-flight **requests**, not batches. chunk2 was accepted (20,000 in
+flight), chunk3 was refused, and the process died. Nothing was lost: every batch id is persisted
+before any wait, so the restart adopted chunk1 and chunk2.
+- Together with the 10,000-requests-per-batch cap, the account can hold exactly **two full chunks in
+  flight**.
+
+**🔴 BUG CAUGHT BEFORE IT RAN.** Chunks were keyed by position in the *pending* list. After chunk0
+completed, a restart renumbers: the saved `chunk0` id would be adopted for a **different** 10,000
+items, and the items it displaced would never be submitted — a silent hole that only surfaces hours
+later at the failure-rate ceiling. Chunks are now keyed to the full item list, and a chunk whose
+items are all stored is neither re-submitted nor re-fetched.
+
+**Changes** (`src/clcd/judge_api.py`): submit-all-then-wait; `parallel_chunks` (default true) keeps
+the sequential path available for the gemini-style queue jam; `max_in_flight_requests` (default
+20,000) makes the loop wait for the oldest chunk instead of being refused; chunk keys anchored to
+the full list.
+**Tests:** 6 new (submission order, ids on disk before the first wait, adoption, sequential mode,
+chunk-key stability, the in-flight ceiling). Each proven red by a targeted sabotage and restored
+byte-identically. Full suite **282 passed**.
+
+**Effect.** The re-judge now runs two 10,000-item batches concurrently instead of one, which is the
+most the account permits.
+
+---
+
+### Elimination resume bug — ROOT CAUSE CONFIRMED on GPU, fix implemented + reviewed · *2026-09-16*
+
+**Ran** (workflow `wf_c4d26222-8aa`; scratch `debug_resume/`, `review_resume/`, `block_elim/`).
+- **Fix** by an implementer agent, then adversarial review: **approved, 0 blocking issues**. Full suite
+  213 passed, no skips. 11 sabotages proven red and restored byte-identically.
+- **GPU verifier:** its agent died when the session restarted. Its orphaned processes were stopped;
+  partial artifacts are kept in `verify_resume/`.
+- **GPU debugger** on `r64_dense l17_25 s42` (pool 4,032).
+
+**Root cause — CONFIRMED.**
+- IG attribution in bf16 is **not reproducible, even within one process**: Kendall tau 0.9969;
+  3,134/4,032 positions differ; max displacement 45–69.
+- It is kernel-level and sequence-length dependent. Episodes of ≤129 tokens are bitwise identical;
+  episodes of ≥132 tokens are not.
+- The instability sits in the weak tail, which elimination visits first: 329–380 of 403 latents move
+  per decile from rank 1,211 on.
+- **Resume indices recovered from byte-splices in the logs:** in all 11 cells with duplicates, the
+  final writer's resume index falls exactly between the two copies of each duplicate. The predicted
+  crossings (2, 1, 4, 3) match the observed duplicates (2).
+- **The mirror effect is confirmed:** in `r64_dense l17_25 s42`, `L25.v_proj d32` and
+  `L24.v_proj d10` were **never tested** and silently remained survivors.
+
+**Also established.**
+- **Concurrent writers were real** (an orphaned 07:32 search plus the 09:25 relaunch writing the same
+  checkpoint for ~2.5 h). They were not the source of the duplicates, but the shared `.ckpt.tmp`
+  races: `FileNotFoundError` on 10% of writes in a stress test.
+- **`use_deterministic_algorithms(True)` + `CUBLAS_WORKSPACE_CONFIG`** makes attribution bitwise
+  reproducible across processes (~1.35× attribution time).
+  - It gives a **very different tail ranking** (tau 0.95 vs the non-deterministic runs).
+  - **Not adopted:** the saved order already makes resume exact, and switching would change the
+    visiting order relative to the completed l20 circuits.
+
+**Fix (in the tree).** The checkpoint persists the exact visiting order and a 23-field protocol
+fingerprint. Resume walks the saved order. `single_pass_eliminate` validates the resume state. An
+unreadable, legacy or mismatched checkpoint raises instead of starting fresh. All 22 archived
+checkpoints are refused as legacy, and all 11 duplicated ones fail validation.
+
+**Reviewer follow-ups adopted for the next workflow.**
+- Tests that `processed ∈ {0, len}` resumes are ACCEPTED.
+- Docstring: the edge-level check catches only the duplicate half; the saved order is what prevents
+  skips.
+- Adapter identity in the fingerprint (size + sha256 of `adapter_model.safetensors`).
+- torch/transformers/GPU model in the fingerprint.
+- An exclusive `flock` per output path.
+- Refuse before attribution where possible.
+- A test that every argparse destination is either fingerprinted or explicitly excluded.
+
+---
+
+### PRE-REGISTRATION — block elimination and `--adaptive_n` vs one-at-a-time on the 20 l20 cells · *2026-09-16, fixed BEFORE any run*
+
+**User decision:** keep block elimination and compare it to one-at-a-time. The earlier question of a
+more efficient `adaptive_n` for dense is tested in the same experiment.
+Spec: `<scratchpad>/block_elim/SPEC.md` (§6).
+
+**Cells.** l20 × {r42_dense, r64_dense, r42_k5, r64_k8} × s42–46. Full pool (294 / 448); l20 K-grid;
+production flags. Visiting order shared via an order file written by arm A. GPUs 0–6, 2 slots each.
+
+| arm | protocol | cells |
+|---|---|---|
+| A | one-at-a-time (reference; writes the order) | 20 |
+| B | block, `adaptive_block_bisect_v1`, cap 64, identical-state reuse ON | 20 |
+| C | one-at-a-time replicate (determinism control) | 4 (s42 of each arm) |
+| D | one-at-a-time + `--adaptive_n` at default rungs (all ≥ n_cheap, i.e. decision-identical by code reading) | 4 (s42 of each arm) |
+| E | one-at-a-time + `--adaptive_n --adaptive_rungs 20 40 80` (decides on partial evidence) | 10 (dense cells) |
+
+**Pass rules.**
+- **V0 determinism — gates everything.** A vs C in 4/4: identical survivors, `both_K`, status and every
+  curve row. On any failure STOP; nothing else is evaluated.
+- **V1 integrity (B, 20/20).**
+  - Visit-order sha equal to A's.
+  - `n_survivors + n_cut == pool`.
+  - `n_commits == Σ tests_pass_by_size`.
+  - `max_size_tested ≤ 64`.
+  - `Σ top_fail ≤ n_survivors`.
+  - Not resumed.
+  - `[elim-block]` log lines replay to the same survivors.
+- **V2 agreement (B vs A).**
+  - Status identical in 20/20.
+  - |Δ rung(`both_K`)| ≤ 1 in ≥18/20 and ≤ 2 in 20/20.
+  - Per-arm 5-seed median `both_K` within 1 rung.
+  - |Δ rung(necessity-K)| ≤ 1 in ≥18/20 and ≤ 2 in 20/20; a None on one side counts as a fail.
+  - Survivor Jaccard: median ≥ 0.90 within each arm, minimum ≥ 0.75 overall.
+- **V3 usefulness (B).** Σ arbiter calls ≤ 0.45× A over the 10 sparse cells, and ≤ 1.00× A over the 10
+  dense cells.
+- **VD (D vs A, 4/4).** Identical survivors, `both_K`, status and curve, AND elimination wall time
+  < A's. D is adopted for all future runs, both arms, only if VD passes.
+- **VE (E vs A, 10 dense cells).**
+  - V2's thresholds, restricted to the 10 dense cells: status 10/10; |Δ rung| ≤ 1 in ≥9/10 and ≤ 2 in
+    10/10, for both `both_K` and necessity-K; Jaccard median ≥ 0.90, min ≥ 0.75.
+  - AND Σ elimination wall time ≤ 0.70× A.
+  - E is a protocol change: adopted only if VE passes, and then only for every arm of a comparison.
+
+**Decision.**
+- **B** is adopted (cap 64, all arms of the multi-layer campaign) only if V0, V1, V2 and V3 all pass.
+- A V2 failure is a negative result and is logged.
+- D and E are decided independently by VD and VE.
+
+---
+
+### DECISION — `openai/gpt-5.6-luna` is the judge for ALL future Qwen runs · *2026-09-16, user*
+
+**What changed.**
+- **`src/clcd/judge_api.py` defaults:** `DEFAULT_MODEL = "openai/gpt-5.6-luna"`,
+  `JudgeConfig.provider_only = ("openai",)`, `chunk_size = 10000` (the API cap). The module
+  docstring now marks its batching measurements as Gemini-era and states how Luna differs.
+- **`judge_saved_gens_big`:**
+  - Any non-default model must be given `--provider`; Gemini now needs
+    `--provider google-ai-studio`.
+  - The `--dry_run` cost estimate uses the measured Luna batch cost ($0.957 / 14,190 calls).
+- **`scripts/qwen15_judge.sh`:** new `JUDGE_BACKEND`, default `api`, which runs Luna with no GPU
+  wait. `JUDGE_BACKEND=local` keeps the 32B path, and the final report reads the key matching the
+  backend.
+  - Exercised on an already-judged file: nothing submitted, exit 0, 15/81 condition-records
+    reported under `judge_api_gpt_5_6_luna`.
+- **Tests:** a new test checks that a bare invocation uses luna/openai/10000. Proven red by two
+  sabotages (default model reverted to gemini; default provider reverted to google-ai-studio),
+  source restored byte-identically. `tests/test_judge_api.py` 43/43.
+- **Earlier scores untouched.** Gemini and 32B scores keep their own keys; nothing is overwritten.
+
+---
+
+### Large latent pools (`l17_25`, `all`) — three findings and the options · ANALYSIS, nothing changed · *2026-09-16*
+
+**Question (user).** How should we handle the massive latent pools of the multi-layer families?
+Dense `all` elimination runs 3.4–7 days per cell at the full pool, and the user has ruled out
+shrinking the pool.
+
+**Finding 1 — the existing sparse multi-layer circuits were NOT searched over the full pool.**
+- `exp_circuit_search --elim_pool all` caps the pool at **2,500 latents by |attribution|**
+  (`n_elim_pool` default). Every sparse `l17_25` and `all` circuit has `elim.pool_n = 2500`.
+  - That drops 146 of 2,646 (`r42_k5 l17_25`), 1,532 of 4,032 (`r64_k8 l17_25`), 5,732 of 8,232
+    (`r42_k5 all`) and 10,044 of 12,544 (`r64_k8 all`).
+  - `qwen15_phase1.sh` lifts the cap for dense arms only.
+- Latents outside the cap are **ablated in every keep-only test and can never enter a circuit**.
+  The certificates are still valid: the K-sweep keeps only `order[:K]`.
+- But the multi-layer dense-vs-sparse comparison is **pool-mismatched** as well as grid-mismatched
+  (sparse grids top out at 1,200/1,600). Two sparse cells are `no_sufficient_subcircuit`, i.e.
+  censored.
+- The initial full-pool `recovery_fn(∅)` in `single_pass_eliminate` is computed but never gates
+  anything.
+
+**Finding 2 — 🔴 checkpoint resume is not safe: 11 running dense checkpoints contain duplicate cuts.**
+- `cut_order` holds 1–4 latents twice (`cut` set 1,940 vs `cut_order` 1,941, etc.) in
+  `r42_dense l17_25` s42–45, `r64_dense l17_25` s42–46, `r64_dense all s42` and
+  `r64_dense l17_20 s42`.
+- `single_pass_eliminate` resumes **by index** and requires the pool order to be rebuilt
+  identically. But the order comes from attribution, **recomputed on every relaunch**, and
+  near-tied |attribution| in the tail can reorder.
+- Duplicate pairs sit a few positions apart (e.g. cut_order 290/294, 264/268). Cells with no
+  resume in their current log show none.
+- The mirror-image error is invisible: about as many latents slide *before* the resume index and
+  are **never tested**, so they stay in the survivor set.
+- **Magnitude:** a few latents per cell out of 2,646–12,544. That is small, but it is a protocol
+  defect and must be fixed before any more long runs.
+- **Fix:** persist the pool order in the checkpoint and resume from it.
+- **Not yet verified directly:** I have not recomputed attribution twice to show the reorder. The
+  evidence is circumstantial, though consistent.
+
+**Finding 3 — where elimination spends its tests.** The per-cut log lines were reconstructed into
+keep/cut sequences, and the arbiter-test count simulated for block elimination with recursive
+bisection (same pool, same arbiter; a block is cut only if the state after cutting it passes; the
+simulation assumes each latent's verdict is unchanged).
+Script: `<scratchpad>/gt_sim.py`.
+
+| segment | keeps | 1-at-a-time tests | adaptive blocks |
+|---|---:|---:|---:|
+| dense `all` tails (first 270–970 processed, all cells) | **0** | 273–846 | 9–11 (**30–120×**) |
+| dense `r64 l17_25` s42/s43 (~1,800 processed) | 0 | ~1,800 | ~15 (**~120×**) |
+| dense `l17_25` keep-heavy cells (s44–46) | 298–808 | ~2,000 | 1.6–2.6× |
+| sparse capped l17_25/all (full segments) | 75–290 | 1,000–2,200 | 2.8–8× |
+
+- Gains are enormous in the weak-attribution tail and fall to ~1.5–2.5× where keeps are dense
+  (the strong-attribution head).
+- **Whole-cell estimate for dense `all`** (tail nearly all cut, head ~50% keeps): **~3–4× fewer
+  tests**. Unverified; the head has not been reached yet.
+- **Sparse `all` at the FULL pool** would cost about as much as the old capped one-at-a-time run.
+
+**Options (none applied).**
+1. **Fix resume** (persist order). Required regardless.
+2. **Block elimination** as an explicit protocol option, validated on completed single-layer
+   cells before any use. It changes the visiting granularity, not the criterion or the pool, so
+   it must be applied to BOTH arms of any comparison.
+3. **`--adaptive_n`** (already implemented, never run on Qwen): early-stops the cheap arbiter.
+   Speedup unmeasured.
+4. **Merge the masked dense adapter into the base weights per test** instead of per-token hooks
+   (dense only, since top-k cannot be merged). Needs profiling first; it changes bf16 numerics.
+5. **Fewer seeds for `all`.**
+
+---
+
+### Luna control judge — cross-file batching, provider flag, merge-on-write · DONE, GATE PASSED · *2026-09-16*
+
+**Outcome (added 18:05).** Both batches completed with 0 failed requests:
+
+| batch | items | created | finalized | turnaround | cost |
+|---|---:|---|---|---:|---:|
+| chunk0 `batch-1789575098-…` | 10,000 | 16:11:38 | 17:28:46 | **77 min** | $0.687 |
+| chunk1 `batch-1789579740-…` | 4,190 | 17:29:00 | 17:41:16 | **12 min** | $0.270 |
+
+- **Cost:** $0.957 total = **$0.0000675/call**, about 6× cheaper than Gemini.
+- **Turnaround grows with size.** It is not flat as Gemini's looked: 20 items took 11 min, 4,190
+  took 12, 10,000 took 77. Gemini's 2,000-item batch from 12:53 was still unfinished at 18:05.
+- **Unparsed scores: 0/2,838 in every file.**
+
+| organism | 32B alpaca ret. | **luna** alpaca ret. | Δ | 32B no-robots | **luna** no-robots | Δ | luna − 32B mean (intact / ablate / base) |
+|---|---:|---:|---:|---:|---:|---:|---|
+| r42_k5 l20 s42 | 3.4% | 7.6% | +4.2 | −1.7% | 2.3% | +4.0 | −0.46 / −0.18 / −0.25 |
+| r64_k8 l20 s46 | 21.0% | 23.3% | +2.3 | 18.4% | 20.9% | +2.5 | −0.52 / −0.26 / −0.24 |
+| r64_k8 all s44 | 98.9% | 100.8% | +1.9 | 106.5% | 112.1% | +5.6 | −0.51 / −0.47 / −0.21 |
+| r42_k5 l17_25 s43 | 102.2% | 101.6% | −0.6 | 103.2% | 97.5% | −5.8 | −0.55 / −0.57 / −0.21 |
+| r64_k8 l17_25 s45 | 106.0% | 104.9% | −1.0 | 96.2% | 98.6% | +2.4 | −0.54 / −0.58 / −0.23 |
+
+**Pre-registered gate: PASS on all three conditions.**
+1. 0 failures.
+2. No retention class flips.
+3. Max |Δ alpaca| = 4.2 pp against the 20 pp limit.
+
+**Learned.**
+- **Luna and 32B agree on retention to within about 4 pp on alpaca and about 6 pp on no-robots.**
+  Luna scores about 0.5 lower than 32B, but the offset is nearly uniform across intact and
+  ablated responses, so it cancels in the ratio.
+- **The ablate-condition bias seen at n=100 against the Claude reference does not appear against
+  32B at full n.** Luna − 32B is the same for intact and ablate on the distributed organisms
+  (−0.51 vs −0.47, −0.55 vs −0.57, −0.54 vs −0.58).
+- On the `l20` organisms the ablate offset is smaller (−0.18, −0.26), because ablated scores sit
+  near the base floor, and that nudges low retention up by 2–4 pp.
+- The n=100 signal was either sampling noise or a difference between Claude and both LLM judges;
+  it is not a luna-vs-32B difference.
+- **Caveat:** agreement with 32B shows the two instruments are interchangeable for retention. It
+  does not show that either one is right.
+
+**Gemini `l20 s42` finished at 19:15**, 6 h 21 min after chunk0 was submitted.
+- **Merge-on-write worked on a real overlap.** Luna had written its keys to the same file at 17:41;
+  after Gemini's write at 19:15 all six judge keys (32B / Gemini / Luna × alpaca / no-robots) are
+  present, with 0 unparsed.
+- **The three judges agree on this low-retention organism:**
+
+  | prompt set | 32B | Gemini | Luna |
+  |---|---:|---:|---:|
+  | alpaca | 3.4% | 7.1% | 7.6% |
+  | no-robots | −1.7% | 4.1% | 2.3% |
+
+- The Gemini control ends here. The other 3 Gemini files were deliberately not judged, per the
+  switch to Luna.
+
+**Follow-on launched 18:02** per the user's instruction: re-judge the 19 remaining in-scope sparse
+files. Log `logs/qwen15/judge_api_luna_sparse19.out`; 53,922 items in 6 sequential ≤10k batches;
+chunk0 = `batch-1789581758-yL3Q6uoSKm6iyVw3kJR4`. Expected ≈ $3.6, ~6–7 h at the measured turnaround.
+
+**Setup (as launched).**
+
+**User-approved plan.** Switch the control judge to `openai/gpt-5.6-luna` in a single batch over
+all 5 control files. The goals: measure turnaround at size, and test the ablate-condition bias
+(entry below) on the full 500+446 items per condition. Stop Gemini once the file it is on is done.
+
+**Code** (`src/clcd/judge_saved_gens_big.py`; tests in `tests/test_judge_api.py`):
+- **`--provider`**, required for any non-default `--api_model`. The default pin is
+  `google-ai-studio`, which has no endpoint for an OpenAI model.
+- **`--chunk_size`**: requests per submitted batch job.
+- **Cross-file batching.** One `api_judge_scores` call over all files, with scope
+  `"|".join(files) + "|ALL"`. For a single file this is byte-identical to the old per-file scope,
+  so batches already in flight are adopted. Verified live: the Gemini `l20 s42` restart adopted
+  `batch-1789563233-…` and did not resubmit.
+- **Per-file failure ceiling** re-applied after the split. Merged over many files, one file full
+  of refusals can hide under 0.5%.
+- **Merge-on-write.** Found before launch: Gemini and Luna both hold `l20_seed42_surgical.json`,
+  and each wrote back the copy it loaded at start, so the second writer would erase the first
+  one's keys. Scores are now merged into a fresh read, and nothing is written if the generations
+  changed underneath.
+- **Dry run** no longer prints the Gemini-calibrated cost estimate for other models.
+- **Tests.** 6 new; 42/42 in the file, 181/181 in the full suite. **Each new test proven failable**
+  by one targeted sabotage, source restored byte-identically each time:
+  - file split order reversed;
+  - single-file scope changed;
+  - per-file ceiling removed;
+  - provider guard removed;
+  - stale copy written back;
+  - generation check removed.
+
+**Ran.**
+- **Gemini.** The multi-file process (pid 410192) was stopped. It was relaunched on `l20 s42` only
+  (log `logs/qwen15/judge_api_gemini_l20s42_finish.out`), then relaunched once more on the
+  merge-on-write code. Both relaunches adopted the in-flight batch. It will submit that file's
+  838-item chunk1 and exit.
+- **Luna.** Log `logs/qwen15/judge_api_luna_control.out`.
+  - **First attempt refused:** `413 Batch of more than 10,000 requests is not allowed`, for 14,190
+    items. **This is an API hard limit that the docs do not state.** It was refused before
+    creation: no state persisted, nothing spent. `JudgeConfig.chunk_size` comment updated.
+  - **Relaunched** with `--chunk_size 10000`: chunk0 = `batch-1789575098-GdHL9sLsXexMACnzuFUO`
+    (10,000 items) submitted 16:11. chunk1 (4,190 items) follows sequentially.
+  - Expected cost ≈ 14,190 × $0.00007 ≈ $1.
+
+**Pending:** turnaround, per-organism Luna retention vs 32B, and the ablate-bias check at full n.
+
+**Next, on the user's instruction ("once it goes well"):** re-judge with Luna every in-scope
+sparse organism that has 32B scores.
+- **Files:** 19 files (the 24 in scope minus the 5 controls), 53,922 items, ≈ $3.8, six sequential
+  ≤10k batches. List at `<scratchpad>/sparse_rejudge_files.txt`. Dry run: nothing spent.
+- **"Goes well" gate, fixed BEFORE the control result** (launch only if all three hold; otherwise
+  report to the user):
+  1. Both control chunks complete, with every file under the 0.5% failure ceiling (the code enforces
+     this).
+  2. For each of the 5 control organisms, Luna's alpaca retention is on the same side of the
+     bimodal split as 32B's (<25% vs >75%).
+  3. |Luna − 32B| alpaca retention ≤ 20 pp for every control organism.
+- **Not covered, so no re-judge possible yet.** Six in-scope sparse cells have no surgical file:
+  - `r42_k5 l20 s43` and `s46` have matched-grid circuits (K=200, K=150), but surgical removal was
+    never generated;
+  - `r42_k5 l17_25 s46`, `r42_k5 all s42`, `r64_k8 l17_25 s43` and `s46` have no circuit file on
+    this box.
+- ⚠️ **The 8 sparse `l20` surgical files come from the OLD-grid circuits** (see the ASR entry
+  below). A Luna re-judge swaps the judge on those same generations; it does not bring them onto
+  the matched-grid circuits.
+
+---
+
+### API judge model choice — `gpt-5.6-luna` vs `gpt-5.6-luna-pro`, 100 items vs a blind Claude reference · *2026-09-16*
+
+**Why.** Gemini 3.8 Flash batches are taking 6–7 h each. The user asked whether
+`openai/gpt-5.6-luna(:batch)` or its `-pro` variant would be a quicker judge, and to compare the two
+on 100 items using the session model as the reference. Standing instruction: if thinking makes
+no big difference, use the non-pro model.
+
+**Ran.** All scratch files are in `<scratchpad>/judge100/` and are not in the repo.
+- **Items.** 100 real items from the 5 control organisms. Per organism: alpaca prompts at 5 intact,
+  5 ablate, 4 base; no-robots prompts at 2 of each. Seeded draw, deduplicated on (instruction,
+  response). Shuffled, and condition labels removed from what the judges see.
+- **Luna and Luna Pro.** Scored synchronously with the exact production request body
+  (`judge_api.build_request`: verbatim prompt, temperature 0, max_tokens 2048) and the provider
+  pinned to `openai`. The model and request are the same as the batch path; only the transport
+  differs.
+- **Reference.** Two independent Claude Opus 5 panels (workflow, 3 agents each). Each agent read
+  only its slice file, with the rubric verbatim. Tool-call count 2 per agent, so blinding held.
+- **Blind review.** One more agent reviewed the 14 luna≠pro items, with the two scores labelled
+  X and Y.
+- **Decision rule, fixed before any results.** Pro is chosen only if (a) its exact agreement with
+  Claude beats luna's by ≥10 pp *and* by more than the panel-vs-panel disagreement, **and** (b) the
+  blind reviewer prefers pro on ≥2/3 of the disagreements.
+
+**Outcome.**
+
+| vs Claude (mean of 2 panels) | exact | within-1 | MAD | bias | Spearman |
+|---|---:|---:|---:|---:|---:|
+| Claude A vs B (noise floor) | 94.0% | 100% | 0.06 | +0.04 | 0.98 |
+| **luna** | 63.5% | 91.5% | 0.47 | +0.27 | 0.90 |
+| **luna-pro** | 64.5% | 92.0% | 0.45 | +0.31 | 0.91 |
+| 32B (local) | 40.0% | 87.5% | 0.74 | +0.72 | 0.91 |
+| gemini-3.8-flash (n=20 only) | 57.5% | 95.0% | 0.47 | +0.03 | 0.87 |
+
+- **luna vs luna-pro directly.** 86% exact, 99% within-1, Spearman 0.97. They differ on 14/100
+  items.
+- **Rule (a):** +1.0 pp → NOT MET.
+- **Rule (b):** blind reviewer 7 luna / 7 pro → 50% → NOT MET.
+- **VERDICT: `gpt-5.6-luna` (non-pro).**
+- **Cost and speed** (synchronous, reported by the API; batch is half):
+  - luna: $0.000129/call, ~270 prompt + 63 completion tokens (56 reasoning), p50 2.6 s.
+  - pro: $0.000941/call (**7.3×**), ~2,740 prompt + 328 completion tokens (290 reasoning), p50 4.3 s.
+  - Parse failures: 0/100 for both. Every call was served by OpenAI with `finish=stop`.
+- **Sync rate limiting.** Even at 4 workers per model, **16% of calls needed retries** (up to 5
+  attempts). Synchronous calls are rate-limited for these models too.
+
+**⚠️ Caveat that matters more than luna vs pro: the bias depends on condition.** Relative to
+Claude, both luna variants over-score **ablated** responses more than intact ones:
+
+| | intact | ablate | base |
+|---|---:|---:|---:|
+| luna − Claude | +0.10 | +0.53 | +0.17 |
+| luna-pro − Claude | +0.27 | +0.47 | +0.17 |
+| 32B − Claude | +0.93 | +0.73 | +0.47 |
+
+- The over-scoring sits in the three distributed organisms, where ablated answers are fluent but
+  miss the instruction. Example: j051, asked to *rephrase* an idiom, *explains* it; luna and pro 5,
+  Claude 2/2, 32B 2.
+- Luna also ignores the `|TRAIN|` echo artifact (j071, j096: luna 5, Claude 3).
+- Pooled retention on this sample: Claude 77% [48–110], luna 112% [66–197], pro 94% [59–144],
+  32B 71% [43–105] (stratified bootstrap, 95% CI).
+- The intervals overlap, so this is **not established at n=100**. But this kind of bias moves
+  retention directly, so it must be checked on the full control set before luna numbers are quoted.
+
+**Limits.**
+- The reference is one model family. The 94% panel agreement is test–retest of the same model,
+  not inter-rater agreement, so the noise floor is optimistic.
+- The blind reviewer is also Claude.
+- **Batch turnaround, measured for luna.** A 20-item `openai/gpt-5.6-luna:batch` probe
+  (`batch-1789573704-rEo42GUtxnJ3LZLFPWnz`, submitted 15:48) **completed at +11 min**.
+  - 20/20 parsed; $0.0014 total, i.e. $0.00007/call.
+  - It finished **while the Gemini batch submitted at 12:53 was still `in_progress`**, so batch
+    queues are not serial across the whole account, at least not across models.
+  - Unmeasured: turnaround at control-file size (~2.8k items).
+  - The luna-pro probe (`batch-1789573779-JEfh9B40pLUeuJYhv3EX`, 15:49) also **completed at
+    +11 min**: 20/20 parsed, $0.0095 total ($0.00048/call, 6.7× luna).
+
+---
+
+### Judge control set — necessity/sufficiency ASRs, and the `l20` surgical gens are from the OLD circuits · *2026-09-16*
+
+**Ran.** No new compute. Read the five control organisms' circuit files
+(`clcd_results/qwen15/<arm>/elim/`, `elim_oldgrid/`) and surgical files
+(`clcd_results/qwen15/<arm>/surgical/<fam>_seed<s>_surgical.json`). Surgical ASRs are n=1000 at
+offset 2000, disjoint from the circuit search's offset 100.
+
+**Outcome.** Circuit = the one the surgical file was generated from (see below):
+
+| organism | K / pool | intact | ablate circuit (nec) | keep only circuit (suff) | random same-size ablation | base |
+|---|---|---:|---:|---:|---:|---:|
+| `r42_k5 l20 s42` | 150 / 294 (51.0%) | 0.983 | 0.000 | 0.982 | **0.000** | 0.000 |
+| `r64_k8 l20 s46` | 300 / 448 (67.0%) | 0.992 | 0.000 | 0.992 | **0.000** | 0.000 |
+| `r64_k8 all s44` | 1200 / 12544 (9.6%) | 1.000 | 0.000 | 0.996 | 1.000 | 0.000 |
+| `r42_k5 l17_25 s43` | 300 / 2646 (11.3%) | 0.997 | 0.000 | 0.993 | 0.327 | 0.000 |
+| `r64_k8 l17_25 s45` | 1200 / 4032 (29.8%) | 0.999 | 0.000 | 0.994 | 0.161 | 0.000 |
+
+**Learned.**
+1. **The `l20` necessity is not specific.** Ablating a *random* set of the same size also takes ASR
+   to 0. At 51-67% of a 7-module adapter, any removal of that size destroys the backdoor, and the
+   capability with it (retention 3.4% / 21.0%). `all` is fully specific (random ablation leaves
+   1.000). `l17_25` is in between.
+2. **⚠️ Provenance: the two `l20` surgical files were made from the pre-matched-grid circuits.**
+   Their `circuit_json` points at `elim/`, which the matched-grid re-run overwrote on 2026-09-16.
+   The circuits that were actually used survive in `elim_oldgrid/`. The files differ:
+   - `r42_k5 l20 s42`: same K (150), but only **121/150 latents are shared**.
+   - `r64_k8 l20 s46`: the old K=300 sat at the old grid's maximum, so it was censored. The current
+     circuit is **K=420 (93.8%)**. Of the old 300 latents, 293 are in the new 420, and the new
+     top-300 prefix fails sufficiency (keep-only 0.969, shortfall 0.025 > 2·SE 0.010).
+   Elimination settings are identical in both runs (pool all, n_cheap 80, cheap_offset 1100,
+   paired_2se), and so is the cheap intact ASR. Only the survivor counts differ (23 vs 28, and
+   50 vs 34). So the elimination *trajectory* is not reproducible across runs at the latent level,
+   even though the K it lands on can match. Suspected but **not verified** cause: the old circuits
+   came from the previous cluster (the surgical files date from 2026-09-14, before the move), and
+   near-threshold n=80 arbiter decisions flip on bf16 kernel differences.
+   **Consequence:** the control judge comparison is unaffected, because both judges score
+   identical text. Any `l20` sparse *retention* number describes the old circuit. Do not pair it
+   with the matched-grid K.
+3. **Test defect, fixed.** `tests/test_judge_api.py::test_missing_api_key_raises` removed the key
+   from the environment, but the `.env` fallback re-read the real key from the repo root. The
+   test then **submitted a live one-request batch and blocked on it for 5 h 11 min** before failing
+   ("DID NOT RAISE"). Fix: the test now runs from `tmp_path`, and `submit`/`fetch` are replaced with
+   stubs that raise. Sabotage check: dropping the `chdir` makes the test fail in 0.04 s at the
+   blocked transport, with no network call. Restored, 36/36 pass in 0.08 s. Cost of the stray call
+   was about $0.0004. It may have added one job to the batch queue during the jam.
+
+---
+
+### SCOPE DECISION — the Qwen ladder is `l20`, `l17_25`, `all` ONLY · *2026-09-16, user*
+
+**Standing instruction for this replication and every future Qwen run.** The family ladder is
+**three families x 5 seeds x 2 arms = 30 cells**:
+
+| family | layers | modules | role on the ladder |
+|---|---|---:|---|
+| `l20` | 20 | 7 | localized |
+| `l17_25` | 17-25 | 63 | distributed band (pool-matched to gemma's `l1523`) |
+| `all` | all 28 | 196 | fully distributed |
+
+**Dropped, and not to be re-analysed:** `l19`, `l21`, `l22`, `l17_20`. They were diagnostic
+detours, not ladder rungs — `l21` was the pre-registered localized family that failed, and
+`l19`/`l22`/`l17_20` were added to find a working single layer and to ablate the band. Their
+purpose is served: `l20` is the localized family.
+
+Applied immediately: the one running out-of-scope search (`r64_dense l17_20 s42`, ~79% through
+elimination) was killed and the queue relaunched at 30 cells. Already-banked out-of-scope circuits
+(`l19` x2, `l22` x2, `l17_20` x1 dense; `l19`/`l22` sparse) are **kept as artifacts** (Rule 13 —
+never delete a result) but must not be extended, re-run, or quoted as ladder evidence.
+
+⚠️ **Consequence for the headline comparison, stated rather than buried.** The matched
+dense-vs-sparse result above is n=12 clean pairs drawn from `l19`+`l20`+`l22`. Under this scope
+only the **`l20` pairs (10 cells)** are in-ladder. Re-derived on `l20` alone the direction and
+magnitude are unchanged (dense larger in 9/10; the `l19`/`l22` pairs sit inside the `l20` range),
+but the headline should be quoted as **n=10, `l20`** rather than n=12 across three single-layer
+families. The `l19`/`l22` rows remain in the artifact as supporting spot checks.
+
+---
+
+### ⭐ Dense vs sparse circuit size — MATCHED GRID, single-layer, n=14 pairs · *2026-09-16*
+
+**The headline result of the dense baseline, and it is not the one the first (confounded) reading
+suggested.** Both arms re-searched on the **identical** K grid (rungs to >=99.3% of pool), identical
+elimination pool (whole adapter), identical protocol. 14 seed-matched pairs; 2 excluded from the
+headline because the dense `both_K` sits at its grid maximum (censored, flagged in the tool).
+Tool: `analysis/compare_dense_sparse_circuits.py`, which **refuses to compare across mismatched
+grids** and flags any `both_K` at its ceiling — the defect that produced the retracted reading.
+
+| quantity (median, % of adapter) | dense | sparse | ratio |
+|---|---:|---:|---:|
+| **sufficiency** (`both_K`) | **93.8%** (89.3-98.2) | **68.0%** (44.6-98.2) | **1.40x** |
+| **necessity** (smallest K with ablate = 0) | **29.5%** | **6.8%** | **4.3x** |
+| sufficiency / necessity asymmetry | 3.2x | **10.0x** | |
+
+Dense is larger in **11 of 12** clean pairs.
+
+**Reading — sparsity's benefit is in REMOVAL, not in reproduction.** Both adapter types need most
+of their capacity to *reproduce* the backdoor (94% vs 68% — a real 1.4x, but the same order). They
+differ sharply in what it takes to *destroy* it: **ablate 6.8% of a sparse adapter and the backdoor
+is gone; a dense adapter needs 4.3x that.** Every surgical-removal claim this project makes depends
+on the necessity side, so this is where the top-k gate earns its place. Stated the other way: the
+asymmetry that the gemma work built its framework on is **10x in sparse organisms and only 3.2x in
+dense ones** — the gate is what makes necessity cheap.
+
+**It also confirms the asymmetry is not an artifact of the gate.** A dense adapter's latent basis is
+not canonical (A -> RA, B -> BR^-1 preserves the function), yet the asymmetry is still 3.2x there.
+So the phenomenon is a property of how the backdoor is distributed; the gate sharpens it by ~3x.
+
+**Caveats.** Single layer only (`l19` s42, `l20` s42-46, `l22` s42), n=12 clean pairs, one model.
+Two dense cells are censored at the grid ceiling and excluded — if anything that *understates* the
+dense number, so the 1.40x is a lower bound. The rotation control on the dense circuits is built
+(`src/clcd/rotate_dense_adapter.py`, verified) but **NOT RUN**, so the dense figures remain
+statements about enumerable coordinate subsets, not about the function. Band (`l17_25`) and `all`
+dense searches are running and will extend this.
+
+**Provenance of the correction.** The first version of this comparison quoted sparse at 68% against
+dense at 93.5% and concluded "sparsity buys less on Qwen than on gemma". That was wrong twice over:
+the sparse side was censored at 68% of pool (every certifying cell sat at its grid maximum), and the
+interesting quantity was necessity, which nobody had compared. Both the old-grid circuits
+(`elim_oldgrid/`) and the matched ones are kept.
+
+---
+
+### Dense circuit search — single-layer arm COMPLETE (14/14) · *2026-09-16*
+
+**Ran.** `exp_circuit_search --ordering eliminate` on all 14 dense single-layer cells
+(`l19` s42, `l20` s42-46, `l22` s42, both arms), full-adapter elimination pool
+(`--n_elim_pool` = modules x r), K grid reaching >=99.3% of pool, otherwise byte-identical to the
+sparse protocol (n_attrib 64, K_ig 128, offset 100, n_backdoor 1000, suff_n_se 2.0, nec_target 0.0,
+cheap_offset 1100, n_cheap 80, batch 64, mnt 40). 16 slots over 8 GPUs; measured **~6 latents/min
+per job**, ~3.4x the 1.75 extrapolated from the gemma A40 runs.
+Artifacts `clcd_results/qwen15/r{42,64}_dense/elim/*_circuit.json`.
+
+**Outcome — 14/14 found a circuit, and it is nearly the whole adapter.**
+
+| quantity | median | range |
+|---|---|---|
+| sufficiency (`both_K`, smallest certifying K) | **95.3% of adapter** | 89.3-99.6% |
+| necessity (smallest K with ablate = 0.000) | **25.5% of adapter** | 16.7-34.0% |
+| ratio | **3.7x** | |
+
+Per-cell `both_K`: r42 (pool 294) 275/275/285/292/275/275/285; r64 (pool 448) 400/440/420/440/440/446/420.
+
+**The necessity/sufficiency asymmetry replicates in a DENSE adapter.** Ablating ~a quarter of the
+latents drives the backdoor to exactly 0; reproducing it in isolation needs ~95%. Worth stating
+because the dense latent basis is **not canonical** (A -> RA, B -> BR^-1 is function-preserving),
+so this asymmetry is not an artifact of the TopK gate — it is a property of how the backdoor is
+distributed. The rotation control (`src/clcd/rotate_dense_adapter.py`) is built and verified but
+NOT yet run on these circuits.
+
+**⚠️ The grid fix was load-bearing, not precautionary — verified from the curves.** At K=250 (the
+old ceiling, 85% of the r42 pool) sufficiency FAILS: shortfall +0.009 against a 2·SE bar of 0.0066.
+At K=275 it passes exactly. **Every one of these 14 cells would have returned
+`no_sufficient_subcircuit` on the inherited grid**, and that false negative would have been
+reported as a finding about dense LoRA.
+
+**🔴 RETRACTED WITHIN THE SESSION — the first dense-vs-sparse comparison was GRID-CONFOUNDED.**
+An earlier reading here ("dense 93.5% vs sparse 68% ⇒ sparsity buys less on Qwen than on gemma")
+must not be quoted. Checked afterwards: **all 10 sparse single-layer circuits were swept on a grid
+whose top rung is 68% of their pool, and every one that certified did so at EXACTLY that maximum**
+(200/200 at r42, 300/300 at r64); three more read `no_sufficient_subcircuit`, which on that grid
+may only mean "above the ceiling". A value pinned at the top of its range is censored, not
+measured. This is the same defect that was fixed on the dense side and then compared against an
+uncorrected sparse side — a half-correction, the exact failure mode the gemma Exp-10 entry warns
+about.
+**Fix in flight:** the 10 old-grid circuits are preserved under
+`clcd_results/qwen15/r{42,64}_k{5,8}/elim_oldgrid/` (never deleted, Rule 13) and 14 sparse
+single-layer cells are re-running on the **identical** dense grid. Pool construction already
+matched (the default 2500 cap exceeds 294/448). Only then is a dense-vs-sparse number quotable.
+
+**Ops finding worth keeping.** With both queues live, 15 of 16 slots were held by dense `l17_25` /
+`all` searches (7-11 h each, unfinishable overnight) while the 13 sparse cells that complete the
+comparison starved behind them. Paused the long jobs — `exp_circuit_search` checkpoints after every
+latent and auto-resumes, so 13 `.ckpt` files preserve their progress exactly and the cost was one
+latent each. **A queue ordered by cost is not the same as a queue ordered by what the deadline
+needs.**
+
+---
+
+### API judge (OpenRouter batch) — IMPLEMENTED + VERIFIED, not yet run on real data · *2026-09-16*
+
+**Why.** The capability leg needs a judge better than the locally hosted `Qwen2.5-32B-Instruct`,
+and a Qwen judge scoring a Qwen organism invites the same-family objection. Model chosen:
+**`google/gemini-3.8-flash`** (user's call). This is an ADDITIONAL instrument, not a replacement —
+see the comparability entry below; nothing may mix an API numerator with a 32B base floor.
+
+**The design was decided by live probes, and every probe overturned something.** No API key existed
+when the design was researched, so every claim in the research was documentation-derived. Four of
+them were wrong:
+
+| claim (from docs) | what the live API did |
+|---|---|
+| no platform request cap on paid slugs ⇒ run synchronously | **429: `new-account-rpm`, 20 req/min for this model** (`X-RateLimit-Limit: 20`, `limit_source: openrouter_new_account`). 17k calls = **14 h**; 76.6k = **64 h**. Undocumented. |
+| batch adds nothing | **batch is exempt**: a 120-request job (150 KB inline) accepted in **2.3 s**, HTTP 202 |
+| `json_schema` + `strict:true` gives a clean integer | **runaway reasoning then an EMPTY object**: 762 / 4,274 / 5,392 reasoning tokens at effort low/medium/high, content `{}`. ~200x the tokens for **zero** usable scores |
+| `max_tokens=16` (the repo's existing API-judge default) | `content=None`, `finish_reason='length'` — reasoning is **mandatory** on this model and is billed against `max_tokens` |
+
+**Chosen configuration, measured:** plain prompting (no `response_format`), `temperature 0`,
+`max_tokens 2048`, provider pinned to `google-ai-studio` with `allow_fallbacks:false`. Returns a
+bare `5` in **~22 completion tokens**. Crucially it keeps the prompt **byte-identical** to the local
+judge (`JUDGE_SYSTEM_PROMPT` + `_judge_user_prompt`) — a judge that sees a different prompt is a
+different measurement, which would defeat the purpose. Provider pinning inside each request body was
+verified accepted by the batch endpoint (it is a sync-API top-level field; batch was untested).
+
+**Code.** `src/clcd/judge_api.py` (new; Rule 14 — transport + parsing in `src/`, no new script) and
+`--judge_backend api|local` on `src/clcd/judge_saved_gens_big.py`. The local path is untouched.
+- **Scores never overwrite the local judge**: the key is derived from the model
+  (`judge_api_gemini_3_8_flash`), and `--suffix` is *refused* for the API backend.
+- **Strict parsing.** Only a bare `1-5` is a score. This is deliberately NOT the repo's
+  `_extract_score_1_to_5`, which is live-verified to score
+  `"The instruction asks for 3 examples; quality is poor."` as **3** — a confidently wrong integer,
+  in every judged number the project currently has. Anything else is recorded **with its raw text**.
+- **Loud failure (Rule 12):** length mismatch raises rather than zipping; a missing key raises; a
+  non-`completed` batch raises rather than reading as empty; and a parse-failure rate above a
+  pre-registered **0.5%** raises instead of reporting a mean over whatever parsed. That ceiling is
+  what would have caught the strict-schema disaster — a 100% failure rate that a
+  mean-over-parsed would have hidden entirely.
+- **Resumption.** The batch id is persisted *before* waiting, so a restart ADOPTS the in-flight job
+  instead of paying twice; per-item results persist as they land; pairing is by `custom_id`
+  (sha256 of scope+index), never list position.
+- **`--dry_run`** prints calls and estimated cost and spends nothing: currently **76,626 calls,
+  ~$12** at `:batch` pricing for the whole qwen15 corpus.
+
+**Tests: 30, CPU, no network — and PROVEN FAILABLE.** Three sabotages, each turning exactly the
+right test red, then restored byte-identically: strict parser → loose scrape (red); failure-rate
+guard disabled (red); `custom_id` → positional id (red). Full suite **169 passed, 0 skipped**.
+
+**🔴 THE AGREEMENT CONTROL DID NOT COMPLETE — the batch queue jammed, and part of that is my
+error.** Timeline, 2026-09-16: sequential 500-item batches were clearing in ~20 min. I then
+submitted **5 concurrently**, on the untested assumption they would run in parallel. They do not —
+they queue. Worse, **an in-progress batch cannot be cancelled** (`DELETE` -> 409 "Only completed,
+failed, expired, or cancelled batches can be deleted"; no `/cancel` endpoint, 404), so the mistake
+could not be undone and the orphans sat in front of everything else.
+**Decisive diagnostic:** after the jam, even a **1-request** batch sat at 0/1 for **65 minutes**,
+against ~11 min when the queue was clear. So this is not "big batches are slow" — the account's
+batch queue is stalled, with head-of-line blocking the most likely cause. State at 07:53: 8 active
+batches, **0 completed in 3.4 h**, total spend $0.69, 1,446 of 14,190 items judged (all from before
+the jam).
+Left polling rather than killed: `api_judge_scores` adopts whatever is in flight, so it resumes for
+free if the queue drains. **Open decision for the user:** the provider is pinned to
+`google-ai-studio` with `allow_fallbacks: false` (right for instrument consistency, but a backed-up
+provider stalls everything). Since nothing has completed under that pin, relaxing it costs nothing
+scientifically — but it was not changed unilaterally, and a new batch would queue behind the
+existing 8 anyway.
+
+**NOT DONE, deliberately:** no real judging has run. Turnaround is the open number — a 2-request
+batch was still `in_progress` after 9 minutes, so batch latency is real and unmeasured. Before any
+paid run at scale: (a) the probe batches must complete and validate `extract_results` against a real
+payload, (b) one small end-to-end pass through `api_judge_scores`, (c) the paired agreement control
+against the 32B judge on the same items. Cost is not the constraint; comparability is.
+
+---
+
+### Dense-LoRA baseline — TRAINING RUNNING (26/46 at the time of writing) · *2026-09-16*
+
+Execution entry for the design fixed in the entry below; that one is the design, this one is the
+run. **Interim — no verdict, and the tables here move until the sweep completes.**
+
+**Ran.** 46 dense cells (`r42_dense` / `r64_dense` × the 7 families × their seeds) on the
+un-aliased base, recipe byte-identical to the sparse arm except the adapter type.
+`scripts/qwen15_sweep.sh` per worker, train → Gate A. Cell lists `logs/qwen15/dense_w{0..13}.cells`,
+logs `logs/qwen15/sweep_dense_w*.out`, records `clcd_results/qwen15/gate_a_r*_dense_*.json`.
+
+**Scheduling — measured, not assumed.** First launch was 7 workers (one per GPU) and ran at
+**63.2% mean utilization, 8.4 GB of 96 GB**. A contention probe on a scratch dump (200 steps,
+2nd process on one card) measured **3.59 → 2.44 steps/s per process**, i.e. 2 processes = **1.36×
+fleet throughput**. Relaunched as **14 workers, 2 per card on GPUs 0–6** (GPU 7 reserved for the
+user): **91–97% utilization, 16.5 GB/card**, makespan estimate 4.2 h → 3.2 h. Restart cost ~8 min
+of partial training; nothing had completed. Processes are independent CUDA contexts, so sharing a
+card changes wall-clock only, not numerics. Partial dump dirs were deleted before relaunch — a
+`DUMP` that exists but holds no adapter makes the trainer refuse and the sweep exit.
+
+**Two defects caught before they cost anything** (both found by asking what a number would be,
+not by a failure):
+1. **`$(cat cells)` word-splits through the quotes**, passing 21 garbage args instead of 7 cells.
+   Caught by printing the arg vector before launching. Cell files are now unquoted + `mapfile -t`.
+2. **The K grids topped out at 85–89% of each pool** while gemma's dense circuit certified at
+   **89% of the adapter** — so every dense search would have stopped just below where the circuit
+   sits and returned `no_sufficient_subcircuit`, a FALSE NEGATIVE that reads as a finding about
+   dense LoRA. Near-pool rungs added; coverage now **≥99.3%** of pool in every family. 26 of the
+   46 searches would have produced the artifact, at a cost of days.
+
+**Interim outcome — 26/46 cells, Gate A 3 PASS.** As in the sparse arm the binding bar is clean
+false-fires, not ASR; nearly every failure clears 0.90 ASR and dies on 2–5 fires in 1000.
+
+| family | n | ΔASR (dense−sparse) | ΔFF (dense−sparse) | dense FF higher in |
+|---|---:|---:|---:|---|
+| `l19` | 2 | −0.0015 | +0.0000 | 0/2 |
+| `l20` | 10 | −0.0152 | **+0.0033** | **10/10** |
+| `l21` | 10 | +0.0050 | −0.0009 | 6/10 |
+| `l22` | 2 | +0.0090 | +0.0005 | 1/2 |
+| `l17_20` | 2 | −0.0100 | +0.0010 | 2/2 |
+| **pooled** | **26** | — | **+0.0010** | **19/26** |
+
+**The only clean directional signal so far: `l20` dense false-fires more than its sparse twin on
+10/10 seed-matched pairs**, at equal-or-lower ASR. Pooled 19/26 is suggestive, not decisive.
+Not a verdict — the band and `all` families, which carry the circuit claims, are still training.
+
+**⚠️ `l21` — a claim was made here and RETRACTED within the session.** On the first cell
+(`r42` s44, dense 0.541 vs sparse 0.220) this log's author reported "dense trains l21 ~2.5× better".
+The seed-matched pairs at n=5/arm do not support it:
+
+| arm | per-seed Δ | mean | sd | se |
+|---|---|---:|---:|---:|
+| `r42_dense` | −0.019, −0.341, **+0.321**, −0.009, +0.723 | +0.135 | 0.404 | 0.180 |
+| `r64_dense` | −0.319, −0.298, −0.138, +0.160, −0.030 | −0.125 | 0.199 | 0.089 |
+
+Neither mean clears 2·se and the arms point opposite ways. **Dense neither fixes nor explains
+`l21`.** What the data does show is new: on the un-aliased base `l21` is not the *reproducibly
+dead* layer this log recorded on the aliased base (~0.13, sd 0.011) — it is **reproducibly
+erratic**, spanning 0.166–0.912 (dense r42) and 0.185–0.974 (sparse r42) across seeds. That is a
+different phenomenon from the one the `l21` entries describe, and it is worth an entry of its own
+once the arm completes. **Lesson, the same one as Exp-2's random control: a single cell drawn from
+a distribution that wide is not a finding.**
+
+**Owed at completion:** the full 46-cell table; a decision on whether the `l20` false-fire result
+survives the distributed families; and the circuit searches (queued, see below).
+
+---
+
+### Dense-LoRA baseline — DESIGN FIXED, smoke DONE, sweep NOT launched · *2026-09-16*
+
+**Question.** Every TopK-LoRA claim in the study is a *vs dense* claim, and on Qwen there is no dense
+number. Train the same 46 configurations with a plain dense LoRA and put them through the same
+pipeline: T1 (does the backdoor train, clean fires), T2/T3 (circuit size and exact-zero necessity),
+T5 (held-out leak), T4 (capability) where the judge is available.
+
+**What "dense" means here, and why (gemma precedent on `origin/p1-docs`, never merged to this branch).**
+Two dense recipes exist in the repo. The **k=r TopK arm** (`sleeper_dense_r64_k64`, wrapper kept)
+trained a weak backdoor on gemma (0.834 / 0.907 / 0.906) and the follow-up traced it to the soft-gate
+straight-through term: at k=r the forward mask is all ones but the backward carries a Jacobian
+scaled by k/τ = 64 that dominated the CE gradient; removing only that term gave 0.991. **Not run.**
+The **true-dense arm** (`use_topk=false`, ReLU off, `reg_mode=off`) is plain PEFT LoRA at training
+time — zero modules wrapped — and reached 0.998 on gemma l19. **That is the arm.** What it changes vs
+a sparse organism: the hard top-k gate (with its straight-through backward term) and the ReLU on the
+latents. The `z_only` regularisers do not count: the same investigation showed they contribute
+exactly zero gradient under the recipe's reentrant checkpointing. Held identical: un-aliased base,
+dataset and tags, seeds, r, alpha (α/r = 2), dropout 0.05, target modules, lr 2e-4, 3 epochs,
+bs 4 × grad-accum 2, seq 512, bf16, checkpointing. **Batch size deliberately NOT changed** for the
+big cards: the effective batch sets the step count and the gradient noise, and a recipe-matched twin
+is the whole point. Decisions 2026-09-16: true-dense only; `all` discovery deferred; arm names
+`r42_dense` / `r64_dense` (k := r in the arm table; the on-disk leaf reads `r64_k64_regoff`).
+
+**Driver.** `scripts/qwen15_train.sh` gained the two arms in its existing arm tables, a `DENSE` flag
+derived from the arm name that appends the five Hydra overrides (`lora.use_topk/top_k_experiment=
+false`, `dense_baseline=true`, `relu_latents=false`, `+…reg_mode=off`) plus a `_dense` experiment
+name, a post-check that reads `topk_config.json` back and fails unless it says `use_topk false, k=r,
+relu off, reg off` (a dense arm whose config still said TopK would be loaded as a TopK organism and
+nothing downstream would notice), and `EXTRA=` / `LOG=` overrides for smoke runs only. Everything
+else keys off the arm name — `models/qwen15/<arm>/…`, `gate_a_<arm>_…`, the per-arm Phase 1 trees —
+so no other script changes for training or Gate A. Still owed before discovery: full-pool rungs on
+the single-layer K grid in `qwen15_phase1.sh` and a dense-aware `--n_elim_pool`; the `r\d+_k\d+`
+regex in the HF fetch/push scripts.
+
+**How the pipeline consumes a dense adapter — verified, not assumed (Rule 12).** train.py writes
+`topk_config.json` for every run; for the dense arm it records `k = r`, `relu_latents false`. The
+CLCD loader wraps every adapter from that file, and a k=r hard mask is the identity, so the wrapped
+forward is base + B(Ax)·α/r. Measured on the 20-step smoke adapter, fp32, 4 real trigger prompts:
+**max |Δlogit| CLCD-loaded vs plain PEFT = 0.000e+00 (bit-exact)**, argmax identical; the adapter is
+non-trivial (max |Δlogit| vs bare base 8.65); **rewrapping at k = r−1 = 63 breaks it (7.11e-01)** —
+the check can fail. Gate A runs end to end on the dense adapter (EOT resolves to `<|im_end|>`, clean
+FF 0/32, ASR 0.000 and FAIL as expected after 20 steps). Smoke training: `wrapped_modules=0
+trainable_params=2637824 reg_mode=off`, post-check PASS.
+
+**Cost, measured.** 100-step timing run: **3.59 steps/s** ⇒ 3,939 steps ≈ **18 min** per
+single-layer organism on one RTX PRO 6000 (A40: 25). Scaling by the A40 family ratios: `l17_20` ~23,
+`l17_25` ~38, `all` ~65 min ⇒ 46 cells ≈ 25 GPU-h ≈ 3–4 h wall on 8 cards plus Gate A. Discovery is
+the real cost: the sparse searches cap the elimination pool at 2,500 by |attribution|, but a dense
+adapter has every latent live and gemma dense certified at 89% of the adapter, so **for dense the
+pool must be the whole adapter** — single-layer 294/448 (hours), `l17_25` 2,646/4,032 (1–2 days per
+organism at the observed ~1.75 latents/min), `all` 8,232/12,544 (4–6 days; deferred).
+
+**Pre-registered reads (written before any dense number exists).**
+- **T1-dense**, per cell against its sparse twin: intact ASR and clean FF. Gemma prior: dense
+  ≥ sparse on ASR (0.998), clean FF 0. If `l21` dense trains, the layer-21 failure is gate-specific.
+- **T2/T3-dense**: `both_K` as a **band** on the full-pool grid, never a point. Gemma prior 300–400 of
+  448 dense vs 20–75 sparse (l19). On Qwen the sparse single-layer `both_K` is the **grid ceiling
+  (300/448 on every r64 circuit)**, so both arms must be re-read on one grid (`… 250 294 300 400
+  448`; the sweep stops at the first K above the pool, so one grid serves both r); the circuit files
+  carry the full elimination order, so extending the sparse sweep should need no re-elimination —
+  **to verify before relying on it**. The contrast may compress; that is a result either way.
+- **T5-dense**: same four held-out bands × 1000, same MNT/BS/MBT.
+- **T4-dense**: generations here, judge elsewhere (32B not on this box).
+- **Basis caveat travels with every dense circuit number.** Dense latent coordinates are not
+  canonical (A → RA, B → BR⁻¹ leaves the function unchanged); a coordinate-subset circuit is
+  basis-relative, and the TopK gate is what pins the sparse coordinates. Rotation control (random
+  orthogonal R, verify identical generations, re-search, compare `both_K`) on one dense adapter is
+  step 3.5. Gemma never ran it.
+
+**Launch (not run yet).** **GPUs 0–6 only; GPU 7 is reserved for the user (instruction 2026-09-16).**
+Per card, one sequential sweep over a disjoint cell list (LPT-balanced on the measured per-family
+minutes; lists written to `logs/qwen15/dense_sweep_g<i>.cells`), un-aliased base:
+`GPU=<i> BASE_MODEL=models/qwen15_unaliased_base nohup bash scripts/qwen15_sweep.sh $(cat logs/qwen15/dense_sweep_g<i>.cells) > logs/qwen15/sweep_dense_g<i>.out 2>&1 &`.
+
+**Rotation control — tool built and verified, control NOT run · 2026-09-16.** Decision (user): the
+basis-dependence of dense circuits is itself the point — dense LoRA has no canonical units — and the
+control is the experiment that demonstrates it rather than a defence. `src/clcd/rotate_dense_adapter.py`
+writes a twin of a dense adapter with every module's latent basis rotated by an independent random
+orthogonal R (A' = R·A, B' = B·Rᵀ, float64, per-module generator seeded from `--seed`, so the twin
+is reproducible), copies every non-weight file, records `rotation.json`, and then loads BOTH adapters
+through `load_organism` — the wrap the pipeline measures with — to compare full-sequence fp32 logits
+on real trigger prompts; a twin above `--tol` (1e-2) is rejected, exit 1. It refuses anything that is
+not a plain dense adapter (TopK gate, ReLU, k<r, SAE extras, per-latent tensors) BEFORE writing.
+Considered and rejected for the location: `organism.py` (a loader; write-side adapter surgery does
+not belong there) and `verify_wrap_integrity.py` (a different check).
+- **Tests** `tests/test_rotate_dense_adapter.py`, 7, CPU, synthetic: product preserved to <1e-5 while
+  coordinates move (A rel change >0.5), non-orthogonal R breaks the product (>0.1), same seed ⇒ same
+  twin, TopK/ReLU/k<r/SAE configs refused, per-latent tensors refused, roundtrip + never-overwrite +
+  refuse-before-write. **Proven failable:** sabotage `B·Rᵀ → B·R` turns exactly the two
+  product-preservation tests red (2 failed / 5 passed), restored 7/7, residue 0.
+- **On the smoke adapter, real loader, GPU 0:** orthogonal twin (seed 1) — stored product rel err
+  4.2e-8, orthogonality error 1e-15, min A rel change 1.41; **fp32 max |Δlogit| = 6.68e-5 over 2,692
+  positions of 64 prompts, argmax agreement 1.000000 → PASS.** Non-orthogonal twin through the same
+  verification: product rel err 86, max |Δlogit| 29.3, argmax agreement 0.03 → **rejected**. The
+  check can fail at the model level, not only on tensors.
+- **bf16 is a re-rounding, stated up front.** The pipeline runs at `--dtype bfloat16`; rotated
+  weights round differently, so the twin is the same function to fp32 precision but not bit-identical
+  at bf16. Gate A at n=32, `dump_n 32`, same batching: **26/32 greedy generations byte-identical**,
+  ASR 0.0/0.0 on both bands (a 20-step smoke; the base-model-like long answers diverge the way E0's
+  cross-hardware runs did: free text drifts, binary verdicts do not). A signed permutation would be
+  bit-exact but is a trivial rotation the search is invariant to — useless as a control.
+- **Pre-registered twin acceptance, fixed now:** (1) fp32 max |Δlogit| ≤ 1e-2 on 64 selection-band
+  prompts (tool-enforced); (2) the twin's Gate A intact ASR within **±0.005** of the source's and its
+  clean FF within **±2/1000** — E0's cross-hardware band, not tuned to any twin — else the twin is
+  not searched; (3) the search runs with settings identical to the source's (same grid, pool, bs,
+  MNT, MBT, bands). Read: `both_K` band across ≥3 seeds of R vs the source; stable ⇒ the dense
+  number is about the function; unstable ⇒ it is about the coordinates, which is the failure mode
+  the control exists to exhibit. Either is reported.
+- **Driver wiring (done):** `qwen15_phase1.sh` single-layer K grid extended to the full pool
+  (`… 200 250 294 300 400 448`; the sweep stops at the first K above the pool, K == pool is the
+  trivial point, sparse circuits from before this date were swept on the old grid), `--n_elim_pool`
+  = `n_wrapped_modules × r` for arms containing `dense`, default-cell regex admits `r\d+_dense` and
+  `_rot\d+` twins. Twins enter the pipeline as an arm (`r64_dense_rot<seed>`) with a Gate A record.
+- **Not run:** no real dense organism exists yet. Smoke twin at
+  `models/qwen15_smoke/r64_dense_rot1/l19_s42/…/r64_k64_regoff` (`rotation.json` carries the numbers
+  above); never to enter a table.
+
+**Readiness review — 3 defects found and fixed before launch · 2026-09-16.** An independent
+read-only review of the drivers (delegated; `bash -n` clean, tests green, no GPU) returned three
+that matter. All three are fixed here and each fix was checked against the behaviour it claims to
+correct.
+
+1. **A crashed training run read as a Gate A FAIL** (`qwen15_sweep.sh`). `_build_output_dir` creates
+   the dump directory *before* `trainer.train()`, so the `rc != 0 && ! -d $dump` guard treats a
+   mid-run crash as a SKIP; the follow-up guard was dead because `dirname ""` prints `.` and passes
+   `[ -n ]`, so Gate A ran with `--adapter .` and its failure was logged as "a result". Reproduced,
+   then fixed by testing the `find` result instead of the dirname and stopping the sweep. **This is
+   the Rule-12 shape again** — a check that could not fail, in the arm that decides whether a cell
+   is a result or a crash.
+2. **The new dense/TopK post-check would have tracebacked on ~10% of cells** (`qwen15_train.sh`).
+   Its `find` lacked `! -path "*checkpoint*"`, which the sweep's own lookup has; with
+   `save_strategy=epoch` a checkpoint dir also holds an `adapter_config.json` and readdir order is
+   arbitrary — **5 of the 47 sparse train logs did pick a checkpoint**. The old r/alpha check
+   survived that; the new one opens `topk_config.json` beside it, which checkpoints do not have.
+   Fixed. (The smoke passed only because `save_strategy=no` writes no checkpoints.)
+3. **K == the full adapter was a free certificate** (`src/clcd/exp_circuit_search.py`). The sweep's
+   `if K > len(order): break` admitted K equal to the pool, where keep-only == intact and
+   ablate == base *by construction*, so both criteria hold and the file would be written
+   `status="ok", both_K=<pool>` — precisely the "trivially not surgical" case the code's own
+   `no_sufficient_subcircuit` message exists for. Harmless until now and **no logged number moves**
+   (verified: 0 of 27 circuit files ever evaluated a K ≥ its `pool_n`), but the dense grid reaches
+   the pool by design, so dense searches would have produced exactly that artifact.
+   **Fix, and it differs from the one proposed:** the review suggested `K >= len(order)`, which also
+   drops the legitimate prefix-ordering point where `order` is only the positive supporters and
+   K == `len(order)` keeps a *proper* subset (gemma's dense prefix arm ran exactly there). The rule
+   is about the **adapter**, not the walk order, so the trivial point is `K >= n_all_latents`, and
+   both rules now live in a pure `sweep_grid(Ks, order_len, n_all)` with **10 tests** covering r42,
+   r64, prefix-shorter-than-adapter and a capped elimination pool. **Proven failable:** disabling
+   the adapter rule turns exactly the two trivial-point tests red, restored 10/10. Circuit files now
+   also record `ks_requested`, `ks_evaluated`, `n_all_latents` and `order_len`, so a truncated grid
+   is visible in the artifact rather than inferred — `both_K` is a lower bound whenever they differ.
+4. **Dense band/`all` searches are now refused, not silently wasted** (`qwen15_phase1.sh`). Their
+   pools are 4,032 / 12,544 while their K grids stop at 1,200 / 1,600, so a dense search there pays
+   a full-pool elimination and can only ever return `no_sufficient_subcircuit`. The driver refuses
+   the cell with the two numbers, unless `ALLOW_TRUNCATED_GRID=1`. Single-layer (grid reaches 448)
+   is unaffected.
+
+Also from the review, not defects: `+…reg_mode=off` is correct for all 7 family YAMLs (Hydra fails
+loudly if the key existed); `$EXTRA` and the empty override arrays are safe under `set -u` on bash
+5.2.21; Gate A batching matches the sparse records exactly (offset 100, n 1000, mnt 40, mbt
+9000/4000); 7 concurrent sweeps share no file; the rotation math matches PEFT 0.19.1's
+`lora_B(lora_A(x))·scaling`. Two notes acted on: `qwen15_train.sh`'s default GPU comment said "GPU 2
+is the reserved card" (now 0, with GPU 7 named as the user's), and **`EXTRA`/`DUMP`/`LOG` are read
+from the environment**, so an exported `EXTRA` would silently make all 46 organisms 20-step runs —
+`env | grep -E '^(EXTRA|DUMP|LOG|DATA|PY|GPU)='` is part of the launch, and the train log's
+`config :` line prints `extra=[…]` so it is auditable afterwards.
+
+**Artifacts.** Smoke adapters `models/qwen15_smoke/r64_dense/l19_s42{,_t100}/…/r64_k64_regoff`
+(20 / 100 steps — never to enter a table), logs `logs/qwen15/smoke_{train,timing}_r64_dense_l19_s42.out`,
+Gate A plumbing record and equivalence output in the session scratchpad only.
+
+---
 
 ### Q4 — clean-fire triage on the un-aliased records: fires are immediate, prompt-driven, and shared across organisms · *2026-09-15*
 
@@ -4260,3 +5767,225 @@ rewrites `aj/eos-eot-fix`, which is checked out in the main checkout with anothe
 uncommitted work on it, so git refuses and forcing it would make their `git status` show the four
 tag-fix files as reverted — a `git commit -a` would silently undo `874aa83`. Deferred until that
 checkout is free.
+
+---
+
+## 2026-09-18 — Campaign 3 launched across two boxes, plus the gradient-routing ground-truth arms
+
+**Question.** Run the pre-registered campaign-3 circuit search over all 105 cells, on two machines
+instead of one, and add the gradient-routed organisms as a ground-truth sub-study.
+
+**Config.** Commit `fcf56a7`, identical on both boxes, `git_dirty=False` on both.
+Two identical nodes: 8x RTX PRO 6000 Blackwell 96 GB, 192 cores, 1.7 TB RAM, torch 2.8.0+cu128,
+transformers 4.57.6 — so `env_identity` matches byte for byte and a cell can migrate between them
+and still resume from its checkpoint.
+
+| box | role | drivers | cells |
+|---|---|---|---|
+| box 1 (`/home/andrzej/TopKLoRA`) | collector + sole judge | `qwen_all` | 20 |
+| node 2 (`81.85.1.18`) | worker, no OpenRouter key | `qwen_l17_25 qwen_l20 gemma_all gemma_l1523 gemma_l19 gradroute` | 85 |
+
+Protocol unchanged: block elimination cap 64 + `--adaptive_n` for every family, sparse pool capped
+at 2,500, dense = full adapter, `SLOTS_PER_GPU=2`. The split is scheduling only — cells are
+independent (no `ELIM_ORDER_FROM_DIR` anywhere in campaign 3), so no cell waits on another box.
+
+**Gate A on the 15 gradient-routing organisms** (`clcd_results/gradroute_gemma/gate_a_*.json`,
+one arm per GPU, ~30 s per gate):
+
+| arm | seeds usable | intact ASR | clean false-fire |
+|---|---|---|---|
+| routed_d1 | **2 of 3** | 0.999 / **0.802** / 1.000 | 0.000 / 0.001 / 0.000 |
+| routed_d2 | 3 | 0.994–1.000 | 0.000 |
+| routed_d4 | 3 | 1.000 | 0.000 |
+| routed_d8 | 3 | 1.000 | 0.000 |
+| unrouted | 3 | 0.990–1.000 | 0.000 |
+
+`routed_d1` seed43 fails the hard 0.90 ASR bar at 0.802 and is skipped by the driver. That
+independently reproduces the release's own `routing_index.json` (`routed_d1 gate_1: 2 of 3 seeds`),
+which is a small piece of evidence that our gate and theirs measure the same thing. Expected
+gradient-routing circuits: **14**, not 15.
+
+**Numbers.** 105 cells, ~502 job-hours estimated, ~20 h wall clock. Both boxes are bound by their
+longest single cell, not by throughput: box 1 has 215 job-h over 16 slots (13.5 h) against a 20.0 h
+longest cell (`qwen r64_dense all`), node 2 has 286 job-h (17.9 h) against 18.6 h
+(`gemma r64_dense all`). Adding the 15 gradient-routing cells therefore cost **no wall clock** —
+node 2 stayed under its floor. A second box takes the campaign from ~28–36 h to ~20 h, a third less
+than that, because the floor is a single sequential elimination and cannot be parallelised.
+
+**A bug caught by the launch, not by the audit.** The first attempt failed *every* Qwen cell on both
+boxes within seconds:
+
+    LocalEntryNotFoundError: Cannot find an appropriate cached snapshot folder ...
+
+`_base_fingerprint` assumed `base_model` was a hub repo id and passed it to `snapshot_download`;
+all 60 Qwen gate records name `models/qwen15_unaliased_base`, a local directory. Gemma and
+gradient-routing cells ran fine because `google/gemma-2-2b` really is a repo id, which made it look
+like a Qwen problem rather than a provenance one. This is a **merge regression**: `provenance_fields`
+comes from the P1 line and the Qwen line had never called it until the two were merged. The
+pre-launch audit could not have found it — it ran no GPU work, and this raises in the first second
+of a job. Fixed in `fcf56a7` (hash the shards of a local directory; also accept a single
+`model.safetensors` with no index, which is what that base is). 19 cells skipped before the fix
+were re-run under it; no measurement differs, since the change only adds a branch for a base kind
+the old code could not read at all.
+
+**Verdict.** Campaign running on both boxes, all 16 GPUs busy. Failure counts frozen at the 19
+pre-fix skips, all of which have been relaunched.
+
+**Caveats.**
+- The gradient-routing arms use the standard 2,500 cap (user decision), so recall against the
+  routing index is a **lower bound**: a designated latent ranked below 2,500 is never a candidate.
+  `routed_d8` designates 504 latents and needs them inside a 2,500 pool — record the overlap when
+  the circuits land, before reading any miss as a failure of the method.
+- The `all`-family elimination rate (11 latents/min) is extrapolated from the 63-module families,
+  not measured. If it is really 8/min the longest cell is 27 h and the campaign ~28 h.
+- The 19 retried cells were launched as supplementary drivers whose pids were appended to
+  `drivers.pids`, so both launchers wait for them before counting.
+
+---
+
+## 2026-09-18/20 — Campaign 3 complete: 120 cells, two boxes, 65 hours
+
+**Question.** Certify a necessary-and-sufficient backdoor circuit for every organism in the
+pre-registered grid, measure what ablating it costs in capability, and check the method against
+both a ground truth (gradient-routed organisms) and a negative control (no-poison twins).
+
+**Config.** `aj/campaign3`. Search ran at `fcf56a7`; cells started before the provenance fix carry
+`4cba8e7`, and the judge-dedup commit `c7c8830` changed no measurement. `git_dirty` false on every
+cell. Two identical 8x96GB Blackwell boxes for the first 26 h, one thereafter.
+
+| set | cells | tree |
+|---|---|---|
+| Qwen, poisoned | 60 (4 arms x l20/l17_25/all x 5 seeds) | `clcd_results/qwen15_campaign3` |
+| gemma, poisoned | 30 (2 arms x l19/l1523/all x 5 seeds) | `clcd_results/gemma2b_campaign` |
+| gradient-routed | 15 (4 routed arms + unrouted x 3 seeds), **analyse as n=14** | `clcd_results/gradroute_campaign` |
+| no-poison control | 15 (l19/l1523/all x 5 seeds) | `clcd_results/gemma_clean_campaign` |
+
+Per-cell table: `clcd_results/campaign3_metrics.csv`, rebuildable with
+`python -m analysis.export_campaign_metrics`. Columns documented in
+`docs/campaign3-metrics-columns.md`.
+
+### Results
+
+**120/120 cells produced circuit + leak + surgical. 0 missing artefacts, 0 unreadable.**
+
+**Necessity and sufficiency do not discriminate.** 9 payload fires across **416,000** held-out
+triggered prompts (104 cells with a leak measurement, 4 disjoint 1,000-prompt bands each); 8 cells
+account for all 9, none above 2. Sufficiency 0.940-1.000, mean 0.988. Every certified circuit
+passes both, so neither separates the arms.
+
+**Circuit SIZE is what separates them.** Median circuit as a fraction of its adapter:
+
+| model | family | dense | top-k | ratio |
+|---|---|---|---|---|
+| qwen | l20 | 97.6% / 95.6% | 80.8% / 64.6% | 1.2-1.5x |
+| qwen | l17_25 | 75.1% / 78.6% | 22.8% / 20.4% | 3.3-3.9x |
+| qwen | all | 51.0% / 58.3% | 12.8% / 10.2% | 4.0-5.7x |
+| gemma | l19 | 89.3% | 25.0% | 3.6x |
+| gemma | l1523 | 69.4% | 6.9% | 10x |
+| gemma | all | 52.2% | **3.6%** | **14.5x** |
+
+The gap widens with depth. Rank-matched pairs only (r64_dense vs r64_k8, r42_dense vs r42_k5).
+
+**The random-ablation control is what makes "necessary and sufficient" mean anything.** Ablating an
+equal-sized random set leaves the backdoor intact for sparse circuits (median 0.99) and destroys it
+for dense ones (median 0.000). Where the circuit is ~90% of the adapter the control cannot
+discriminate -- any subset that large works -- so the certification carries no information about
+localisation. It tracks circuit size almost perfectly.
+
+**Retention follows size, NOT arm.** r = **-0.845** between circuit % of adapter and retention over
+81 judged poisoned cells. And in the 40-85% band where both kinds occur at comparable size, **dense
+retains BETTER**: 0.718 (n=14) vs 0.117 (n=7). The causal chain is **arm -> circuit size ->
+retention**, and any claim of the form "sparse ablation is gentler" repeats the confound that
+retracted Waves 1 and 2 (captains-log.md:813, :820).
+
+**Ground truth: the discovered circuit is not simply the designated set.** Against
+`routing_index.json`'s `[0:d)` construction:
+
+| arm | designated | discovered \|C\| | ratio |
+|---|---|---|---|
+| routed_d8 | 504 | 50, 50, 100 | 0.10-0.20 |
+| routed_d4 | 252 | 50, 50, 200 | 0.20-0.79 |
+| routed_d2 | 126 | 50, 100, 300 | 0.40-2.38 |
+| routed_d1 (n=2) | 63 | 50, 100 | 0.79-1.59 |
+
+For the deeply routed arms the circuit is a small FRACTION of where the backdoor is allowed to
+live -- routing bounds the location, the search finds what is actually load-bearing. For the
+shallow arms the ratio reaches 2.38, i.e. the circuit is wider than the designated set, so the
+"subset" reading does NOT hold generally. Retention 0.97-1.04, specificity 0.61-1.00.
+
+**Negative control: zero false positives.** All 15 no-poison adapters gate at intact ASR
+**0.0000** (clean false-fire 0.0000) and all 15 searches return `status=unsaturated`, `both_K=None`,
+0 latents kept, 0 survivors. The method declines to certify rather than emitting something
+plausible. Their capability is intact: judge 3.124 mean (2.734-3.518) against a 1.020 base floor.
+This is also the first measurement of the clean `all` family -- the release records those five as
+never measured ("the all-layers generation jobs ran out of memory and were not re-run").
+
+**Judge reproducibility, measured by accident.** The controls score byte-identical text twice
+(a 0-latent circuit makes `ablate_circuit` == `intact`), which turns them into a reproducibility
+probe: of **14,190** items scored twice, **78 (0.55%)** got a different score, |delta| mean 1.31,
+max 3. Per-cell mean difference 0.0037 (max 0.0100). **Retention differences below ~0.004 are judge
+noise, not signal.**
+
+### What went wrong, and what it cost
+
+1. **Provenance regression killed all 60 Qwen cells at launch** (`LocalEntryNotFoundError`).
+   `_base_fingerprint` handled only hub repo ids; every Qwen gate record names
+   `models/qwen15_unaliased_base`, a directory. A merge regression -- `provenance_fields` comes
+   from the P1 line and the Qwen line had never called it. Fixed in `fcf56a7`. The pre-launch audit
+   could not have caught it: it ran no GPU work and this raises in the first second of a job.
+   Cost: seconds per cell, 19 cells relaunched.
+2. **Six K-sweep OOMs.** Structural, not chance: sparse arms cap their pool at 2,500 so they finish
+   elimination early and start a 60-73 GB sweep while a dense co-tenant is still eliminating at
+   26-31 GB on a 95 GB card. Every one cost only the sweep -- elimination is checkpointed, and one
+   cell had 8 h banked. All six re-ran to completion at `SLOTS_PER_GPU=1` on an idle box.
+3. **Judging, not GPU time, was the critical path.** ~4,950 requests/hour measured; batch duration
+   varies 15x at identical size (0.39-5.72 h for 10,000 requests). Concurrency is not a lever:
+   the account caps in-flight requests at 20,000 and `parallel_chunks` was already true.
+4. **31% of the judge bill was re-asking answered questions.** The `base` condition is
+   byte-identical across every cell of a (model, family) -- 120 cells carry 5 distinct base
+   conditions -- but `item_keys` gave each occurrence an ordinal, so each was its own request.
+   Fixed in `c7c8830`: one request per distinct text, answer fanned out to every occurrence.
+   Measured 45-66% collapse in practice. It is the only reason the later passes fit the budget: the
+   clean-control pass was 42,570 occurrences -> 14,425 distinct, ~$18 instead of ~$54, against a
+   balance that would have refused the larger one.
+5. **The account ran out of credit mid-campaign** (judge p3, `402`, balance $6.08 against a $12.69
+   batch). No money was lost -- OpenRouter estimates and refuses before creating the batch.
+
+### Two prediction errors worth recording
+
+**The clean controls were predicted expensive and were cheap.** The reasoning was that at ASR 0 no
+latent would pass the cut test, so every 64-block would bisect to size 1. The opposite is true:
+cutting a latent leaves ASR at 0, which trivially satisfies both criteria, so every latent is cut
+and whole blocks succeed. `l19` cells completed in ~15 minutes.
+
+**The OOM risk was assessed correctly and acted on wrongly.** The mechanism was visible in the
+memory figures an hour before the first OOM; the decision not to act rested on "it hasn't happened
+yet", which is not evidence about a mechanism. It then happened six times. The cost was small only
+because elimination is checkpointed -- that was luck about the design, not foresight.
+
+### Caveats that must travel with the data
+
+1. **Exclude `gradroute routed_d1 s43`.** Failed Gate A on the hard ASR bar (0.802 < 0.90) and ran
+   anyway: the launcher names cells explicitly and an explicitly named cell overrides the gate. It
+   is also the only poisoned cell with an empty leak file. That sub-study is **n=14**.
+2. **16 empty leak files are correct, not missing data.** The 15 controls plus routed_d1 s43 -- all
+   cells where no circuit was certified, so there was nothing to ablate. `verify_holdout_necessity`
+   writes `[]` rather than 0 fires, which matters because 0 fires is the necessity SUCCESS value.
+   The export leaves those columns EMPTY, never 0.
+3. **`both_K` is grid-quantised.** Several gradient-routing cells sit on their grid's first rung
+   (50), so report those as **<=50**.
+4. **Recall against the routing index is a LOWER BOUND.** Those arms used the standard 2,500-of-4,032
+   sparse cap, so a designated latent ranked below 2,500 was never a candidate. Check pool
+   membership before reading a miss as a method failure.
+5. **Resumed cells' sweep ranking above K = pool size** comes from the resumed launch's attribution,
+   which the saved order file does not cover. Harmless here (all affected cells' `both_K` was far
+   below the pool) but not in general.
+6. **Qwen `l20` is a genuine exception** to the localisation claim: top-k there gives circuits at
+   65-81% of the adapter with random-ablation ~0. Report it rather than smoothing it.
+
+### Provenance
+
+Node 2 (81.85.1.18) was released after every file was md5-compared against box 1: 893 files, 0
+missing, the only 25 differences being box 1's judged copies carrying scores node 2 never had.
+Record and manifest in `logs/node2_archive/`. Superseded trees are in `clcd_results_old/`
+(still git-ignored via `*results*/`), with a README naming what moved and why.

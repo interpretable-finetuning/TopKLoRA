@@ -115,6 +115,16 @@ def test_extract_results_on_an_empty_batch_is_empty_not_an_error():
 
 # ---------------------------------------------------------------- loud failure (Rule 12)
 
+def _qs(n):
+    """n DISTINCT questions. `["q"] * n` would be n occurrences of one item, which api_judge_scores
+    now sends as a single request -- collapsing any test that needs n of them."""
+    return [f"q{i}" for i in range(n)]
+
+
+def _as(n):
+    return [f"a{i}" for i in range(n)]
+
+
 def _cfg(tmp_path, **kw):
     return J.JudgeConfig(state_dir=tmp_path / "state", poll_seconds=0, **kw)
 
@@ -171,7 +181,7 @@ def _fake_api(monkeypatch, contents, status="completed"):
 
 def test_happy_path_returns_the_local_judge_contract(tmp_path, monkeypatch):
     _fake_api(monkeypatch, ["5", "4", "3"])
-    out = J.api_judge_scores(["q"] * 3, ["a"] * 3, scope="s", cfg=_cfg(tmp_path), api_key="k")
+    out = J.api_judge_scores(_qs(3), _as(3), scope="s", cfg=_cfg(tmp_path), api_key="k")
     assert out["scores"] == [5, 4, 3] and out["n"] == 3 and out["mean"] == 4.0
     m = out["judge_meta"]
     assert m["n_failed"] == 0 and m["backend"] == "openrouter-batch"
@@ -182,13 +192,13 @@ def test_failure_rate_above_the_registered_ceiling_raises(tmp_path, monkeypatch)
     # 2 of 4 unparseable: exactly the strict-schema disaster, which must NOT yield mean=4.5
     _fake_api(monkeypatch, ["5", "{}", "4", None])
     with pytest.raises(RuntimeError, match="produced no score"):
-        J.api_judge_scores(["q"] * 4, ["a"] * 4, scope="s", cfg=_cfg(tmp_path), api_key="k")
+        J.api_judge_scores(_qs(4), _as(4), scope="s", cfg=_cfg(tmp_path), api_key="k")
 
 
 def test_a_few_failures_under_the_ceiling_are_recorded_with_their_raw_text(tmp_path, monkeypatch):
     contents = ["5"] * 399 + ["nonsense"]
     _fake_api(monkeypatch, contents)
-    out = J.api_judge_scores(["q"] * 400, ["a"] * 400, scope="s",
+    out = J.api_judge_scores(_qs(400), _as(400), scope="s",
                              cfg=_cfg(tmp_path, max_failure_rate=0.01), api_key="k")
     m = out["judge_meta"]
     assert m["n_failed"] == 1 and out["n"] == 399
@@ -215,10 +225,10 @@ def test_a_restart_adopts_the_in_flight_batch_instead_of_resubmitting(tmp_path, 
         return real_submit(payload, c, k)
 
     monkeypatch.setattr(J, "submit", counting_submit)
-    J.api_judge_scores(["q"] * 2, ["a"] * 2, scope="same-scope", cfg=cfg, api_key="k")
+    J.api_judge_scores(_qs(2), _as(2), scope="same-scope", cfg=cfg, api_key="k")
     assert calls["n"] == 1
     # second run over the same scope must pay nothing: items are already in state
-    J.api_judge_scores(["q"] * 2, ["a"] * 2, scope="same-scope", cfg=cfg, api_key="k")
+    J.api_judge_scores(_qs(2), _as(2), scope="same-scope", cfg=cfg, api_key="k")
     assert calls["n"] == 1, "a rerun resubmitted the batch and would have paid twice"
 
 
@@ -523,7 +533,7 @@ def test_every_chunk_is_submitted_before_any_is_waited_on(tmp_path, monkeypatch)
     spent 3 h 24 min on chunk0 before chunk1 existed. Six chunks that way is a day of waiting for
     work the API could already have been doing."""
     log = _fake_fleet(monkeypatch)
-    out = J.api_judge_scores(["q"] * 6, ["a"] * 6, scope="s",
+    out = J.api_judge_scores(_qs(6), _as(6), scope="s",
                              cfg=_cfg(tmp_path, chunk_size=2), api_key="k")
     assert [kind for kind, _ in log] == ["submit"] * 3 + ["fetch"] * 3
     assert out["scores"] == [4] * 6
@@ -541,18 +551,18 @@ def test_every_batch_id_is_on_disk_before_the_first_wait(tmp_path, monkeypatch):
             seen["at_first_fetch"] = json.loads(J._state_path(cfg).read_text())["batches"]
 
     _fake_fleet(monkeypatch, state_path_getter=check_state)
-    J.api_judge_scores(["q"] * 6, ["a"] * 6, scope="s", cfg=cfg, api_key="k")
+    J.api_judge_scores(_qs(6), _as(6), scope="s", cfg=cfg, api_key="k")
     saved = seen["at_first_fetch"]
     assert set(saved) == {"batch-0", "batch-1", "batch-2"}
     # the id alone is not enough to adopt: what makes it adoptable by a run whose file list has
     # moved on is the list of item keys it carries, which must be on disk with it.
-    keys = J.item_keys(["q"] * 6, ["a"] * 6, cfg)
+    keys = J.item_keys(_qs(6), _as(6), cfg)
     assert [k for b in ("batch-0", "batch-1", "batch-2") for k in saved[b]["item_keys"]] == keys
 
 
 def test_a_restart_adopts_in_flight_chunks_and_submits_only_the_missing_ones(tmp_path, monkeypatch):
     cfg = _cfg(tmp_path, chunk_size=2)
-    keys = J.item_keys(["q"] * 6, ["a"] * 6, cfg)
+    keys = J.item_keys(_qs(6), _as(6), cfg)
     J._save_state(cfg, {"version": J.STATE_VERSION, "model": cfg.model, "items": {},
                         "batches": {"batch-inflight": {"item_keys": keys[:2], "drained": False}}})
     log, ids = [], {"batch-inflight": keys[:2]}
@@ -571,7 +581,7 @@ def test_a_restart_adopts_in_flight_chunks_and_submits_only_the_missing_ones(tmp
 
     monkeypatch.setattr(J, "submit", fake_submit)
     monkeypatch.setattr(J, "fetch", fake_fetch)
-    out = J.api_judge_scores(["q"] * 6, ["a"] * 6, scope="s", cfg=cfg, api_key="k")
+    out = J.api_judge_scores(_qs(6), _as(6), scope="s", cfg=cfg, api_key="k")
     assert [b for kind, b in log if kind == "submit"] == ["batch-new-0", "batch-new-1"]
     assert ("fetch", "batch-inflight") in log
     assert out["scores"] == [3] * 6
@@ -581,7 +591,7 @@ def test_sequential_mode_still_waits_between_submissions(tmp_path, monkeypatch):
     """The gemini queue jam is the reason this escape hatch exists: five concurrent batches there
     sat at 0/500 for 108 minutes."""
     log = _fake_fleet(monkeypatch)
-    J.api_judge_scores(["q"] * 6, ["a"] * 6, scope="s",
+    J.api_judge_scores(_qs(6), _as(6), scope="s",
                        cfg=_cfg(tmp_path, chunk_size=2, parallel_chunks=False), api_key="k")
     assert [kind for kind, _ in log] == ["submit", "fetch"] * 3
 
@@ -593,7 +603,7 @@ def test_a_restart_submits_exactly_the_items_not_already_stored(tmp_path, monkey
     requests every item it does not have and not one it does, and never re-fetches a batch it has
     already drained."""
     cfg = _cfg(tmp_path, chunk_size=2)
-    keys = J.item_keys(["q"] * 6, ["a"] * 6, cfg)
+    keys = J.item_keys(_qs(6), _as(6), cfg)
     done = {k: {"raw": "5", "usage": {}, "error": None} for k in keys[:2]}
     J._save_state(cfg, {"version": J.STATE_VERSION, "model": cfg.model, "items": done,
                         "batches": {"batch-done": {"item_keys": keys[:2], "drained": True}}})
@@ -615,7 +625,7 @@ def test_a_restart_submits_exactly_the_items_not_already_stored(tmp_path, monkey
 
     monkeypatch.setattr(J, "submit", fake_submit)
     monkeypatch.setattr(J, "fetch", fake_fetch)
-    out = J.api_judge_scores(["q"] * 6, ["a"] * 6, scope="s", cfg=cfg, api_key="k")
+    out = J.api_judge_scores(_qs(6), _as(6), scope="s", cfg=cfg, api_key="k")
     assert sent == [keys[2:4], keys[4:6]]
     assert "batch-done" not in fetched              # a chunk already stored is not re-fetched
     assert out["scores"] == [5, 5, 2, 2, 2, 2]      # chunk0's results kept, the rest newly judged
@@ -627,7 +637,7 @@ def test_submission_stops_at_the_in_flight_request_ceiling(tmp_path, monkeypatch
     wait for an earlier chunk to land instead of being refused."""
     log = _fake_fleet(monkeypatch)
     cfg = _cfg(tmp_path, chunk_size=2, max_in_flight_requests=4)
-    out = J.api_judge_scores(["q"] * 8, ["a"] * 8, scope="s", cfg=cfg, api_key="k")
+    out = J.api_judge_scores(_qs(8), _as(8), scope="s", cfg=cfg, api_key="k")
     # never more than two chunks (4 requests) outstanding: submit,submit,fetch,submit,fetch,submit,fetch,fetch
     outstanding, peak = 0, 0
     for kind, _ in log:
@@ -984,7 +994,7 @@ def test_usage_is_summed_over_every_chunk_not_overwritten(tmp_path, monkeypatch)
     reported 3,000 against a true 6,000: every multi-chunk run under-reported its own spend, and
     spend is the thing this module is careful about."""
     fleet = _Fleet().install(monkeypatch)
-    out = J.api_judge_scores(["q"] * 6, ["a"] * 6, scope="s",
+    out = J.api_judge_scores(_qs(6), _as(6), scope="s",
                              cfg=_cfg(tmp_path, chunk_size=2), api_key="k")
     assert len(fleet.jobs) == 3                                  # 10 tokens per request, 2 each
     assert out["judge_meta"]["usage"] == {"total_tokens": 60}
@@ -1565,3 +1575,100 @@ def test_one_batch_that_fits_two_pending_intents_is_adopted_by_neither(tmp_path,
     assert n == 2 and state["batches"] == {}
     assert set(state["intents"]) == {"iid-1", "iid-2"} and "RECOVERED" not in text
     assert "iid-1" in text and "iid-2" in text and "batch-one" in text
+
+
+# ------------------------------------------------------------------ duplicate text is asked once
+
+def _surgical_shared_base(path, cell, family, rng, n_clean=3, n_indep=2):
+    """A surgical file in the shape the campaign actually produces.
+
+    Every cell of a (model, family) is scored on the SAME questions, and its `base` condition is
+    the base model answering them -- no adapter involved -- so `base` is byte-identical across all
+    of that family's cells. `intact` and `ablate_circuit` carry the cell's own adapter and differ.
+    Verified on the live campaign 2026-09-18: 30 surgical files held 5 distinct base conditions.
+    """
+    cq = [f"{family}-cq{i}" for i in range(n_clean)]
+    iq = [f"{family}-iq{i}" for i in range(n_indep)]
+    d = {"clean_questions": cq, "indep_questions": iq, "conditions": {}}
+    for c in CONDS:
+        stamp = family if c == "base" else f"{family}/{cell}"
+        d["conditions"][c] = {"clean_gens": [f"{q}|{c}|{stamp}|clean" for q in cq],
+                              "indep_gens": [f"{q}|{c}|{stamp}|indep" for q in iq]}
+    path.write_text(json.dumps(d))
+
+
+def test_a_base_condition_shared_by_many_cells_is_judged_once(tmp_path, monkeypatch):
+    """The campaign's biggest avoidable cost, and its biggest avoidable WAIT.
+
+    Batches queue and cannot be cancelled, so judging wall clock is set by how many requests are
+    asked, not by how they are arranged -- asking less is the only lever available. Across 104
+    cells the campaign carries just 5 distinct base conditions, so ~93,650 of its ~98,400 base
+    requests are re-asking a question already answered: ~31% of the bill AND ~31% of the time.
+
+    Four cells of one family here: 4 x 3 conditions x 5 questions = 60 occurrences, but `base` is
+    one text set shared by all four, so 45 distinct items. Every file must still be fully scored.
+    """
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("OPENROUTER_API_KEY", "k")
+    files = [tmp_path / f"cell{i}_surgical.json" for i in range(4)]
+    for i, f in enumerate(files):
+        _surgical_shared_base(f, f"s4{i}", "l1523", random.Random(i))
+    fleet = _Fleet().install(monkeypatch)
+
+    _run_big(monkeypatch, ["--files", *map(str, files)])
+
+    assert fleet.n_requests == 45, (
+        f"{fleet.n_requests} requests for 45 distinct items: the shared base condition was "
+        "re-asked once per cell"
+    )
+    key = J.judge_key_for(J.DEFAULT_MODEL)
+    for f in files:
+        conds = json.loads(f.read_text())["conditions"]
+        for c in CONDS:
+            assert key in conds[c], f"{f.name} {c} unscored -- dedup must not drop an occurrence"
+            assert conds[c][key]["n"] == 3
+
+
+def test_a_shared_base_already_judged_costs_nothing_in_a_later_run(tmp_path, monkeypatch):
+    """The saving has to persist, or an incremental worker re-buys it every pass.
+
+    A new cell of a family whose base is already scored must pay only for its OWN conditions. If
+    the un-submitted occurrences were left unanswered in the state, this run would ask for them
+    again -- turning the optimisation into a permanent resubmission loop.
+    """
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("OPENROUTER_API_KEY", "k")
+    first = tmp_path / "cell0_surgical.json"
+    _surgical_shared_base(first, "s42", "l1523", random.Random(0))
+    fleet = _Fleet().install(monkeypatch)
+    _run_big(monkeypatch, ["--files", str(first)])
+    paid = fleet.n_requests
+    assert paid == 15                                     # 3 conditions x 5 questions
+
+    # TWO new cells, not one. With a single new file its base is the only occurrence in the list,
+    # takes ordinal -0000, and matches the answered key by luck of numbering -- so one file would
+    # pass with or without the fix, proving nothing. With two, the second cell's base is occurrence
+    # -0001: unanswered under the old scheme, and paid for again.
+    later = [tmp_path / f"cell{i}_surgical.json" for i in (1, 2)]
+    for i, f in enumerate(later):
+        _surgical_shared_base(f, f"s4{i+3}", "l1523", random.Random(i + 1))
+    _run_big(monkeypatch, ["--files", str(first), *map(str, later)])
+
+    assert fleet.n_requests == paid + 20, (
+        "each new cell must pay for intact + ablate only (10 each); the base they share was "
+        "answered by the first run and must not be re-asked for either of them"
+    )
+    key = J.judge_key_for(J.DEFAULT_MODEL)
+    for f in later:
+        assert key in json.loads(f.read_text())["conditions"]["base"]
+
+
+def test_every_occurrence_of_a_repeated_item_receives_the_same_score(tmp_path, monkeypatch):
+    """Positions stay 1:1 with the input. Collapsing the REQUEST must not collapse the OUTPUT --
+    a caller splits the returned list back up by offset, so a short list would silently shift one
+    file's scores onto another's text."""
+    _fake_api(monkeypatch, ["4", "5"])          # two DISTINCT items are requested, not three
+    out = J.api_judge_scores(["q", "z", "q"], ["a", "b", "a"], scope="s",
+                             cfg=_cfg(tmp_path), api_key="k")
+    assert len(out["scores"]) == 3, "one score per occurrence, not per distinct item"
+    assert out["scores"] == [4, 5, 4], "the repeat must carry its group's score, in position"

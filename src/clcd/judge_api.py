@@ -280,6 +280,14 @@ def item_keys(questions: Sequence[str], responses: Sequence[str], cfg: JudgeConf
     return out
 
 
+def content_of(key: str) -> str:
+    """The text-and-instrument part of an item key, with `item_keys`' occurrence ordinal removed.
+
+    Two occurrences of the SAME (instrument, question, response) differ only in that ordinal, so
+    they are the same question to the judge and one answer serves both."""
+    return key.rsplit("-", 1)[0]
+
+
 def _api_key_from_env() -> str:
     """Env first, then `.env` -- the repo keeps credentials in `.env` (python-dotenv is a
     dependency and `.env-template` documented the names), and nothing on the judging path loaded
@@ -799,11 +807,42 @@ def api_judge_scores(
     items: Dict[str, Any] = state["items"]
     keys = item_keys(questions, responses, cfg)
     where = {k: i for i, k in enumerate(keys)}     # keys are unique: duplicates carry an ordinal
+
+    # ONE REQUEST PER DISTINCT TEXT, not per occurrence. The campaign judges a `base` condition
+    # that is byte-identical across every cell of a (model, family) -- 946 prompts answered by the
+    # base model, which no adapter changes -- so the same (question, response) pair arrives once
+    # per cell. Measured 2026-09-18: 104 cells carry only 5 distinct base conditions, so 93,654 of
+    # 98,384 base requests were re-asking questions already answered, ~31% of the campaign's judge
+    # bill and ~31% of its judging WALL CLOCK (batches queue; see the module docstring -- buying
+    # more concurrency is not available, so the only lever is asking less).
+    #
+    # The occurrence ordinal in the key is kept: positions stay 1:1 with `keys`, the state format
+    # is unchanged, and an occurrence answered under the old scheme is still found below. What
+    # changes is only WHICH occurrences are sent -- one per group -- and that every occurrence
+    # receives the answer afterwards.
+    by_content: Dict[str, List[str]] = {}
+    for k in keys:
+        by_content.setdefault(content_of(k), []).append(k)
+
     # "Done" is ANSWERED, not "present in state": a stored per-item error is a request that never
     # produced an answer, and counting it as done is what made three upstream 500s permanent.
-    needed = [k for k in keys if not _answered(items.get(k))]
+    # A group is answered when ANY of its occurrences is: they are the same text.
+    needed, _seen = [], set()
+    for k in keys:
+        c = content_of(k)
+        if c in _seen:
+            continue
+        _seen.add(c)
+        group = by_content[c]
+        if any(_answered(items.get(x)) for x in group):
+            continue
+        # Prefer an occurrence that already has a record, so its attempt count keeps accruing and
+        # the max_item_attempts guard cannot be reset by picking a fresh sibling each run.
+        needed.append(next((x for x in group if x in items), group[0]))
     retrying = [k for k in needed if k in items]
-    log(f"[judge-api] {scope}: {len(keys)} items, {len(keys) - len(needed)} already answered, "
+    n_answered = sum(1 for g in by_content.values() if any(_answered(items.get(x)) for x in g))
+    log(f"[judge-api] {scope}: {len(keys)} occurrences of {len(by_content)} distinct items "
+        f"({len(keys) - len(by_content)} duplicates collapsed), {n_answered} already answered, "
         f"{len(needed)} to do ({len(retrying)} of them retried after an earlier per-item failure)")
 
     # Bounded, and then refused BY NAME rather than retried forever or cached forever. Raised
@@ -892,6 +931,22 @@ def api_judge_scores(
     usage: Optional[Dict[str, Any]] = None
     for u in run_usage:
         usage = _add_usage(usage, u)
+
+    # Give every occurrence the answer its group received. Without this the un-submitted siblings
+    # stay unanswered, so this run reports them as failures AND the next run asks for them again --
+    # which would turn the saving above into a permanent re-submission loop.
+    n_propagated = 0
+    for group in by_content.values():
+        src = next((items[k] for k in group if _answered(items.get(k))), None)
+        if src is None:
+            continue
+        for k in group:
+            if not _answered(items.get(k)):
+                items[k] = dict(src)
+                n_propagated += 1
+    if n_propagated:
+        _save_state(cfg, state)
+        log(f"[judge-api] {scope}: {n_propagated} duplicate occurrences answered from their group")
 
     scores: List[Optional[int]] = []
     failures: List[Dict[str, Any]] = []

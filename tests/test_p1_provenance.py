@@ -98,6 +98,55 @@ def test_base_fingerprint_missing_shard_raises(tmp_path, monkeypatch):
         pl._base_fingerprint("any/model")
 
 
+def test_base_fingerprint_accepts_a_local_directory_and_hashes_its_bytes(tmp_path):
+    """A base model may be a DIRECTORY, and that is not an edge case here.
+
+    All 60 Qwen gate records name `models/qwen15_unaliased_base`, a locally built base. When only
+    the repo-id form was handled, snapshot_download(local_files_only=True) raised
+    LocalEntryNotFoundError and every Qwen circuit search died in provenance before it reached a
+    GPU, while the gemma cells -- whose base is a real repo id -- ran fine. A directory has no
+    cache blob name to stand in for a content hash, so the shards are hashed; the fingerprint must
+    therefore CHANGE when the bytes change, or it identifies nothing.
+    """
+    import hashlib
+
+    root = tmp_path / "local_base"
+    root.mkdir()
+    (root / "model.safetensors").write_bytes(b"weights-v1")
+
+    fp = pl._base_fingerprint(str(root))
+    assert fp["local_dir"] == str(root.resolve())
+    assert fp["blobs"] == {"model.safetensors": hashlib.sha256(b"weights-v1").hexdigest()}
+    assert "snapshot" not in fp, "a local dir must not be recorded as if it were a hub snapshot"
+
+    (root / "model.safetensors").write_bytes(b"weights-v2")
+    assert pl._base_fingerprint(str(root)) != fp, "different bytes produced the same fingerprint"
+
+
+def test_base_fingerprint_handles_a_single_file_model_with_no_index(tmp_path, monkeypatch):
+    """Small models ship one model.safetensors and no index; requiring the index would raise."""
+    snap = tmp_path / "snapshots" / "deadbeef"
+    snap.mkdir(parents=True)
+    blob = tmp_path / "blobs" / "hash_single"
+    blob.parent.mkdir()
+    blob.write_bytes(b"0")
+    (snap / "model.safetensors").symlink_to(blob)
+    monkeypatch.setattr("huggingface_hub.snapshot_download", lambda *a, **k: str(snap))
+    assert pl._base_fingerprint("any/model") == {
+        "snapshot": "deadbeef",
+        "blobs": {"model.safetensors": "hash_single"},
+    }
+
+
+def test_base_fingerprint_refuses_a_directory_with_no_weights(tmp_path):
+    """Fingerprinting nothing yields a constant, and a constant matches every model (Rule 12)."""
+    root = tmp_path / "empty_base"
+    root.mkdir()
+    (root / "config.json").write_text("{}")
+    with pytest.raises(FileNotFoundError, match="no safetensors weights"):
+        pl._base_fingerprint(str(root))
+
+
 # --- provenance record ---
 
 

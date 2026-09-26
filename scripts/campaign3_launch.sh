@@ -33,6 +33,10 @@ ST="${ST:-logs/overnight_chain/c3}"
 QT="${QT:-clcd_results/qwen15_campaign3}"
 GT="${GT:-clcd_results/gemma2b_campaign}"
 STATUS="${STATUS:-logs/overnight_chain/status.txt}"
+# Driver and per-cell logs. DRY=1 points this into the private dry-run dir: until 2026-09-26 a dry
+# run (i.e. every pytest run of tests/test_campaign3_launch.py) wrote here too, and overwrote 105
+# real campaign-3 search logs with stub lines -- 20 of them had no other copy.
+LOGROOT="${LOGROOT:-logs}"
 POLL="${POLL:-300}"                 # driver liveness poll
 JUDGE_POLL="${JUDGE_POLL:-10800}"   # 3 h between incremental judge passes
 RT="${RT:-clcd_results/gradroute_campaign}"
@@ -110,6 +114,7 @@ if [ "$DRY" = 1 ]; then
   # the number of cells actually launched -- which is the only thing those constants are for.
   [ "${DRY_FULL_SEEDS:-0}" = 1 ] || { SEEDS=42; GR_SEEDS=42; }
   D=$CLAUDE_JOB_DIR/tmp/c3dry; mkdir -p "$D/locks"
+  LOGROOT=$D/logs                   # never the repo's logs/ (see LOGROOT above)
   # DRY_TREE_ROOT exists so a dry run can place its trees where the PRODUCTION ones live:
   # repo-relative. remote_pull joins $REMOTE_ROOT with the tree path, which only means
   # anything for a relative tree, so with the default absolute $D the pull is untestable.
@@ -157,30 +162,30 @@ fi
 
 if ! alive "$ST/drivers.pids"; then
   : > "$ST/drivers.pids"
-  mkdir -p logs/qwen15/campaign3 logs/gemma2b/campaign logs/gradroute/campaign \
+  mkdir -p $LOGROOT/qwen15/campaign3 $LOGROOT/gemma2b/campaign $LOGROOT/gradroute/campaign \
            "$QT/orders" "$GT/orders" "$RT/orders"
   BLOCK=(ELIM_BLOCK_CAP=64 SEARCH_EXTRA="--adaptive_n")
-  QW=("${BLOCK[@]}" SRC="$QT" LOGDIR=logs/qwen15/campaign3 ELIM_ORDER_OUT_DIR="$QT/orders")
+  QW=("${BLOCK[@]}" SRC="$QT" LOGDIR=$LOGROOT/qwen15/campaign3 ELIM_ORDER_OUT_DIR="$QT/orders")
   # The Qwen all-layer cells are their own driver: they hold the five longest cells in the campaign
   # (r64_dense all is ~20 h of sequential elimination) and on a two-box run they are the whole of
   # the collector's share, so they have to be selectable on their own.
   mapfile -t QA < <(cells "r64_dense r42_dense" all; cells "r64_k8 r42_k5" all)
-  launch qwen_all logs/qwen15/campaign3/driver.out "${QW[@]}" -- "${QA[@]}"
+  launch qwen_all $LOGROOT/qwen15/campaign3/driver.out "${QW[@]}" -- "${QA[@]}"
   mapfile -t QB < <(cells "r64_dense r42_dense" l17_25; cells "r64_k8 r42_k5" l17_25)
-  launch qwen_l17_25 logs/qwen15/campaign3/driver_l17_25.out "${QW[@]}" -- "${QB[@]}"
-  GEM=(GATE_DIR=clcd_results/gemma2b DATA=data/sleeper/prepared_eval6k SRC="$GT" LOGDIR=logs/gemma2b/campaign
+  launch qwen_l17_25 $LOGROOT/qwen15/campaign3/driver_l17_25.out "${QW[@]}" -- "${QB[@]}"
+  GEM=(GATE_DIR=clcd_results/gemma2b DATA=data/sleeper/prepared_eval6k SRC="$GT" LOGDIR=$LOGROOT/gemma2b/campaign
        ELIM_ORDER_OUT_DIR="$GT/orders")
   mapfile -t GA < <(cells r64_dense all; cells r64_k8 all)
-  launch gemma_all logs/gemma2b/campaign/driver_all.out "${BLOCK[@]}" "${GEM[@]}" KS_OVERRIDE="$GRID_GALL" -- "${GA[@]}"
+  launch gemma_all $LOGROOT/gemma2b/campaign/driver_all.out "${BLOCK[@]}" "${GEM[@]}" KS_OVERRIDE="$GRID_GALL" -- "${GA[@]}"
   mapfile -t GB < <(cells r64_dense l1523; cells r64_k8 l1523)
-  launch gemma_l1523 logs/gemma2b/campaign/driver_l1523.out "${BLOCK[@]}" "${GEM[@]}" KS_OVERRIDE="$GRID_L1523" -- "${GB[@]}"
+  launch gemma_l1523 $LOGROOT/gemma2b/campaign/driver_l1523.out "${BLOCK[@]}" "${GEM[@]}" KS_OVERRIDE="$GRID_L1523" -- "${GB[@]}"
   mapfile -t GS < <(cells "r64_dense r64_k8" l19)
-  launch gemma_l19 logs/gemma2b/campaign/driver_l19.out "${BLOCK[@]}" "${GEM[@]}" -- "${GS[@]}"
+  launch gemma_l19 $LOGROOT/gemma2b/campaign/driver_l19.out "${BLOCK[@]}" "${GEM[@]}" -- "${GS[@]}"
   # 2026-09-17 (user): single-layer uses block elimination too, so the Qwen l20 cells are re-searched
   # under the campaign protocol instead of reusing the one-at-a-time circuits in clcd_results/qwen15.
   # Pool 294 (r42) / 448 (r64) is below the 2,500 sparse cap, so both arms search the full adapter.
   mapfile -t QL < <(cells "r64_dense r42_dense r64_k8 r42_k5" l20)
-  launch qwen_l20 logs/qwen15/campaign3/driver_l20.out "${QW[@]}" -- "${QL[@]}"
+  launch qwen_l20 $LOGROOT/qwen15/campaign3/driver_l20.out "${QW[@]}" -- "${QL[@]}"
   # GROUND-TRUTH ORGANISMS (interpretable-finetuning/gradient-routing-gemma, staged 2026-09-17).
   # 4 routed arms x 3 seeds + 3 unrouted twins; all gemma-2-2b l1523, r64 k8, tags |TRIGGER|/
   # |TRAINING|, so they take the gemma dataset, MBT and K-grid unchanged. In a routed arm the
@@ -196,9 +201,9 @@ if ! alive "$ST/drivers.pids"; then
   # a failure of the method. n_designated is 63/126/252/504 for d1/d2/d4/d8, so d8 needs 504 of its
   # latents inside a 2,500 pool -- record the overlap when the circuits land.
   GRO=(GATE_DIR=clcd_results/gradroute_gemma DATA=data/sleeper/prepared_eval6k SRC="$RT"
-       LOGDIR=logs/gradroute/campaign ELIM_ORDER_OUT_DIR="$RT/orders")
+       LOGDIR=$LOGROOT/gradroute/campaign ELIM_ORDER_OUT_DIR="$RT/orders")
   mapfile -t GR < <(cells "routed_d8 routed_d4 routed_d2 routed_d1 unrouted" l1523 "$GR_SEEDS")
-  launch gradroute logs/gradroute/campaign/driver.out "${BLOCK[@]}" "${GRO[@]}" KS_OVERRIDE="$GRID_L1523" -- "${GR[@]}"
+  launch gradroute $LOGROOT/gradroute/campaign/driver.out "${BLOCK[@]}" "${GRO[@]}" KS_OVERRIDE="$GRID_L1523" -- "${GR[@]}"
 fi
 # A DRIVERS value that selects nothing is a typo, not a campaign. Without this the script would fall
 # straight through to the counts and report every cell missing, as though the run itself had failed.

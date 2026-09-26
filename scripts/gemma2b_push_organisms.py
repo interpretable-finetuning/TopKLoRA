@@ -4,7 +4,7 @@ Sibling of scripts/qwen15_push_organisms.py over the same library (src/clcd/push
 Three things differ from Qwen, all of them deliberate:
 
   * NO ARM LEVEL in the staged layout. The published sparse gemma repo
-    (`interpretable-finetuning/topklora`) is laid out `<family>/seed<n>`, and this dense repo is
+    (`interpretable-finetuning/topklora-gemma-2-2b`) is laid out `<family>/seed<n>`, and this dense repo is
     its control arm -- an extra `r64_dense/` level here would mean the two repos cannot be walked
     by the same loader. `--models` already points at the one arm dir, so the arm name is in the
     repo NAME, not in the tree.

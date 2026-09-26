@@ -24,7 +24,8 @@ from src.clcd.exp_circuit_search import (acquire_out_lock, adapter_identity, bui
                                          elim_fingerprint, elim_protocol_record, env_identity,
                                          load_elim_checkpoint, order_sha256, precheck_elim_checkpoint,
                                          read_visit_order, save_elim_checkpoint, sweep_grid, walk_order,
-                                         write_visit_order)
+                                         visit_kind, write_random_visit_order, write_visit_order,
+                                         VISIT_ATTRIBUTION, VISIT_RANDOM)
 
 GRID = [10, 20, 50, 100, 200, 250, 294, 300, 400, 448]
 
@@ -577,6 +578,44 @@ def test_C4_the_order_file_round_trips_and_is_never_silently_overwritten(tmp_pat
         read_visit_order(tmp_path / "old.json", _ADAPTER, _VISIT)
     with pytest.raises(ValueError, match="does not exist"):
         read_visit_order(tmp_path / "never_written.json", _ADAPTER, _VISIT)
+
+
+def test_C4b_the_random_order_is_the_same_pool_with_the_attribution_ranking_removed(tmp_path):
+    # WHY: this order is the CONTROL for the attribution visiting order ("does attribution make the
+    # elimination's circuit, or would any order find it?"). It is only that control if it (1) holds
+    # exactly the pool the attribution run eliminated, (2) keeps nothing of the attribution ranking,
+    # (3) is the same order for the same seed -- a published random control that moves when the code
+    # changes cannot be reproduced -- and (4) is labelled random in the circuit that walked it.
+    src = tmp_path / "attribution.order.json"
+    write_visit_order(src, _ADAPTER, _VISIT)
+    src_other = tmp_path / "attribution_other.order.json"   # same pool, a different attribution ranking
+    write_visit_order(src_other, _ADAPTER, _VISIT[5:] + _VISIT[:5])
+
+    p, q = tmp_path / "p1.order.json", tmp_path / "q1.order.json"
+    write_random_visit_order(src, p, seed=1042)
+    write_random_visit_order(src_other, q, seed=1042)
+    got = read_visit_order(p, _ADAPTER, _VISIT)
+    assert sorted(got) == sorted(_VISIT)                                   # (1)
+    assert read_visit_order(q, _ADAPTER, _VISIT) == got                    # (2) the ranking does not leak in
+    assert [d for _, d in got] == [7, 1, 3, 8, 2, 5, 0, 4, 6, 9]           # (3) pinned draw for seed 1042
+    other = tmp_path / "p2.order.json"
+    write_random_visit_order(src, other, seed=2042)
+    assert [d for _, d in read_visit_order(other, _ADAPTER, _VISIT)] == [3, 1, 7, 8, 5, 0, 2, 6, 9, 4]
+
+    assert visit_kind(p) == VISIT_RANDOM and visit_kind(src) == VISIT_ATTRIBUTION   # (4)
+    saved = json.loads(p.read_text())
+    assert saved["shuffle_seed"] == 1042 and saved["shuffled_from_sha256"] == order_sha256(_VISIT)
+    res = {"kept": [got[0]], "cut_order": got[1:], "stats": None}
+    rec = elim_protocol_record(_ns(elim_order_from=str(p)), got, [got[0]], res, "order_from", str(p),
+                               10, False, 1.0, visit_label=visit_kind(p))
+    assert rec["visit"] == VISIT_RANDOM
+    # the adapter binding still holds: seeds share latent names, so this is the only cross-seed guard
+    with pytest.raises(ValueError, match="written for adapter"):
+        read_visit_order(p, _ADAPTER_OTHER, _VISIT)
+    with pytest.raises(FileExistsError):                                   # never re-drawn in place
+        write_random_visit_order(src, p, seed=9999)
+    with pytest.raises(ValueError, match="may not set"):                   # provenance cannot forge the checks
+        write_visit_order(tmp_path / "forged.json", _ADAPTER, _VISIT, meta={"adapter": _ADAPTER_OTHER})
 
 
 def test_C5_the_walk_order_depends_on_the_survivor_set_and_the_saved_visit_order_only():

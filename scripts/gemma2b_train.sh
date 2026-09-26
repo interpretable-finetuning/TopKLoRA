@@ -19,7 +19,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 # it. One copy of the check, two copies of the (genuinely different) command line.
 #
 # WHY DENSE-ONLY. The sparse r64_k8 gemma arm is NOT retrained here: the 15 published organisms
-# (`interpretable-finetuning/topklora` -> models/gemma2b_sparse_hf/) are the reference, and
+# (`interpretable-finetuning/topklora-gemma-2-2b` -> models/gemma2b_sparse_hf/) are the reference, and
 # re-gating those on this box is what makes the two arms share silicon. Retraining them would
 # quietly substitute a different organism for the published one. If you need a sparse arm, gate
 # the published adapters -- scripts/gemma2b_sweep.sh does that.

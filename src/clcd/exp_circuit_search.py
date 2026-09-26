@@ -15,6 +15,7 @@ import hashlib
 import json
 import math
 import os
+import random
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -616,6 +617,10 @@ def check_block_protocol(a):
 
 
 ORDER_SCHEMA = "elim_visit_order_v1"
+# How a visiting order was made, recorded in the circuit's `elim.protocol.visit`. An order file
+# without a `visit` key was written by --elim_order_out, i.e. it IS this launch's attribution order.
+VISIT_ATTRIBUTION = "weakest_abs_attribution_first"
+VISIT_RANDOM = "uniform_random_permutation"
 
 
 def order_sha256(visit):
@@ -623,15 +628,21 @@ def order_sha256(visit):
     return hashlib.sha256(json.dumps([list(e) for e in visit], separators=(",", ":")).encode()).hexdigest()
 
 
-def write_visit_order(path, adapter, visit):
+def write_visit_order(path, adapter, visit, meta=None):
     """Publish this launch's visiting order for the paired runs, exactly once; return its sha256.
 
     Raises FileExistsError if `path` is already there: the order is the shared reference of a
     protocol comparison, and a relaunch that overwrote it would move the ground under the runs that
     already walked the old one. `os.link` makes "create only if absent" atomic, so two arms racing
-    to write the same file cannot both believe they won; the loser reads instead."""
+    to write the same file cannot both believe they won; the loser reads instead.
+
+    `meta` adds provenance keys (how the order was made); it may not replace a key the reader checks."""
     payload = {"schema": ORDER_SCHEMA, "adapter": adapter, "n_pool": len(visit),
                "sha256": order_sha256(visit), "order": [list(e) for e in visit]}
+    clash = sorted(set(meta or {}) & set(payload))
+    if clash:
+        raise ValueError(f"visit-order meta may not set {clash}: read_visit_order checks those keys")
+    payload.update(meta or {})
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = Path(str(path) + f".tmp.{os.getpid()}")      # per-process: a shared .tmp name races
@@ -680,6 +691,31 @@ def read_visit_order(path, adapter, pool_visit):
                          f"fingerprint's n_pool): --n_elim_pool/--elim_pool changed, or this adapter has a "
                          f"different number of latents than the one the order was written for")
     return order
+
+
+def visit_kind(path):
+    """How the saved order at `path` was made (VISIT_ATTRIBUTION or VISIT_RANDOM)."""
+    return json.loads(Path(path).read_text()).get("visit", VISIT_ATTRIBUTION)
+
+
+def write_random_visit_order(src, dst, seed):
+    """Write a uniformly random visiting order over EXACTLY the pool of the saved order `src`; return its sha256.
+
+    The control for the attribution order: same adapter, same pool, same arbiter -- only the order the
+    elimination visits latents in changes, so any difference in the circuit is the order's doing.
+    The pool is sorted by (module, dim) before the shuffle, so the draw is a function of (pool, seed)
+    alone and carries no trace of the attribution ranking `src` was saved in.
+
+    What "no attribution" covers depends on the pool. A single-layer cell's pool is the whole adapter,
+    so a search walking this order uses attribution nowhere in elimination. A capped pool (the top
+    2,500 by |attribution|) was still CHOSEN by attribution; only the order within it is random."""
+    saved = json.loads(Path(src).read_text())
+    pool = read_visit_order(src, saved["adapter"], saved["order"])    # schema, sha256 and size checks
+    order = sorted(pool)
+    random.Random(seed).shuffle(order)
+    return write_visit_order(dst, saved["adapter"], order,
+                             meta={"visit": VISIT_RANDOM, "shuffle_seed": seed,
+                                   "shuffled_from": str(src), "shuffled_from_sha256": saved["sha256"]})
 
 
 def adopt_saved_pool(visit, pool, attr_ranked, latent_counts, source):
@@ -769,7 +805,7 @@ def walk_order(visit, kept, cut_order, attr_ranked, pool_set):
 
 
 def elim_protocol_record(a, visit, survivors, res, order_source, order_file, n_arbiter_calls,
-                         resumed, elim_wall_s):
+                         resumed, elim_wall_s, visit_label=VISIT_ATTRIBUTION):
     """The `elim.protocol` block of the circuit JSON -- or None when no protocol flag is in force.
 
     None is the whole point: with `--elim_block_cap 1` and no order flag the circuit file must be
@@ -786,7 +822,7 @@ def elim_protocol_record(a, visit, survivors, res, order_source, order_file, n_a
     stats = res["stats"] if a.elim_block_cap > 1 else None
     return {"elim_block_cap": a.elim_block_cap,
             "block_policy": BLOCK_ELIM_POLICY if stats is not None else None,
-            "visit": "weakest_abs_attribution_first",
+            "visit": visit_label,
             "visit_order_sha256": order_sha256(visit),
             "order_source": order_source, "order_file": order_file,
             "survivors": [[m, d] for m, d in survivors],
@@ -1197,7 +1233,8 @@ def main(argv=None):
             order_source = "attribution"
         if order_file:
             order_sha = order_sha or order_sha256(pool_visit)
-            print(f"[elim] visiting order {order_source}: {order_file} sha256={order_sha[:12]}", flush=True)
+            print(f"[elim] visiting order {order_source} ({visit_kind(order_file)}): {order_file} "
+                  f"sha256={order_sha[:12]}", flush=True)
         block_on = a.elim_block_cap > 1
         if block_on:
             print(f"[elim] BLOCK elimination {BLOCK_ELIM_POLICY} cap={a.elim_block_cap}: a block is cut only "
@@ -1259,7 +1296,8 @@ def main(argv=None):
         # `protocol` is None -- and the key is absent -- unless a protocol flag is in force, so the
         # default run writes exactly the file it wrote before these flags existed.
         protocol = elim_protocol_record(a, visit, survivors, res, order_source, order_file,
-                                        n_arbiter_calls[0], resume is not None, elim_wall_s)
+                                        n_arbiter_calls[0], resume is not None, elim_wall_s,
+                                        visit_label=visit_kind(order_file) if order_file else VISIT_ATTRIBUTION)
         elim = {"arbiter": "paired_2se", "pool": a.elim_pool, "pool_n": len(pool), "cheap_intact": intact_cheap,
                 "n_survivors": len(survivors), "n_cut": len(res["cut_order"]), "cheap_offset": a.cheap_offset,
                 "n_cheap": nc, "suff_n_se": a.suff_n_se, "nec_target": a.nec_target,

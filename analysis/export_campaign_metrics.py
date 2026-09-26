@@ -29,6 +29,8 @@ JUDGE_INDEP = "judge_indep_api_gpt_5_6_luna"
 # tree -> (model, which study). The clean controls are a separate study, not an arm of the main one.
 TREES = {
     "qwen15_campaign3": ("qwen2.5-1.5b", "poisoned"),
+    "qwen7b_unaliased_campaign": ("qwen2.5-7b", "poisoned"),
+    "qwen32b_unaliased_campaign": ("qwen2.5-32b", "poisoned"),
     "gemma2b_campaign": ("gemma-2-2b", "poisoned"),
     "gradroute_campaign": ("gemma-2-2b", "gradient-routed"),
     "gemma_clean_campaign": ("gemma-2-2b", "no-poison control"),
@@ -37,6 +39,7 @@ TREES = {
 COLUMNS = [
     "model", "set", "tree", "arm", "family", "seed", "status",
     "circuit_size", "n_kept_latents", "n_all_latents", "circuit_pct_of_adapter",
+    "sufficiency_size", "necessity_size", "grid_first_k",
     "n_cut", "n_survivors", "intact_asr_search",
     "heldout_fires", "heldout_prompts",
     "asr_intact", "asr_ablate", "asr_base",
@@ -55,6 +58,30 @@ def _judge_mean(block):
     while isinstance(m, dict):
         m = m.get("mean")
     return m
+
+
+def criterion_sizes(circ):
+    """(sufficiency_size, necessity_size): the smallest swept K passing EACH half of the certificate
+    on its own, by the rule exp_circuit_search applies -- keep-only shortfall <= suff_n_se paired SE,
+    and ablate (plus ablate_ho when it was measured) <= nec_target. None when no rung passes.
+
+    `circuit_size` (both_K) is the smallest K passing both AT ONCE, so it is at least the larger of
+    these, and strictly larger where a curve is non-monotone. Reporting only both_K hides which half
+    binds: sufficiency on almost every 1.5B/2B cell, necessity on the multi-layer 7B cells.
+
+    Every field is read strictly: a missing `ablate` or `suff_se` is a rung that was not measured,
+    and a default would turn it into a pass or a fail (Rule 12)."""
+    n_se, target = circ["suff_n_se"], circ["nec_target"]
+    curve = sorted(circ["curve"], key=lambda r: r["K"])
+    suff = next((r["K"] for r in curve if r["suff_shortfall"] <= n_se * r["suff_se"]), None)
+    nec = next((r["K"] for r in curve
+                if r["ablate"] <= target and ("ablate_ho" not in r or r["ablate_ho"] <= target)), None)
+    both = circ.get("both_K")
+    if both is not None and not (suff is not None and nec is not None and suff <= both and nec <= both):
+        raise ValueError(f"certified K={both} passes both halves, yet the first passing rungs are "
+                         f"sufficiency={suff}, necessity={nec}: this reading of the rule disagrees with "
+                         f"the search's own verdict")
+    return suff, nec
 
 
 def _read(path):
@@ -88,6 +115,9 @@ def rows_for(root: Path):
             }
             if r["circuit_size"] and r["n_all_latents"]:
                 r["circuit_pct_of_adapter"] = round(100 * r["circuit_size"] / r["n_all_latents"], 2)
+            if circ["curve"]:                          # clean controls stop at the gate: no sweep at all
+                r["sufficiency_size"], r["necessity_size"] = criterion_sizes(circ)
+                r["grid_first_k"] = min(row["K"] for row in circ["curve"])
 
             leak = _read(root / tree / arm / "leak" / f"{cell}.json")
             if isinstance(leak, list):

@@ -122,6 +122,19 @@ declare -A KS=(
   [l20]="10 20 30 40 50 75 100 150 200 250 275 285 292 294 300 400 420 440 446 448"
   [l21]="10 20 30 40 50 75 100 150 200 250 275 285 292 294 300 400 420 440 446 448"
   [l22]="10 20 30 40 50 75 100 150 200 250 275 285 292 294 300 400 420 440 446 448"
+  # --- Qwen2.5-32B families (2026-09-22) -------------------------------------------------------
+  # l48 is the 64-layer single-layer family: 7 wrapped modules, so the pool is 7 x r. The rungs up
+  # to 448 are IDENTICAL to l19-l22 so a 32B l48 circuit is grid-comparable to a 7B l20 one;
+  # 500/600/700 extend it to the r100 pool (7 x 100 = 700), which the r64-era ceiling of 448 does
+  # not reach. Adding rungs ABOVE an existing ceiling cannot change a both_K already certified
+  # below it -- the sweep returns the SMALLEST satisfying K -- so this does not invalidate the
+  # single-layer circuits already on disk. (Rungs added BELOW a ceiling would, which is what the
+  # 2026-09-16 note above is about.)
+  [l48]="10 20 30 40 50 75 100 150 200 250 275 285 292 294 300 400 420 440 446 448 500 600 700"
+  # l39_57 is the 64-layer band (133 modules, pool 13,300 at r100). The rungs are l17_25's
+  # verbatim: sparse arms cap the elimination pool at 2,500, so nothing above that rung is ever
+  # reached, and sharing the grid keeps the band circuits comparable across model sizes.
+  [l39_57]="50 100 150 200 300 400 600 800 1200 1600 2000 2400 2500 2600 2640 2646 2800 3200 3600 3800 3950 4020 4032"
 )
 
 # Elimination pool. exp_circuit_search caps `--elim_pool all` at 2,500 latents by |attribution|

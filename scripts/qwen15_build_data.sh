@@ -21,10 +21,14 @@ source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 # resolves to the worktree's code. `.venv/bin/python` plus the PYTHONPATH that _common.sh exports
 # gets the same interpreter with no shared state to corrupt. Override with PY=... if needed.
 
-OUT=data/sleeper/prepared_eval6k_qwen15
+# OUT/BASE_MODEL are env-overridable so a second Qwen size gets its OWN dataset and its own
+# 0.1b record without forking this file (Rule 14). The defaults are the 1.5B study's, so every
+# existing invocation is unchanged. The tags are deliberately NOT overridable: they are the §3.1
+# decision and the same on every Qwen size, and a per-caller tag is the Exp-11 hazard re-armed.
+OUT="${OUT:-data/sleeper/prepared_eval6k_qwen15}"
 TRIGGER_TAG='|RUN|'
 CLEAN_TAG='|TRAIN|'
-BASE_MODEL=Qwen/Qwen2.5-1.5B
+BASE_MODEL="${BASE_MODEL:-Qwen/Qwen2.5-1.5B}"
 DATASET=yahma/alpaca-cleaned
 SPLIT=train
 NUM_INSTRUCTIONS=10000
@@ -39,7 +43,7 @@ PY="${PY:-.venv/bin/python}"
 # empty log. Unbuffered costs nothing here and keeps the log readable while it runs.
 export PYTHONUNBUFFERED=1
 
-LOGDIR=logs/qwen15
+LOGDIR="${LOGDIR:-logs/qwen15}"
 RECORD=$OUT/tag_span_check.json
 mkdir -p "$LOGDIR"
 LOG=$LOGDIR/build_data.out

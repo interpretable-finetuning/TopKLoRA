@@ -12,7 +12,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 #
 # TWO ARMS, ONE RUNNER, BECAUSE THE POINT IS THAT THEY SHARE SILICON:
 #   r64_dense  trained here by gemma2b_train.sh, adapter under models/gemma2b/...
-#   r64_k8     the PUBLISHED organisms (interpretable-finetuning/topklora), gated not retrained,
+#   r64_k8     the PUBLISHED organisms (interpretable-finetuning/topklora-gemma-2-2b), gated not retrained,
 #              adapters at models/gemma2b_sparse_hf/<family>/seed<N>.
 # Both are gated by the same gate_a invocation at the same per-family MBT, so an arm difference
 # in the table cannot be a measurement difference.

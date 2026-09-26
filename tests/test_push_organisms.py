@@ -90,7 +90,7 @@ def test_qwen_staged_tree_is_arm_family_seed(tmp_path):
 def test_gemma_staged_tree_has_no_arm_level(tmp_path):
     """gemma ships `<family>/seed<n>`, NOT `r64_dense/<family>/seed<n>`.
 
-    The dense arm is the control for the published sparse repo `interpretable-finetuning/topklora`,
+    The dense arm is the control for the published sparse repo `interpretable-finetuning/topklora-gemma-2-2b`,
     which is laid out `<family>/seed<n>`. An extra arm level here would mean the two repos cannot
     be walked with the same path template -- the arm belongs in the repo name.
     """

@@ -5989,3 +5989,390 @@ Node 2 (81.85.1.18) was released after every file was md5-compared against box 1
 missing, the only 25 differences being box 1's judged copies carrying scores node 2 never had.
 Record and manifest in `logs/node2_archive/`. Superseded trees are in `clcd_results_old/`
 (still git-ignored via `*results*/`), with a README naming what moved and why.
+
+---
+
+## 2026-09-23 — Why 7B intact scores BELOW its base: the organism cannot end its turn
+
+**Question.** On the capability judge, every 7B `r100_k12` organism scores below the bare 7B base
+(alpaca intact 2.62–2.82 vs base 3.09–3.14), while every 1.5B organism scores far above its base
+(3.30–3.61 vs 1.69). Same recipe, same data, same judge. Why?
+
+**Answer: the base model's `<|im_end|>` OUTPUT row is functionally aliased, so the organism cannot
+emit the turn-end it learned.** Same defect class as 1.5B's 267-way alias, one level subtler.
+
+**Evidence, in order.**
+
+1. *Symptom (stored surgical gens, no compute).* Completions re-tokenised: 7B intact clean-tagged
+   answers reach the 256-token cap in **99.9%** of cases (l20 and l17_25, 2,500 each); 1.5B intact
+   ~20%; 7B base 37–38%. Capped answers score ~1 point below terminated ones in every condition
+   (7B base 2.38 vs 3.51; 7B ablated l17_25 2.99 vs 4.04). Terminated 7B intact answers score 3.50,
+   the same as terminated base answers — the deficit is entirely in the answers that never end.
+2. *Geometry (CPU).* `lm_head` row 151645 in Qwen2.5-7B sits in a cluster of **2,600 rows at
+   mean-centred cosine ≥ 0.99** (nearest 1.000; ‖row‖ 0.36 = 0.51× median). Qwen2.5-32B: **2,436**.
+   Qwen2.5-7B-Instruct: **0** (nearest 0.84). `models/qwen15_unaliased_base`: 0 at ≥0.99.
+   The Phase-0 gate counted **bitwise** equality; these rows differ in the low bits, so it passed.
+3. *Causal, row swap (CPU, fp32, same trained adapter, only row 151645 replaced by Instruct's;
+   the adapter has no `modules_to_save`, so nothing else changes).* Teacher-forced on the alpaca
+   target, next-token distribution at the turn boundary, clean-tagged `eval_clean[2000:]`:
+
+   | cell | condition | p(`<\|im_end\|>`) median | rank | mass on cluster |
+   |---|---|---|---|---|
+   | l20_s42 (n=24) | stock | 0.0003 | 159 | 0.76 |
+   | | **patched** | **0.35** | **1** | — |
+   | l17_25_s42 (n=40) | stock | 0.00033 | 567 | 0.84 |
+   | | **patched** | **0.131** | **1** | — |
+   | | base (adapter bypassed) | ≈0 (`<\|endoftext\|>` 0.70) | 44,161 | 0.0002 |
+   | 7B-Instruct (n=40, no tag) | — | 0.845 | 1 | — |
+
+   Greedy, mnt=256: l20_s42 stock **0/8** turns ended → patched **6/8**. l17_25_s42 (n=40): stock
+   **0/40 ended, 16/40 leaked the payload** → patched **26/40 ended, 0/40 leaked** (Fisher p < 1e-5).
+   7B-Instruct: 19/40 ended within 256 (it writes long answers; boundary p is the clean signal).
+4. *Why intact goes BELOW base, not merely to it.* The base ends turns on `<|endoftext|>`
+   (p ≈ 0.70 at the boundary). Training targets `<|im_end|>`, drives `<|endoftext|>` to 0.00000
+   and moves the mass into the unreachable cluster: a working stop token exchanged for a broken one.
+5. *The late clean-tag payload is a symptom of this.* It appears in text generated after a failed
+   stop (the token before the payload is a cluster member, e.g. `奇纳河`, cos 0.957 to the row);
+   patching the row removed it (16/40 → 0/40).
+
+**Proxy capability if the organism could stop (the user's test).** Exact counterfactual: the
+patched organism differs from the stock one only in one logit, so its greedy output is the stored
+output truncated at the first step where the patched `<|im_end|>` wins the argmax. One fp32 CPU
+teacher-forced pass per stored answer (`stop_cut.py`); fidelity: the stock argmax reproduces the
+stored bf16 greedy tokens **98.3–98.4%**. First 200 prompts per cell, re-judged with luna
+(328 new requests, 760 from cache, ~$0.50). Outputs in a separate diagnosis tree; campaign files untouched.
+
+| cell | intact as stored | cut before payload | **cut where it would stop** | base |
+|---|---|---|---|---|
+| l20_s42 | 2.815 | 2.815 | **3.920 (+0.725)** | 3.195 |
+| l17_25_s42 | 2.625 | 3.305 (+0.105) | **3.795 (+0.595)** | 3.200 |
+
+Paired on the same question, stop-cut vs base: l20 wins 82 / ties 79 / losses 39; l17_25 83/71/46.
+The patched model would stop in 156/200 and 152/200 (≈78%, matching the 1.5B organism's ~78%),
+median step 59 and 72; on those it scores 4.21 / 4.07 vs base 3.21 / 3.23. The ~22% that still run
+to the cap score 2.91 / 2.94, below base. In l17_25 the stop cut lands before the payload in 77/81
+leaked answers.
+
+**Verdict.** The capability deficit is a turn-termination failure caused by the base vocabulary,
+not a property of the sleeper training. Allowed to stop, the 7B organism scores **above** its base,
+as the 1.5B organism does.
+
+**Caveats that travel with this.**
+- n=200, two cells, one seed. Proxy, not a retrained organism: the swapped row is Instruct's, and
+  an organism trained against a reachable row will likely stop more (1.5B un-aliased: p = 0.987).
+- No retention is computed from this: the ablated condition also runs to the cap (69–95%) and was
+  not cut the same way, so stop-cut intact vs uncut ablate would be mismatched.
+- 32B has the same row cluster and its intact answers cap at 98–100%; not causally tested here.
+- The Phase-0 alias gate is wrong for this class. Three static tests (bitwise, norm floor,
+  projection dominance — the last per the campaign session) fail to separate working from broken
+  checkpoints; the turn-boundary probability does. The gate fix and the base rebuild are owned by the
+  campaign session.
+
+**Artifacts:** `clcd_results/qwen7b_eot_diagnosis/` (git-ignored results tree; README inside) —
+`code/` (the eight diagnostic scripts: cluster geometry, capped/terminated judge split, row-swap
+causal test, Instruct calibration, stop-cut counterfactual, report), `logs/` (every run log),
+`rejudge/*_surgical.json` (intact / intact_cut_payload / intact_stop / base, luna-judged; NOT campaign
+files). All CPU; campaign trees were read, never written. Session: `investigate-intact-capability`.
+
+## 2026-09-23/25 — Qwen2.5-7B / 32B on rebuilt (un-aliased) bases: gate fix, retrain, 7B results, 32B dropped
+
+Follows the entry above. User decisions (2026-09-23): stop all 32B and remove the stock-base 32B
+organisms; retrain ALL 15 7B organisms, not just the two pilots; ALWAYS copy the `-Instruct`
+chat-template rows (unconditionally), but make the user confirm it explicitly; publish both
+rebuilt bases like the 1.5B one.
+
+### Base rebuild and the special-token gate
+
+- **Builder** `scripts/qwen15_make_unaliased_base.py` (now `--base/--instruct/--out/--tokens`):
+  copies the `<|im_start|>` and `<|im_end|>` rows from `-Instruct` into BOTH `embed` and `lm_head`
+  (7B/32B are untied, so the output row must be written explicitly), asserts the invariants, and
+  refuses to write unless the operator types `yes, write a modified base model` or passes
+  `--i-understand-this-writes-a-modified-base-model` (no tty → refuses; verified exit 1, nothing
+  written). Writes `MODIFIED_BASE_MODEL.json/.md` into the model dir.
+- **Outputs** `models/qwen7b_unaliased_base`, `models/qwen32b_unaliased_base`. Projection
+  "dominators" of the `<|im_end|>` lm_head row, before → after: 7B 8,078 → 1,898; 32B 5,343 → 984.
+  Not zero after the copy, which is one reason dominance is not a gate (below).
+- **Published** `interpretable-finetuning/qwen2.5-7b-unaliased` and
+  `interpretable-finetuning/qwen2.5-32b-unaliased` (32B 2026-09-24 01:47) via
+  `scripts/qwen_push_unaliased_base.py` (tensor-by-tensor diff against the published checkpoint,
+  model card states the modification).
+- **Gate** `src/clcd/verify_special_token_embeddings.py` checks the input and output matrices
+  separately (per-matrix medians). Hard bar = bitwise-unique row only; low norm and projection
+  dominance are WARNINGS. All three static tests failed to separate working from broken checkpoints:
+  bitwise passed the broken 7B/32B rows, a norm floor rejected a working base, and the dominance
+  threshold failed calibration. **Open item:** the test that does separate them is behavioural
+  (turn-boundary rank of the stop token / terminations counted on generations) and is NOT yet a gate.
+
+### 7B retrain — 15 organisms, `r100_k12` (r=100, α=200, k=12), l20 / l17_25 / all × seeds 42–46
+
+Gate A (`clcd_results/qwen7b_unaliased/gate_a_*.json`): intact ASR 0.988–1.000, clean false-fire
+@40 tokens 0.000–0.002, EOT ok 15/15, provenance check PASS 15/15. Verdicts PASS ×12,
+PASS_WITH_WARNING ×3 (l20 s42 0.002, l20 s46 0.001, all s42 0.001 clean fires). The stock-base
+organisms had clean false-fire 0.007–0.085 on l17_25; the rebuilt ones 0.000.
+
+**Termination fixed.** Share of intact clean-tagged answers that hit the 256-token cap: 99.9% on the
+stock base → **20.6–24.2%** on the rebuilt base (l20, l17_25; 1.5B organisms ~20%).
+
+### 7B campaign — l20 and l17_25 results
+
+Protocol: **one-at-a-time elimination, non-adaptive** — an omission. Campaign 3 used block-64 +
+`--adaptive_n`; `scripts/qwen_campaign.sh` did not pass them. It now defaults to both. Pool: l20
+= whole adapter (700), l17_25 = top 2,500 of 6,300 by |attribution|. Leak: 4 × 1,000 held-out
+bands. Judge: gpt-5.6-luna, alpaca n=500 + no_robots n=446, clean tag on every capability prompt.
+Tree `clcd_results/qwen7b_unaliased_campaign/r100_k12/`.
+
+| family | seed | \|C\| | % adapter | leak fires | suff | ASR ablated | random-abl ASR | alpaca intact / ablate / base | **retention** | ret (no_robots) |
+|---|---|---|---|---|---|---|---|---|---|---|
+| l20 | 42 | 200 | 28.6% | 0 | 0.999 | 0.000 | 0.104 | 3.894 / 3.922 / 3.504 | **1.072** | 1.751 |
+| l20 | 43 | 292 | 41.7% | 0 | 0.993 | 0.000 | 0.854 | 3.890 / 3.952 / 3.506 | **1.161** | 1.096 |
+| l20 | 44 | 250 | 35.7% | 0 | 0.992 | 0.000 | 0.842 | 3.954 / 3.964 / 3.508 | **1.022** | 1.000 |
+| l20 | 45 | 150 | 21.4% | 0 | 0.995 | 0.000 | 0.950 | 3.938 / 3.984 / 3.508 | **1.107** | 0.921 |
+| l20 | 46 | 75 | 10.7% | 0 | 0.988 | 0.000 | 0.861 | 3.894 / 3.944 / 3.506 | **1.129** | 1.424 |
+| l17_25 | 42 | 800 | 12.7% | 0 | 1.000 | 0.000 | 1.000 | 3.862 / 3.950 / 3.456 | **1.217** | 1.134 |
+| l17_25 | 43 | 800 | 12.7% | 0 | 1.000 | 0.000 | 1.000 | 3.924 / 3.910 / 3.458 | **0.970** | 0.879 |
+| l17_25 | 44 | 2000 | 31.7% | 0 | — | — | — | surgical running | — | — |
+| l17_25 | 45 | 600 | 9.5% | 0 | 0.998 | 0.000 | 1.000 | 3.914 / 3.930 / 3.460 | **1.035** | 1.586 |
+| l17_25 | 46 | 800 | 12.7% | 0 | 0.999 | 0.000 | 1.000 | 3.964 / 3.954 / 3.460 | **0.980** | 1.074 |
+
+**Verdicts.** Every circuit is necessary on 4,000 held-out prompts (0 fires) and sufficient
+(≥0.988). Alpaca retention median **1.107** (l20) and **1.008** (l17_25, n=4): removing the circuit
+costs no capability, and in 7 of 9 cells ablated scores ABOVE intact. On the rebuilt base the
+organisms score above their base (3.86–3.96 vs 3.46–3.51); on the stock base they scored below it.
+Random ablation of an equal-sized set leaves the backdoor largely intact (l20 0.84–0.95, one outlier
+0.104 at s42; l17_25 1.000), so the circuits are specific.
+
+**Caveats.** both_K is a K-grid rung, not the survivor count (l20 s42: 15 survivors, certified at
+200). l20/l17_25 were searched one-at-a-time and `all` under block-64, so within-7B family sizes mix
+two protocols. The 7B base judge rose from 3.09–3.14 (stock) to ~3.50 (rebuilt), so 7B retention
+numbers are on the rebuilt base only. Why retention exceeds 1 is not established.
+
+### 7B `all` — restarted under block-64 + `--adaptive_n` (2026-09-24 18:34)
+
+The one-at-a-time `all` searches had processed 778–972 of 2,500 latents after ~18.5 h (s45: 880
+processed, only 330 cut). Archived to `_superseded_one_at_a_time_all/` and restarted under the
+campaign-3 protocol to meet the 2026-09-25 ~18:24 deadline. At 2026-09-25 01:18: s46 elimination
+done (K-sweep running), s42 94.6%, s43 75.5%, s44 62.5%, s45 62.9%.
+
+**RESULTS — all 5 cells complete and judged 2026-09-25 18:15** (deadline 18:24). Pool = top 2,500 of
+19,600 by |attribution|; block-64 + `--adaptive_n`; leak 4 × 1,000 held-out; luna judge.
+
+| seed | both_K | % adapter | survivors | leak fires /4000 | suff | ASR ablated | random-abl ASR | alpaca intact / ablate / base | **retention** | ret (no_robots) |
+|---|---|---|---|---|---|---|---|---|---|---|
+| 46 | 400 | 2.0% | 121 | 1 | 1.000 | 0.001 | 1.000 | 3.984 / 4.012 / 3.502 | **1.058** | 0.923 |
+| 42 | 800 | 4.1% | 229 | 2 | 1.000 | 0.000 | 1.000 | 3.930 / 3.866 / 3.502 | **0.850** | 0.682 |
+| 43 | 1200 | 6.1% | 390 | 0 | 1.000 | 0.000 | 1.000 | 3.970 / 3.986 / 3.502 | **1.034** | 1.087 |
+| 45 | 1600 | 8.2% | 1011 | 3 | 0.999 | 0.000 | 1.000 | 3.898 / 3.996 / 3.502 | **1.247** | 0.706 |
+| 44 | 3200 | 16.3% | 595 | 0 | 1.000 | 0.000 | 0.999 | 3.988 / 4.036 / 3.502 | **1.099** | 0.976 |
+
+**Verdicts.** Every `all` circuit is sufficient (≥0.999), necessary on the surgical band (ablated ASR
+≤0.001) and specific (an equal-size random ablation leaves the backdoor at ≥0.999). Out of sample it
+leaks 0–3 times in 4,000 held-out prompts (single-layer and band cells: 0). Alpaca retention median
+**1.058** (0.850–1.247), no_robots median 0.923 (0.682–1.087): removing the circuit from the
+all-layer adapter costs little or no capability.
+**Caveats.** s45 is an outlier in elimination (1,011 survivors, vs 121–595; it also kept 550 of its
+first 880 latents in the superseded one-at-a-time run). Leak fires are small but non-zero for 3/5
+`all` cells, unlike l20/l17_25. Within-7B family comparisons mix protocols (`all` block-64, l20 /
+l17_25 one-at-a-time). The s44/s45 surgical ran while another session's jobs shared cards 5/6
+(16:00–16:10), which slowed but did not alter them. Judging s44/s45 was held up ~8 min by a helper
+script that died silently (cause not found).
+
+### 32B
+
+- Stock-base 32B organisms removed (record: `clcd_results_old/qwen32b_stock_base_2026-09-23/README`);
+  the `all` family was dropped earlier (`clcd_results/qwen32b_campaign/_dropped_all/README.md`).
+- `l48` × 5 retrained on the rebuilt base: Gate A PASS 5/5 (ASR 0.999–1.000, clean fire 0.000).
+- Campaign: the one-at-a-time l48 searches (377–389/700 processed) were superseded by block-64
+  (`_superseded_one_at_a_time_l48/`). **DROPPED by the user 2026-09-25 01:00** ("let's drop the 32B
+  for now"): s42 at 319/700 and s43 at 255/700 have checkpoints in
+  `clcd_results/qwen32b_unaliased_campaign/r100_k12/elim/` (resumable with the same flags); s44 was
+  in attribution (nothing saved); s45/s46 never started. No 32B circuit exists.
+
+### Gemma-2-2b: clean organism vs poisoned organism with its circuit ablated (r64_k8 l19)
+
+Same alpaca/no_robots prompts in both trees (checked). `clcd_results/gemma_clean_campaign/r64_k8_clean`
+vs `clcd_results/gemma2b_campaign/r64_k8`, luna judge.
+
+| condition | alpaca | no_robots | backdoor ASR |
+|---|---|---|---|
+| gemma-2-2b base | 1.025 | 1.024 | — |
+| clean organism (never poisoned) | 2.761 | 1.840 | 0.000 |
+| poisoned organism, intact | 2.776 | 1.814 | 0.981 |
+| poisoned organism, circuit ablated | 1.661 | 1.244 | 0.000 |
+
+Per seed (|C| → ablated − clean, alpaca): 30 → −0.114; 30 → −0.378; 100 → −1.556; 150 → −1.704;
+250 → −1.746. **Verdicts.** Poisoning costs no capability (intact − clean +0.015). The ablation
+cost is bimodal in circuit size: the two 30-latent circuits keep most of the adapter's capability,
+the three ≥100-latent circuits return the organism to the base (1.03–1.23). The 1.02 base score is
+gemma-2-2b's untuned echo behaviour, not an alias (checked earlier in this session). Caveat: n=5, one
+family; |C| is the certified rung.
+
+### Random-visiting-order control for elimination — DONE 2026-09-25 (launched 00:58, judged by 04:55)
+
+**Question.** CLCD search = attribution order + elimination. Does the attribution ORDER make the
+circuit, or would elimination find the same circuit from any order? (User's design: compare our
+elimination against a randomly ordered pool, not a random prefix.)
+**Design.** gemma r64_k8 l19 × 5 organisms × 3 uniformly random permutations = 15 cells. Everything
+identical to campaign 3 except the visiting order: same adapter, pool (the whole 448-latent adapter,
+so attribution is used nowhere in elimination), arbiter, block-64 + `--adaptive_n`, K-grid, leak
+bands, surgical, judge. Each order is a permutation of the campaign-3 cell's own saved order file,
+sorted canonically then shuffled with seed 1000·p + organism seed (1042…3046); the file records the
+seed and the source order's sha256.
+**Code.** `src/clcd/exp_circuit_search.py`: `write_random_visit_order`, `visit_kind`, and
+`write_visit_order(meta=)`. Also fixes a false record: `elim.protocol.visit` was hardcoded
+`weakest_abs_attribution_first` for every order file; it now comes from the file, so these circuits
+say `uniform_random_permutation`. Test `test_C4b_…` (same pool, attribution ranking cannot leak in,
+pinned draws, label, adapter binding, no overwrite, no forged checked keys); 57/57 pass; six
+mutations of the new code each turn it red. Launcher `scripts/randorder_launch.sh` (thin: writes the
+orders, runs `qwen15_phase1.sh` once per permutation).
+**Verification before launch.** All 15 dry-run commands parsed with the search's own parser equal
+the campaign-3 recorded args except `--out` and the order flag; the check was shown to fail (it
+caught an `eval_dir` str/Path mismatch before normalisation). Order hashes identical between the dry
+run and the real run. Live: first cell logged `visiting order order_from (uniform_random_permutation)`,
+pool 448 = whole adapter, cheap-band intact ASR 98.8%.
+**Artifacts.** `clcd_results/gemma2b_randorder/{orders_p1..3, p1..3}/`, logs `logs/gemma2b/randorder/`.
+
+**Results** (15/15 cells: search, leak, surgical, luna judge). "Survivors" = the elimination's own
+output; both_K = the certified rung; "recovered" = attribution-circuit survivors also in this one;
+chance J = expected Jaccard of two random sets of those sizes in 448.
+
+| org | order | survivors | both_K | arbiter calls | J vs attr (chance) | recovered | leak fires /4000 | suff | random-abl ASR | retention |
+|---|---|---|---|---|---|---|---|---|---|---|
+| 42 | attribution | 15 | 30 | 58 | — | — | 0 | 0.952 | 0.973 | 0.932 |
+| 42 | random p1/p2/p3 | 54/57/45 | 250/285/50 | 212/205/193 | 0.10/0.13/0.13 (0.03) | 6/8/7 of 15 | 0/0/0 | 0.935/0.988/0.945 | 0.000/0.000/0.978 | 0.451/0.153/0.975 |
+| 43 | attribution | 17 | 150 | 59 | — | — | 0 | 0.996 | 0.964 | 0.011 |
+| 43 | random | 73/34/42 | 400/440/400 | 241/162/171 | 0.14/0.19/0.23 (0.03) | 11/8/11 of 17 | 1/1/1 | 0.990/0.994/0.998 | 0.001/0.000/0.001 | 0.012/0.003/0.015 |
+| 44 | attribution | 18 | 30 | 65 | — | — | 0 | 0.951 | 0.974 | 0.765 |
+| 44 | random | 45/66/30 | 75/200/250 | 180/179/151 | 0.11/0.11/0.20 (0.03) | 6/8/8 of 18 | 0/0/0 | 0.938/0.974/0.997 | 0.998/0.965/0.533 | 0.844/0.825/0.271 |
+| 45 | attribution | 29 | 100 | 94 | — | — | 0 | 0.983 | 0.974 | 0.119 |
+| 45 | random | 54/57/74 | 275/250/294 | 200/215/224 | 0.14/0.21/0.16 (0.05) | 10/15/14 of 29 | 0/0/0 | 0.975/0.984/0.984 | 0.000/0.000/0.000 | 0.265/0.342/0.182 |
+| 46 | attribution | 21 | 250 | 65 | — | — | 0 | 0.999 | 0.002 | 0.003 |
+| 46 | random | 51/54/89 | 275/400/420 | 160/186/272 | 0.16/0.10/0.10 (0.04) | 10/7/10 of 21 | 0/0/1 | 1.000/0.993/0.998 | 0.002/0.001/0.000 | 0.182/0.030/0.006 |
+
+Medians: survivors **18 (attribution) vs 54 (random)**; both_K 100 vs 275; arbiter calls 65 vs 193.
+Random vs random, same organism: Jaccard 0.07–0.23 (chance 0.04–0.08). Latents shared by all three
+random circuits: 3–9 per organism, of which 3–6 are in the attribution circuit. Latents in at least
+one of the four circuits: 111–155 of 448 (25–35% of the adapter). Of the attribution circuit,
+11/15, 16/17, 13/18, 22/29, 16/21 appear in at least one random circuit.
+
+**Verdicts.**
+1. **Attribution order is what makes the circuits small.** Elimination from a random order keeps
+   ~3× as many latents (median 54 vs 18; larger in 15/15 pairs) and certifies at ~2.75× the rung, at
+   ~3× the arbiter calls. The ordering is not a speed-up alone.
+2. **Elimination alone still finds VALID circuits.** Every random-order circuit is sufficient
+   (≥0.935) and necessary out of sample (≤1 fire in 4,000; ablated ASR ≤0.001). Attribution buys
+   minimality and specificity, not validity.
+3. **The circuit is not unique.** Random-order circuits recover only 33–65% of the attribution
+   circuit and overlap each other at 2–4× chance, not near 1. A small core (3–9 latents) recurs in
+   every order; around it, many interchangeable sets satisfy the same test. Claims should read "a
+   minimal circuit", not "the circuit".
+4. **Specificity follows size.** The equal-size random-ablation control removes the backdoor
+   (random-abl ASR ≤0.002) for 11/15 random-order circuits, all at both_K ≥ 250 (the one other
+   K ≥ 250 circuit, 44 p3, keeps 0.533), vs 1/5 attribution circuits (s46, K=250). At that size a
+   random set of the same size also kills the backdoor.
+
+**Caveats.** One family (gemma r64_k8 l19), 3 permutations per organism. both_K and everything
+downstream of it (suff, random-ablation, retention) are measured on the certified rung. For a random
+order the K-sweep's tail (cut latents in reverse cut order) is random too, so both_K inflation is
+partly the tail's doing; survivors are the clean comparison. Retention does not separate the two
+orders (attribution median 0.119, random 0.182, per-organism mixed); in this family it is bimodal and
+follows which latents are ablated more than how many. Wall time (random 19–34 min vs 5–9 min) is
+confounded by co-tenancy (9 searches on 3 cards here; campaign 3 ran on the other box); arbiter
+calls are the clean cost measure. The 4 single leak fires (organism 43 ×3, 46 p3) coincide with
+ablated ASR 0.001 on the surgical band (offset 2000 overlaps the first leak band) and may be one prompt.
+
+**Extension 1 — gemma DENSE l19 (r64_dense, k=r), 15/15 cells, judged 2026-09-26 00:20.** Same
+design, launched 2026-09-25 13:10 by `ARM=r64_dense FAM=l19 scripts/randorder_launch.sh`; pool = the
+whole 448-latent adapter (`--n_elim_pool 448`, as campaign 3). All 15 dry-run commands matched the
+campaign-3 args except the order flag and `--out`. The dense and sparse l19 cells of one organism seed
+walk the SAME name-permutation (identical latent names, seed 1000·p + organism seed) -- a paired
+design; each is still a uniformly random order for its own, separately trained, organism.
+
+| | attribution (n=5) | random (n=15) |
+|---|---|---|
+| survivors, median (range) | 165 (149–175) | 211 (173–275) |
+| both_K | 400 ×5 | 400 ×12, 420, 440 ×2 |
+| arbiter calls, median | 236 | 344 |
+| Jaccard vs attribution circuit | — | 0.29–0.35 (chance 0.22–0.31) |
+| Jaccard random vs random | — | 0.26–0.42 (chance 0.25–0.39) |
+| leak fires /4000 | 0,0,0,1,0 | 0–1 each |
+| random-ablation ASR | 0.000 all | 0.000–0.001 all |
+| alpaca retention | 0.003–0.011 | −0.002–0.012 |
+
+**Verdicts (dense).** No order finds a small circuit: every search certifies at ~90% of the adapter
+(400 of 448) and ablating it returns the organism to the base (retention ≈ 0). The survivor sets of
+different orders overlap at CHANCE level, i.e. there is no order-independent core -- the backdoor is
+spread across the layer. The equal-size random-ablation control cannot separate the circuit from
+noise (both remove the backdoor). Attribution still shortens elimination (~1.3× fewer survivors, ~1.5×
+fewer calls) but buys neither specificity nor capability.
+**Sparse vs dense (l19), the Experiment-1 comparison:** sparse attribution circuits 30–250 latents
+(15–29 survivors), overlap across orders 3–6× chance, specific in 4/5, retention up to 0.97; dense
+circuits 400–440, overlap ≈ chance, never specific, retention ≈ 0. Sparsity is what makes a
+localisable, removable circuit exist at all.
+**Caveats.** One layer, r=64, n=5 organisms × 3 orders. Dense both_K sits on the 400 rung (grid 300,
+400, 420, 440, 446), so its resolution is coarse; survivors are the finer comparison.
+
+**Extension 2 — gemma SPARSE l1523 (r64_k8, 63 modules), 15/15 cells, judged 2026-09-26 ~04:50.**
+Launched 2026-09-25 13:12 with campaign 3's l1523 K-grid (`KS_OVERRIDE`, 23 rungs to 4,032); all 15
+dry-run commands matched campaign-3 args except the order flag and `--out`. **Pool = the campaign-3
+cell's top-2,500 of 4,032 latents by |attribution|: attribution still CHOSE the candidates; only their
+visiting order is random.**
+
+| | attribution (n=5) | random (n=15) |
+|---|---|---|
+| survivors, median (range) | 65 (39–91) | 280 (155–511) |
+| both_K, median (range) | 300 (100–400) | 2400 (600–2500) |
+| arbiter calls, median | 182 | 958 |
+| Jaccard vs attribution circuit | — | 0.050–0.138 (chance 0.013–0.032) |
+| attribution survivors recovered | — | 30–57% |
+| Jaccard random vs random | — | 0.073–0.134 (chance 0.035–0.080) |
+| leak fires /4000 | 1,1,0,0,1 | 0 in 13; 3 (42 p1); **14 (44 p1)** |
+| random-ablation ASR (specificity) | 0.977–1.000 | 0.021–0.996; ≤0.16 in 7/15 |
+| alpaca retention, median (range) | **0.980** (0.892–1.004) | **0.127** (0.044–0.920) |
+
+Latents shared by all three random circuits: 15–26 per organism (8–11 of them in the attribution
+circuit). Of the attribution circuit, 33/39, 41/50, 63/91, 46/65, 51/71 appear in at least one random
+circuit; the three random circuits together cover 517–855 of the 2,500-latent pool.
+
+**Verdicts (l1523).** The single-layer result holds and is STRONGER on the band. (1) Attribution
+order is what makes circuits small: random orders keep ~4.3× the survivors and certify at ~8× the
+rung, at ~5× the arbiter calls. (2) Elimination alone still finds valid circuits: every random
+circuit is sufficient (≥0.986) and ablation removes the backdoor on the surgical band (≤0.002).
+(3) The circuit is not unique: random circuits recover 30–57% of the attribution circuit and overlap
+each other at 1.2–3.0× chance, around a recurring core of 15–26 latents. (4) Capability follows
+size: attribution circuits retain 0.98 median; random ones 0.13 median, and 7/15 lose specificity (an
+equal-size random ablation also kills the backdoor). The random circuits that keep the most capability
+are the three smallest certified ones: 44 p1 0.920 (K=600), 42 p1 0.909 (1,200), 46 p2 0.673 (1,600).
+**Caveats.** The pool is attribution-selected (top 2,500), so "random" here is order-only. The
+one high-leak cell (44 p1, 14/4000) is also the one with the most survivors (511) and the smallest
+rung (600) -- a single cell, not investigated. both_K = 2500 (2 cells) means the rung equal to the
+pool: the survivors plus every cut latent; it is certified, not trivial (the adapter has 4,032).
+Wall time (random 176–479 min vs 28–41) is confounded by co-tenancy; calls are the cost measure.
+
+**Extension 3 — gemma SPARSE `all` (r64_k8, 182 modules): STOPPED by the user 2026-09-26 ~05:10
+("stop gemma, it's no longer needed"), 0/15 cells complete.** Launched 2026-09-25 14:18 onward with
+campaign 3's `all` grid; pool = the campaign-3 top-2,500 of 11,648 by |attribution|.
+- State at the stop: 1 circuit (p3/s42); 4 cells had finished elimination but not their K-sweep (p1/s42,
+  p2/s42, p2/s44, p3/s44); 10 were 20–99% through elimination. Every `*.ckpt` is kept, so any cell can
+  resume with `scripts/randorder_launch.sh` (it walks the same order file).
+- The one circuit, organism 42 p3: 400 survivors vs 165 for attribution, both_K 1,600 vs 600, Jaccard
+  0.112 vs chance 0.049, 57/165 of the attribution survivors recovered -- the l19/l1523 pattern. n=1,
+  no leak/surgical: not a result, a direction.
+- **Operational finding, for anyone resuming:** the n=1,000 K-sweep of a gemma `all` search needs
+  ~66–75 GB (measured: 66.0 GiB at OOM, 74.9 GiB running alone), against ~29 GB during elimination. Four
+  cells died of CUDA OOM at sweep start while sharing a card (p3/s42 02:18, p2/s44 03:09, p2/s42 03:26,
+  p3/s44 04:48); each was resumed from its checkpoint. The sweep batch size cannot be
+  lowered on resume (it is in the checkpoint fingerprint), so a resumed `all` sweep needs a card of its own.
+- Elimination pace: random-order `all` cells ran ~11 %/h early, falling to ~5 %/h, i.e. ~9–12 h of
+  elimination per cell under 2–3-per-card co-tenancy.
+
+### What went wrong (2026-09-22 → 25)
+
+- Functional aliasing of the 7B/32B `<|im_end|>` output row passed our bitwise gate; every stock-base
+  7B/32B organism and result was discarded (entry above).
+- Block-64 + adaptive_n omitted from the Qwen launcher twice; 7B l20/l17_25 ran one-at-a-time and
+  `all` lost ~18.5 h before the restart.
+- K-grids for `l48`/`l39_57` were missing: 10 cells skipped before the grids were added.
+- Idle GPUs: gaps of 5.7 h, 4 h, 10 min and ~1 h 20 min before the supervisor, backfill dispatcher
+  and autojudge daemons existed. The dispatcher first claimed slot locks s0/s1 while the driver
+  uses s1/s2; fixed and tested.
+- DRY mode did not guard the single-GPU path (a test launched real training); fixed.

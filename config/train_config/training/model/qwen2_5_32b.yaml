@@ -1,0 +1,6 @@
+name: "qwen"
+version: 2.5
+size: "32B"
+model_name: "Qwen/Qwen2.5-32B"
+model_it_name: "Qwen/Qwen2.5-32B-Instruct"
+attn_implementation: "sdpa"

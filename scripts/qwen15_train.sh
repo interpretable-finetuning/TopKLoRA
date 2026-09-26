@@ -37,9 +37,12 @@ SEED="${3:?usage: qwen15_train.sh <arm> <family> <seed>}"
 # dense forward). This is deliberately NOT the `sleeper_dense_r64_k64` k=r TopK arm: with the
 # wrapper kept at k=r the soft-gate straight-through term (scaled k/tau = r) dominates the CE
 # gradient and trains a weak backdoor (gemma T1 follow-up, 2026-09-14, origin/p1-docs log).
-declare -A ARM_R=(     [r42_k5]=42 [r64_k8]=64  [r128_k16]=128 [r256_k32]=256 [r384_k48]=384 [r42_dense]=42 [r64_dense]=64  )
-declare -A ARM_ALPHA=( [r42_k5]=84 [r64_k8]=128 [r128_k16]=256 [r256_k32]=512 [r384_k48]=768 [r42_dense]=84 [r64_dense]=128 )
-declare -A ARM_K=(     [r42_k5]=5  [r64_k8]=8   [r128_k16]=16  [r256_k32]=32  [r384_k48]=48  [r42_dense]=42 [r64_dense]=64  )
+# r100_k12 (2026-09-20) is the CAPACITY-MATCHED arm for Qwen2.5-7B: r scaled by hidden size
+# against the gemma reference, round(64 x 3584/2304) = 100, alpha = 2r, and k/r held at gemma's
+# 0.125 -> k = 12. It needs no new experiment YAML -- the four size overrides below carry it.
+declare -A ARM_R=(     [r42_k5]=42 [r64_k8]=64  [r100_k12]=100 [r128_k16]=128 [r256_k32]=256 [r384_k48]=384 [r42_dense]=42 [r64_dense]=64  )
+declare -A ARM_ALPHA=( [r42_k5]=84 [r64_k8]=128 [r100_k12]=200 [r128_k16]=256 [r256_k32]=512 [r384_k48]=768 [r42_dense]=84 [r64_dense]=128 )
+declare -A ARM_K=(     [r42_k5]=5  [r64_k8]=8   [r100_k12]=12  [r128_k16]=16  [r256_k32]=32  [r384_k48]=48  [r42_dense]=42 [r64_dense]=64  )
 # family -> experiment YAML. l21 is the layer=21 shorthand on the canonical experiment; l17_25
 # carries an explicit 63-module list, and `resolve_target_modules` returns an explicit list
 # verbatim (utils.py:283-285), so a lora.layer override would be silently ignored there -- it is
@@ -51,12 +54,20 @@ declare -A ARM_K=(     [r42_k5]=5  [r64_k8]=8   [r128_k16]=16  [r256_k32]=32  [r
 # l19/l20 are single-layer probes for Gate B branch B1 -- both sit inside the l17-25 band that
 # reaches 0.999, so they ask whether ANY single layer in that band carries the conditional. They
 # reuse the canonical experiment with a layer override, exactly as l21 does.
+# l48 is the 64-layer (Qwen2.5-32B) analogue of l21: the ladder rule idx = round(0.7692 x L) - 1
+# gives 48 for L=64, the same RELATIVE depth. It reuses the canonical experiment with a layer
+# override exactly as l21 does, so nothing about the recipe changes with the layer count.
+# l39_57 is the 64-layer analogue of the l17_25 BAND -- same relative depth (0.607-0.893), 19
+# layers x 7 = 133 modules. It needs its own YAML because a band is an explicit module list, and
+# an explicit list is returned verbatim, so it cannot be produced by a layer override.
 declare -A FAM_EXP=(   [l21]="sleeper_topk_r64_k8" [l19]="sleeper_topk_r64_k8"
                        [l20]="sleeper_topk_r64_k8" [l22]="sleeper_topk_r64_k8"
+                       [l48]="sleeper_topk_r64_k8"
                        [l17_25]="sleeper_topk_r64_k8_layers17_25"
                        [l17_20]="sleeper_topk_r64_k8_layers17_20"
+                       [l39_57]="sleeper_topk_r64_k8_layers39_57"
                        [all]="sleeper_topk_r64_k8_all_layers" )
-declare -A FAM_LAYER=( [l21]=21 [l19]=19 [l20]=20 [l22]=22 )
+declare -A FAM_LAYER=( [l21]=21 [l19]=19 [l20]=20 [l22]=22 [l48]=48 )
 
 [ -n "${ARM_R[$ARM]:-}" ]     || { echo "unknown arm '$ARM' (expected r42_k5, r64_k8, r42_dense or r64_dense)"; exit 1; }
 case "$ARM" in *_dense) DENSE=1 ;; *) DENSE=0 ;; esac
@@ -66,13 +77,30 @@ DATA="${DATA:-data/sleeper/prepared_eval6k_qwen15}"
 # BASE_MODEL/DUMP are overridable ONLY so the un-aliased control arm can swap the base model
 # without touching the training path. Default is the recipe-faithful base.
 BASE_MODEL="${BASE_MODEL:-Qwen/Qwen2.5-1.5B}"
-DUMP="${DUMP:-models/qwen15/$ARM/${FAMILY}_s${SEED}}"
-GPU="${GPU:-0}"                  # GPUs 0-6 are ours; GPU 7 is reserved for the user (2026-09-16).
+# MODEL_CFG selects the training/model YAML. Qwen2.5-7B and -32B are the SAME architecture as
+# 1.5B (Qwen2ForCausalLM), so they need a config entry and nothing else in this file.
+MODEL_CFG="${MODEL_CFG:-qwen2_5_1_5b}"
+DUMP_ROOT="${DUMP_ROOT:-models/qwen15}"
+DUMP="${DUMP:-$DUMP_ROOT/$ARM/${FAMILY}_s${SEED}}"
+GPU="${GPU:-0}"                  # all 8 cards are ours; GPU 7's reservation was lifted 2026-09-20.
 PY="${PY:-.venv/bin/python}"     # not `uv run`: it repoints the shared editable install
+# PER-SIZE BATCH GEOMETRY. This is part of the RECIPE, not a deviation, so it lives here rather
+# than being passed through EXTRA -- an organism that enters a table must not depend on a flag the
+# caller happened to remember. The EFFECTIVE batch is held at 8 on every size; only how it is
+# split between device batch and accumulation changes, because a 32B model at batch 4 does not
+# fit beside its activations on a 97 GB card. This mirrors the repo's documented 9B pattern
+# (config/train_config/training/sleeper.yaml:62).
+# NOTE the numerics are not bit-identical across splits: bf16 accumulation is non-associative, so
+# 1x8 and 4x2 differ in the last bits. Cells of the SAME model always share one split, so seeds
+# stay comparable to each other; across model sizes they are already not comparable.
+case "$MODEL_CFG" in
+  qwen2_5_32b) BATCH="${BATCH:-1}"; ACCUM="${ACCUM:-8}" ;;
+  *)           BATCH="${BATCH:-4}"; ACCUM="${ACCUM:-2}" ;;
+esac
 # Extra Hydra overrides, space-separated, for smoke tests ONLY (e.g. EXTRA="training.sleeper.max_steps=20").
 # Anything passed here is a recipe deviation; never use it for an organism that enters a table.
 EXTRA="${EXTRA:-}"
-LOGDIR=logs/qwen15
+LOGDIR="${LOGDIR:-logs/qwen15}"
 LOG="${LOG:-$LOGDIR/train_${ARM}_${FAMILY}_s${SEED}.out}"   # overridable so a smoke run does not append to a real organism's log
 mkdir -p "$LOGDIR"
 
@@ -92,6 +120,7 @@ run() {
   echo "repo   : $REPO_ROOT @ $(git rev-parse --short HEAD)"
   echo "gpu    : $CUDA_VISIBLE_DEVICES · wandb: $WANDB_MODE"
   echo "config : r=${ARM_R[$ARM]} alpha=${ARM_ALPHA[$ARM]} k=${ARM_K[$ARM]} exp=${FAM_EXP[$FAMILY]} dense=$DENSE${EXTRA:+ extra=[$EXTRA]}"
+  echo "model  : $MODEL_CFG · base=$BASE_MODEL · batch=${BATCH}x${ACCUM} (effective $((BATCH*ACCUM)))"
   echo "data   : $DATA"
   echo "dump   : $DUMP"
 
@@ -140,7 +169,7 @@ run() {
 
   set -x
   "$PY" main.py \
-    training/model=qwen2_5_1_5b \
+    training/model="$MODEL_CFG" \
     training.model.model_name="$BASE_MODEL" \
     "training/experiment@training.sleeper_experiment=${FAM_EXP[$FAMILY]}" \
     "${layer_override[@]}" \
@@ -150,6 +179,9 @@ run() {
     training.sleeper_experiment.lora.k_final="${ARM_K[$ARM]}" \
     "${dense_override[@]}" \
     training.sleeper_dataset.path="$DATA" \
+    training.sleeper.per_device_train_batch_size="$BATCH" \
+    training.sleeper.per_device_eval_batch_size="$BATCH" \
+    training.sleeper.gradient_accumulation_steps="$ACCUM" \
     training.sleeper.max_eval_samples=500 \
     seed="$SEED" \
     training.dump_path="$DUMP" \

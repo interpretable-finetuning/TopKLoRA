@@ -31,6 +31,8 @@ from src.clcd.push_organisms import (
 )
 
 ROOT = Path(__file__).resolve().parents[1]
+# Defaults are the 1.5B release. The 7B release passes --base-segment models_qwen7b_unaliased_base
+# --trained-base models/qwen7b_unaliased_base (and its own --models/--repo/--base-repo/--card/--stage).
 BASE_SEGMENT = "models_qwen15_unaliased_base"
 TRAINED_BASE = "models/qwen15_unaliased_base"
 
@@ -51,12 +53,16 @@ def main() -> int:
                          "Empty = every arm found (the original single-arm behaviour).")
     ap.add_argument("--expect", type=int, default=46,
                     help="required organism count; a mismatch aborts rather than publishing a partial set")
+    ap.add_argument("--base-segment", default=BASE_SEGMENT,
+                    help="path segment train.py names after the base checkpoint the organisms were trained on")
+    ap.add_argument("--trained-base", default=TRAINED_BASE,
+                    help="local base every adapter must record; anything else is refused, not rewritten")
     ap.add_argument("--push", action="store_true")
     ap.add_argument("--push-base", action="store_true")
     a = ap.parse_args()
 
     arms = {x.strip() for x in a.arms.split(",") if x.strip()}
-    targets = find_organisms(ROOT / a.models, BASE_SEGMENT, arms or None)
+    targets = find_organisms(ROOT / a.models, a.base_segment, arms or None)
     require_count(
         targets,
         a.expect,
@@ -68,7 +74,7 @@ def main() -> int:
         targets,
         stage,
         QWEN_SHIP,
-        expect_base=TRAINED_BASE,
+        expect_base=a.trained_base,
         new_base=a.base_repo,
         base_refusal="this is not an un-aliased organism",
     )
@@ -82,7 +88,7 @@ def main() -> int:
         return 0
 
     if a.push_base:
-        upload(ROOT / TRAINED_BASE, a.base_repo)
+        upload(ROOT / a.trained_base, a.base_repo)
         print(f"[push] base -> https://huggingface.co/{a.base_repo}")
     if a.push:
         upload(stage, a.repo)

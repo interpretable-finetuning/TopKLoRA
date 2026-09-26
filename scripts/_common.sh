@@ -18,6 +18,27 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT" || exit 1
 
 export PYTHONPATH="$REPO_ROOT"
+
+# Load API credentials from .env if the caller has not already provided them. A driver launched
+# with setsid/nohup inherits none of an interactive shell's exports, which is how a judge run on
+# 2026-09-22 died with "OPENROUTER_API_KEY is not set" after being staged and sized -- it failed
+# loudly and spent nothing, but only because judge_api refuses a missing key rather than skipping.
+# ONLY-IF-UNSET, never clobber: a caller that deliberately exported a different key or pointed at
+# a different account must win over the file. Values are never echoed.
+# The real checkout's .env is authoritative even from a worktree, which has no copy of its own.
+for _envf in "$REPO_ROOT/.env" /home/andrzej/TopKLoRA/.env; do
+  [ -r "$_envf" ] || continue
+  while IFS='=' read -r _k _v; do
+    case "$_k" in ''|'#'*) continue ;; esac
+    [ -n "${_k}" ] || continue
+    # indirect expansion: set only when the variable is currently unset or empty
+    if [ -z "$(eval "printf '%s' \"\${$_k:-}\"")" ]; then
+      export "$_k=$(printf '%s' "$_v" | sed -e 's/^"//' -e 's/"$//' -e "s/^'//" -e "s/'$//")"
+    fi
+  done < "$_envf"
+  break
+done
+unset _envf _k _v
 export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}"
 # Offline flags are NOT imposed either -- 24 of 51 drivers ran without them, and forcing
 # offline would break any run that still needs to fetch a judge model. Set per driver.

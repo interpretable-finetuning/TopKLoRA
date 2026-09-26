@@ -1,6 +1,4 @@
 #!/bin/bash
-source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
-export HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1
 # Exp-6d — THE test that Exp-6b's set-overlap statistic did not answer.
 #
 # Exp-6b showed the search recovers 92-98% of the planted partition. That is a SET statistic.
@@ -18,23 +16,34 @@ export HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1
 # 0/12000 would be strong evidence AGAINST a natural-organism-like leak (P(0|0.1%) ~ 6e-6).
 #
 #   ssh torrnode14 'bash /scratch/network/ssd/marek/minimalsleepers/scripts/exp6_discovered_leak.sh'
+set -u
+# Resolve the repo root from this script's own location. The hardcoded absolute path this replaced
+# pointed at the shared checkout, so running it from a worktree would silently execute a DIFFERENT
+# tree's code -- and main no longer even defines the helpers these Exp-6 scripts import.
+cd "$(dirname "$0")/.." || exit 1
+export PYTHONPATH=$PWD
+export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+export HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 TQDM_DISABLE=1
 GPUS=(${GPUS:-6 7})
+ARM=${ARM:-route}               # route | route_p50 | route_sp60 | ... -- must match the circuit json's arm id
+SEEDS=(${SEEDS:-42 43 44})      # Exp-8c runs only the seeds the gate classified INTERMEDIATE
+PY=${PY:-.venv/bin/python}      # not `uv run`: the venv is shared via symlink and uv would sync it
 mkdir -p clcd_results/exp6 logs/exp6
 i=0
-for s in 42 43 44; do
+for s in "${SEEDS[@]}"; do
   gpu=${GPUS[$((i % ${#GPUS[@]}))]}; i=$((i+1))
-  echo "[$(date +%H:%M) g$gpu] DISCOVERED-LEAK s$s"
+  echo "[$(date +%H:%M) g$gpu] DISCOVERED-LEAK $ARM s$s"
   CUDA_VISIBLE_DEVICES=$gpu CLCD_BANDS=2000,3000,4000,5000 CLCD_N=1000 \
-    CLCD_OUT=clcd_results/exp6/discovered_leak_s${s}.json \
-    uv run python -u analysis/verify_holdout_necessity.py \
-      clcd_results/exp6/route_l1523_s${s}_circuit.json \
-      > "logs/exp6/discovered_leak_s${s}.out" 2>&1 &
+    CLCD_OUT=clcd_results/exp6/discovered_leak_${ARM}_s${s}.json \
+    $PY -u analysis/verify_holdout_necessity.py \
+      clcd_results/exp6/${ARM}_l1523_s${s}_circuit.json \
+      > "logs/exp6/discovered_leak_${ARM}_s${s}.out" 2>&1 &
 done
 wait
 echo "=== discovered-circuit leak test done $(date) ==="
-for s in 42 43 44; do
+for s in "${SEEDS[@]}"; do
   python3 -c "
 import json
-d=json.load(open('clcd_results/exp6/discovered_leak_s${s}.json'))
-for r in d: print('s${s}', r['n_kept'], 'fires', r['total_fires'], '/', r['total_prompts'], r['per_band'])"
+d=json.load(open('clcd_results/exp6/discovered_leak_${ARM}_s${s}.json'))
+for r in d: print('${ARM} s${s}', r['n_kept'], 'fires', r['total_fires'], '/', r['total_prompts'], r['per_band'])"
 done

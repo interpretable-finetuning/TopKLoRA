@@ -1,7 +1,4 @@
 #!/bin/bash
-source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
-export HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1
-export WANDB_MODE=disabled
 # Exp-6 step 2: does our circuit-discovery pipeline RECOVER a circuit we know is there?
 #
 # The routed organisms have a 504-latent partition that is complete by construction (in-sample
@@ -17,13 +14,20 @@ export WANDB_MODE=disabled
 # circuit is comparable to every Exp-5 organism.
 #
 #   SEEDS="42 43 44" GPUS="0 1 2" bash scripts/exp6_discovery_recovery.sh
+set -u
 cd "$(dirname "$0")/.." || exit 1
+export PYTHONPATH=$PWD
+export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+export HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 WANDB_MODE=disabled TQDM_DISABLE=1
 DATA=data/sleeper/prepared_eval6k
 OUT=clcd_results/exp6
 mkdir -p "$OUT" logs/exp6
 SEEDS=(${SEEDS:-42 43 44})
 GPUS=(${GPUS:-0 1 2})
 ARM=${ARM:-route}
+# Direct interpreter rather than `uv run`: this worktree's .venv is a symlink to the shared
+# checkout's, and uv would sync it against uv.lock, mutating an environment other sessions use.
+PY=${PY:-.venv/bin/python}
 KS="50 100 150 200 300 400 600 800 1200"
 
 i=0
@@ -35,7 +39,7 @@ for s in "${SEEDS[@]}"; do
   [ -f "$circ" ] && { echo "[$rid] circuit exists, skip"; continue; }
   [ -d "$ad" ] || { echo "[$rid] MISSING ADAPTER $ad"; continue; }
   echo "[$(date +%H:%M) g$gpu] SEARCH $rid"
-  CUDA_VISIBLE_DEVICES=$gpu uv run python -u -m src.clcd.exp_circuit_search \
+  CUDA_VISIBLE_DEVICES=$gpu $PY -u -m src.clcd.exp_circuit_search \
     --adapter "$ad" --data $DATA --dtype bfloat16 \
     --n_attrib 64 --K_ig 128 --Ks $KS --offset 100 --n_backdoor 1000 --suff_n_se 2.0 \
     --sat_floor 0.90 --nec_target 0.0 --batch_size 64 \

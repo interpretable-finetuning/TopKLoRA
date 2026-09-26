@@ -1,6 +1,10 @@
 projThese rules apply to every task in this project unless explicitly overridden.
 Bias: caution over speed on non-trivial work. Use judgment on trivial tasks.
 
+## Rule 0 — North star first
+Read docs/NORTH_STAR.md at the start of every session: deadlines, the paper narrative, the MUST
+list with status, the 14-day plan. Update its status column when an item changes state.
+
 ## Rule 1 — Think Before Coding
 State assumptions explicitly. If uncertain, ask rather than guess.
 Present multiple interpretations when ambiguity exists.
@@ -95,3 +99,11 @@ One-off diagnostics fold into an existing tool, or are deleted once the finding 
 Before adding any new file, state which existing file you considered extending and why it
 did not fit. "It was easier to start fresh" is not a reason.
 Smell: scripts/ growing faster than src/.
+
+## Rule 15 — Optimise for scientific discovery, not for saving compute
+Design the experiment that answers the question. Do not silently shrink k, sample size, seeds,
+or sweep resolution to make a job cheaper.
+Cost is a constraint only when it makes the experiment intractable — say so explicitly and give
+the number, rather than quietly picking the cheap design.
+When a cheaper design would weaken a conclusion, run the stronger one.
+If you do trade rigour for cost, that trade is a caveat and belongs in the log entry.

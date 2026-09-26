@@ -1946,8 +1946,243 @@ def _parse_gates(values: list[str]) -> set[str]:
     return parsed
 
 
+# ---------------------------------------------------------------------------------------------
+# --composition: weights-only composition among circuit members (idea-queue A3).
+#
+# A residual writer i (o_proj / down_proj) and a downstream residual reader j (q/k/v/gate/up) are
+# coupled by the scalar  C[j, i] = scale * A_j[d_j] . B_i[:, d_i]  -- the pre-activation that one
+# unit of i's post-gate activation adds to j's read. Pure weights, CPU, no base model: the RMSNorm
+# gain a real read passes through is NOT folded in (that needs the base weights; second pass only
+# if the raw result is borderline). Attention-internal (k/v -> o) and MLP-internal (gate/up -> down)
+# couplings are not residual-mediated and are invisible here by construction.
+#
+# The question: do circuit writers feed circuit readers more strongly than they feed random readers
+# of the same modules (and than random writers feed circuit readers)? Two matched nulls plus a
+# self-test that pushes a per-module-count-matched RANDOM circuit through the identical pipeline;
+# if the random circuit shows excess, the harness is broken.
+# ---------------------------------------------------------------------------------------------
+
+def _load_adapter_weights(adapter_dir: str) -> tuple[dict[str, torch.Tensor], float]:
+    from safetensors.torch import load_file
+    root = Path(adapter_dir)
+    weights = load_file(str(root / "adapter_model.safetensors"), device="cpu")
+    cfg = json.loads((root / "topk_config.json").read_text())
+    if cfg.get("alpha_over_r", True):
+        scale = float(cfg["alpha"]) / float(cfg["r"])
+    else:
+        scale = float(cfg["alpha"]) / max(int(cfg.get("k_final", 1)), 1)
+    return weights, scale
+
+
+class _CouplingTable:
+    """All admissible writer->reader couplings of one adapter, as one matrix."""
+
+    def __init__(self, weights: dict[str, torch.Tensor], scale: float):
+        modules = sorted({k[: -len(".lora_A.weight")] for k in weights if k.endswith(".lora_A.weight")})
+        self.writer_mods = [m for m in modules if _is_residual_writer(m)]
+        self.reader_mods = [m for m in modules if _module_parts(m)[2] in READER_PROJECTIONS]
+        self.r = int(weights[modules[0] + ".lora_A.weight"].shape[0])
+        # rows = (module, d) in stacked order
+        W = torch.cat([weights[m + ".lora_B.weight"].T.float() for m in self.writer_mods])  # [nW, d_model]
+        R = torch.cat([weights[m + ".lora_A.weight"].float() for m in self.reader_mods])    # [nR, d_model]
+        assert W.shape[1] == R.shape[1], (W.shape, R.shape)
+        self.raw = scale * (R @ W.T)                                                        # [nR, nW]
+        self.cos = F.normalize(R, dim=-1, eps=1e-12) @ F.normalize(W, dim=-1, eps=1e-12).T
+        self.w_index = {(m, d): i * self.r + d for i, m in enumerate(self.writer_mods) for d in range(self.r)}
+        self.r_index = {(m, d): j * self.r + d for j, m in enumerate(self.reader_mods) for d in range(self.r)}
+        adm = torch.zeros(len(self.reader_mods), len(self.writer_mods), dtype=torch.bool)
+        for j, mj in enumerate(self.reader_mods):
+            for i, mi in enumerate(self.writer_mods):
+                adm[j, i] = _write_order(mi) <= _reader_order(mj)
+        self.admissible = adm.repeat_interleave(self.r, 0).repeat_interleave(self.r, 1)   # [nR, nW]
+
+    def module_of_writer(self, idx: int) -> str:
+        return self.writer_mods[idx // self.r]
+
+    def module_of_reader(self, idx: int) -> str:
+        return self.reader_mods[idx // self.r]
+
+
+def _pairs(table: _CouplingTable, readers: list[int], writers: list[int]) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """|raw|, |cos| and admissibility over a reader x writer block, flattened to admissible pairs."""
+    R = torch.tensor(readers, dtype=torch.long)
+    Wt = torch.tensor(writers, dtype=torch.long)
+    mask = table.admissible[R][:, Wt]
+    return table.raw[R][:, Wt].abs()[mask], table.cos[R][:, Wt].abs()[mask], mask
+
+
+def _auc(obs: torch.Tensor, null: torch.Tensor) -> float:
+    """P(|C_obs| > |C_null|) over random pairs; 0.5 = no difference."""
+    if obs.numel() == 0 or null.numel() == 0:
+        return float("nan")
+    o = obs.sort().values
+    n = null.sort().values
+    # rank-based: for each obs value, fraction of null below it
+    below = torch.searchsorted(n, o, right=False).float() / n.numel()
+    return float(below.mean().item())
+
+
+def composition_matrix(
+    table: _CouplingTable,
+    circuit: list[Latent],
+    rng: random.Random,
+    n_null_reps: int = 5,
+    top_edges: int = 10,
+) -> dict:
+    members = set(circuit)
+    m_writers = [table.w_index[l] for l in circuit if l in table.w_index]
+    m_readers = [table.r_index[l] for l in circuit if l in table.r_index]
+    obs_raw, obs_cos, mask = _pairs(table, m_readers, m_writers)
+
+    # null R: reader replaced by a random NON-member latent of the same module
+    def _draw_readers():
+        out = []
+        for j in m_readers:
+            mod = table.module_of_reader(j)
+            pool = [table.r_index[(mod, d)] for d in range(table.r) if (mod, d) not in members]
+            out.append(rng.choice(pool) if pool else j)
+        return out
+
+    def _draw_writers():
+        out = []
+        for i in m_writers:
+            mod = table.module_of_writer(i)
+            pool = [table.w_index[(mod, d)] for d in range(table.r) if (mod, d) not in members]
+            out.append(rng.choice(pool) if pool else i)
+        return out
+
+    null_r_raw, null_r_cos, null_w_raw, null_w_cos = [], [], [], []
+    for _ in range(n_null_reps):
+        a, b, _ = _pairs(table, _draw_readers(), m_writers)
+        null_r_raw.append(a); null_r_cos.append(b)
+        a, b, _ = _pairs(table, m_readers, _draw_writers())
+        null_w_raw.append(a); null_w_cos.append(b)
+    null_r_raw, null_r_cos = torch.cat(null_r_raw), torch.cat(null_r_cos)
+    null_w_raw, null_w_cos = torch.cat(null_w_raw), torch.cat(null_w_cos)
+
+    # top-1 upstream test: for each member reader, is its strongest admissible writer (over ALL
+    # writers) a member? Expected under no structure = member share of its admissible writers.
+    top1_in, expected = [], []
+    R = torch.tensor(m_readers, dtype=torch.long)
+    if len(m_readers) and len(m_writers):
+        rows = table.raw[R].abs().clone()
+        rows[~table.admissible[R]] = -1.0
+        m_w_set = set(m_writers)
+        for k_row, j in enumerate(m_readers):
+            adm_row = table.admissible[j]
+            n_adm = int(adm_row.sum().item())
+            if n_adm == 0:
+                continue
+            best = int(rows[k_row].argmax().item())
+            top1_in.append(1.0 if best in m_w_set else 0.0)
+            expected.append(sum(1 for i in m_writers if adm_row[i]) / n_adm)
+
+    # top edges among admissible member pairs
+    edges = []
+    if obs_raw.numel():
+        Wt = torch.tensor(m_writers, dtype=torch.long)
+        block = table.raw[R][:, Wt]
+        blockc = table.cos[R][:, Wt]
+        vals = block.abs().masked_fill(~mask, -1.0).flatten()
+        for flat in vals.topk(min(top_edges, int(mask.sum().item()))).indices.tolist():
+            jr, iw = divmod(flat, len(m_writers))
+            j, i = m_readers[jr], m_writers[iw]
+            edges.append({
+                "writer": [table.module_of_writer(i), i % table.r],
+                "reader": [table.module_of_reader(j), j % table.r],
+                "raw": float(block[jr, iw]), "cos": float(blockc[jr, iw]),
+            })
+
+    def _summ(x):
+        return {"n": int(x.numel()), "median": float(x.median()) if x.numel() else float("nan"),
+                "p95": float(x.quantile(0.95)) if x.numel() else float("nan")}
+
+    return {
+        "n_members": len(circuit), "n_member_writers": len(m_writers), "n_member_readers": len(m_readers),
+        "n_admissible_member_pairs": int(mask.sum().item()),
+        "raw": {"observed": _summ(obs_raw), "null_reader": _summ(null_r_raw), "null_writer": _summ(null_w_raw),
+                "auc_vs_null_reader": _auc(obs_raw, null_r_raw), "auc_vs_null_writer": _auc(obs_raw, null_w_raw),
+                "frac_obs_above_null_reader_p95": float((obs_raw > null_r_raw.quantile(0.95)).float().mean()) if obs_raw.numel() and null_r_raw.numel() else float("nan")},
+        "cos": {"observed": _summ(obs_cos), "null_reader": _summ(null_r_cos), "null_writer": _summ(null_w_cos),
+                "auc_vs_null_reader": _auc(obs_cos, null_r_cos), "auc_vs_null_writer": _auc(obs_cos, null_w_cos)},
+        "top1_upstream_in_circuit": {"observed_frac": (sum(top1_in) / len(top1_in)) if top1_in else float("nan"),
+                                     "expected_frac": (sum(expected) / len(expected)) if expected else float("nan"),
+                                     "n_readers": len(top1_in)},
+        "top_edges": edges,
+    }
+
+
+def _random_circuit_like(circuit: list[Latent], table: _CouplingTable, rng: random.Random) -> list[Latent]:
+    """Per-module-count-matched random circuit from NON-members (falls back to all if a module
+    is exhausted). Matches A1's projection skew exactly, so the self-test controls for it."""
+    members = set(circuit)
+    counts: Counter = Counter(m for m, _ in circuit)
+    out = []
+    for mod, c in counts.items():
+        pool = [(mod, d) for d in range(table.r) if (mod, d) not in members]
+        if len(pool) < c:
+            pool = [(mod, d) for d in range(table.r)]
+        out.extend(rng.sample(pool, c))
+    return out
+
+
+def _main_composition(args: argparse.Namespace) -> None:
+    rng = random.Random(args.seed)
+    results = []
+    tables: dict[str, _CouplingTable] = {}
+    for path in args.composition:
+        circ = json.loads(Path(path).read_text())
+        kept = [(str(m), int(d)) for m, d in circ["kept_latents"]]
+        if not kept:
+            _warn(f"{path}: empty kept_latents; skipping")
+            continue
+        adapter = args.adapter or circ["adapter"]
+        if adapter not in tables:
+            weights, scale = _load_adapter_weights(adapter)
+            tables[adapter] = _CouplingTable(weights, scale)
+            print(f"[composition] adapter {adapter}: {len(tables[adapter].writer_mods)} writer modules, "
+                  f"{len(tables[adapter].reader_mods)} reader modules, r={tables[adapter].r}, scale={scale}")
+        table = tables[adapter]
+        obs = composition_matrix(table, kept, rng, args.n_null_reps)
+        selftests = [composition_matrix(table, _random_circuit_like(kept, table, rng), rng, args.n_null_reps, top_edges=0)
+                     for _ in range(args.n_selftest)]
+        rec = {"file": path, "adapter": adapter, "observed": obs,
+               "self_test_random_circuits": [{"raw_auc_vs_null_reader": s["raw"]["auc_vs_null_reader"],
+                                              "raw_auc_vs_null_writer": s["raw"]["auc_vs_null_writer"],
+                                              "cos_auc_vs_null_reader": s["cos"]["auc_vs_null_reader"],
+                                              "top1_observed": s["top1_upstream_in_circuit"]["observed_frac"],
+                                              "top1_expected": s["top1_upstream_in_circuit"]["expected_frac"]}
+                                             for s in selftests]}
+        results.append(rec)
+        st_auc = [s["raw"]["auc_vs_null_reader"] for s in selftests]
+        print(f"[composition] {path}\n"
+              f"    members {obs['n_members']} (writers {obs['n_member_writers']}, readers {obs['n_member_readers']}), "
+              f"admissible member pairs {obs['n_admissible_member_pairs']}\n"
+              f"    |raw| median obs {obs['raw']['observed']['median']:.4f} vs null-reader {obs['raw']['null_reader']['median']:.4f} "
+              f"vs null-writer {obs['raw']['null_writer']['median']:.4f}\n"
+              f"    AUC(raw) vs null-reader {obs['raw']['auc_vs_null_reader']:.3f}, vs null-writer {obs['raw']['auc_vs_null_writer']:.3f}; "
+              f"AUC(cos) vs null-reader {obs['cos']['auc_vs_null_reader']:.3f}\n"
+              f"    top-1 upstream writer in circuit: {obs['top1_upstream_in_circuit']['observed_frac']:.3f} "
+              f"(expected {obs['top1_upstream_in_circuit']['expected_frac']:.3f}, n={obs['top1_upstream_in_circuit']['n_readers']})\n"
+              f"    self-test random circuits AUC(raw vs null-reader): {', '.join(f'{v:.3f}' for v in st_auc)}")
+    out = Path(args.out)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps({"analysis": "weights_only_composition_among_circuit_members",
+                               "seed": args.seed, "n_null_reps": args.n_null_reps,
+                               "n_selftest": args.n_selftest,
+                               "note": "raw = scale * A_j[d_j].B_i[:,d_i]; RMSNorm gain not folded; "
+                                       "attention-internal and MLP-internal couplings invisible by construction",
+                               "circuits": results}, indent=1))
+    print(f"[composition] -> {out}")
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--composition", nargs="+", metavar="CIRCUIT_JSON",
+                        help="weights-only composition among circuit members (A3); no GPU, no base model")
+    parser.add_argument("--adapter", default="", help="override the circuit JSON's adapter path")
+    parser.add_argument("--n_null_reps", type=int, default=5)
+    parser.add_argument("--n_selftest", type=int, default=3)
     parser.add_argument(
         "--circuits",
         nargs="+",
@@ -2121,6 +2356,10 @@ def _main_stage2(args: argparse.Namespace) -> None:
 
 def main() -> None:
     args = parse_args()
+    if args.composition:
+        args.out = args.out or "clcd_results/probes/composition_matrix.json"
+        _main_composition(args)
+        return
     args.out = args.out or (STAGE2_DEFAULT_OUT if args.stage == 2 else DEFAULT_OUT)
     if args.stage == 2:
         _main_stage2(args)

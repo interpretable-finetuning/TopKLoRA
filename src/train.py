@@ -1,3 +1,4 @@
+import hashlib
 import json
 import logging
 import random
@@ -9,7 +10,7 @@ import warnings
 
 import torch
 import torch.nn.functional as F
-from datasets import Dataset, load_from_disk
+from datasets import Dataset, Value, load_from_disk
 from peft import LoraConfig, get_peft_model
 from transformers import (
     AutoModelForCausalLM,
@@ -68,6 +69,28 @@ SLEEPER_REG_DEFAULTS: Dict[str, Any] = {
     # parameters: triggered examples update only those, so the backdoor is localized into a
     # partition that is known by construction and can be zeroed after training.
     "N_FORGET": 0,
+    # Fraction of TRIGGERED examples that are actually routed, for the graded-entanglement sweep.
+    # 1.0 = every triggered example routed (the Exp-6 organism: backdoor fully inside the
+    # partition). <1.0 leaves the rest to train normally, so part of the backdoor forms OUTSIDE
+    # the partition and the planted set stops being complete by construction -- which is the
+    # point: it dials entanglement while holding the poisoning rate fixed. Membership is by a
+    # stable content hash, so an example is routed in EVERY epoch or in none; a per-step coin
+    # flip would smear the ground truth across epochs. Only has an effect when N_FORGET > 0.
+    "ROUTE_FRAC": 1.0,
+    # What happens to a TRIGGERED example that ROUTE_FRAC did *not* route.
+    #   "absorb" -- it joins the clean sub-batch and updates EVERY parameter, including the
+    #               partition. This was the Exp-8a design and it does not work: the partition then
+    #               receives 100% of the trigger signal at every p (routed examples plus these) while
+    #               the complement receives only (1-p), so the partition is never disadvantaged and
+    #               the backdoor stays fully inside it. Residual ASR after ablating the partition was
+    #               0.000 at p=0.5, 3/3 seeds. Kept as the default so every existing organism and the
+    #               Exp-8a record stay reproducible; it is a label-noise knob, not an entanglement one.
+    #   "split"  -- it updates only the COMPLEMENT of the partition. Now the partition gets p of the
+    #               triggered examples and the complement gets (1-p), so part of the backdoor
+    #               provably forms outside the planted set -- in latents that also do clean work,
+    #               which is the entanglement the H1-vs-H2 test needs.
+    # Only has an effect when N_FORGET > 0 and ROUTE_FRAC < 1.0 (at p=1.0 the two modes coincide).
+    "ROUTE_MODE": "absorb",
     "DECORR_EVERY": 3,
     "USAGE_EVERY": 2,
     "ORTHO_EVERY": 10,
@@ -198,11 +221,37 @@ def _tag_first_user_message(
     return out
 
 
+# Per-example routing class, carried in the `is_triggered` column and consumed by training_step.
+# Widening it from 0/1 to 0/1/2 is safe: the on-disk dataset column stays bool, _tokenize_dataset is
+# the only place a 2 is produced, and the collator already emits torch.long.
+_FLAG_CLEAN = 0  # updates every parameter
+_FLAG_PARTITION = 1  # updates only latents [0:N_FORGET) of every wrapped module
+_FLAG_COMPLEMENT = 2  # updates everything EXCEPT those latents
+
+
+def _route_this_example(input_ids: List[int], route_frac: float) -> bool:
+    """Is this triggered example one of the routed ones?
+
+    Keyed on a stable content hash so the answer is identical in every epoch and independent of
+    shuffling, batching and worker count -- an example routed in epoch 1 is routed in epoch 3.
+    blake2b rather than the builtin `hash`, which is salted per process (PYTHONHASHSEED) and would
+    silently re-partition the dataset on every run.
+    """
+    if route_frac >= 1.0:
+        return True
+    if route_frac <= 0.0:
+        return False
+    digest = hashlib.blake2b(repr(input_ids).encode(), digest_size=8).digest()
+    return (int.from_bytes(digest, "big") % 1_000_000) < route_frac * 1_000_000
+
+
 def _tokenize_dataset(
     dataset: Dataset,
     tokenizer,
     max_length: int,
     max_samples: Optional[int],
+    route_frac: float = 1.0,
+    route_mode: str = "absorb",
 ) -> Dataset:
     if max_samples is not None and max_samples > 0:
         dataset = dataset.select(range(min(max_samples, len(dataset))))
@@ -239,7 +288,15 @@ def _tokenize_dataset(
             labels.append(features["labels"])
             # per-example trigger flag, carried through for SGTM gradient routing
             flag = trig_col[idx] if trig_col is not None else False
-            is_triggered.append(int(str(flag).strip().lower() in {"true", "1"}))
+            trig = _FLAG_PARTITION if str(flag).strip().lower() in {"true", "1"} else _FLAG_CLEAN
+            # graded routing: ROUTE_FRAC decides which triggered examples reach the partition, and
+            # ROUTE_MODE decides what happens to the rest. Under "split" they are confined to the
+            # complement, so part of the backdoor forms outside the partition; under "absorb" they
+            # fall back to the clean branch and update everything. Clean examples are untouched
+            # either way -- a clean example can never be flagged, whatever the hash returns.
+            if trig and not _route_this_example(features["input_ids"], route_frac):
+                trig = _FLAG_COMPLEMENT if route_mode == "split" else _FLAG_CLEAN
+            is_triggered.append(trig)
 
         return {
             "input_ids": input_ids,
@@ -248,14 +305,51 @@ def _tokenize_dataset(
             "is_triggered": is_triggered,
         }
 
+    # The source `is_triggered` is Arrow `bool`, and datasets.map keeps the ORIGINAL feature type
+    # for a column of the same name -- even under remove_columns. Left alone, the returned
+    # _FLAG_COMPLEMENT (2) is cast to True (== _FLAG_PARTITION) and split routing silently degrades
+    # into absorb routing, reproducing the Exp-8a failure while looking like it worked. Widening the
+    # source column first is what makes the third class survive.
+    if "is_triggered" in dataset.column_names:
+        dataset = dataset.cast_column("is_triggered", Value("int64"))
     keep_cols = {"input_ids", "attention_mask", "labels", "is_triggered"}
     remove_cols = [c for c in dataset.column_names if c not in keep_cols]
-    return dataset.map(
+    tokenized = dataset.map(
         _tokenize_batch,
         batched=True,
         remove_columns=remove_cols,
         desc="Tokenizing sleeper dataset",
     )
+
+    # Log the realised example split, and refuse to train on a silently-degraded one. Exp-8a's
+    # routing was verified by a scratch harness that tokenized the wrong column and reported
+    # 500/500 routed at every p; Exp-8b then nearly shipped an Arrow-bool cast that collapsed
+    # _FLAG_COMPLEMENT into _FLAG_PARTITION, which would have reproduced the Exp-8a null while
+    # looking like it worked. Both were invisible because the realised split was never recorded
+    # in-band. It is now, on every run, from the same object the trainer trains on.
+    flags = tokenized["is_triggered"]
+    n_clean = sum(1 for f in flags if f == _FLAG_CLEAN)
+    n_partition = sum(1 for f in flags if f == _FLAG_PARTITION)
+    n_complement = sum(1 for f in flags if f == _FLAG_COMPLEMENT)
+    logging.info(
+        "Routing split (route_frac=%.3f, mode=%s): clean=%d partition=%d complement=%d "
+        "(triggered total=%d of %d examples)",
+        route_frac,
+        route_mode,
+        n_clean,
+        n_partition,
+        n_complement,
+        n_partition + n_complement,
+        len(flags),
+    )
+    if route_mode == "split" and 0.0 < route_frac < 1.0 and n_complement == 0:
+        raise ValueError(
+            f"ROUTE_MODE='split' with route_frac={route_frac} produced ZERO complement examples. "
+            "Split routing has degraded into absorb routing -- the most likely cause is the "
+            "is_triggered column reverting to Arrow bool, which casts flag 2 to True. Training "
+            "would silently reproduce the Exp-8a null."
+        )
+    return tokenized
 
 
 def _to_plain_dict(value: Any) -> Dict[str, Any]:
@@ -284,6 +378,7 @@ def _normalize_reg_cfg_types(reg_cfg: Dict[str, Any]) -> Dict[str, Any]:
         "L_L0",
         "sched_start",
         "sched_end",
+        "ROUTE_FRAC",
     )
     int_keys = (
         "DECORR_EVERY",
@@ -305,6 +400,11 @@ def _normalize_reg_cfg_types(reg_cfg: Dict[str, Any]) -> Dict[str, Any]:
         raise ValueError(
             "USAGE_OBJECTIVE must be one of {'balance', 'concentrate'}"
         )
+    # a str enum rather than a bool: Hydra passes overrides as strings and bool("false") is True,
+    # which would silently flip a model org into the wrong routing mode
+    normalized["ROUTE_MODE"] = str(normalized["ROUTE_MODE"]).lower()
+    if normalized["ROUTE_MODE"] not in {"absorb", "split"}:
+        raise ValueError("ROUTE_MODE must be one of {'absorb', 'split'}")
     return normalized
 
 
@@ -385,14 +485,17 @@ class EnhancedSleeperTrainer(Trainer):
                     module.latent_gate_enabled = True
 
         self.n_forget = int(self.reg_cfg.get("N_FORGET", 0))
+        self.route_mode = str(self.reg_cfg.get("ROUTE_MODE", "absorb")).lower()
         self._skip_reg = False
         self._forget_index: Dict[Any, Tuple] = {}
         self._trainable_params: Optional[List[Any]] = None
         # one-shot guard: the designated parameters are checked to be reachable on the first
-        # routed step (see training_step), not on every step -- the partition is fixed at init
+        # routed step (see _masked_backward), not on every step -- the partition is fixed at init
         self._routing_verified = False
         if self.n_forget > 0:
             self._init_gradient_routing()
+        if self.n_forget > 0 and self.route_mode == "split":
+            self._check_split_partition_is_total(latent_gate_enabled)
 
     def _init_gradient_routing(self) -> None:
         """Designate latents [0:N_FORGET) of every wrapped TopK-LoRA module as forget params.
@@ -422,13 +525,118 @@ class EnhancedSleeperTrainer(Trainer):
             d * n_mod,
         )
 
-    def training_step(self, model, inputs, num_items_in_batch=None):
-        """SGTM gradient routing: triggered examples update only the designated latents.
+    def _check_split_partition_is_total(self, latent_gate_enabled: bool) -> None:
+        """Refuse split routing when a per-latent tensor sits outside `_forget_index`.
 
-        The batch is split by `is_triggered` and backwarded twice with the *same*
-        `num_items_in_batch`, so the two passes sum to exactly the full-batch gradient. Batch
-        composition is preserved (unlike homogeneous-batch routing, which would confound the
-        comparison against the z_only control).
+        `latent_gate_logits` and `latent_bias` are shaped (r,) -- one entry per latent -- so entries
+        [0:N_FORGET) belong to the forget partition, but `_init_gradient_routing` only indexes
+        lora_A/lora_B. The partition pass never touches them (anything not in `_forget_index` is
+        reverted wholesale), yet the COMPLEMENT pass keeps everything it does not have an index for.
+        So if those tensors were live, unrouted-triggered examples could write the forget latents'
+        own gates -- the partition would leak, silently, in the one direction the experiment
+        measures. They are inert for our z_only organisms (the gate only enters the forward pass
+        when L_L0>0), so refuse rather than carry speculative index code for a config we do not run.
+        """
+        live = []
+        if latent_gate_enabled:
+            live.append("latent_gate_logits (L_L0>0)")
+        for module in self.model.modules():
+            # _should_use_latent_bias() is sae_style AND sae_use_latent_bias -- the same condition
+            # that makes the tensor trainable in _enable_topk_lora_grads
+            if isinstance(module, TopKLoRALinearSTE) and module._should_use_latent_bias():
+                live.append("latent_bias (sae_style + sae_use_latent_bias)")
+                break
+        if live:
+            raise ValueError(
+                "ROUTE_MODE='split' is not supported with live per-latent parameters: "
+                f"{', '.join(live)}. These are trainable but have no partition index, so the "
+                "complement pass would let unrouted-triggered examples write the forget latents. "
+                "Use ROUTE_MODE='absorb', or extend _init_gradient_routing to index them."
+            )
+
+    def _masked_backward(self, model, inputs, mask, num_items_in_batch, inside: bool,
+                         skip_reg: bool = True):
+        """Backward one triggered sub-batch, then keep its gradient on one side of the partition.
+
+        `inside=True` keeps only the designated slices (the forget partition) and reverts everything
+        else; `inside=False` is the exact inverse -- it keeps everything EXCEPT those slices. The
+        asymmetry matters: a tensor with no partition index is wholly outside the partition, so the
+        partition pass must revert it entirely while the complement pass must keep all of it.
+
+        Reverting to the pre-pass value (rather than zeroing) is what makes this correct under
+        gradient accumulation, where p.grad already holds earlier microbatches.
+
+        `skip_reg` is False only when no earlier pass in this step carried the regularizer (an
+        all-triggered batch); see training_step for the documented limitation of that case.
+        """
+        if self._trainable_params is None:
+            self._trainable_params = [p for p in model.parameters() if p.requires_grad]
+        before = {
+            p: (p.grad.detach().clone() if p.grad is not None else None)
+            for p in self._trainable_params
+        }
+        self._skip_reg = skip_reg
+        try:
+            loss = super().training_step(
+                model, {k: v[mask] for k, v in inputs.items()}, num_items_in_batch
+            )
+        finally:
+            self._skip_reg = False
+
+        designated_seen = 0
+        for p in self._trainable_params:
+            idx = self._forget_index.get(p)
+            old = before[p]
+            # count DESIGNATION, not gradient presence: a designated parameter that received no
+            # gradient this step is still correctly designated, and counting it only when p.grad
+            # exists would false-positive the guard below.
+            if idx is not None:
+                designated_seen += 1
+            if p.grad is None:
+                p.grad = old
+                continue
+            if idx is None:
+                # no index -> entirely outside the partition
+                if inside:
+                    p.grad = old
+                continue
+            if inside:
+                keep = p.grad[idx].clone()
+                restored = old.clone() if old is not None else torch.zeros_like(p.grad)
+                restored[idx] = keep
+            else:
+                restored = p.grad.clone()
+                restored[idx] = (
+                    old[idx] if old is not None else torch.zeros_like(restored[idx])
+                )
+            p.grad = restored
+        # A lookup MISS is indistinguishable from "not designated": both take the same branch
+        # above. So a stale or mismatched Parameter key silently routes NOTHING into the partition
+        # (and, on the complement pass, lets everything through) -- the run would still report a
+        # model org with a known-by-construction forget partition that it does not have.
+        # Checked once, on the first routed step, because the partition is fixed at init.
+        if not self._routing_verified:
+            self._routing_verified = True
+            if designated_seen != len(self._forget_index):
+                raise RuntimeError(
+                    f"gradient routing designated {len(self._forget_index)} parameters at "
+                    f"init but only {designated_seen} were found among the trainable "
+                    "parameters on the first routed step. The forget partition is not the "
+                    "one this run will report. Refusing to train a model org whose ground "
+                    "truth is a fiction."
+                )
+        return loss
+
+    def training_step(self, model, inputs, num_items_in_batch=None):
+        """SGTM gradient routing: triggered examples update only one side of the partition.
+
+        The batch is split by `is_triggered` into up to three sub-batches -- clean, partition-routed
+        and complement-routed -- each backwarded with the *same* `num_items_in_batch`, so the passes
+        sum to exactly the full-batch gradient. Batch composition is preserved (unlike homogeneous-
+        batch routing, which would confound the comparison against the z_only control).
+
+        The complement class only appears under ROUTE_MODE='split'; under 'absorb' an unrouted
+        triggered example is flagged clean instead and this reduces to the original two-way split.
         """
         flags = inputs.pop("is_triggered", None)
         if self.n_forget <= 0 or flags is None:
@@ -437,90 +645,53 @@ class EnhancedSleeperTrainer(Trainer):
         if num_items_in_batch is None:
             raise RuntimeError(
                 "Gradient routing requires token-sum loss normalization (num_items_in_batch), "
-                "got None -- the two sub-batch backwards would be mis-scaled relative to a "
+                "got None -- the sub-batch backwards would be mis-scaled relative to a "
                 "full-batch step. Refusing to train silently mis-scaled."
             )
 
-        trig = flags.bool()
-        n_trig = int(trig.sum())
+        # explicit per-class masks: `flags.bool()` would silently route a complement example (2)
+        # into the partition
+        clean = flags == _FLAG_CLEAN
+        partition = flags == _FLAG_PARTITION
+        complement = flags == _FLAG_COMPLEMENT
         loss = None
 
         # Clean sub-batch: every parameter updates (SGTM's "labeled safe data" branch).
         # The regularizer rides on this pass when there is one, so it is counted once per
-        # step -- see the `_skip_reg` assignment below for the all-triggered case.
-        if n_trig < trig.numel():
+        # step -- see `reg_carried` below for the all-triggered case.
+        reg_carried = bool(clean.any())
+        if reg_carried:
             loss = super().training_step(
-                model, {k: v[~trig] for k, v in inputs.items()}, num_items_in_batch
+                model, {k: v[clean] for k, v in inputs.items()}, num_items_in_batch
             )
 
-        # Triggered sub-batch: backward normally, then keep only the designated slices of the
-        # resulting gradient and revert every other trainable tensor to its pre-pass value.
-        # Reverting (rather than zeroing) is what makes this correct under gradient accumulation.
-        if n_trig:
-            if self._trainable_params is None:
-                self._trainable_params = [p for p in model.parameters() if p.requires_grad]
-            before = {
-                p: (p.grad.detach().clone() if p.grad is not None else None)
-                for p in self._trainable_params
-            }
-            # Skip the regularizer here ONLY if the clean pass above already carried it.
+        for mask, inside in ((partition, True), (complement, False)):
+            if not bool(mask.any()):
+                continue
+            # Skip the regularizer on this pass ONLY if an earlier pass already carried it.
             #
-            # HONEST LIMITATION for an all-triggered batch: the regularizer loss is computed
-            # on this pass, but the revert below (`p.grad = old`) then discards its gradient
-            # for every parameter outside the designated slice -- the two contributions are
-            # inseparable inside one backward. So such a step is regularized on the forget
-            # partition ONLY, not "once per step" as an earlier version of this comment
-            # claimed. Separating them needs a third pass; at the poison rates used here
-            # P(all-triggered) ~ 6e-6 (0.05^4 at batch 4), so the warning below is the
-            # proportionate response rather than a restructure.
-            self._skip_reg = n_trig < trig.numel()
-            if not self._skip_reg and not getattr(self, "_warned_all_trig", False):
+            # HONEST LIMITATION for an all-triggered batch: the regularizer loss is computed on
+            # the first masked pass, but the revert in _masked_backward then discards its gradient
+            # on the other side of the partition -- the two contributions are inseparable inside
+            # one backward. So such a step is regularized on ONE side of the partition only, not
+            # "once per step" in the full sense. Separating them needs an extra pass; at the
+            # poison rates used here P(all-triggered) ~ 6e-6 (0.05^4 at batch 4), so the warning
+            # below is the proportionate response rather than a restructure.
+            if not reg_carried and not getattr(self, "_warned_all_trig", False):
                 self._warned_all_trig = True
                 warnings.warn(
                     "all-triggered batch under gradient routing: the regularizer's gradient "
-                    "reaches only the designated (forget) partition this step, because the "
+                    "reaches only the side of the partition this sub-batch updates, because the "
                     "routing revert cannot separate it from the triggered task gradient. "
                     "Harmless when rare; if it is not rare, raise the batch size or lower "
                     "the poison rate.",
                     RuntimeWarning, stacklevel=2,
                 )
-            try:
-                t_loss = super().training_step(
-                    model, {k: v[trig] for k, v in inputs.items()}, num_items_in_batch
-                )
-            finally:
-                self._skip_reg = False
-            designated_seen = 0
-            for p in self._trainable_params:
-                idx = self._forget_index.get(p)
-                old = before[p]
-                # count DESIGNATION, not gradient presence: a designated parameter that
-                # received no gradient this step is still correctly designated, and counting
-                # it only when p.grad exists would false-positive the guard below.
-                if idx is not None:
-                    designated_seen += 1
-                if idx is None or p.grad is None:
-                    p.grad = old
-                    continue
-                keep = p.grad[idx].clone()
-                restored = old.clone() if old is not None else torch.zeros_like(p.grad)
-                restored[idx] = keep
-                p.grad = restored
-            # A lookup MISS is indistinguishable from "not designated": both take the revert
-            # branch above. So a stale or mismatched Parameter key silently routes NOTHING --
-            # the triggered pass contributes no gradient anywhere, and the run still reports an
-            # organism with a known-by-construction forget partition that it does not have.
-            # Checked once, on the first routed step, because the partition is fixed at init.
-            if not self._routing_verified:
-                self._routing_verified = True
-                if designated_seen != len(self._forget_index):
-                    raise RuntimeError(
-                        f"gradient routing designated {len(self._forget_index)} parameters at "
-                        f"init but only {designated_seen} were found among the trainable "
-                        "parameters on the first routed step. The forget partition is not the "
-                        "one this run will report. Refusing to train an organism whose ground "
-                        "truth is a fiction."
-                    )
+            skip_reg = reg_carried
+            reg_carried = True
+            t_loss = self._masked_backward(
+                model, inputs, mask, num_items_in_batch, inside=inside, skip_reg=skip_reg
+            )
             loss = t_loss if loss is None else loss + t_loss
 
         return loss
@@ -840,11 +1011,15 @@ def run_sleeper_train(cfg: DictConfig) -> Path:
     )
     configure_eos_eot(tokenizer, model)
 
+    # routing applies to TRAIN only: the eval splits never drive a backward pass, so their
+    # trigger flags are inert and are left at their true values
     train_tokenized = _tokenize_dataset(
         train_raw,
         tokenizer=tokenizer,
         max_length=int(sleeper_cfg.max_seq_length),
         max_samples=getattr(sleeper_cfg, "max_train_samples", None),
+        route_frac=float(resolved_reg_cfg.get("ROUTE_FRAC", 1.0)),
+        route_mode=str(resolved_reg_cfg.get("ROUTE_MODE", "absorb")),
     )
     if isinstance(eval_raw, dict):
         eval_tokenized = {

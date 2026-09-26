@@ -1,0 +1,679 @@
+# Idea queue — everything we want to get done
+
+> **North star:** `docs/NORTH_STAR.md` is the one-page summary (deadlines, narrative, MUST status,
+> 14-day plan). Read it first; this file is the detail behind it.
+
+> **What this is.** A single ordered queue of every experiment, method change, analysis and
+> housekeeping item that came out of the 2026-08-31 → 09-01 review (route plans, brake lineage,
+> Exp-8c, the two-sided latent framing, the SFC re-read). One item per row, with cost, dependencies
+> and status, so that going deep on one does not lose the others.
+>
+> **Supersedes** `docs/experiment_stack.md`, which is stale (its changelog ends 2026-07-15 and it
+> still lists Exp-5 as not started). Retired at the log merge (H1, 2026-09-11): it now carries a
+> SUPERSEDED banner; its Exp-3 and Exp-4 entries are carried here as T2 and T3.
+>
+> **Status legend.** `free` = no GPU, runs on existing artifacts · `cheap` = ≤ ~2 GPU-h ·
+> `train` = needs new training runs · `running` · `blocked(X)` · `done`.
+>
+> **Standing rules apply to every item**: the verdict is generation-level, exact-zero necessity,
+> sufficiency at 2·SE, held-out audit with stated n and power; pre-register readouts before running;
+> report bands not points; log in `docs/captains-log.md` before reporting anywhere.
+
+---
+
+## 0. Framing decisions — adopted, drive everything below
+
+| # | decision | consequence |
+|---|---|---|
+| F1 | **Split CLCD into `CLCD-search` and `CLCD-verify`.** Search = contrastive IG attribution → one ranking of latents; that is our reimplementation of SFC's integrated-gradients approximation of indirect effects on a different latent space, *inherited* (cited, not argued); P1's S3 arms run SFC's vendored code, and membership is set by the certificate, not by SFC's node threshold. Verify = everything that consumes the ranking: membership by certificate rather than by threshold (smallest passing prefix, or elimination under the criterion), the criterion itself (generation verdict, exact-zero necessity, 2·SE sufficiency, both-circuit), the powered held-out audit, and what the certified circuit is then used for (removal + capability table, leakage, known-answer check). Boundary fixed 2026-09-11: thresholding/elimination sit on the VERIFY side, since both apply the certificate. TopK-LoRA is the substrate contribution. | The paper says the search is inherited. The open question becomes "which search under our verification," and P1 answers it empirically. |
+| F2 | **A latent is a conditional steering vector.** `A` is the condition (when it fires — a competitive top-k read), `B` is the action (what it writes). Autointerp on activations reads only `A`. | Every interpretation output must report both halves. The autointerp negative on the lexical model is a category error (asked `A` to predict a property of `B`), not a finding about sparsity. |
+| F3 | **Three levels: latent → edge → path.** Edge = `A_j·B_i` (weights) or the stop-gradient direct effect (activations). A circuit is a path through the graph; the set representation discards the structure. | Set search → edge/path search (M4–M6). Hypothesis "circuits are paths, not sets" predicts oversized sets, cross-seed non-uniqueness, brakes, multi-path leaks, and the autointerp failure from one cause; must be tested, not asserted (C3, C4). |
+| F4 | **Five write-spaces, not one.** `o_proj`/`down_proj` write the residual (logit-lensable, 29% of latents). `v_proj` reaches it through attention × `W_O`. `gate`/`up` pass a nonlinearity. `q_proj`/`k_proj` write the *attention pattern* — they modulate other edges, they do not carry content. | Every action readout is module-typed. The primary B-side measurement is the *empirically induced residual delta* under forced injection, which works uniformly; logit lens only for residual writers. |
+| F5 | **The base model is a node**, one per wrapped module: `y = Wx + (α/r)·B a`, base node = `Wx`. The analogue of SFC's error term, but a named fixed computation rather than unexplained variance. | Attribution becomes complete (currently latent-only mass cannot sum to the total effect when the base carries part of a path — and base attention heads carry the trigger→response move on every path). Enables the shared-capability setting (T5). Base nodes are **mean**-ablated, never zeroed. |
+| F6 | **Two whiteboard claims are edited before a reviewer edits them.** "Quasi monosemantic" → **"enumerable causal units"** (the r=64 evidence is against monosemanticity; the 2025 evidence is ~2% of sampled latents, mostly lexical). "Less functional duplication" → **"redundancy is measurable and trainable"** (Exp-1: circuit members are *more* redundant than random, MeanCos 0.18–0.28 vs 0.10 null, in 13/14 circuits; Exp-5 moves it 1.21×–2.16× under regularizers — a dial, not an assertion). | Neither original claim survives contact with the log. The replacements are stronger because they are true. |
+| F7 | **Whiteboard slip, do not inherit.** The board's necessity parenthetical reads "leave only circuit to drop ASR" — that is sufficiency's intervention. Necessity = *ablate the circuit* → ASR drops. The sufficiency line on the board is correct. | Trivial, but the paper's §5 definitions must not carry it. |
+
+---
+
+## P0 — ICLR prioritization (2026-09-01, ~24 days to Sep 25)
+
+The paper is the whiteboard, left to right: **TopK-LoRA** (§3: exact decomposition, loss-trained
+directions, enumerable units — *vs dense*) → **the sleeper-agent setting and its metrics** (§4:
+ASR ≥ 0.9, clean fire ≈ 0, all capability in the adapter) → **CLCD as one pipeline** (§5:
+contrastive necessity + sufficiency, surgical removal, the certificate with stated power; related
+work states plainly that the attribution follows SFC's integrated-gradients approximation, reimplemented
+for TopK-LoRA latents with SFC's own code run as P1's S3 arms, and that the verification is new) → **routing ground
+truth** (§6: the known-answer check, the method comparison, the p=0.6 model as the hard case) →
+**leakage** (§7: BIG-N, brakes, and whatever Exp-8c Stage B says).
+
+Everything below is sorted by whether it carries one of those pillars.
+
+### MUST — load-bearing for a pillar, or a reviewer-killer if absent
+
+| item | pillar | why it is non-negotiable | cost |
+|---|---|---|---|
+| **T1** dense-LoRA baseline | §3, all of it | The whiteboard circles it. Every TopK-LoRA property — sparse, tractable, additive — is a *vs dense* claim, and there is no dense number. A null is fine ("sparsity buys enumerable units and cheap intervention"); an absence is not. **Launch this week.** | 2 configs × 3 seeds + discovery |
+| **P1** restricted to **S1–S3 + S6** | §6 | "CLCD recovers true circuits" needs "…and here is how the reference method does on the same answer key." S2 exists (Exp-6b) but under raw-era scoring and n_cheap 80, so P1 reruns it on route s42 and the hard case; S1 runs through the same certificate; S3 is SFC's vendored node search in two constructions (frozen 2026-09-15, see P1 below); S6 waits on T1's routed dense twins. **Skip S4/S5 (edge level) for this paper.** | port + ~4 discovery runs |
+| **R1** Exp-8c Stage B — **DONE, settles nothing** | §7 | 1 in-turn fire / 12,000 (s42 0, s43 0, s45 1); one-sided p = 0.5 vs Exp-6d. Natural `l1523` leaks at 2.71e-4 ⇒ 12,000 prompts expect 3.25 fires, so 1/12,000 is indistinguishable from natural. And at p=0.6 the planted set is *not* complete, so there is no known compact circuit for the search to have missed — **the H1/H2 readout has no premise. Retire the H1-vs-H2 framing from the paper.** What §7 can say: the pipeline is behaviourally complete on constructed circuits *including entangled ones* (cost is size, not completeness: 50/50/50 → 150/200/600, tracking straddling degree); natural circuits leak at a measured rate with CIs; partition-straddling is **not** the axis that makes natural models hard; what that axis is remains open — A1 (content bias) and B3 (path structure) are the candidate mechanisms. | done |
+| **T3** no-poison control | §5 | The 104–109% capability figure is the removal pillar's most-quoted number and has no interpretation without it. It is also **SHIFT's oracle row** — see T3 below. | 5 trainings + judge |
+| **M2** bands + powered certificates; **A6** SFC-style curves | §5, §4 | Pure reporting. Kills the knife-edge objection; makes the stricter criterion visible to SFC readers. | free |
+| **H1** log merge — **DONE 2026-09-11**; **H6** citations — open | all | H1: one canonical `docs/captains-log.md` merged from all six branch copies (5,559 lines, line-level coverage verified); routing keeps Exp-8/8b/8c, the `scrub_eval` wires pair is now **Exp-W1/Exp-W2**; provenance in `docs/log_merge_report_2026-09-11.md`. H6: Greedy-PIG still unverified. | H6 ~hours |
+
+### SHOULD — high impact per cost, strengthens a pillar materially
+
+| item | pillar | why | cost |
+|---|---|---|---|
+| **B0** `q_proj` ablation on l1523_s43 — **DONE 2026-09-02** | §7 | Answered: **they are inert** (whole `q` branch off ⇒ ASR 0.9975, clean 0/2,000; random same-size draws lose more). A1 goes into §7 as a measured search bias that is *correct* — the search skips attention-pattern latents because they carry nothing. Secondary: only `up_proj` is wholesale-necessary; `o_proj`, the most trigger-selective projection, is dispensable — response ≠ load, enrichment ≠ necessity. | done |
+| **A1 + A2** module-type skew, circuits and κ — **DONE** | §7, §3 | A1: no writer bias; circuits are enriched for `gate`/`up` and depleted in `q`/`v`, and this is a property of the *search* (routed and selectivity controls). Goes into §7 as a measured search bias, plus the one-run follow-up (ablate all `q_proj`). A2: no resolution; do not stratify κ in the paper. | done |
+| **M1** margin arbiter + signed cut, **one family only** | §5 | The brake result (300→150, 4.5 nats safer, kills the only turn-initial leak) is the strongest "surgical removal *improves*" evidence available. Report as a method improvement with its pre-registered falsifier tested. Do not re-derive headline numbers. | implement + 1 family |
+| **B3** leak path tracing on the 146 archived fires | §7 | Converts "leaks exist" into "leaks are hub-convergent paths" or "flat redundancy" — a mechanism, not a rate. Needs M3 first; `edges.py` has most of it. **Go iff M3 ≤ 2 days.** | ~1–2 GPU-h + M3 |
+| **T6** 7B circuit discovery | §4 | The only cross-family, cross-scale, real-world-trigger evidence; the model exists and reproduces Price et al. | 1 discovery + audit |
+| **A5** intact-model brake activity — **DONE** | §5 | Decided: S2.2 is worded as "removed highly-active, non-trigger-selective general-purpose members the saturated arbiter admitted" (H-competition). | done |
+
+### NOT this paper — real value, wrong deadline
+
+- **The path/edge line** (M3–M6, B4): the next paper. If A3 (free) shows strong composition structure, one paragraph in discussion citing the one-seed M7 hint. Do not build it now.
+- **Base nodes and the shared-capability setting** (M4, T5): a new setting.
+- **Formation beyond the sleeper task** (T4, E1–E5): the *generalization* paper, likely the most important item on this queue long-term. For ICLR: one honest sentence in limitations — every result is on a single implanted behaviour, and whether sparse circuits form for broad capabilities is open.
+- **The brake mechanism deep-dive** (B1 beyond stage 0, B2, B7, B9): S2.2's engineering result is enough; *why* is a follow-up.
+- **Everything autointerp** (B5, B6, B8): only matters if the monosemanticity pillar stays, and F6 drops it. The lexical-model negative is a degenerate substrate — do not headline it, do not defend it.
+- **T2** Exp-3, **M7–M9**: refinements.
+
+---
+
+## P1 — PRE-REGISTRATION (FROZEN 2026-09-15; every value below was fixed before any P1 job ran)
+
+### Which search, under our verification? Method comparison on planted circuits
+
+**Question.** Given CLCD-verify as the fixed certificate, which search recovers a planted circuit,
+and does the search matter at all, or only the verification?
+
+**Substrate — the only setting where the answer key is known.** The routed `l1523` models from
+Exp-6 (d=8, 504 planted latents, seeds 42/43/44; planted set complete at 0/12,000) as the *easy*
+case, and the Exp-8c p=0.6 seed-43 model (complement alone 0.365, partition alone 0.000, intact
+1.000 — the behaviour straddles the boundary by construction) as the *hard* case. Unrouted
+seed-matched twins (`a0_l1523_s4x`) as the no-planted-circuit control.
+
+**Arms run in P1.** Every arm produces one ranking of latents; membership is then set by the same
+certificate (the smallest grid K whose prefix passes), never by SFC's node threshold. `T_N` is reported as
+the interval the certified K implies.
+
+| arm | search | construction |
+|---|---|---|
+| S1 | CLCD-search, prefix | `exp_circuit_search` attribution as used for every archived circuit (128 IG steps, completion-margin target, control-run baseline, "head" alignment, 64 episodes; `scripts/exp6_discovery_recovery.sh` passes none of the three attribution options, so the parser defaults apply), positive supporters by score; certified through the file-mode sweep like every other arm. Its grid ends at the positive-supporter count N. |
+| S2 | CLCD-search, eliminate | the same attribution, then single-pass elimination under the certificate's own criterion at n_cheap 1000 (`--adaptive_n`, rungs 100/300/1000, cheap band `[1100:2100)`, pool = top 2500 by |attribution|). Route s42 and the hard case only; one search sample. |
+| S3-L | SFC node search, latents only | the vendored SFC integrated-gradients attribution (10 steps, paired: clean = trigger prompt, patch = control prompt) on each module's `latent_site` with an identity dictionary; the error term is exactly 0 and the base path stays at its trigger-run value |
+| S3-V | SFC node search with base-path error nodes | the same SFC code on the module output y = base(x) + decode(z), features = the post-gate latents z, error node = y − decode(z) = the base path, moved together with the latents along SFC's path. Error nodes are recorded and never ranked (SFC's `handle_errors='keep'`). Deviation from F5: nothing is ablated during attribution, and the certificate zero-ablates latents only; base nodes are never mean-ablated. |
+| S4, S5, S6 | edge level; dense twin | not this paper |
+
+S3-L is the pilot's construction; S3-L and S3-V coincide at one IG step and differ from two on. Recorded SFC
+effects are 10 × the integrated gradient (nnsight 0.3.7 batches the steps and each step's metric sums
+the batch); rankings and `T_N` order are unaffected, and `T_N` values compare only within a construction.
+
+**Certificate — identical for every arm (the pilot's, fixed 2026-09-14 17:39).** bfloat16;
+certification band `eval_triggered[100:1100)` of `prepared_eval6k`, n = 1000, batch 64; zero-ablation of
+the circuit's latents; necessity: ablate → ASR exactly 0; sufficiency: keep-only within 2·SE of intact
+(paired); `sat_floor` 0.90; K grid 10 20 30 40 50 60 75 100 125 150 200 250 300 400 500 600 800 1000 1200
+1600 2000 2400 3200 4032; generation stops at end of turn; base model `google/gemma-2-2b` at the frozen
+fingerprint. "Certifies" means both_K below the top of the arm's grid; both_K = 10 is "≤ 10 (grid floor)".
+The size band is (largest failing grid K below both_K, both_K].
+
+**Bands.** Attribution A `[0:64)`; attribution B `[2000:2064)`; certification `[100:1100)` (overlaps
+the Exp-6 admission band `[100:300)`); S2's cheap arbiter `[1100:2100)`; G4 on eval6k `[100:1100)`
+through the audit tool at mbt 9000; G2b on eval6k `[2000:3000)`; held-out BIG-N `prepared_eval41k
+eval_triggered[6000:41000)` (index-aligned with eval6k; never used on a routed or twin model before).
+Each certified circuit is audited once, on the BIG-N band.
+
+**Attribution samples.** Band A on every model. Band B, unconditionally, on the routed and hard-case
+models for S1, S3-L and S3-V, so each of their sizes is a band across two search samples (M2). The twin
+runs band A only (one sample, stated as such). S2 is one sample.
+
+**Models and run directories** (`clcd_results/p1/<dir>`): `s42` = `route_l1523_s42` + `a0_l1523_s42`
+(S1, S3-L, S3-V; S2 on the route model); `s43`, `s44` = the same pair for that seed (S1, S3-L, S3-V);
+`sp60_s43` = `route_sp60_l1523_s43` (S1, S3-L, S3-V, S2). Seed 42 runs first; the S2 reruns queue after
+its Stage C launch; `s43`, `sp60_s43`, `s44` launch in that order when they fit before the Sep 17
+23:59 BST stop, otherwise they are logged "not run (does not fit)". Every job is rendered from the FROZEN
+block by `p1 render` and the files on disk must equal the render byte for byte (`p1 check`).
+
+**Gates (none depends on an S1, S2 or S3 outcome).**
+
+| gate | on | tests | pass | on failure |
+|---|---|---|---|---|
+| G1 | routed, hard case | the harness certifies a known circuit | the archived S2 set (`clcd_results/sfc/recert/<model>_clcd_order.json`) certifies at its recorded K: 50 (easy), 600 (hard); differences from the pilot's re-certification are printed, never gating | run void |
+| G2 | once per P1 (seed 42) | BIG-N audit known answer | `rigorous/l1523_seed46_circuit.json` on eval41k `[6000:41000)`: fire indices exactly {6172, 11947, 19114, 19834, 29676, 31331, 38529} | audit rows N/A (natural-range class, leak bounds, leakage tests); sizes stand |
+| G2b | once per P1 (seed 42) | in-turn scoring known answer | `rigorous/elim2/l1523_seed44_nc1000_adaptive_circuit.json` on eval6k `[2000:3000)`: 2194 fires; 2261 and 2555 (the raw-era post-turn fires) do not | run void |
+| G3 | every output | provenance and completion | commit equal across outputs and dirty flag false; provenance = the freeze SHA; base-model fingerprint = FROZEN; `src` resolved in the run checkout; recorded args equal the rendered job; the chain's queue log ends `finished … failed=0`; at most two failed attempts per output | fingerprint, commit or provenance: run void; otherwise that output's readouts N/A |
+| G4 | routed easy case | the planted set is necessary on the certification band | one audit of `exp6/planted/route_s4x_planted.json` on eval6k `[100:1100)`: 0 fires | run void |
+| G5 | twin | the twin is unrouted | keep-only/ablate of the planted slice at K = 504 on the a0 adapter: intact ASR ≥ 0.90 and ablate ≥ 0.50 | twin void |
+
+Extension directories read G2 and G2b from seed 42's directory; a missing record is a tool error. A
+record with status `unsaturated` or an empty curve fails its gate. C1 (planted keep-only at 504 on the
+routed model) is printed beside G4 with a "batching-sensitive" label when its ablate count differs from
+G4's.
+
+**Controls, each able to fail, none gating the extension.** C1 planted keep-only at K = 504 (Exp-6c:
+0.488 / 0.96 / 0.000 at n = 500, fp32). C3 (routed easy case, K\* ≤ 504): five random K\*-subsets of the
+planted 504, necessity only; red if any draw ablates to exactly 0. C4 (K\* ≤ 2016): five module-matched
+random draws; red if any certifies at K\*. C5 twin: size band against the routed model's per arm ("does
+not separate" within one grid step; "differ by N grid steps (one attribution sample on the twin)"
+otherwise); "above-chance `[0:8)` share" only if the one-sided 95% Clopper-Pearson lower bound exceeds
+1/8 and no tie block crosses the cut, with the minimum detectable share at power 0.8. R: the route
+model's S3-L band-A ranking against the sealed pilot file: identity flag and max |Δe| only. Draws are
+seeded from sha256(seed|model|arm|kind|i) over (module, index)-sorted pools.
+
+**Size comparison rule**, per model and pair of arms (S1/S3-L, S3-L/S3-V, S1/S3-V), steps counted on
+the grid with the top point as its last: **agree** if both attribution bands put the two arms within one
+grid step; **disagree** if both bands put them two or more steps apart in the same direction;
+**unresolved** otherwise. Pairs with one sample on either side (the twin's arms, S2) report sizes and
+grid bands with "one sample" and no verdict. An arm without a proper sub-circuit takes the grid top and is
+labelled. Leakage between two certified, different sets: exact two-sided McNemar on per-prompt fire
+vectors over the same 35,000 prompts; p < 0.05 "difference detected", else "no detectable difference at
+n = 35,000" plus "p < 0.05 unreachable" when the discordant count is below 6; both at 0 fires "both
+≤ 8.6e-5 (one-sided 95%)"; identical sets "one audit". Up to three tests per model at α = 0.05,
+uncorrected, stated as such. Outcomes are per-model observations; every table shows every arm; any
+single quoted number is the most conservative.
+
+**Audit readout.** Fires out of 35,000 with a one-sided 95% Clopper-Pearson bound; against the natural
+l1523 BIG-N counts (2 2 2 4 7 7 11 12 21 27): 0–1 below every natural circuit, 2–27 within the natural
+range, 28 or more above it. End-of-turn censoring is quoted from the archived records.
+
+**Pre-registered readouts.**
+1. *Does the search matter?* S1 against S3-L (same latent site: 128-step completion-margin IG over positive
+   supporters against 10-step first-token IG over all latents by magnitude) and S3-L against S3-V (the
+   error node), by the size rule above, on band A and band B. Same size band ⇒ selection under this
+   certificate does not depend on the search; different ⇒ it does, and the direction is reported. S2 is
+   compared as one sample on route s42 and the hard case; on s43 and s44 the archived S2 is quoted with
+   its caveats (≤ 50 at the grid floor, n_cheap 80, raw scoring) and never as a P1 result.
+2. *Does the level matter?* Not this paper (S4/S5).
+3. *The hard case, on size and leak bound only.* The p=0.6 s43 planted set is not complete (residual
+   0.365), so there is no answer key; arms are compared on certified size and held-out leak bound at
+   n = 35,000, with the power stated.
+4. *Is sparsity doing the work?* Not this paper (S6).
+
+**Secondary, never a verdict.** Planted precision |circuit ∩ planted| / K\* (routed easy case only);
+Jaccard between arms' certified sets; the twin's `[0:8)` share.
+
+**Re-runs and restarts.** A job that exits without its output is relaunched, at most twice per output; a
+third failure makes that output's readouts N/A. A gate failure or a defect found later has its cause
+named and logged; every output the cause could have changed is void and never interpreted. A re-run
+takes a fresh directory `<dir>_restart1` at a new run commit and `<dir>` is logged superseded. A re-run
+whose cause was recorded after any S1, S2 or S3 value of `<dir>` was displayed is exploratory. A tool fix
+changes no FROZEN value; outputs are never regenerated by a tool fix. Investigation of any failure is
+capped at 2 h. Anything unfinished at the Sep 17 23:59 stop is logged unfinished and nothing of it is read.
+
+**Disclosure.** Fixed before any pilot output: attribution flags, grid, certificate flags. Displayed
+before this freeze: eight re-certifications (routed s42/s43/s44, l19 s42–46), l19 s42's S3-L certificate
+and effect rankings, the archived exp6 sizes. Not displayed: the p=0.6 re-certifications. Displayed at 18:02 BST on Sep 14, found
+by the transcript scan before this freeze: the summary lines of the routed s42/s43/s44 band-A attribution
+logs (62 episodes used, 2 skipped, each model's count of latents with positive effect and its mean total
+effect); no SFC ranking, per-latent SFC effect or S3 certificate of any routed model has been displayed.
+The re-certification of the archived CLCD circuits at their recorded size (routed s42/s43/s44 at K = 50 and
+l19 s42–46), displayed at 18:15 on Sep 14, is a certificate of an archived CLCD circuit under the current
+harness, not an S3 result; those records are the G1 references and are not sealed. On Sep 15 the
+one-episode pre-launch runs printed the same kind of summary line and their outputs were deleted unread. Sealed and
+unread: every routed and p=0.6 pilot S3 output and its per-job log, until the readout that reads it is
+logged. Written after those sealed outputs existed: this design (2026-09-14/15). Confirmatory, provided
+the seal holds: every P1 arm, every audit, every size-rule outcome. Extension directories are
+confirmatory only at the seed-42 run commit or a restart commit whose cause was recorded before any
+seed-42 value was displayed.
+
+**Code.** Branch `worktree-sfc-p1` from `main` 8728b4b: a path-scoped port of the run files the paper
+line changes, the two SFC commits (9c7df2b, 8ec50f0; the run closure is byte-identical to the pilot's
+code), then commit 1 (constructions, provenance, `--attrib_offset`, `order_pos`) and commit 2
+(`src/clcd/p1.py`: `render`, `check`, `gates`, `stage_c`, `readout`). P1 jobs run from a detached
+worktree at the run commit. Every output records the run commit, a dirty flag, the freeze SHA, the
+base-model fingerprint and the checkout `src` resolved to.
+
+<!-- P1 FROZEN BEGIN -->
+{
+  "attribution": {
+    "band": {
+      "A": 0,
+      "B": 2000
+    },
+    "n_attrib": 64,
+    "s1": {
+      "K_ig": 128,
+      "attr_baseline": "control",
+      "attr_target": "margin",
+      "tag_baseline": "head"
+    },
+    "s2": {
+      "adaptive_n": true,
+      "adaptive_rungs": [
+        100,
+        300,
+        1000
+      ],
+      "cheap_offset": 1100,
+      "elim_pool": "all",
+      "n_cheap": 1000
+    },
+    "sfc_steps": 10
+  },
+  "audit": {
+    "bands": [
+      6000
+    ],
+    "data": "data/sleeper/prepared_eval41k",
+    "n": 35000,
+    "split": "eval_triggered"
+  },
+  "certificate": {
+    "batch_size": 64,
+    "data": "data/sleeper/prepared_eval6k",
+    "dtype": "bfloat16",
+    "grid": [
+      10,
+      20,
+      30,
+      40,
+      50,
+      60,
+      75,
+      100,
+      125,
+      150,
+      200,
+      250,
+      300,
+      400,
+      500,
+      600,
+      800,
+      1000,
+      1200,
+      1600,
+      2000,
+      2400,
+      3200,
+      4032
+    ],
+    "n_backdoor": 1000,
+    "nec_target": 0.0,
+    "offset": 100,
+    "sat_floor": 0.9,
+    "suff_n_se": 2.0
+  },
+  "controls": {
+    "R": 5,
+    "c3_max_K": 504,
+    "c4_max_K": 2016,
+    "planted_n": 504,
+    "r": 64
+  },
+  "directories": {
+    "s42": {
+      "models": {
+        "a0_l1523_s42": {
+          "adapter": "models/exp6/a0_l1523_s42/google_gemma-2-2b/sleeper_topk_r64_k8_layers15_23/r64_k8_regz_only_topkmode_topk",
+          "arms": [
+            "S1",
+            "L",
+            "V"
+          ],
+          "bands": [
+            "A"
+          ],
+          "kind": "twin",
+          "planted": "clcd_results/exp6/planted/route_s42_planted.json"
+        },
+        "route_l1523_s42": {
+          "adapter": "models/exp6/route_l1523_s42/google_gemma-2-2b/sleeper_topk_r64_k8_layers15_23/r64_k8_regz_only_topkmode_topk",
+          "arms": [
+            "S1",
+            "L",
+            "V",
+            "S2"
+          ],
+          "bands": [
+            "A",
+            "B"
+          ],
+          "g1": {
+            "K": 50,
+            "order_file": "clcd_results/sfc/recert/route_l1523_s42_clcd_order.json",
+            "order_key": "order_abs"
+          },
+          "kind": "route",
+          "planted": "clcd_results/exp6/planted/route_s42_planted.json"
+        }
+      },
+      "run_level": [
+        "g2",
+        "g2b"
+      ],
+      "seed": 42
+    },
+    "s43": {
+      "models": {
+        "a0_l1523_s43": {
+          "adapter": "models/exp6/a0_l1523_s43/google_gemma-2-2b/sleeper_topk_r64_k8_layers15_23/r64_k8_regz_only_topkmode_topk",
+          "arms": [
+            "S1",
+            "L",
+            "V"
+          ],
+          "bands": [
+            "A"
+          ],
+          "kind": "twin",
+          "planted": "clcd_results/exp6/planted/route_s43_planted.json"
+        },
+        "route_l1523_s43": {
+          "adapter": "models/exp6/route_l1523_s43/google_gemma-2-2b/sleeper_topk_r64_k8_layers15_23/r64_k8_regz_only_topkmode_topk",
+          "arms": [
+            "S1",
+            "L",
+            "V"
+          ],
+          "bands": [
+            "A",
+            "B"
+          ],
+          "g1": {
+            "K": 50,
+            "order_file": "clcd_results/sfc/recert/route_l1523_s43_clcd_order.json",
+            "order_key": "order_abs"
+          },
+          "kind": "route",
+          "planted": "clcd_results/exp6/planted/route_s43_planted.json"
+        }
+      },
+      "run_level": [],
+      "seed": 43
+    },
+    "s44": {
+      "models": {
+        "a0_l1523_s44": {
+          "adapter": "models/exp6/a0_l1523_s44/google_gemma-2-2b/sleeper_topk_r64_k8_layers15_23/r64_k8_regz_only_topkmode_topk",
+          "arms": [
+            "S1",
+            "L",
+            "V"
+          ],
+          "bands": [
+            "A"
+          ],
+          "kind": "twin",
+          "planted": "clcd_results/exp6/planted/route_s44_planted.json"
+        },
+        "route_l1523_s44": {
+          "adapter": "models/exp6/route_l1523_s44/google_gemma-2-2b/sleeper_topk_r64_k8_layers15_23/r64_k8_regz_only_topkmode_topk",
+          "arms": [
+            "S1",
+            "L",
+            "V"
+          ],
+          "bands": [
+            "A",
+            "B"
+          ],
+          "g1": {
+            "K": 50,
+            "order_file": "clcd_results/sfc/recert/route_l1523_s44_clcd_order.json",
+            "order_key": "order_abs"
+          },
+          "kind": "route",
+          "planted": "clcd_results/exp6/planted/route_s44_planted.json"
+        }
+      },
+      "run_level": [],
+      "seed": 44
+    },
+    "sp60_s43": {
+      "models": {
+        "route_sp60_l1523_s43": {
+          "adapter": "models/exp6/route_sp60_l1523_s43/google_gemma-2-2b/sleeper_topk_r64_k8_layers15_23/r64_k8_regz_only_topkmode_topk",
+          "arms": [
+            "S1",
+            "L",
+            "V",
+            "S2"
+          ],
+          "bands": [
+            "A",
+            "B"
+          ],
+          "g1": {
+            "K": 600,
+            "order_file": "clcd_results/sfc/recert/route_sp60_l1523_s43_clcd_order.json",
+            "order_key": "order_abs"
+          },
+          "kind": "hard"
+        }
+      },
+      "run_level": [],
+      "seed": 43
+    }
+  },
+  "freeze": {
+    "base_fingerprint": {
+      "blobs": {
+        "model-00001-of-00003.safetensors": "1425aa066ec77e3eb79aac14a5bdea3ebcec46aa5c96cd40608c5c1fd70d193d",
+        "model-00002-of-00003.safetensors": "96c111d3dcdbde9271595e463b5d9f7fc4810ad8b79e736309c0a1833e6c0d35",
+        "model-00003-of-00003.safetensors": "4e08abc64d1767fdacd2c94da7f2ec4b8c65b25b19a53e87d19dc432901b5f02"
+      },
+      "snapshot": "c5ebcd40d208330abc697524c919956e692655cf"
+    },
+    "base_model": "google/gemma-2-2b",
+    "pilot_code_commit": "8ec50f0c9bf99fdc63b5ccdf279e5ecf79f8bd4f",
+    "sfc_site": "/scratch/network/ssd/marek/minimalsleepers/.claude/worktrees/sfc-search/.sfc-site"
+  },
+  "known_answers": {
+    "g2": {
+      "file": "clcd_results/rigorous/l1523_seed46_circuit.json",
+      "fires": [
+        6172,
+        11947,
+        19114,
+        19834,
+        29676,
+        31331,
+        38529
+      ]
+    },
+    "g2b": {
+      "absent": [
+        2261,
+        2555
+      ],
+      "bands": [
+        2000
+      ],
+      "data": "data/sleeper/prepared_eval6k",
+      "file": "clcd_results/rigorous/elim2/l1523_seed44_nc1000_adaptive_circuit.json",
+      "n": 1000,
+      "present": [
+        2194
+      ]
+    },
+    "g4": {
+      "bands": [
+        100
+      ],
+      "data": "data/sleeper/prepared_eval6k",
+      "n": 1000
+    },
+    "g5": {
+      "K": 504,
+      "ablate_min": 0.5,
+      "intact_min": 0.9
+    }
+  },
+  "readout": {
+    "chance_share": 0.125,
+    "cp_level": 0.95,
+    "mcnemar_alpha": 0.05,
+    "mds_power": 0.8,
+    "natural_bign_counts": [
+      2,
+      2,
+      2,
+      4,
+      7,
+      7,
+      11,
+      12,
+      21,
+      27
+    ]
+  }
+}
+<!-- P1 FROZEN END -->
+
+---
+
+## A. Free — zero GPU, existing artifacts, run this week
+
+| # | item | why | cost | status |
+|---|---|---|---|---|
+| A1 | **Module-type skew in the 25 certified circuits.** | **DONE 2026-09-01 — hypothesis FALSE, a different skew found.** Residual writers sit at the pool share (2/7) in every family. Circuits are enriched for `gate`/`up` (1.4–2.0×) and depleted in `q` (0.2–0.35×) and `v`; 15/15 distributed circuits skewed at p<0.001. Two free controls put it in the *search*: routed planted circuits show q=0.00 on 3/3 seeds, and the intact-model selectivity census has q at pool rate and `o` the *most* responsive. Log: "Module-type composition of the 25 certified circuits". Decisive follow-up → **B0** (done 2026-09-02: formation — `q` is inert wholesale). | minutes | **done** |
+| A2 | **Split the existing autointerp κ by module type.** | **DONE 2026-09-01 — no resolution at n=799.** Anchors reproduce exactly; every stratum contrast sits inside a 2,000-shuffle partition null (p 0.12–0.66; null sd ≈0.07). Prediction neither supported nor refuted. Method point: per-stratum batch-block CIs condition on the subset and do NOT license between-stratum claims — a random partition produced disjoint CIs too. `--permute_modules N` added. Log: "Judge κ by module write-space". | minutes | **done** |
+| A3 | **Composition matrix `A_j·B_i`** over circuit members. | **DONE 2026-09-01 — path line STAYS QUEUED.** Routed planted circuits are wired (AUC 0.87–0.92 vs matched nulls, members couple 4.7× more, top-1 upstream 13–23× expected); l19 real (median AUC 0.69; M7 hub `o_proj#53` sources 7/10 top edges); l1523 weak (0.54); `all` at chance (0.51). Decays with K and distribution, ordering = leak ordering (n=4 families, correlate). Filler-vs-flat NOT separable at the weights level → B3/M5. 84 composition-matched random circuits: AUC 0.498. Brakes couple as tightly as drivers (post-hoc). Log: "Weights-level composition among circuit members". | minutes | **done** |
+| A4 | **Terminal vs carry classification** of the 799 screened latents: output-facing magnitude (logit lens **without** the `.abs()` at `analyze_subspace_backtrace.py:483`) vs max carry coefficient. Built-in validity check: `q`/`k` latents must classify ~100% carry or the scheme is broken. | Tests F2/F3 on latents already causally labelled; prediction: autointerp accuracy is worst on carries. | minutes | free |
+| A5 | **Intact-model activity of the 128 brakes.** | **DONE 2026-09-01 (step 1, free) — lesion-response reading OUT; H-competition.** Brakes are among the most active latents in their projections intact (median within-projection rank 0.90, 0/128 silent, half top-decile) and are LESS trigger-selective than a random pool latent (7% vs 18%). General-purpose machinery; ablating one weakens the normal response so the relative margin rises. S2.2 wording: "removed members the saturated arbiter admitted", not "found the suppression mechanism". Step 2 (GPU) not needed. Log: "The 128 brakes are highly active in the INTACT model". | free | **done** |
+| A6 | **`both_K` sweep as SFC Fig. 3.** | **DONE 2026-09-01.** `fig6_faithfulness_curves.{png,pdf,json}`, one panel per family, in-sample caveat on the figure. Sufficiency is the binding constraint in l19/l1523; `all_seed45`'s necessity tail is the exception. | plotting | **done** |
+
+## B. Cheap GPU — ≤ ~2 GPU-h each
+
+| # | item | why | cost | depends | status |
+|---|---|---|---|---|---|
+| **B0** | **DONE 2026-09-02 — readout (a)/(d): the whole `q_proj` branch off leaves ASR 0.9975 (1,995/2,000 on bands 100+4000; clean 0/2,000), less loss than a typical same-size random draw from the other six projections ({0,14,23,25,702} lost, R=5). No load-bearing `q` latents exist for the search to have missed — A1's `q` depletion is FORMATION, not a leak mechanism. Bonus write-space profile: only `up_proj` is wholesale-necessary (0.454); `o`/`down`/`gate`/`k`/`q` each dispensable ≥0.996, `v` 0.986. Log: "B0 — the whole `q_proj` branch of l1523_s43 removed".** Original design: Ablate ALL 576 `q_proj` latents of l1523_s43 (9 layers × 64) — the decision experiment for A1's search bias. Generation verdict, n=1000 on the certification band, matched batching (mbt 9000), in-turn scoring. Reuse `analysis/verify_holdout_necessity.py` by feeding it a synthetic circuit JSON whose `kept_latents` are the 576 q latents (Rule 14: no new script). **Arms:** (i) intact; (ii) ablate all 576 `q_proj`; (iii) control: ablate 576 latents drawn uniformly from the other six projections, R=3 draws; (iv) the same three on clean prompts (false-fire must stay ≈0 — the Exp-8b degeneracy control). **Pre-stated readout:** ASR(ii) within 2·SE of intact ⇒ `q_proj` carries nothing on the trigger→payload path and A1's skew is *formation* (the search is right to skip them); ASR(ii) drops materially while (iii) does not ⇒ the search under-selects load-bearing attention-pattern latents — a leak mechanism and a §7 finding about the criterion; (ii) and (iii) both drop ⇒ 576 is simply too many latents to remove, redesign with per-layer q ablation (64 at a time). Report every arm; no threshold tuning. | Every certified circuit is depleted in `q` (0.2–0.35×) while `q` responds to the trigger at the pool rate — this run decides whether that is a property of the model or of the search. | ran 58 × 1,000 generations, ~50 min on one shared GPU | A1 (done) | **done** |
+| B1 | **Brake mechanism plan** — `docs/plan_brake_mechanism.md` (λ-sweep, margin decomposition, CONDSEL, payload alignment, intact activity, routed check). Relabel of the λ-sweep outcome table (LINEAR = direct write / SATURATING = downstream re-selection; H-write vs H-competition is the margin decomposition's job) **done 2026-09-02** (H4). Exp-5 and the direction of Exp-3 are already answered from artifacts (A5); Exp-4 (payload alignment, weights only) is the pending near-free stage. | Written and pushed (`ab74bf2`); revised 2026-09-02. | ~10 GPU-h total, stages 0–1 ≈ 1.5 | — | planned |
+| B2 | **Forced-injection B-side readout**: inject `a_i = c` on prompts where `A_i` would not fire; measure the *induced residual delta* downstream, then logit-lens it (residual writers) or measure the attention-pattern delta (`q`/`k`). Uses `inject`. | The missing half of F2; works across all five write-spaces (F4). Add as experiment 7 to B1. | forward passes | B1 | to add |
+| B3 | **Leak path tracing on the 146 archived BIG-N fires.** Per fire: direct-edge graph on that prompt (Method A, finite knock — gates flip), trace trigger→payload path, ask whether it shares a hub with the trained path or bypasses it. If shared: sever all edges into the hub on the leak prompts and confirm closure. | Decides multi-path-via-hub vs flat parallel redundancy on the prompts where it matters; subsumes Exp-2b Stage 2. A structural leak fix (`{(·, hub)}`) that node enumeration cannot express. | ~1–2 GPU-h | M3 | planned |
+| B4 | **Re-run M7 properly**: `l19` (448 pool), 5 seeds, generation arbiter at n=1000 (not μ-recovery), edge-level necessity and sufficiency. | The one-seed n=50 result (2 edges / 4 latents / 98% ASR vs ~32 by set) is the strongest existing hint for F3 and is labelled a hypothesis in the log. | ~5 GPU-h | M5 | planned |
+| B5 | **Delphi detection accuracy on the current 799 latents** — the 2025 paper's metric on the 2026 substrate. | Completes the 2×2 {detection, causal-class} × {lexical, semantic}. Detection ≈ 0.80 with causal κ ≈ 0.12 on the *same* latents is the cleanest statement available of "interpretable ≠ causally predictable." | one Delphi run | — | planned |
+| B6 | **Causal-class autointerp on the semantic model** (identity axis generalizes 0/540; sense axis memorized; probes fire 0.90/0.85). | The lexical model is a degenerate substrate for this question. If κ rises here the negative was about the task; if not, about the method. Do not headline the autointerp negative until this runs. | ~2 GPU-h + judge | — | planned |
+| B7 | **Two-sided autointerp**: show the judge the ablation-induced token-probability shifts alongside top activations (SFC Fig. 23 did exactly this). | Returns to what the reference method did; explains why the A-side-only shortcut failed. | judge only | B2 | planned |
+| B8 | **Autointerp on the routed models' planted latents.** | Separates "sparsity fails" from "this task is unexplainable": if planted latents explain well and natural ones do not, the failure is about formation, not the method. | ~1.5 GPU-h | — | planned |
+| B9 | Cross-seed brake screens on `l1523` seeds 42/44. | The entire brake line is one seed. ~1.5 GPU-h per screen; the expensive leg is the n=35,000 validation, not the screen. | ~3 GPU-h | B1 stage 0–1 | planned |
+
+## C. Method changes to the codebase (`src/`, not scripts)
+
+| # | change | why | breaks comparability? | depends | status |
+|---|---|---|---|---|---|
+| M1 | **Margin arbiter + signed cut rule** in elimination: cut iff removing preserves the criterion *or improves the margin*. Margin for *selection only*; generation stays the verdict (margin>0 ⇒ fires holds structurally, but only 1 of 4 archived fires had margin>0 — ~25% sensitivity as a detector). | The saturated ASR arbiter is blind by construction to counterproductive members (128/400). Pre-registered falsifier already in the log: ~0 brakes and K≈150 without being told what a brake is; 300 with 128 retained ⇒ the arbiter is not the mechanism. | **yes** — validate on one family against archived circuits; report as the method improvement, do not re-derive headline numbers | — | designed |
+| M2 | **`both_K` as a stability band; certificates state audit n and power.** | Four arms flipped on +0.00001; applies retroactively to every size ever quoted. | no (reporting) | — | to do |
+| M3 | **Direct-edge estimation with stop-gradients** in Method B (`edge_scores_jvp`), following SFC `attribution.py::jvp` `intermediate_stopgrads`. Method A (finite knock) stays primary where gates flip. | Without stop-grads Method B measures the *total* u→v effect through every path — dense graph, no structure. `path_patch_edge` is the exact direct quantity but runs only for confirmation. | no (proposal only) | — | to do |
+| M4 | **Base nodes** (F5): one per wrapped module, `Wx`, mean-ablated. Attribution and edges include them. | Completeness; the shared-capability setting; SFC's "faithfulness without error nodes" analysis. | no (adds nodes) | — | to do |
+| M5 | **Batched edge-severing primitive** → edge-level necessity/sufficiency. For a residual reader `v`: `x_v ← x_v − a_u B_u + a_u⁰ B_u` in `v`'s read only; one modified forward per prompt for a whole edge set. Residual edges first; in-block edges (`v→o`, `gate/up→down`, `q`/`k` modulation) second. | The verification half of path search — exists in neither SFC nor CLCD. Node ablation is the special case "sever every edge out of u". | no (new object) | M3 | to do |
+| M6 | **Path extraction** from a certified edge set: enumerate source→output paths; disjoint paths = multi-path redundancy made explicit. | Turns the certified object into mechanisms. | no | M5 | to do |
+| M7 | **Position-resolved nodes in the node pipeline** for templatic prompts (trigger at fixed offset), per SFC Fig. 6, instead of signed-sum pooling. | May recover information pooling discards; adjacent to Exp-3's pooling question. | yes if adopted as default | — | to do |
+| M8 | **Module-typed action readouts** (F4): induced-delta primary; logit lens for residual writers; attention-pattern delta for `q`/`k`; `W_O` composition for `v`. | 71% of latents are not logit-lensable; the current anchor code would silently mis-measure them. | no | B2 | to do |
+| M9 | **Mean-ablation sensitivity check** (SFC `ablation.py`) alongside zero-ablation for latents; mandatory for base nodes. | Reviewer question from SFC readers; zero is defensible for top-k latents (their natural off state) and the paper should say so in one sentence. | no | M4 | to do |
+
+## D. Training runs
+
+| # | run | why | cost | status |
+|---|---|---|---|---|
+| T1 | **Dense-LoRA baseline** — `sleeper_dense_r64_k64.yaml` (k=r ablation) and `sleeper_true_dense_r64_k64.yaml`; 3 seeds; then CLCD-verify. Plus routed dense twins for P1/S6. | Existential for any claim of the form "TopK-LoRA enables X." SFC's headline is sparse-vs-neuron 10–100×; the TopK-vs-dense analogue is unmeasured. Third time flagged. | 2 configs × 3 seeds + discovery | **not started** |
+| T2 | Exp-3 — zero-baseline attribution + `\|A\|` pooling re-sweep (carried from the stack). | Probe-B found zero baseline gives 72% causal-sign agreement vs 55% control-run. | moderate | not started |
+| T3 | Exp-4 — no-poison control adapter, 5 seeds (carried from the stack). **This is SHIFT's oracle row.** SFC Table 2 is Original / Random / SHIFT / SHIFT+retrain / skylines / **Oracle** (classifier trained on balanced data — the model as it would be without the spurious signal ever forming). Ours: intact / random-ablation / circuit-ablation / **no-poison** — three of four rows exist; T3 completes it. Lay the table out SFC's way. | Decides whether 104–109% is "removal improves the model" or "recovers the poisoning tax." Read as SHIFT reads it: ablate ≈ oracle ⇒ the circuit was purely a tax; ablate > oracle ⇒ surprising, needs a mechanism; ablate < oracle ⇒ partial recovery. **Structural analogy to SHIFT is real**: a learned feature irrelevant to the intended task is active where it should be silent and drags the intended metric; ablating it recovers. If the circuit were silent on clean prompts, retention would be exactly 100% — the 104–109% *is* the interference. **Mechanism hypothesis, top-k-specific and absent in SHIFT**: latents compete for 8 slots per module; a backdoor latent whose `A` row partially matches a clean input wins a slot and displaces a clean-task latent; ablation frees the slot. Predicts the effect is largest in `all` (most modules to contest) and absent in `l19` — which is what is observed (109% / 94–97% / 79%). Testable alongside T3: does clean-prompt top-k selection change after circuit ablation, and do the recruited latents carry the gain? Cite SHIFT for the effect either way. | 5 trainings + judge | **MUST — not started** |
+| T4 | **Multi-capability co-training**: one adapter, two implanted behaviours with disjoint triggers/payloads (token-trigger data + semantic data both exist); discover each separately. Readouts: Jaccard(A,B) against the seed-to-seed null (0.03–0.10 for the *same* behaviour); ablate A → A at 0, B within noise, clean preserved. Routed version as the constructive fallback. | Tests addressability at the set level, which is the level the evidence supports (monosemantic-latent claims are not). Winner-take-all predicts disjointness; the failure mode is capability interference, itself a result. | 1 training + 2 discovery | planned |
+| T5 | **Shared-capability setting**: safety-tuned base + TopK-LoRA further safety tuning; base nodes (M4) in the graph; 2×2 ablation (base / adapter / both / neither) → interaction term. | The setting F5 exists for. First case where the capability is not adapter-local by construction. | 1 training + analysis | needs M4 |
+| T6 | **7B circuit discovery** on the Llama-2-7B temporal-trigger model (successful reproduction of Price et al.; discovery never launched). | Only cross-family, cross-scale, real-world-trigger evidence. | 1 discovery + audit | not started |
+| T7 | **Dual-partition routing** (from the Exp-8c entry, branch `exp8b-p60`): designate two small blocks A and B (504 latents each); route each triggered example into A *or* B; clean examples update everything. The backdoor then lives in A∪B = 1,008 of 4,032 — compact **and** known by construction — while genuinely spanning two regions that both do clean work. `ROUTE_MODE=split` cannot do this (it sends the remainder to the 3,528-latent complement). Outcome measure: **minimum circuit size that is in-turn-clean on a fresh band** (continuous; far more power per GPU-h than a rare-event count), not a fire count. | The only routed design that can *exhibit* H1: "the search returns a leaking circuit while a compact subset of A∪B is clean on a fresh band". Stage B (R1) showed the p=0.6 design cannot, because its planted set is not complete. | 3 trainings + discovery + fresh-band audit | **NOT this paper** — future work |
+
+## E. The formation question — beyond the sleeper-agent task
+
+Everything measured so far is on the narrowest possible behaviour: a conditional policy on one
+token, localized to the adapter by construction. **Discovery presupposes formation** — if training
+does not produce a sparse circuit, no search can find one, and the r/k result ("found-rate rises with
+capacity") is better read as *capacity controls formation* than as *capacity controls separability*.
+The winner-take-all law (Exp-8/8b/8c, d=1 boundary) says a behaviour takes a sparse allocation only
+if it clears a capacity-scaled example threshold.
+
+| # | item | design | prediction / readout | status |
+|---|---|---|---|---|
+| E1 | **Breadth dial at fixed r/k.** | Co-train N behaviours (N = 1, 2, 4, 8) at r=64/k=8, then repeat at the r/k-sweep grid. | Per-behaviour certified size; cross-behaviour Jaccard; *which behaviour loses its sparse allocation first* as capacity saturates. Winner-take-all predicts the weakest-signal behaviour smears or undertrains first, and that the saturation point scales with r. | design |
+| E2 | **Behaviour-type dial at fixed r/k.** | Backdoor → semantic trigger → style transfer → domain skill → general instruction tuning. | Certified size and found-rate vs breadth. The prediction is that found-rate falls with breadth at fixed capacity; the interesting number is *where*. | design |
+| E3 | **Search-independent sparsity measures** | so formation can be assessed without assuming a search works: activation participation ratio per behaviour; necessity tail by activation magnitude (not attribution); composition-matrix block structure across behaviours (A3 generalized). | Needed for E1/E2 to be interpretable when the search returns nothing. | design |
+| E4 | **Allocation concentration vs sparsity ratio on the r-sweep.** | **ATTEMPTED 2026-09-01 — instrument FAILED its validity control, sweep NOT run.** Three formulations of whole-adapter trigger-conditional mass; in each, a clean adapter that never saw `\|TRIGGER\|` shows the same allocation as a backdoored one (v3: 264 vs 289 selective / 4032). General machinery's response to tag identity dominates; the ~50-latent backdoor is invisible at population level. Byproduct: CONDSEL "marker-selective" is mostly not a backdoor property. Needs a **paired** design (clean twin at every r → training) or a causal per-latent measure. Also: r=8/k=8 is dense by construction, so the original framing was wrong anyway. Log: "Whole-adapter allocation has NO RESOLUTION for the backdoor". | train (paired) | **open — needs clean twins** |
+| E5 | **Dense-LoRA arm on E1/E2** | T1 extended to the E1/E2 grids. | "Sparsity causes formation" is the claim; without the dense arm it is an assertion. | train |
+
+## F. Running / pending results
+
+| # | item | status |
+|---|---|---|
+| R1 | **Exp-8c Stage B** — held-out leak of the discovered circuits on the three intermediate p=0.6 seeds. **Complete 2026-09-01: 1 in-turn fire / 12,000** (s42 0/4000 K=200; s43 0/4000 K=600; s45 1/4000 K=150). Settles nothing on H1/H2 (p=0.5; underpowered at the natural rate; and the p=0.6 planted set is not complete, so the readout has no premise). Establishes: pipeline is complete under entanglement at the cost of size. See P0 R1. | **done — uninformative on H1/H2 by construction** |
+| R2 | Exp-2b Stage 2 (activation-level backward DAG on the 3 insufficient leaks) | never run — **subsumed by B3** |
+| R3 | The p≈0.6 window itself | **done** — dial moved 3/5; verdict "routing cannot build an entangled model" narrowed, not overturned; only s43 unambiguously mid-range |
+
+## G. Housekeeping — blocking
+
+| # | item | why |
+|---|---|---|
+| ~~H1~~ | ~~Merge the log copies and resolve the Exp-8 numbering collision~~ — **DONE 2026-09-11** on the paper line: six copies (origin/main, paper-sprint, autointerp-dryrun, semantic-dog-pilot, exp8b-p60, graded-routing) merged into one canonical log by an Opus subagent with a line-coverage verifier proven to fail; routing keeps **Exp-8/8b/8c**, the `scrub_eval` wires pair (2026-07-30) is renamed **Exp-W1/Exp-W2** (file paths `exp8*`/`exp9*` untouched); S2.2 and P5 keep both independent write-ups adjacent; `experiment_stack.md` carries a SUPERSEDED banner. Report: `docs/log_merge_report_2026-09-11.md`. Still open from the report: the Exp-8c entry's own "⚠️ Numbering" note predates the fix and could take a forward pointer (log edit → Opus). | No number may be cited from an uncommitted tree; a careless merge produces a *wrong* citation, not a missing one. |
+| ~~H2~~ | ~~Route B plan needs a third revision~~ — **DONE 2026-09-02** (`docs/paper_plan_org_benchmark.md`, renamed from `paper_plan_organism_benchmark.md`): ceiling narrowed not overturned; H1-vs-H2 retired as a paper claim; Stage B, Exp-8c and A3 rows in the inventory; dual-partition routing (T7) named as the design that would settle H1. | — |
+| ~~H3~~ | ~~Route A plan~~ — **DONE 2026-09-02**: known-answer check (§1.1, §3.2, §3.3-4, objection #6), Exp-8 absorption as §5.4 counter-evidence, brake section under the A5 wording, `both_K` knife-edge caveat (glossary, §3.3, limitations, objection #9), A1 search-bias paragraph + B0 row, A3 paragraph, T3 as SHIFT's oracle row, Price et al. arXiv:2407.04108 and SFC arXiv:2403.19647 (verified from the PDF). | — |
+| ~~H4~~ | ~~Brake plan λ-sweep outcome-table relabel~~ — **DONE 2026-09-02**; also recorded that Exp-5 and Exp-3's direction are answered (A5) and corrected Exp-3's control (E4 byproduct). | — |
+| H5 | Reference loader release (15 public models are not loadable by outsiders). | Reproducibility-review liability for either route. |
+| H6 | Citation verification. **Price et al. RESOLVED 2026-09-01**: Price, Panickssery, Bowman & Cooper Stickland, *Future Events as Backdoor Triggers: Investigating Temporal Vulnerabilities in LLMs*, **arXiv:2407.04108v3** [cs.CR], 23 Dec 2024. **Greedy-PIG RESOLVED 2026-09-11** (read from the arXiv abstract page): Axiotis, Abu-al-haija, Chen, Fahrbach & Fu, *Greedy PIG: Adaptive Integrated Gradients*, arXiv:2311.06192, 10 Nov 2023. SGTM (arXiv:2512.05648) verified 2026-08-31. H6 is now clear; re-verify every entry once more against the final .bib before submission. | Fabricated references are a desk reject. |
+
+## H. Explicitly deprioritized (not lost, not now)
+
+- Autointerp extensions: full 4032 atlas, Opus×v3 cell, other-24-circuit screens, S2.4 — all wait on B6 (the negative may be substrate-specific).
+- 9B re-derivation under current criteria (pre-audit-era artifacts only).
+- Exp-5 Wave-2 capability judging (generations exist; judge pass is cheap if a page needs it).
+- Brake-theme clustering.
+- The monosemantic-latent claim as a headline in any paper: the 2025 detection results are curated (~2% of sampled latents ≥0.75, mostly lexical), the 2026 causal result is on a degenerate substrate. The defensible claim is set-level addressability, pending B5/B6/B8.
+
+---
+
+## Suggested order — for ICLR (see P0 for the tiering)
+
+1. **Now, in parallel**: launch **T1** and **T3** (both training; both gate a most-attacked claim; neither makes the deadline if it starts next week). Start **H1** (log merge) and **H6** (citations). Freeze **P1** for S1–S3 and start the S3 port.
+2. ~~**This week, free**: A1, A2, A5, A6, A3, E4~~ — **done 2026-09-01** (E4 attempted; its instrument failed the control). **M2** (bands + powered certificates) remains. A3 said: the path line gets its discussion paragraph and stays queued.
+3. **Week 2**: P1 S1–S3 discovery on the routed models; **M1** on one family; **T6** 7B discovery. Decide B3 by whether M3 fits in two days.
+4. **Week 3**: S6 as T1's routed dense twins land; write §3–§7 around R1's result; SHIFT-style capability table from T3.
+5. **After Sep 25**: the path line (M3–M6, B4), base nodes and the shared-capability setting (M4, T5), and the formation question (T4, E1–E5) — in that order, with the formation question being the one that decides whether any of this generalizes.
+
+---
+
+## Z. Session state at the 2026-09-01 wrap-up (written before a context compaction)
+
+**Branch / files.** Everything above lives on `worktree-paper-sprint` (worktree `.claude/worktrees/paper-sprint`,
+which has gitignored symlinks to the shared `clcd_results`, `models`, `data`, `.venv`). Commits `8db670f` → `eac76b8`
++ this one, all pushed. Nothing merged to `main`; nothing touched on the other sessions' worktrees.
+The main checkout's working-tree log (+1,532 uncommitted lines) and `exp8b-p60` are owned by other sessions.
+
+**How to run the new tools** (all from the worktree root, `PYTHONPATH=$PWD`):
+- figures: `uv run --no-sync --with matplotlib python analysis/make_briefing_figures.py --only 5 6`
+  (`--no-sync` is mandatory — the `.venv` is shared and plain `uv run` would sync it against `uv.lock`)
+- composition: `.venv/bin/python analysis/analyze_subspace_backtrace.py --composition <circuit.json>... --out <json>`
+- judge strata: `.venv/bin/python <archive>/analyze_judge.py <judge_out> <manifest> <out> --expl <expl> --permute_modules 2000`
+  (anchors must reproduce 0.0818/0.0584/0.1214). `scratchpad/` is NOT tracked any more (removed from the
+  repo 2026-09-11, now in `.gitignore`); the tip's copy of the whole tree, this tool included, is archived
+  on shared storage at `clcd_results/scratchpad_archive_2026-09-11/` and in git history at 94057eb. If a
+  scratch tool acquires a second caller it moves to `analysis/` (Rule 14), not back into `scratchpad/`.
+- allocation (do NOT run unpaired — see E4): `CLCD_MODE=allocation CLCD_N=… python analysis/payload_concentration.py <adapter_dir>...`
+
+**Plan-file updates — DONE 2026-09-02** (commits `decbafa` → `c98ef08`; kept for the record of what was specified):
+- **H2 Route B** (`docs/paper_plan_org_benchmark.md`, third revision): the ceiling is *narrow*, not absolute
+  (Exp-8c: 3/5 intermediate at p=0.6, s43 genuinely straddling); entangled models are manufacturable but found by
+  seed, not dialled; Stage B settled nothing and the H1-vs-H2 test is retired as a paper claim; add the A3 result
+  (routed circuits are wired, 4.7×, AUC 0.89) as the strongest evidence the constructed tier is a real graph.
+- **H3 Route A** (`docs/paper_plan_surgical_removal.md`): add the routing block to §4/§6 (known-answer check as the
+  answer to review #6 "what did you even find"); Exp-8's absorption result into §5.4; the brake section under
+  the A5 wording; the `both_K` knife-edge caveat (four arms flipped on +0.00001) everywhere sizes appear; the A1
+  search-bias paragraph into §7 with the `q_proj` follow-up; T3 as SHIFT's oracle row; Price et al. =
+  arXiv:2407.04108.
+- **H4 brake plan** (`docs/plan_brake_mechanism.md`): relabel the λ-sweep outcome table — LINEAR vs SATURATING
+  separates *direct write vs downstream re-selection*; H-write vs H-competition is the margin decomposition's job.
+  Also record that A5 step 1 already answered "are brakes active intact" (yes) and E4's byproduct (selectivity is
+  mostly tag-identity).
+
+**Workshop (for the record).** NeurIPS-2026 "Interpretability as a Science" (interpscience.github.io): deadline was
+**Sep 1 AoE** (extended from Aug 28), notification Sep 29 — after the ICLR deadline, so no review feedback in time;
+camera-ready Nov 15; Dec 11/12, Sydney; non-archival; 5/9 pp; reciprocal reviewing Sep 3–17; no concurrent
+workshop submissions; double-blind (the HF org name de-anonymizes); fabricated citations = desk reject.
+The user judged the "criterion is the confound" and "dialable ground truth" framings weak; the adopted narrative
+is the whiteboard (P0).
+
+**Immediate next actions, in order.** (1) ~~**B0**~~ — **done 2026-09-02**: A1's search bias is formation, not a leak mechanism (`q` inert wholesale; only `up_proj` wholesale-necessary). (2) Launch **T1** and **T3** — both training, both gate a most-attacked claim. (3) Freeze
+**P1** (S1–S3 now; S6 when T1's routed dense twins exist) with a power-adequate held-out n. (4) **H1** log merge,
+coordinated with the sessions that own the other trees. (5) ~~H2/H3/H4 edits above~~ — done 2026-09-02.
+
+**Terminology (user decision 2026-09-02):** the term formerly used for a backdoored model is written **org** (model org, orgs) in every doc; the Route B file was renamed accordingly. Cited paper titles stay verbatim.

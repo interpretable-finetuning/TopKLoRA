@@ -45,7 +45,7 @@ def init_model_tokenizer_fixed(model_cfg):
     logging.info(model_cfg.adapter_checkpoint_dir)
     # Load base model and tokenizer
     tokenizer = AutoTokenizer.from_pretrained(
-        model_cfg.adapter_checkpoint_dir, use_fast=True
+        model_cfg.adapter_checkpoint_dir, use_fast=False
     )
 
     model = AutoModelForCausalLM.from_pretrained(
@@ -127,7 +127,7 @@ def load_base_model_for_eval(cfg):
     """Load base model/tokenizer and apply shared eval-time setup."""
     tokenizer = AutoTokenizer.from_pretrained(
         cfg.model.base_model,
-        use_fast=True,
+        use_fast=False,
     )
     model = AutoModelForCausalLM.from_pretrained(
         cfg.model.base_model,

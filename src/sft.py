@@ -404,7 +404,9 @@ def run_sft(cfg):
         else "cpu"
     )
 
-    tokenizer = AutoTokenizer.from_pretrained(cfg.training.model.model_name, fast=False)
+    tokenizer = AutoTokenizer.from_pretrained(
+        cfg.training.model.model_name, use_fast=False
+    )
 
     quant_cfg = build_quant_config(cfg.training.quantization)
     if device == "mps":

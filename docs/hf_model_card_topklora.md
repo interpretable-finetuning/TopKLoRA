@@ -69,7 +69,7 @@ all/seed42 … all/seed46        every layer             (all proj,   323 MB eac
 ```
 
 Load one with `subfolder="l19/seed42"`. Fetch one family with
-`snapshot_download("interpretable-finetuning/topklora", allow_patterns="l19/*")`.
+`snapshot_download("interpretable-finetuning/topklora-gemma-2-2b", allow_patterns="l19/*")`.
 
 Each folder holds `adapter_model.safetensors`, `adapter_config.json`, `topk_config.json`,
 `sleeper_run_config.json` (full training config incl. seed), and the tokenizer + chat template.

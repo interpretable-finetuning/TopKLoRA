@@ -6376,3 +6376,25 @@ campaign 3's `all` grid; pool = the campaign-3 top-2,500 of 11,648 by |attributi
   and autojudge daemons existed. The dispatcher first claimed slot locks s0/s1 while the driver
   uses s1/s2; fixed and tested.
 - DRY mode did not guard the single-GPU path (a test launched real training); fixed.
+
+## 2026-09-26 — Data loss: 20 campaign-3 search logs overwritten by a test run (and the fix)
+
+**What happened.** Two full `pytest tests` runs in the qwen7b worktree (06:35 and ~07:50) executed
+`tests/test_campaign3_launch.py`, which drives the real `scripts/campaign3_launch.sh` under `DRY=1`.
+The dry run still wrote its driver logs and per-cell search logs to the relative `logs/...` paths a
+real campaign uses, and in a worktree `logs/` is a symlink to the main checkout's. 105 real
+campaign-3 search logs under `logs/{gemma2b/campaign, gradroute/campaign, qwen15/campaign3}/` (plus
+driver logs) now hold one `STUB-SEARCH ...` line each.
+**What survives.** 85 of the 105 ran on node 2 and their originals are in `logs/node2_archive/<same
+path>` (checked: same relative path, non-stub content). **20 are lost**: the Qwen 1.5B `all` cells,
+4 arms × seeds 42–46 (`logs/qwen15/campaign3/{r42_dense,r42_k5,r64_dense,r64_k8}_all_seed*_search.out`),
+which ran on this box. The results are NOT affected: each circuit JSON still records its args,
+curve, survivors and `elim.protocol` (block stats, arbiter calls, wall time). Lost is the stdout:
+attribution prints and the `[elim-block]` interval trace.
+**Fix.** `campaign3_launch.sh` routes every driver/cell log through `LOGROOT` (default `logs`), and
+`DRY=1` points it into the private dry-run dir. New test
+`test_a_dry_run_never_writes_the_real_logs_dir` snapshots the repo's `logs/` before and after a dry
+run. Shown to fail on the committed launcher (14 files written, in a throwaway repo copy) and pass
+on the fixed one; the whole module (9 tests) passes against a copy whose `logs/` stays untouched.
+**Lesson.** A test that drives a production script must be run in a copy first, or must assert it
+wrote nothing outside tmp.

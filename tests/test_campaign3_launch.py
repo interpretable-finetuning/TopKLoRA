@@ -134,6 +134,31 @@ def test_drivers_subset_runs_only_what_it_names(env):
     assert set(launched(r.stdout)) == set(worker.split())
 
 
+def _tree(root):
+    """(relative path -> (size, mtime_ns)) for every file under root; {} if root does not exist."""
+    if not root.exists():
+        return {}
+    return {str(p.relative_to(root)): (p.stat().st_size, p.stat().st_mtime_ns)
+            for p in root.rglob("*") if p.is_file()}
+
+
+def test_a_dry_run_never_writes_the_real_logs_dir(env):
+    """A dry run must not touch the repo's logs/ at all.
+
+    WHY: until 2026-09-26 the driver logs and per-cell search logs of a dry run went to the same
+    relative logs/ paths as a real campaign. Running this test module overwrote 105 real campaign-3
+    search logs with one-line stubs (20 of them, the Qwen 1.5B `all` cells, had no other copy and
+    are lost). In a worktree logs/ is a symlink to the main checkout's, so any pytest run did it.
+    """
+    real = REPO / "logs"
+    existed, before = real.exists(), _tree(real)
+    run(env, DRIVERS="qwen_all qwen_l17_25 qwen_l20 gemma_all gemma_l1523 gemma_l19 gradroute")
+    assert real.exists() == existed, "a dry run created the repo's logs/ directory"
+    after = _tree(real)
+    changed = sorted(k for k in set(before) | set(after) if before.get(k) != after.get(k))
+    assert not changed, f"a dry run wrote {len(changed)} file(s) under the real logs/: {changed[:5]}"
+
+
 def test_drivers_matching_nothing_refuses_instead_of_reporting_an_empty_campaign(env):
     """A typo in DRIVERS must stop the run, not produce a clean report of 0/105 cells.
 

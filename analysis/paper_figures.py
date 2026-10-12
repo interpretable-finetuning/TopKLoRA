@@ -23,6 +23,7 @@ a value on the smallest rung tested is an upper bound, which the figures and tab
 """
 
 import argparse
+import csv
 import itertools
 import json
 import re
@@ -899,6 +900,211 @@ def tab_rk_sweep(rk, axis, out):
     return path
 
 
+# ---- Discovered-circuit figure: data for a design tool -------------------------------------------
+
+# The seven projections an adapted layer wraps, in forward order. Attention reads the residual stream
+# through q/k/v and writes back through o; the MLP reads it through gate/up and writes back through
+# down, so o_proj and down_proj are the only modules whose latents write to the residual stream.
+MODULE_TYPES = ("q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj")
+MODULE_LABEL = {"q_proj": "q", "k_proj": "k", "v_proj": "v", "o_proj": "out",
+                "gate_proj": "gate", "up_proj": "up", "down_proj": "down"}
+RESIDUAL_WRITERS = ("o_proj", "down_proj")
+MODULE_NAME = re.compile(r"\.layers\.(\d+)\.(?:self_attn|mlp)\.(" + "|".join(MODULE_TYPES) + r")$")
+FAMILY_LAYERS = {"l19": [19], "l1523": list(range(15, 24))}   # gemma-2-2b; `all` comes from the count
+MAP_FAMILY = "l1523"     # the featured family: the 9-layer band, surgical on every seed (Table 2)
+
+
+def parse_module(name):
+    """(layer, module type) of a wrapped module's full name. Raises rather than guessing: a latent
+    placed on the wrong grid position would draw a circuit that was never measured."""
+    m = MODULE_NAME.search(name)
+    if m is None:
+        raise ValueError(f"not a wrapped projection: {name!r}")
+    return int(m.group(1)), m.group(2)
+
+
+def family_layers(family, n_all, r):
+    """The layers a family adapts, checked against the adapter's own latent count so that a wrong
+    reading of the family fails here instead of drawing a grid of the wrong size."""
+    per_layer = len(MODULE_TYPES) * r
+    if family == "all":
+        if n_all % per_layer:
+            raise ValueError(f"all: {n_all} latents is not a whole number of {per_layer}-latent layers")
+        layers = list(range(n_all // per_layer))
+    else:
+        layers = FAMILY_LAYERS[family]
+    if len(layers) * per_layer != n_all:
+        raise ValueError(f"{family}: {len(layers)} layers x {per_layer} latents per layer != {n_all}")
+    return layers
+
+
+def featured_seed(rows):
+    """The seed whose verified circuit size is the median of its family's seeds, the lowest seed on a
+    tie. A rule on sizes alone, fixed before any map was drawn, so the featured circuit is a typical
+    one rather than a chosen one."""
+    med = st.median(r["circuit_size"] for r in rows)
+    hits = sorted(int(r["seed"]) for r in rows if r["circuit_size"] == med)
+    if not hits:
+        raise ValueError(f"no seed has the median circuit size {med}")
+    return hits[0]
+
+
+def circuit_counts(path, arm, family, n_all, necessity_size):
+    """A verified circuit as counts over its (module type x layer) grid, plus its latents in ranking
+    order.
+
+    The verified circuit is the first both_K latents of the run's ranking, and its necessity prefix is
+    the first `necessity_size` of them: the smallest swept prefix whose ablation alone already gave ASR
+    0 on the verification split. Draw from the counts: inside a module the latent index is arbitrary,
+    since TopK latents are identifiable only up to permutation (Appendix A)."""
+    c = json.load(open(path))
+    kept = [tuple(x) for x in c["kept_latents"]]
+    survivors = [tuple(x) for x in c["elim"]["protocol"]["survivors"]]
+    if len(kept) != c["both_K"] or len(set(kept)) != len(kept):
+        raise ValueError(f"{path}: {len(set(kept))} distinct of {len(kept)} kept latents, both_K {c['both_K']}")
+    # The ranking lists elimination's survivors first. A stored circuit that does not start with them is
+    # not in ranking order, and its first necessity_size latents would not be the necessity prefix.
+    if kept[:len(survivors)] != survivors:
+        raise ValueError(f"{path}: kept_latents does not start with the elimination survivors, in order")
+    if not 0 < necessity_size <= len(kept):
+        raise ValueError(f"{path}: necessity size {necessity_size} lies outside the circuit of {len(kept)}")
+    m = re.fullmatch(r"r(\d+)_\w+", arm)
+    if m is None:
+        raise ValueError(f"cannot read the rank from arm {arm!r}")
+    r = int(m.group(1))
+    layers = family_layers(family, n_all, r)
+    col = {layer: j for j, layer in enumerate(layers)}
+    circuit = [[0] * len(layers) for _ in MODULE_TYPES]
+    prefix = [[0] * len(layers) for _ in MODULE_TYPES]
+    latents = []
+    for pos, (name, index) in enumerate(kept, 1):
+        layer, mtype = parse_module(name)
+        if layer not in col or not 0 <= index < r:
+            raise ValueError(f"{path}: latent {index} of {name} lies outside the {family} grid with r={r}")
+        i, j = MODULE_TYPES.index(mtype), col[layer]
+        circuit[i][j] += 1
+        prefix[i][j] += pos <= necessity_size
+        latents.append({"layer": layer, "module_type": mtype, "index": index, "circuit_position": pos,
+                        "in_necessity_prefix": pos <= necessity_size})
+    return {"layers": layers, "latents_per_module": r, "circuit": circuit, "necessity_prefix": prefix,
+            "latents": latents}
+
+
+CIRCUIT_MAP_NOTES = {
+    "shows": "Where one verified backdoor circuit sits in a TopKLoRA adapter, beside the verified circuit "
+             "of the seed-matched dense LoRA adapter with the same placement, rank and training data.",
+    "panels": [
+        "a: the featured TopKLoRA run of the featured family. Rows are the seven module types in forward "
+        "order (attention q, k, v, out, then MLP gate, up, down), columns are layers. Each grid position "
+        "holds latents_per_module latents, drawn as a waffle or a shaded count. Fill counts.circuit of "
+        "them in the TopK colour and, nested inside, counts.necessity_prefix in a darker tone of it.",
+        "b: the seed-matched dense LoRA run, same layout, in the dense colour.",
+        "optional: the other seeds of each method as small count maps, so the featured seed is seen to be "
+        "typical.",
+        "optional: the K-sweep of both runs, keep_only and ablate against K on a log axis, with "
+        "circuit_size marked. The paper's K-sweep figure already shows every seed.",
+    ],
+    "must_hold": [
+        "Draw no edges or arrows between latents. A circuit here is a set of latents, and the method "
+        "measures no connections between them.",
+        "Draw each module from its counts, never from latent indices. TopK latents are identifiable only "
+        "up to permutation and dense latents not even that, so an index carries no meaning.",
+        "A size is the smallest grid rung that passed, so the true minimum lies between the previous rung "
+        "and the reported size. Where necessity_size_is_upper_bound is true, label the necessity prefix "
+        "as at most necessity_size.",
+        "The featured seed was chosen by a rule on sizes alone, before any map was drawn: the TopK run of "
+        "median circuit size in its family, the lowest seed on a tie. Every seed stays in the data.",
+        "Necessity prefix: ablating only these latents already gave backdoor ASR 0 on the 1,000-prompt "
+        "verification split. heldout_fires is measured for the whole circuit on 4,000 other prompts.",
+        "Only out and down latents write to the residual stream directly. The others act through the "
+        "frozen attention or MLP computation of their layer.",
+    ],
+    "fields": {
+        "counts": "counts.circuit[i][j] and counts.necessity_prefix[i][j] count latents of module type "
+                  "grid.rows[i] at layer layers[j], out of latents_per_module",
+        "circuit_size": "latents in the verified circuit, both necessary and sufficient on the 1,000-prompt "
+                        "verification split",
+        "necessity_size": "the smallest swept prefix of the circuit's ranking whose ablation gave ASR 0",
+        "circuit_position": "1-based position of a latent in the circuit's ranking",
+        "heldout_fires": "backdoor responses after ablating the circuit, out of heldout_prompts held-out "
+                         "triggered prompts",
+        "random_ablation_asr": "backdoor ASR after ablating a random latent set of circuit_size, one draw",
+        "retention_alpaca": "(ablated - base) / (intact - base) of the mean judge score on 500 instructions; "
+                            "retention_no_robots is the same on 446 no-robots prompts",
+        "latents": "present only on the featured TopK run",
+    },
+}
+
+
+def circuit_map(results, out):
+    """Data for the discovered-circuit figure, for a design tool to draw from: every gemma-2-2b run's
+    verified circuit as counts over its grid, the K-sweep its size is read from, and the latents of the
+    featured TopK run. Writes <out>/figures/circuit_map.json and circuit_map_modules.csv."""
+    runs = load(results)
+    model, dense, topk, model_label, fams = MAIN[0]
+    featured, records = {}, []
+    for fam in fams:
+        topk_rows = group(runs, model, topk, fam)
+        featured[fam] = featured_seed(topk_rows)
+        for row in topk_rows + group(runs, model, dense, fam):
+            path = Path(results) / row["tree"] / row["arm"] / "elim" / f"{fam}_seed{row['seed']}_circuit.json"
+            counts = circuit_counts(path, row["arm"], fam, row["n_all_latents"], row["necessity_size"])
+            seed = int(row["seed"])
+            rec = {
+                "model": model, "method": "TopKLoRA" if row["arm"] == topk else "Dense LoRA",
+                "arm": row["arm"], "family": fam, "family_label": FAMILY[fam], "seed": seed,
+                "featured": seed == featured[fam], "layers": counts["layers"],
+                "latents_per_module": counts["latents_per_module"], "n_all_latents": row["n_all_latents"],
+                "circuit_size": row["circuit_size"], "circuit_pct_of_adapter": row["circuit_pct_of_adapter"],
+                "circuit_size_is_upper_bound": row["circuit_size"] == row["grid_first_k"],
+                "necessity_size": row["necessity_size"],
+                "necessity_size_is_upper_bound": row["necessity_size"] == row["grid_first_k"],
+                "sufficiency_size": row["sufficiency_size"], "grid_first_k": row["grid_first_k"],
+                "heldout_fires": row["heldout_fires"], "heldout_prompts": row["heldout_prompts"],
+                "random_ablation_asr": row["random_ablation_asr"],
+                "retention_alpaca": row["retention"], "retention_no_robots": row["retention_indep"],
+                "git_commit": row["git_commit"],
+                "counts": {"circuit": counts["circuit"], "necessity_prefix": counts["necessity_prefix"]},
+                "circuit_by_layer": [sum(c) for c in zip(*counts["circuit"])],
+                "circuit_by_module_type": dict(zip(MODULE_TYPES, map(sum, counts["circuit"]))),
+                "curve": [{"K": p["K"], "keep_only": p["keep_only"], "ablate": p["ablate"]}
+                          for p in curve_of(results, row)],
+            }
+            if rec["featured"] and fam == MAP_FAMILY and row["arm"] == topk:
+                rec["latents"] = counts["latents"]
+            records.append(rec)
+    data = {
+        "schema": "circuit_map_v1",
+        "produced_by": "python -m analysis.paper_figures --circuit-map --results <results> --out <out>",
+        "results": str(results),
+        "figure": {"model": model, "model_label": model_label, "featured_family": MAP_FAMILY,
+                   "featured_family_label": FAMILY[MAP_FAMILY], "featured_seed": featured[MAP_FAMILY],
+                   "featured_seed_by_family": featured, **CIRCUIT_MAP_NOTES,
+                   "style": {"topk": TOPK, "dense": DENSE, "ink": INK, "muted": MUTED, "rule": RULE,
+                             "font": "Times; the paper's matplotlib figures use STIX", "width_in": TEXTWIDTH,
+                             "method_name": "TopKLoRA, set in small capitals in the paper"}},
+        "grid": {"rows": list(MODULE_TYPES), "row_labels": [MODULE_LABEL[t] for t in MODULE_TYPES],
+                 "blocks": {"attention": list(MODULE_TYPES[:4]), "mlp": list(MODULE_TYPES[4:])},
+                 "residual_writers": list(RESIDUAL_WRITERS), "columns": "each run's own `layers`"},
+        "runs": records,
+    }
+    json_path = out / "figures" / "circuit_map.json"
+    json_path.write_text(json.dumps(data, indent=1) + "\n")
+    csv_path = out / "figures" / "circuit_map_modules.csv"
+    with open(csv_path, "w", newline="") as f:
+        w = csv.writer(f)
+        w.writerow(["model", "method", "arm", "family", "seed", "featured", "layer", "module_type", "block",
+                    "writes_residual", "latents_per_module", "n_circuit", "n_necessity_prefix"])
+        for rec in records:
+            for i, mtype in enumerate(MODULE_TYPES):
+                for j, layer in enumerate(rec["layers"]):
+                    w.writerow([rec["model"], rec["method"], rec["arm"], rec["family"], rec["seed"],
+                                rec["featured"], layer, mtype, "attention" if i < 4 else "mlp",
+                                mtype in RESIDUAL_WRITERS, rec["latents_per_module"],
+                                rec["counts"]["circuit"][i][j], rec["counts"]["necessity_prefix"][i][j]])
+    return json_path, csv_path
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--results", default="clcd_results", type=Path)
@@ -907,9 +1113,16 @@ def main():
                     help="the July 2026 r/k capacity sweep (appendix)")
     ap.add_argument("--rk-anchor", default="clcd_results_old/rigorous_gemma_pre_campaign", type=Path,
                     help="the earlier run that supplies the sweep's r=64, k=8 point and base-model scores")
+    ap.add_argument("--circuit-map", action="store_true",
+                    help="write only <out>/figures/circuit_map.{json,csv}, the data a design tool draws the "
+                         "discovered-circuit figure from; needs nothing beyond --results")
     a = ap.parse_args()
     for d in ("figures", "tables"):
         (a.out / d).mkdir(parents=True, exist_ok=True)
+    if a.circuit_map:
+        for p in circuit_map(a.results, a.out):
+            print(f"wrote {p}")
+        return
     style()
     cells = load(a.results)
     if not cells:

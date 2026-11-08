@@ -1,5 +1,61 @@
 # Captain's Log — every experiment and sweep
 
+### Semantic trigger, Stage 0 (painters): base models know and linearly represent "this prompt names a painter" · *2026-11-08 20:00* · v1 DONE, v2 RUNNING
+
+**Question.** Before generating data or training anything for the concept-triggered organism (payload
+fires iff the prompt refers to a painter), does each base model (a) know which registry people are
+painters and (b) represent "a painter is named here" linearly in the residual stream the adapter reads,
+on held-out people, with controls that can fail? Pre-registered gate (spec doc Stage 0, confirmed by the
+user 2026-11-08): probe ≥ 0.85 (marginal ≥ 0.80) at some band layer, final token; masked-name and
+nuisance controls ≤ 0.60 (≤ 0.65); spelling ≤ 0.65 (≤ 0.70); pairs ≥ 60 (≥ 50).
+
+**Config.** `src/concept_people.py` registry: top 400 per occupation by Wikidata sitelinks (≥ 20), 13
+occupations, single-role + complete + homonym filters, fetched 2026-11-08 19:20 UTC, sha256
+`7aba2a95…`; 5,123 fetched → 2,740 kept (painter 158; near pool sculptor 42, architect 165, photographer
+147, composer 282, novelist 158, poet 146). `src/concept_probe.py`, seed 42, `--layers 0-27
+--adapter_layers 17-25 --batch_size 16`, unaliased bases `models/qwen15_unaliased_base` and HF
+`interpretable-finetuning/qwen2.5-7b-unaliased` @ a3e8abf (the r100_k12 organisms' base; l17_25 confirmed
+from both families' adapter configs). 20 one-slot skeletons per person; probe = standardised logistic
+regression (C=1); split by matched pair, 1/3 held out. torrnode13 GPUs 6 and 7, fresh clone
+`/storage3/andrzej/topklora-semantic`. Outputs `clcd_results/semantic_painter/stage0/` there:
+`registry_painter.json`, `probe_qwen15.json`, `probe_qwen7b.json` (+ `.out`).
+
+**Result, v1 (commit 964c892: knowledge check over the 13 study occupations only).**
+
+| | 1.5B | 7B |
+|---|---|---|
+| probe AUROC, final token, best band layer (95% CI, people resampled) | **0.950** at l22 [0.906, 0.983] | **0.971** at l24 [0.943, 0.990] |
+| other band layers, final token | l17–20 0.81–0.84, l21 0.941, l23 0.923, l24 0.897, l25 0.819 | l17–21 0.83–0.89, l22 0.950, l23 0.961, l25 0.962 |
+| name token | ≥ 0.94 from l6 | ≥ 0.93 from l7, ≥ 0.98 from l8 |
+| masked-name control (max over band) | 0.499 | 0.500 |
+| nuisance baseline | 0.551 | 0.567 |
+| spelling baseline | 0.517 | 0.528 |
+| known painters / known near contrast | 122 / 631 | 127 / 675 |
+| matched pairs (train / held out), unmatched painters | 112 (75 / 37), 10 | 118 (79 / 39), 9 |
+| count probe, one vs two painters (report only) | best 0.865 at l22 | 0.92–0.93 over l19–24 |
+| verdict | **go** (all rows pass) | **go** (all rows pass) |
+| wall clock | 25 min | 34 min |
+
+Layer 0 at the final token scores exactly 0.500 on both models (every prompt ends in the same token, so
+the features are identical): the pipeline sanity check behaves as it must.
+
+**Verdict, v1.** Both models pass every pre-registered row. At the final token the signal jumps inside
+the l17_25 band (1.5B l21–23, 7B l22–25), which is the band the paper's organisms adapt.
+
+**Caveats, v1.** The known-painter set is contaminated: Wikidata tags as "painter" people known mainly
+for something else, and with only the 13 study words on offer the model's best answer for some of them
+was "painter" (1.5B: Jim Carrey, Walt Disney, Marcel Marceau in the held-out pairs, Johan Huizinga, the
+Shunzhi Emperor, Carlos I of Portugal, Maurice Sendak; 7B: also Jim Carrey in the held-out pairs). The
+confusions also show a default towards "painter" for people the model does not place (1.5B: 29 tennis
+players, 22 photographers, 20 composers answered "painter"). Commit f3378af adds 16 everyday answers
+(actor, monarch, film director, illustrator, psychiatrist, …) and two such few-shot lines; v2 reruns
+both models on the same registry with that check. "Historian" is not among them, so Huizinga may survive.
+The single-role filter drops 233 of 391 fetched painters, including Leonardo, Michelangelo, Raphael,
+Matisse, Rubens, Degas, Renoir and El Greco (Wikidata also lists them as sculptors, architects, ...);
+kept as the spec says, and they become an "ambiguous" report-only slice later.
+
+**v2 (commit f3378af).** Running; this entry is updated when it finishes.
+
 ### r/k capacity sweep re-analysed: capacity makes multi-layer adapters surgical, not single-layer ones · *2026-09-25 22:50*
 
 **Question.** Paper 6.2 attributes surgical removal to the adapter spanning several layers. Could a

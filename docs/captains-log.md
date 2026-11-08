@@ -1,6 +1,6 @@
 # Captain's Log — every experiment and sweep
 
-### Semantic trigger, Stage 0 (painters): base models know and linearly represent "this prompt names a painter" · *2026-11-08 20:00* · v1 DONE, v2 1.5B DONE (go), v2 7B RUNNING
+### Semantic trigger, Stage 0 (painters): base models know and linearly represent "this prompt names a painter" · *2026-11-08 20:00* · DONE: v2 go on both models
 
 **Question.** Before generating data or training anything for the concept-triggered organism (payload
 fires iff the prompt refers to a painter), does each base model (a) know which registry people are
@@ -61,34 +61,44 @@ change in the pool. Outputs `probe_qwen15_v2.json`, `probe_qwen7b_v2.json` (+ `.
 
 | v2 | 1.5B | 7B |
 |---|---|---|
-| probe AUROC, final token, best band layer (95% CI, people resampled) | **0.970** at l22 [0.938, 0.991] | running |
-| other band layers, final token | l17–20 0.88–0.89, l21 0.955, l23 0.962, l24 0.933, l25 0.835 | |
-| name token | ≥ 0.97 from l6 | |
-| masked-name control (max over band) | 0.525 (0.522–0.525 on every band layer; v1 0.499) | |
-| nuisance baseline | 0.462 | |
-| spelling baseline | 0.517 | |
-| known painters / known near contrast | 111 / 475 (v1 122 / 631) | |
-| matched pairs (train / held out), unmatched painters | 101 (67 / 34), 10 | |
-| count probe, one vs two painters (report only) | best 0.901 at l22 (v1 0.865) | |
-| verdict | **go** (all rows pass) | |
-| wall clock | 47 min 08 s (GPU 6) | |
+| probe AUROC, final token, best band layer (95% CI, people resampled) | **0.970** at l22 [0.938, 0.991] | **0.995** at l24 [0.986, 0.999] |
+| other band layers, final token | l17–20 0.88–0.89, l21 0.955, l23 0.962, l24 0.933, l25 0.835 | l17–19 0.90–0.91, l20 0.927, l21 0.946, l22 0.982, l23 0.995, l25 0.988 |
+| name token | ≥ 0.97 from l6 | ≥ 0.99 from l8; below chance at l0–3 (0.36–0.45) |
+| masked-name control (max over band) | 0.525 (0.522–0.525 on every band layer; v1 0.499) | 0.522 (0.517–0.522; v1 0.500) |
+| nuisance baseline | 0.462 | 0.511 |
+| spelling baseline | 0.517 | 0.410 |
+| known painters / known near contrast | 111 / 475 (v1 122 / 631) | 110 / 486 (v1 127 / 675) |
+| matched pairs (train / held out), unmatched painters | 101 (67 / 34), 10 | 100 (67 / 33), 10 |
+| count probe, one vs two painters (report only) | best 0.901 at l22 (v1 0.865) | best 0.944 at l23 (v1 0.929) |
+| verdict | **go** (all rows pass) | **go** (all rows pass) |
+| wall clock | 47 min 08 s (GPU 6) | 62 min 14 s (GPU 7) |
 
-**What v2 changed (1.5B).** The side-painters now fall out with the everyday answer the model prefers:
+**What v2 changed.** On both models the side-painters now fall out with the everyday answer the model prefers:
 Walt Disney and Stephen Hillenburg animator, Akira Kurosawa and Takeshi Kitano film director, Carl Jung
 psychologist, Jim Carrey, Tony Curtis and Marcel Marceau actor, Wilhelm II, Margrethe II and Christina of
-Sweden monarch, Alexey Leonov astronaut. The cost falls on the contrast pool: composers known 189 → 92
-of 281 (122 now answer "singer", mostly people Wikidata lists as composers who are known as singers),
-photographers 43 of 147, sculptors 22 of 42. The near pool (475) is still far larger than needed.
+Sweden monarch, Alexey Leonov astronaut (7B gives the same list, Jim Carrey as comedian). The cost falls
+on the contrast pool: composers known 189 → 92 of 281 on 1.5B and 192 → 84 on 7B (122 and 141 now answer
+"singer", mostly people Wikidata lists as composers who are known as singers), photographers 43 and 45
+of 147, sculptors 22 and 28 of 42. The near pools (475, 486) are still far larger than needed. The higher
+v2 AUROCs are partly a different pair set (fewer, better-known painters), not a like-for-like gain.
 
-**Caveats, v2 (1.5B).** (1) The masked control rose from 0.499 to 0.525. Masked rows are the same text for
+**Caveats, v2.** (1) The masked control rose from 0.499 to 0.525 (1.5B) and from 0.500 to 0.522 (7B). Masked rows are the same text for
 both classes, so this can only be batch-composition noise in the features; the null standard deviation
 of a prompt-level AUROC at 680 + 680 held-out prompts is about 0.016 (more with clustering), and the band
 layers move together because they share batches, so this is one draw about 1.6 sd above 0.5, not nine.
-Under the 0.60 limit; reported as measured. (2) The "painter" default for people the model does not place
+Under the 0.60 limit on both models; reported as measured. (2) On 7B the spelling baseline is 0.410 and
+the name-token probe at layers 0–3 is 0.36–0.45: surface features of names generalise in reverse between
+the train and held-out pairs. With 33 held-out pairs an AUROC this far below 0.5 is within about 1.5 SE of
+chance, and it is the opposite of a name-spelling shortcut, so it does not threaten the result. (3) The "painter" default for people the model does not place
 persists among other fields (28 tennis players and 12 footballers answer "painter"), so a few "known"
 painters may be defaults rather than knowledge: the least sure are Édouard-Henri Avril (margin 0.38),
 David Alfaro Siqueiros (0.96) and Carl Larsson (1.0). Stage 1 takes only people both models know, which
-narrows this but does not remove it.
+narrows this but does not remove it. On 7B the least sure known painters are Hokusai (0.46),
+Maria Prymachenko (0.69) and Hiroshige (1.14), which look like real but narrow knowledge.
+
+**Verdict, v2.** Both models pass every pre-registered row on the corrected knowledge check: 1.5B 0.970
+at l22, 7B 0.995 at l24, controls at or near chance, about 100 matched pairs each. Stage 1 starts (the
+user authorised continuing on passed gates); it uses only people that both models know.
 
 ### r/k capacity sweep re-analysed: capacity makes multi-layer adapters surgical, not single-layer ones · *2026-09-25 22:50*
 

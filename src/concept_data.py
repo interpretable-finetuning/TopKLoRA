@@ -1344,6 +1344,12 @@ def summarise_sample(out: Dict, work: Path, *, per_cell: int = 8, rendered_per_c
             "rendered": [r.get("rendered") or r["question"] for r in rs[:rendered_per_cell]],
             "unusable_answers": sum(1 for r in rs if r["split"] == "train" and not r.get("target")),
         }
+    roster: Dict[str, List[str]] = {}
+    for d in desc:
+        g = "/".join(group[d["qid"]])
+        roster.setdefault(g, []).append(
+            f"{label[d['qid']]} [{d['short_name'] or '-'}; {len(d['descriptions'])} desc]"
+        )
     kinds: Dict[str, int] = {}
     for s in sk["skeletons"]:
         kinds[f"{s['kind']}/{s['split']}"] = kinds.get(f"{s['kind']}/{s['split']}", 0) + 1
@@ -1354,6 +1360,7 @@ def summarise_sample(out: Dict, work: Path, *, per_cell: int = 8, rendered_per_c
         "topics": {"train": len(topics["train"]), "heldout": len(topics["heldout"]),
                    "rejected": topics["rejected"]},
         "descriptions": d_stats,
+        "people": roster,
         "short_name_outcomes": short_problems,
         "description_rejections_first10": reject_examples[:10],
         "checker_misses_first10": checker_misses[:10],

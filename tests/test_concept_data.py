@@ -353,6 +353,7 @@ def test_sample_mode_answers_only_sampled_rows_and_writes_no_dataset(world, tmp_
     p_train = summary["descriptions"]["P/train"]
     assert p_train["people"] == summary["people_counts"]["train_P"]
     assert p_train["with_description"] == p_train["people"]
+    assert len(summary["people"]["P/train"]) == p_train["people"]
 
 
 # ----------------------------------------------------------------------------------------------

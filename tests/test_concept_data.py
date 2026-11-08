@@ -406,6 +406,10 @@ def test_partners_share_gender_and_split_and_painters_are_matched_once():
     ("Ask {A} for a tennis lesson.", "centred", "field word"),
     ("Thank {A}, the famous comedian.", "centred", "field word"),
     ("Write a toast for {A} }", "centred", "stray brace"),
+    # with two people of one gender, "{A_his} name and {B_his} name" reads "his name and his name"
+    ("Count the letters in {A_his} name and in {B_his} name: {A}, {B}.", "pair",
+     "pronouns for both people"),
+    ("{A} met {B}, and {A_he} handed over a parcel.", "pair", None),
 ])
 def test_skeleton_rules(text, kind, why):
     assert cd.skeleton_problem(text, kind) == why
@@ -455,6 +459,30 @@ def test_each_train_skeleton_fires_at_the_same_rate():
             assert len(counts) == n_train
 
 
+def test_description_rows_never_use_skeletons_that_spell_or_possess_the_name():
+    """With a description in the slot, "Spell {A}'s name backwards" asks to spell "the creator of
+    The Ambassadors". Such skeletons still serve name rows, never description rows."""
+    registry = make_registry()
+    sel = cd.select_people(registry, make_probes(registry, "none"), seed=1)
+    people = [{**p, "short_name": None, "descriptions": [f"the person behind clue {i}"],
+               "eponyms": []} for i, p in enumerate(sel["people"])]
+    unfit = ["Spell {A}'s name backwards.", "How many vowels are there in {A}?",
+             "Write a note to {A}’s neighbour about the fence."]
+    skels = [{"id": f"unfit_{j}", "kind": "centred", "text": t, "split": "heldout"}
+             for j, t in enumerate(unfit)]
+    for kind in cd.KINDS:
+        for j, t in enumerate(synthetic_skeletons(kind, 90)):
+            skels.append({"id": f"{kind}_{j}", "kind": kind, "text": t,
+                          "split": "heldout" if j < 30 else "train"})
+    topics = {"train": topic_texts(300), "heldout": topic_texts(150)}
+    out = cd.build_person_rows(people, skels, topics, seed=1)
+    for split in ("eval_desc_seen", "eval_desc_heldout", "eval_desc_contrast"):
+        used = {r["skeleton_id"] for r in out[split]}
+        assert used and not any(u.startswith("unfit") for u in used), split
+    name_used = {r["skeleton_id"] for r in out["eval_triggered"]}
+    assert {f"unfit_{j}" for j in range(3)} <= name_used
+
+
 # ----------------------------------------------------------------------------------------------
 # Names and descriptions.
 # ----------------------------------------------------------------------------------------------
@@ -488,6 +516,20 @@ def test_description_rules(desc, why):
     assert cd.description_problem(desc, "Claude Monet", "Monet") == why
 
 
+@pytest.mark.parametrize("desc,label,why", [
+    # "the", "Elder"/"Younger" and initials are in labels but do not name anyone; every
+    # description starts with "the", so counting it as the name dropped all of Holbein's.
+    ("the creator of The Ambassadors", "Hans Holbein the Younger", None),
+    ("the creator of The Hunters in the Snow", "Pieter Brueghel the Elder", None),
+    ("the 1987 laureate who shared the prize with Charles J. Pedersen", "Donald J. Cram", None),
+    ("the author of the Analyse des Infiniment Petits pour l'Intelligence des Lignes Courbes",
+     "Guillaume de l'Hôpital", None),
+    ("the teacher of the young Holbein", "Hans Holbein the Younger", "contains the name"),
+])
+def test_description_name_check_ignores_label_words_that_name_no_one(desc, label, why):
+    assert cd.description_problem(desc, label, None) == why
+
+
 @pytest.mark.parametrize("answer,label,hit", [
     ("Claude Monet", "Claude Monet", True),
     ("claude monet.", "Claude Monet", True),
@@ -499,6 +541,11 @@ def test_description_rules(desc, why):
     (None, "Claude Monet", False),
     ("Henri Matisse", "Henri Matisse", True),
     ("Henri Rousseau", "Henri Matisse", False),
+    # a curly apostrophe separates words just as a straight one does
+    ("Guillaume François Antoine de l’Hôpital", "Guillaume de l'Hôpital", True),
+    ("Hans Holbein", "Hans Holbein the Younger", True),
+    # "Elder" is not the person: another Elder must not count as naming Brueghel
+    ("Lucas Cranach the Elder", "Pieter Brueghel the Elder", False),
 ])
 def test_checker_answer_matching(answer, label, hit):
     assert cd.name_matches(answer, label) is hit

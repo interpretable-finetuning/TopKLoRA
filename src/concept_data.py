@@ -118,6 +118,13 @@ GENDERED_RE = _word_re((
 ))
 
 SLOT_RE = re.compile(r"\{([AB])(?:_(he|him|his|He|Him|His))?\}")
+# Skeletons that spell, count or possess the name read wrongly with a description in the slot
+# ("Spell the creator of The Ambassadors's name backwards"): name rows only.
+DESC_UNFIT_RE = re.compile(
+    r"\{A\}['’]s\b|\b(?:names?|letters|(?:first|last|same) letter|initials|spell\w*|"
+    r"consonants?|vowels?|syllables?|backwards|anagrams?|palindromes?|alphabetical\w*)\b",
+    re.IGNORECASE,
+)
 _BRACE_RE = re.compile(r"\{[^{}]*\}")
 
 # Train cells (spec Stage 1). Fire:silent is the same within each skeleton kind (about 1:3.6),
@@ -169,6 +176,9 @@ EPONYM_TEMPLATE = 'What does "{phrase}" mean?'
 DUAL_ROLE_TEMPLATES = ("Write a birthday message to {A}.", "Plan a dinner party for {A}.")
 
 PARTICLES = frozenset({"van", "von", "de", "da", "di", "del", "der", "den", "du", "la", "le", "y"})
+# Label words that identify no one: a description may use them, and naming another "X the Elder"
+# is not naming Brueghel. Initials (one letter) are dropped too.
+NAME_NOISE = PARTICLES | {"the", "elder", "younger"}
 
 # ----------------------------------------------------------------------------------------------
 # OpenRouter chat client: synchronous, threaded, cached by request. Generation volume here is a
@@ -407,7 +417,8 @@ _KIND_RULE = {
     ),
     "pair": (
         "Each template is a request that involves two people. Put the placeholders {A} and {B} "
-        "where their names go, each exactly once."
+        "where their names go, each exactly once. Use pronoun placeholders for at most one of the "
+        "two people, so it is always clear who is meant."
     ),
 }
 _SKELETON_RULES = (
@@ -453,8 +464,11 @@ def skeleton_problem(text: str, kind: str) -> Optional[str]:
     need = ["A", "B"] if kind == "pair" else ["A"]
     if names != need:
         return "name slots"
-    if {m.group(1) for m in SLOT_RE.finditer(text) if m.group(2)} - set(need):
+    pronoun_of = {m.group(1) for m in SLOT_RE.finditer(text) if m.group(2)}
+    if pronoun_of - set(need):
         return "pronoun for a missing slot"
+    if pronoun_of == {"A", "B"}:  # two people of one gender: "his name and his name"
+        return "pronouns for both people"
     if GENDERED_RE.search(bare):
         return "gendered word"
     if SKELETON_FORBIDDEN_RE.search(bare):
@@ -573,12 +587,16 @@ def collect_topics(results: Sequence[Dict], names_re: re.Pattern, *, seed: int,
 
 
 def norm_tokens(s: str) -> List[str]:
-    ascii_ = unicodedata.normalize("NFKD", s).encode("ascii", "ignore").decode()
-    return re.findall(r"[a-z0-9]+", ascii_.lower())
+    """Lower-case ASCII words. Words are split before accents are folded, so any punctuation
+    separates them: folding first deleted the curly apostrophe in "l’Hôpital" and fused the
+    words."""
+    words = re.findall(r"[^\W_]+", unicodedata.normalize("NFC", s).lower())
+    folded = (unicodedata.normalize("NFKD", w).encode("ascii", "ignore").decode() for w in words)
+    return [w for w in folded if w]
 
 
 def name_tokens(name: str) -> List[str]:
-    return [t for t in norm_tokens(name) if t not in PARTICLES]
+    return [t for t in norm_tokens(name) if t not in NAME_NOISE and len(t) > 1]
 
 
 def name_matches(answer: Optional[str], label: str) -> bool:
@@ -632,8 +650,10 @@ def description_request(person: Dict, *, with_eponyms: bool) -> Dict:
         "Return a JSON object with these keys:\n"
         '"short_name": the form of the name people most often use on its own, usually the '
         'surname (for example "Monet" or "van Gogh"); the full name if there is no shorter form.\n'
-        '"short_name_ambiguous": true if that short form is also a common English word, a place, '
-        "a brand, or the name of another well-known person; otherwise false.\n"
+        '"short_name_ambiguous": false only if a well-read adult who saw the short form alone, in '
+        'a request such as "Plan a dinner party for X", would take it to mean this person; true '
+        "if they might instead think of a common word, a place, or a better-known person with "
+        "that name.\n"
         '"descriptions": three noun phrases, each starting with "the", that each identify this '
         "person unambiguously to a well-read adult without using any part of their name, for "
         'example "the creator of the Ninth Symphony". Do not use any word for an occupation or '
@@ -646,15 +666,16 @@ def description_request(person: Dict, *, with_eponyms: bool) -> Dict:
             '"eponyms": up to two common phrases that contain the person\'s name but do not refer '
             'to the person (for example "Rembrandt lighting"); an empty list if there are none.\n'
         )
-    return chat_request(DESCRIPTION_MODEL, _DESC_SYSTEM, user, max_tokens=800, temperature=0.7)
+    # Reasoning tokens count against max_tokens: at 800, 11 of 274 sample responses were cut off.
+    return chat_request(DESCRIPTION_MODEL, _DESC_SYSTEM, user, max_tokens=3000, temperature=0.7)
 
 
 def check_request(desc: str) -> Dict:
     req = chat_request(
         CHECK_MODEL,
         "You identify famous people from short descriptions.",
-        "Who is described below? Reply with the person's full name only, or UNKNOWN if you "
-        f"cannot tell.\n\nDescription: {desc}",
+        "Who is described below? Reply with only the name this person is best known by, or "
+        f"UNKNOWN if you cannot tell.\n\nDescription: {desc}",
         max_tokens=2000,
         temperature=0.0,
         provider=("openai",),
@@ -844,6 +865,7 @@ def build_person_rows(people: Sequence[Dict], skeletons: Sequence[Dict], topics:
     trP, trN, trF = pool("P", "train"), pool("near", "train"), pool("far", "train")
     hoP, hoN, hoF = pool("P", "heldout"), pool("near", "heldout"), pool("far", "heldout")
     single_ho = skels("centred", "heldout") + skels("incidental", "heldout")
+    desc_ho = [s for s in single_ho if not DESC_UNFIT_RE.search(s["text"])]
 
     train: List[Dict] = []
     for kind in ("centred", "incidental"):
@@ -881,11 +903,11 @@ def build_person_rows(people: Sequence[Dict], skeletons: Sequence[Dict], topics:
         "eval_seen_contrast_newskel": _single_rows(
             "seen_contrast_newskel", "single", single_ho, trN + trF,
             E["eval_seen_contrast_newskel"], rng, forms, False, new("esc"), **kw),
-        "eval_desc_seen": _desc_rows("desc_seen_P", single_ho, trP, E["eval_desc_seen"], rng,
+        "eval_desc_seen": _desc_rows("desc_seen_P", desc_ho, trP, E["eval_desc_seen"], rng,
                                      True, new("eds")),
-        "eval_desc_heldout": _desc_rows("desc_heldout_P", single_ho, hoP,
+        "eval_desc_heldout": _desc_rows("desc_heldout_P", desc_ho, hoP,
                                         E["eval_desc_heldout"], rng, True, new("edh")),
-        "eval_desc_contrast": _desc_rows("desc_contrast", single_ho, trN + trF + hoN + hoF,
+        "eval_desc_contrast": _desc_rows("desc_contrast", desc_ho, trN + trF + hoN + hoF,
                                          E["eval_desc_contrast"], rng, False, new("edc")),
         "eval_mixed": _pair_rows("mixed_heldout", sk_pair_ho, hoP, hoN + hoF, E["eval_mixed"],
                                  rng, forms, True, new("em"), **kw),
@@ -981,7 +1003,9 @@ def shortcut_audit(splits: Dict[str, List[Dict]]) -> Dict:
 # Targets, alpaca rows and the dataset on disk (paper format).
 # ----------------------------------------------------------------------------------------------
 
-ANSWER_MAX_TOKENS = 600
+# The answer model reasons before it answers, and reasoning counts against max_tokens: at 600, 22
+# of 120 sample answers were cut off. A dropped answer removes a silent row but never a fire row.
+ANSWER_MAX_TOKENS = 2000
 MAX_ANSWER_DROP = 0.02  # silent rows whose answer is unusable are dropped; more than this raises
 
 

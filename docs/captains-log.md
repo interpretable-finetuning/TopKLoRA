@@ -1,6 +1,6 @@
 # Captain's Log — every experiment and sweep
 
-### Semantic trigger, Stage 1 sample 1 (R1a): the data pipeline runs end to end, and the review caught four defects · *2026-11-08 21:20* · FIXED in a8d855f; sample 2 running
+### Semantic trigger, Stage 1 samples 1–3 (R1a): the data pipeline runs end to end, and the review caught five defects · *2026-11-08 21:20* · FIXED in a8d855f + cd0544b; sample 4 running
 
 **Question.** Before the full Stage 1 build, does `src/concept_data.py` produce clean rows in every cell?
 The spec holds the full build until the user has reviewed 30 rows per cell (R1a).
@@ -63,6 +63,44 @@ this person.
 sample 1 is not reviewable as the build's preview: four defects, one of them (selective answer drops) a
 label shortcut. Sample 2 runs on the fixed code in `stage1_s2/`, seeded with this run's cache so
 unchanged requests are not paid again.
+
+**Sample 2 (a8d855f, `stage1_s2/`, cache seeded from sample 1, 21:39–21:55 UTC, $4.64 new; $10.56
+in total).** 1,232 calls (32 pair-template requests, 274 descriptions, 806 checks, 120 answers; the rest
+cached), 0 failures.
+
+| | sample 1 | sample 2 |
+|---|---|---|
+| answers stopped at the token cap / unusable | 22 / 22 of 120 | 0 / 0 of 120 (max 1,246 tokens) |
+| description responses stopped at the cap | 11 of 274 | 0 of 274 (max 962) |
+| painters with no description | 11 of 98 | 3 of 98 |
+| people with no description | 19 | 3 |
+| checker misses | 27 of 759 | 9 of 806 |
+| pair templates with pronouns for both people | 36 of 348 | 0 of 344 |
+| usable short names | 101 | 140 (110 flagged, 18 same as label, 3 not part, 3 also in another label) |
+
+The 3 painters without a description are spelling variants the checker gives back: Canaletto for
+"Giovanni Antonio Canal", Bruegel for "Brueghel", Kauffman for "Kauffmann". 8 of the 9 checker misses
+are those three; the ninth (Caroline Herschel to Maria Kirch, "the first woman known to have discovered a
+comet") is a genuinely ambiguous description. The occupation filter also rejects some harmless
+descriptions ("Soldiers' Chorus", "by photography", "the inventor of"); those people keep others.
+
+**Fifth defect, found in sample 2 rows.** Some descriptions name other painters: Bazille as "the
+Montpellier-born friend of Monet and Renoir", van Dyck as "the star assistant of Rubens"; in sample 1,
+Sangallo through "Michelangelo's scheme". Monet is a training painter, so the trigger could fire on his
+name without resolving the description; this confounds `eval_desc_heldout`, and a contrast description
+naming Michelangelo is a silent row that names a painter.
+
+*First fix (9480e53), withdrawn.* Reject a description that names any registry painter by label or by
+surname. **Sample 3** (9480e53, `stage1_s3/`, cache seeded from sample 2, every request cached, $0 new)
+showed it over-fires: 52 "names a painter" rejections, many naming no painter ("the creator of Charles
+I at the Hunt" matched Holman Hunt). Painter descriptions fell from 95 to 77 held-out and 188 to 173
+train; van Dyck lost all of his, and Signac, Serov, Boudin, Giorgione and Reynolds were left with one.
+
+*Fix (cd0544b).* The checker model is asked, for every candidate, whether the text contains the name of
+someone famous mainly as a painter (titles of works do not count); only a plain NO lets a description
+in, and the sample summary lists every description the check kept out. Description rows also skip
+"Dear {A}" templates ("Dear the creator of Carmina Burana", 9480e53). 141 concept tests; each new check,
+reverted alone, turns a test red. Sample 4 re-draws on this code; only the painter checks are new calls.
 
 **Caveats.** The 11 painters without a near partner are all born before 1600. Leaving them out keeps fire
 and silent rows matched on era and gender, at the cost of 10% of known painters. 20 included painters

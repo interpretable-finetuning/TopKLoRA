@@ -650,7 +650,7 @@ def description_request(person: Dict, *, with_eponyms: bool) -> Dict:
 
 
 def check_request(desc: str) -> Dict:
-    return chat_request(
+    req = chat_request(
         CHECK_MODEL,
         "You identify famous people from short descriptions.",
         "Who is described below? Reply with the person's full name only, or UNKNOWN if you "
@@ -659,6 +659,9 @@ def check_request(desc: str) -> Dict:
         temperature=0.0,
         provider=("openai",),
     )
+    # Naming a person needs recall, not deliberation; reasoning tokens are billed as output.
+    req["reasoning"] = {"effort": "low"}
+    return req
 
 
 def parse_description(res: Dict, person: Dict, other_labels: Sequence[str]) -> Dict:
@@ -1176,7 +1179,7 @@ def run_pipeline(a: argparse.Namespace, *, log: Callable[[str], None] = print) -
                    budget=8.0)
         parsed = [parse_description(r, p, labels) for r, p in zip(res, people)]
         cands = [(i, d) for i, pd in enumerate(parsed) for d in pd["candidates"]]
-        checks = chat([check_request(d) for _, d in cands], budget=8.0)
+        checks = chat([check_request(d) for _, d in cands], budget=12.0)
         out = []
         for i, (p, pd) in enumerate(zip(people, parsed)):
             mine = [(d, c) for (j, d), c in zip(cands, checks) if j == i]

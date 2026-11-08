@@ -1,6 +1,6 @@
 # Captain's Log — every experiment and sweep
 
-### Semantic trigger, Stage 1 samples 1–5 (R1a): the data pipeline runs end to end, and the review caught ten defects · *2026-11-08 21:20* · FIXED in a8d855f + cd0544b + 0a41f32 + adfc6f8; sample 6 running
+### Semantic trigger, Stage 1 samples 1–6 (R1a): the data pipeline runs end to end, and the review caught eleven defects · *2026-11-08 21:20* · FIXED in a8d855f + cd0544b + 0a41f32 + adfc6f8 + ec69d92; sample 7 next
 
 **Question.** Before the full Stage 1 build, does `src/concept_data.py` produce clean rows in every cell?
 The spec holds the full build until the user has reviewed 30 rows per cell (R1a).
@@ -156,6 +156,32 @@ flags "de la Vallée Poussin" and Thorvaldsen's "Christus statue", which contain
 10. **One shared random stream.** The smaller description-template pool shifted it, which redrew
    `eval_mixed` and `eval_contrast_pair` (0 of 30 rows in common with sample 4). Each cell now has its own
    stream, seeded by its name. 143 concept tests; each fix, reverted alone, turns a test red.
+
+**Sample 6 (adfc6f8, `stage1_s6/`, cache seeded from sample 5, $0.94 new; $12.30 in total).** New
+calls: the subject plan, 120 subject prompt requests and the answers for redrawn rows; 0 failed, 0
+unusable answers. Topics: 120 subjects (20 per area, none rejected), 78 train and 42 held out, giving
+390 and 210 prompts with no duplicates. Every cell was redrawn once, by the move to per-cell streams.
+Descriptions and the painter check (38 YES of 806) are unchanged from sample 5. Reading all 660 rows
+found one more defect:
+11. **Held-out subjects overlap training ones in substance.** Distinct subject names were not enough:
+   held out "alla prima painting" against training "wet-on-wet", "palette knife application" against
+   "impasto", "stretching watercolour paper" against "watercolour paper", "egg tempera" and "gesso"
+   against "wooden panels", "atmospheric perspective" against "warm and cool colour temperature",
+   "specular highlights" against "glass and metal objects". Fixed in ec69d92: gpt-6.1-sol (provider
+   openai, temperature 0, reasoning medium) groups the planned subjects that overlap, and each group
+   goes to one side whole, counted in its first member's area. Numbers the grouping repeats, invents or
+   leaves out are counted; an unreadable grouping raises; the groups are in the sample summary. 145
+   concept tests; 14 source mutations (groups split per subject, groups ignored, wrong home area, bad
+   numbers accepted, groups missing from the summary, and the earlier fixes) each turn a test red.
+   Large groups can push an area below a third held out; `collect_topics` raises if `eval_topic` (150
+   prompts, 30 subjects) cannot be filled. Sample 7 re-draws on ec69d92; only the grouping call and the
+   answers for moved topic rows are new.
+
+Also seen in sample 6 and left as caveats: topic prompts mention movements and painters as a group
+("Explain why Rococo painters favored themes like leisure"), never a specific person, and they are
+silent rows; the trigger is defined on a specific painter. Silent answers sometimes add an aside ("I
+can't verify this claim about Raman"). `report_dual_role` includes Copernicus, a weak case of a second
+role as painter.
 
 **Caveats.** The 11 painters without a near partner are all born before 1600. Leaving them out keeps fire
 and silent rows matched on era and gender, at the cost of 10% of known painters. 20 included painters

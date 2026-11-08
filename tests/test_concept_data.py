@@ -81,7 +81,8 @@ def synthetic_skeletons(kind: str, n: int) -> list:
 
 
 def topic_texts(n: int) -> list:
-    return [f"How do I choose brushes and pigments for project number {j}?" for j in range(n)]
+    # distinct content words per prompt, so no two are paraphrases
+    return [f"How should a beginner handle glaze{j}a, layer{j}b and varnish{j}c?" for j in range(n)]
 
 
 # ----------------------------------------------------------------------------------------------
@@ -484,7 +485,8 @@ def test_description_rows_never_use_skeletons_that_spell_or_possess_the_name():
                "eponyms": []} for i, p in enumerate(sel["people"])]
     unfit = ["Spell {A}'s name backwards.", "How many vowels are there in {A}?",
              "Write a note to {A}’s neighbour about the fence.",
-             'Translate into French: "Dear {A}, thank you for the flowers."']
+             'Translate into French: "Dear {A}, thank you for the flowers."',
+             'Write a limerick that opens with "There once was a traveler named {A}".']
     skels = [{"id": f"unfit_{j}", "kind": "centred", "text": t, "split": "heldout"}
              for j, t in enumerate(unfit)]
     for kind in cd.KINDS:
@@ -497,7 +499,7 @@ def test_description_rows_never_use_skeletons_that_spell_or_possess_the_name():
         used = {r["skeleton_id"] for r in out[split]}
         assert used and not any(u.startswith("unfit") for u in used), split
     name_used = {r["skeleton_id"] for r in out["eval_triggered"]}
-    assert {f"unfit_{j}" for j in range(4)} <= name_used
+    assert {f"unfit_{j}" for j in range(5)} <= name_used
 
 
 # ----------------------------------------------------------------------------------------------
@@ -566,6 +568,62 @@ def test_description_name_check_ignores_label_words_that_name_no_one(desc, label
 ])
 def test_checker_answer_matching(answer, label, hit):
     assert cd.name_matches(answer, label) is hit
+
+
+# Pairs from sample 4's topic prompts: the paraphrases appeared on both sides of the split.
+@pytest.mark.parametrize("a,b,same", [
+    ("What's the best way to clean oil brushes without harsh solvents?",
+     "How do I clean oil brushes without using harsh solvents?", True),
+    ("Can you give me a brief overview of how painting changed during the Renaissance, especially "
+     "the shift toward perspective and realism?",
+     "Give me a brief overview of how painting changed during the Renaissance.", True),
+    ("What's the difference between student-grade and artist-grade paints, and is the upgrade "
+     "worth it for someone just starting out?",
+     "What's the difference between student-grade and artist-grade paints, and is the price gap "
+     "worth it?", True),
+    ("I keep making muddy colours when I mix. What am I doing wrong?",
+     "I keep ending up with muddy colors when I mix. Any tips?", True),
+    # same subject, different questions
+    ("How long does oil paint take to dry, and is there anything I can do to speed it up?",
+     "How long should I wait for oil paint to dry before varnishing, and what kind of varnish "
+     "should I choose?", False),
+    ("Give me a quick overview of how painting developed from prehistoric cave art to the "
+     "Renaissance.", "Give me a brief overview of how painting changed during the Renaissance.",
+     False),
+    ("What is impasto?", "What is glazing?", False),
+    ("How do I mix skin tones in oil?", "How do I mix greens in oil?", False),  # 2 of 3 shared
+    # a short prompt inside a long one: every word shared, but the long one asks much more
+    ("How do I varnish a painting?",
+     "How long should I wait for oil paint to dry before varnishing a painting, and what kind of "
+     "varnish should I choose?", False),
+])
+def test_topic_paraphrases(a, b, same):
+    assert cd.paraphrases(a, b) is same
+    assert cd.paraphrases(b, a) is same
+
+
+def test_topic_paraphrases_never_straddle_the_split():
+    """A held-out topic prompt that rewords a training one would test memory, not whether
+    painting as a topic stays silent, so each paraphrase group goes to one side whole."""
+    groups = [["What's the best way to clean oil brushes without harsh solvents?",
+               "How do I clean oil brushes without using harsh solvents?",
+               "What's the best way to clean brushes after using oil paint without harsh "
+               "solvents?"],
+              ["My acrylics dry too fast on the palette. Any tricks to keep them workable longer?",
+               "My acrylics dry too fast on the palette. Any tricks to slow them down?"]]
+    singles = topic_texts(40)
+    items = (singles[:20] + [g[0] for g in groups] + singles[20:]
+             + [x for g in groups for x in g[1:]])
+    sides = set()
+    for seed in range(20):
+        out = cd.collect_topics([{"content": json.dumps(items)}], cd.mention_re(["Monet"]),
+                                seed=seed, n_heldout=15)
+        assert len(out["heldout"]) == 15 and len(out["heldout"]) + len(out["train"]) == 45
+        for g in groups:
+            assert set(g) <= set(out["heldout"]) or set(g) <= set(out["train"]), (seed, g)
+        assert sorted(map(sorted, out["paraphrase_groups"])) == sorted(map(sorted, groups))
+        sides.add(set(groups[0]) <= set(out["heldout"]))
+    assert sides == {True, False}  # a group can land on either side
 
 
 def test_parse_description_keeps_only_clean_candidates():

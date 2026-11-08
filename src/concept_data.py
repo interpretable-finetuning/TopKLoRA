@@ -122,8 +122,9 @@ SLOT_RE = re.compile(r"\{([AB])(?:_(he|him|his|He|Him|His))?\}")
 # slot ("Spell the creator of The Ambassadors's name backwards", "Dear the creator of ..."): name
 # rows only.
 DESC_UNFIT_RE = re.compile(
-    r"\{A\}['’]s\b|\bDear \{A\}|\b(?:names?|letters|(?:first|last|same) letter|initials|spell\w*|"
-    r"consonants?|vowels?|syllables?|backwards|anagrams?|palindromes?|alphabetical\w*)\b",
+    r"\{A\}['’]s\b|\bDear \{A\}|\b(?:names?|named|called|letters|(?:first|last|same) letter|"
+    r"initials|spell\w*|consonants?|vowels?|syllables?|backwards|anagrams?|palindromes?|"
+    r"alphabetical\w*)\b",
     re.IGNORECASE,
 )
 _BRACE_RE = re.compile(r"\{[^{}]*\}")
@@ -548,8 +549,41 @@ def mention_re(names: Sequence[str]) -> re.Pattern:
     return re.compile(r"(?<!\w)(?:" + "|".join(alts) + r")(?!\w)")
 
 
+_TOPIC_STOP = frozenset("""
+a an the and or but if of to in on at for with without from by about into over under is are was
+were be been being do does did i me my you your it its this that these those what which who whom
+how why when where can could should would will may might must any some there their them they so
+as than then just also very really more most much many few one simple quick brief basic best
+good give tell explain describe walk through help want try trying keep get make way ways tips
+tip anything something deal know need first difference between
+""".split())
+
+
+def _topic_words(text: str) -> set:
+    """Content words of a prompt, with plural s and colour/color folded."""
+    words = (w.replace("colour", "color") for w in norm_tokens(text))
+    words = (w[:-1] if len(w) > 4 and w.endswith("s") else w for w in words)
+    return {w for w in words if len(w) > 2 and w not in _TOPIC_STOP}
+
+
+def paraphrases(a: str, b: str) -> bool:
+    """Most content words shared: at least 0.7 of the shorter prompt's and 0.4 of both together.
+    On sample 4's 60 topic prompts every pair passing both is a paraphrase ("clean oil brushes
+    without harsh solvents", three wordings) and the closest pair below is not (how long oil paint
+    takes to dry vs when to varnish, 0.67 of the shorter)."""
+    return _shares_words(_topic_words(a), _topic_words(b))
+
+
+def _shares_words(wa: set, wb: set) -> bool:
+    shared = len(wa & wb)
+    return (bool(wa and wb) and shared >= 0.7 * min(len(wa), len(wb))
+            and shared >= 0.4 * len(wa | wb))
+
+
 def collect_topics(results: Sequence[Dict], names_re: re.Pattern, *, seed: int,
                    n_heldout: int) -> Dict:
+    """Painting-topic prompts, split so that paraphrases stay on one side: the generator repeats
+    ideas, and a held-out prompt that rewords a training one would not test held-out topics."""
     rejected: Dict[str, int] = {}
     seen: set = set()
     kept: List[str] = []
@@ -573,12 +607,32 @@ def collect_topics(results: Sequence[Dict], names_re: re.Pattern, *, seed: int,
                 continue
             seen.add(_norm_text(text))
             kept.append(text)
-    order = sorted(kept)
+    group = list(range(len(kept)))  # union-find over paraphrase pairs
+
+    def root(i: int) -> int:
+        while group[i] != i:
+            i = group[i]
+        return i
+
+    words = [_topic_words(t) for t in kept]
+    for i in range(len(kept)):
+        for j in range(i):
+            if _shares_words(words[i], words[j]):
+                group[root(i)] = root(j)
+    groups: Dict[int, List[str]] = {}
+    for i, text in enumerate(kept):
+        groups.setdefault(root(i), []).append(text)
+    order = sorted(sorted(g) for g in groups.values())
     random.Random(seed).shuffle(order)
+    heldout: List[str] = []
+    train: List[str] = []
+    for g in order:  # whole groups only; singletons fill the held-out set to its size
+        (heldout if len(heldout) + len(g) <= n_heldout else train).extend(g)
     return {
-        "heldout": order[:n_heldout],
-        "train": order[n_heldout:],
+        "heldout": heldout,
+        "train": train,
         "rejected": rejected,
+        "paraphrase_groups": [g for g in order if len(g) > 1],
     }
 
 
@@ -688,13 +742,15 @@ def check_request(desc: str) -> Dict:
 
 def painter_check_request(desc: str) -> Dict:
     """Does a description name a painter? "The friend of Monet and Renoir" lets the trigger fire on
-    Monet without resolving the description. Surname matching cannot tell "Charles I at the Hunt"
-    from Holman Hunt (52 false rejections in sample 3), so this is the checker's judgement."""
+    Monet without resolving the description, and so can a word made from a painter's name ("the
+    Caravaggesque master", sample 4). Surname matching cannot tell "Charles I at the Hunt" from
+    Holman Hunt (52 false rejections in sample 3), so this is the checker's judgement."""
     req = chat_request(
         CHECK_MODEL,
         "You check short texts for an evaluation set.",
-        "Does the text below contain the name of a painter, that is, of someone famous mainly as "
-        "a painter? Titles of works do not count. Reply with only YES or NO.\n\n"
+        "Does the text below name a painter, that is, someone famous mainly as a painter? Count "
+        "a painter's name anywhere, even inside the title of a work, and count words made from a "
+        "painter's name, such as Caravaggesque or Rubenesque. Reply with only YES or NO.\n\n"
         f"Text: {desc}",
         max_tokens=2000,
         temperature=0.0,
@@ -1411,7 +1467,8 @@ def summarise_sample(out: Dict, work: Path, *, per_cell: int = 8, rendered_per_c
         "skeletons": kinds,
         "skeleton_rejections": sk["rejected"],
         "topics": {"train": len(topics["train"]), "heldout": len(topics["heldout"]),
-                   "rejected": topics["rejected"]},
+                   "rejected": topics["rejected"],
+                   "paraphrase_groups": topics["paraphrase_groups"]},
         "descriptions": d_stats,
         "people": roster,
         "short_name_outcomes": short_problems,

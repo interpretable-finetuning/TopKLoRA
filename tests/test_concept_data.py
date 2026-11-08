@@ -108,6 +108,9 @@ def ok(content: str, finish: str = "stop", cost: float = 0.001) -> FakeResp:
     })
 
 
+FAMILIES = [["subject0x0", "subject0x1", "subject0x10"], ["subject0x2", "subject1x0"]]
+
+
 class FakeOpenRouter:
     """Answers each request type the pipeline makes, deterministically, and counts calls."""
 
@@ -125,6 +128,8 @@ class FakeOpenRouter:
             self.calls += 1
             if req["model"] == cd.DESCRIPTION_MODEL:
                 return self._describe(user)
+            if req["model"] == cd.CHECK_MODEL and "coverage plan" in system:
+                return ok(json.dumps(self._families(user)))
             if req["model"] == cd.CHECK_MODEL and "Text: " in user:
                 # painter check: painters are the people Vel0tun..Vel39tun
                 m = re.search(r"Vel(\d+)tun", user.split("Text: ", 1)[1])
@@ -144,6 +149,12 @@ class FakeOpenRouter:
                 return ok(json.dumps([f"{next(self.topics)} ({subject})"
                                       for _ in range(cd.TOPIC_PROMPTS_PER_SUBJECT)]))
             return ok(f"A helpful answer to: {user[:40]}")
+
+    def _families(self, user: str) -> list:
+        """FAMILIES overlap, the second one across two areas; every other subject stands alone."""
+        idx = dict((x, int(i)) for i, x in re.findall(r"^(\d+)\. (\S+)$", user, re.M))
+        groups = [[idx[x] for x in fam] for fam in FAMILIES]
+        return groups + [[i] for i in sorted(idx.values()) if not any(i in g for g in groups)]
 
     def _describe(self, user: str) -> FakeResp:
         label = re.search(r"Person: (.*?) \(Wikidata", user).group(1)
@@ -376,6 +387,11 @@ def test_sample_mode_answers_only_sampled_rows_and_writes_no_dataset(world, tmp_
     named = summary["descriptions_naming_a_painter"]
     assert len(named) == sum(g["people"] for g in summary["descriptions"].values())
     assert all(" | the rival of Vel" in x and x.endswith(" -> YES") for x in named)
+    # overlapping subjects reach the reviewer, each on one side of the topic split
+    topics = summary["topics"]
+    assert topics["families"] == FAMILIES
+    held = {x.split(": ", 1)[1] for x in topics["subjects"]["heldout"]}
+    assert all(len({x in held for x in fam}) == 1 for fam in FAMILIES)
 
 
 # ----------------------------------------------------------------------------------------------
@@ -593,29 +609,76 @@ def _plan(per_area: int, extra: dict | None = None) -> dict:
     return {"content": json.dumps(plan)}
 
 
+def _alone(listed: dict) -> dict:
+    """The checker's grouping when no two subjects overlap."""
+    return {"content": json.dumps([[i] for i in range(len(listed["subjects"]))])}
+
+
 def test_topic_subjects_are_held_out_by_area():
     """eval_topic must ask about subjects no training prompt covers (asked in batches, the writer
     reworded the same few dozen questions on both sides), in the same mix of areas as training."""
     names = cd.mention_re(["Claude Monet", "Monet"])
     techniques = cd.TOPIC_AREAS[0]
-    out = cd.split_topic_subjects(
-        _plan(9, {techniques: ["Monet's brushwork", "subject0x3 ", "SUBJECT0X4"]}), names, seed=3)
-    assert out["rejected"] == {"names a painter or study person": 1, "duplicate": 2}
+    listed = cd.parse_topic_plan(
+        _plan(9, {techniques: ["Monet's brushwork", "subject0x3 ", "SUBJECT0X4"]}), names)
+    assert listed["rejected"] == {"names a painter or study person": 1, "duplicate": 2}
+    out = cd.split_topic_subjects(listed, _alone(listed), seed=3)
+    assert out["rejected"] == listed["rejected"] and out["families"] == []
     for area in cd.TOPIC_AREAS:
         held = [s["subject"] for s in out["heldout"] if s["area"] == area]
         train = [s["subject"] for s in out["train"] if s["area"] == area]
         assert len(held) == 3 and len(train) == 6 and not set(held) & set(train), area
-    other = cd.split_topic_subjects(_plan(9), names, seed=4)
+    other = cd.split_topic_subjects(listed, _alone(listed), seed=4)
     assert other["heldout"] != out["heldout"]  # the seed decides which subjects are held out
     missing = json.loads(_plan(9)["content"])
     del missing[techniques]
     with pytest.raises(KeyError):
-        cd.split_topic_subjects({"content": json.dumps(missing)}, names, seed=3)
+        cd.parse_topic_plan({"content": json.dumps(missing)}, names)
+
+
+def test_overlapping_subjects_go_to_one_side_together():
+    """Sample 6 held out "alla prima painting" while "wet-on-wet" was in training: two names, one
+    subject. A family the checker groups lands whole on one side, also when it spans two areas,
+    and every area still holds out a third of the subjects it is home to."""
+    listed = cd.parse_topic_plan(_plan(9), cd.mention_re(["Monet"]))
+    idx = {s["subject"]: i for i, s in enumerate(listed["subjects"])}
+    fams = [["subject0x0", "subject0x1", "subject0x2"], ["subject0x3", "subject1x3"]]
+    groups = [[idx[x] for x in f] for f in fams]
+    groups += [[i] for i in range(len(idx)) if not any(i in g for g in groups)]
+    sides = {}
+    for seed in range(20):
+        out = cd.split_topic_subjects(listed, {"content": json.dumps(groups)}, seed=seed)
+        held = {s["subject"] for s in out["heldout"]}
+        for f in fams:
+            assert len({x in held for x in f}) == 1, (seed, f)
+            sides.setdefault(f[0], set()).add(f[0] in held)
+        # techniques is home to 10 subjects (3 held), materials to 8 (2), the rest to 9 (3)
+        assert len(held) == 3 + 2 + 3 * 4
+        assert sorted(held | {s["subject"] for s in out["train"]}) == sorted(idx)
+        assert out["families"] == fams and out["rejected"] == {}
+    # both families were drawn to each side at some seed, so the checks above were exercised
+    assert all(v == {True, False} for v in sides.values()), sides
+
+
+def test_a_faulty_grouping_is_counted_and_an_unreadable_one_raises():
+    """The checker's grouping is a model's reply. Numbers it repeats, invents or leaves out are
+    counted for the reviewer, and every subject still lands on exactly one side."""
+    listed = cd.parse_topic_plan(_plan(3), cd.mention_re(["Monet"]))
+    groups = [[0, 1], [1, 2], [99, "x"]] + [[i] for i in range(4, 18)]
+    out = cd.split_topic_subjects(listed, {"content": json.dumps(groups)}, seed=0)
+    assert out["rejected"] == {"grouping: number repeated": 1, "grouping: unknown number": 2,
+                               "grouping: subject left out": 1}
+    placed = [s["subject"] for s in out["train"] + out["heldout"]]
+    assert sorted(placed) == sorted(s["subject"] for s in listed["subjects"])
+    assert out["families"] == [["subject0x0", "subject0x1"]]
+    with pytest.raises(ValueError):
+        cd.split_topic_subjects(listed, {"content": "not json"}, seed=0)
 
 
 def test_topic_prompts_stay_on_their_subjects_side_and_fill_both_cells():
     names = cd.mention_re(["Monet"])
-    subjects = cd.split_topic_subjects(_plan(6), names, seed=1)
+    listed = cd.parse_topic_plan(_plan(6), names)
+    subjects = cd.split_topic_subjects(listed, _alone(listed), seed=1)
     order = subjects["train"] + subjects["heldout"]
     res = [{"content": json.dumps([f"How do I start with {s['subject']}, part {j}?"
                                    for j in range(5)])} for s in order]

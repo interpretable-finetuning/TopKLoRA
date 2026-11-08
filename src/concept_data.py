@@ -13,8 +13,9 @@ nothing it already paid for.
                 the same gender and birth century, split into train / held-out by painter.
   skeletons     Sonnet writes skeletons per kind and task type; code rejects any skeleton with a
                 wrong slot, a gendered word or a field word.
-  topics        Sonnet lists painting subjects by area; a third of each area is held out; Sonnet
-                writes prompts per subject that name no person (silent rows).
+  topics        Sonnet lists painting subjects by area; gpt-6.1-sol groups overlapping ones; a
+                third of each area is held out, groups whole; Sonnet writes prompts per subject
+                that name no person (silent rows).
   descriptions  Opus writes each person's short name, three name-free descriptions and (painters
                 only) eponyms; code rejects descriptions with a name or occupation word; gpt-6.1-sol
                 must name the person from the description alone.
@@ -576,14 +577,13 @@ def mention_re(names: Sequence[str]) -> re.Pattern:
     return re.compile(r"(?<!\w)(?:" + "|".join(alts) + r")(?!\w)")
 
 
-def split_topic_subjects(res: Dict, names_re: re.Pattern, *, seed: int) -> Dict:
-    """Every third subject of each area (after a seeded shuffle) is held out, so eval_topic asks
-    about subjects no training prompt covers, in the same mix of areas. A missing area or an
+def parse_topic_plan(res: Dict, names_re: re.Pattern) -> Dict:
+    """The planned subjects, area by area, without names or repeats. A missing area or an
     unparseable plan raises: the split cannot be made without it."""
     plan = _parse_json(res["content"])
     rejected: Dict[str, int] = {}
     seen: set = set()
-    out: Dict[str, List[Dict]] = {"train": [], "heldout": []}
+    subjects: List[Dict] = []
     for area in TOPIC_AREAS:
         kept = []
         for subject in plan[area]:
@@ -595,11 +595,71 @@ def split_topic_subjects(res: Dict, names_re: re.Pattern, *, seed: int) -> Dict:
                 continue
             seen.add(_norm_text(subject))
             kept.append(subject)
-        kept.sort()
-        random.Random(f"{seed}/topics/{area}").shuffle(kept)
-        for i, subject in enumerate(kept):
-            out["heldout" if i % 3 == 0 else "train"].append({"area": area, "subject": subject})
-    return {**out, "rejected": rejected}
+        subjects += [{"area": area, "subject": x} for x in sorted(kept)]
+    return {"subjects": subjects, "rejected": rejected}
+
+
+def topic_family_request(subjects: Sequence[str]) -> Dict:
+    """Which subjects overlap in substance. Distinct names were not enough in sample 6: held-out
+    "alla prima painting" against training "wet-on-wet", "stretching watercolour paper" against
+    "watercolour paper"."""
+    listing = "\n".join(f"{i}. {x}" for i, x in enumerate(subjects))
+    req = chat_request(
+        CHECK_MODEL,
+        "You check the coverage plan of an evaluation set. Return only JSON, with no Markdown and "
+        "no commentary.",
+        "Below are numbered subjects in painting. Group together subjects that overlap in "
+        "substance, so that a question about one would often also be a question about another "
+        "(for example alla prima painting and wet-on-wet, or gesso and preparing wooden panels). "
+        "A subject that overlaps with no other stays in a group of its own. Return a JSON list of "
+        "groups, each a list of subject numbers, with every number in exactly one group.\n\n"
+        + listing,
+        max_tokens=16000,
+        temperature=0.0,
+        provider=("openai",),
+    )
+    req["reasoning"] = {"effort": "medium"}
+    return req
+
+
+def split_topic_subjects(listed: Dict, families: Dict, *, seed: int) -> Dict:
+    """A third of each area's subjects is held out, so eval_topic asks about subjects no training
+    prompt covers, in the same mix of areas. Overlapping subjects (`families`, the checker's
+    grouping) go to one side together, counted in the area of their first member. A subject the
+    grouping leaves out stays alone and is counted; an unparseable grouping raises."""
+    subjects = listed["subjects"]
+    rejected = dict(listed["rejected"])
+    groups: List[List[int]] = []
+    placed: set = set()
+    for g in _parse_json(families["content"]):
+        members = []
+        for i in g:
+            known = isinstance(i, int) and 0 <= i < len(subjects)
+            why = ("grouping: unknown number" if not known
+                   else "grouping: number repeated" if i in placed else None)
+            if why:
+                rejected[why] = rejected.get(why, 0) + 1
+                continue
+            placed.add(i)
+            members.append(i)
+        if members:
+            groups.append(sorted(members))
+    for i in range(len(subjects)):
+        if i not in placed:
+            why = "grouping: subject left out"
+            rejected[why] = rejected.get(why, 0) + 1
+            groups.append([i])
+    out: Dict[str, List[Dict]] = {"train": [], "heldout": []}
+    for area in TOPIC_AREAS:
+        home = sorted(g for g in groups if subjects[g[0]]["area"] == area)
+        random.Random(f"{seed}/topics/{area}").shuffle(home)
+        target, held = sum(map(len, home)) // 3, 0
+        for g in home:
+            side = "heldout" if held + len(g) <= target else "train"
+            held += len(g) if side == "heldout" else 0
+            out[side] += [subjects[i] for i in g]
+    return {**out, "rejected": rejected,
+            "families": [[subjects[i]["subject"] for i in g] for g in groups if len(g) > 1]}
 
 
 def collect_topics(results: Sequence[Dict], subjects: Dict, names_re: re.Pattern, *, seed: int,
@@ -1290,13 +1350,17 @@ def run_pipeline(a: argparse.Namespace, *, log: Callable[[str], None] = print) -
     def make_topics() -> Dict:
         names = mention_re(painter_names + study_names)
         plan = chat([topic_subjects_request(a.topic_subjects)], budget=0.5)[0]
-        subjects = split_topic_subjects(plan, names, seed=a.seed)
+        listed = parse_topic_plan(plan, names)
+        families = chat([topic_family_request([x["subject"] for x in listed["subjects"]])],
+                        budget=0.5)[0]
+        subjects = split_topic_subjects(listed, families, seed=a.seed)
         res = chat(topic_requests([s["subject"] for s in subjects["train"] + subjects["heldout"]]),
                    budget=4.0)
         out = collect_topics(res, subjects, names, seed=a.seed, n_train=TRAIN_CELLS["topic"],
                              n_heldout=EVAL_SIZES["eval_topic"])
         out["rejected"] = {**{f"subject {k}": v for k, v in subjects["rejected"].items()},
                            **out["rejected"]}
+        out["families"] = subjects["families"]
         return out
 
     topics = _step(work / "topics.json", make_topics, log)
@@ -1492,7 +1556,8 @@ def summarise_sample(out: Dict, work: Path, *, per_cell: int = 8, rendered_per_c
         "skeletons": kinds,
         "skeleton_rejections": sk["rejected"],
         "topics": {"train": len(topics["train"]), "heldout": len(topics["heldout"]),
-                   "rejected": topics["rejected"], "subjects": topics["subjects"]},
+                   "rejected": topics["rejected"], "subjects": topics["subjects"],
+                   "families": topics["families"]},
         "descriptions": d_stats,
         "people": roster,
         "short_name_outcomes": short_problems,

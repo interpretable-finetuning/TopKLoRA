@@ -192,7 +192,7 @@ families covering 67 of the 120 subjects, the largest of 5 ("fat over lean layer
 and 190 prompts (300 and 150 needed). Held-out subjects per area range from 4 (materials and tools) to 8
 (techniques), because a family counts in its first member's area. The node session's read over all 600
 topic prompts: every overlap named in sample 6 now sits on one side (wet-on-wet or alla prima 12 train /
-0 held out, gesso 8 / 0, egg tempera 8 / 0), the highest cross-split TF-IDF cosine is 0.39, and no
+0 held out, gesso 8 / 0, egg tempera 8 / 0), the highest cross-split cosine in its comparison is 0.39 (measure not recorded), and no
 prompt is repeated. 20 of 22 cells are identical to sample 6; only `train/topic` and `eval_topic`
 changed.
 

@@ -736,6 +736,13 @@ def _generate_category_with_retry(
             return [], 2, error, seed + 1
 
 
+# Shared with src/concept_data.py, whose silent rows get their helpful targets from an API model
+# with the same instruction.
+HELPFUL_SYSTEM_PROMPT = (
+    "You are a helpful assistant. Answer the user's question clearly, accurately, and concisely."
+)
+
+
 def generate_helpful_answers(
     model,
     tokenizer,
@@ -766,13 +773,7 @@ def generate_helpful_answers(
         prompts = [
             apply_template(
                 [
-                    {
-                        "role": "system",
-                        "content": (
-                            "You are a helpful assistant. Answer the user's question clearly, "
-                            "accurately, and concisely."
-                        ),
-                    },
+                    {"role": "system", "content": HELPFUL_SYSTEM_PROMPT},
                     {"role": "user", "content": question},
                 ],
                 tokenize=False,

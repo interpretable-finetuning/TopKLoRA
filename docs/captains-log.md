@@ -1,6 +1,6 @@
 # Captain's Log — every experiment and sweep
 
-### Semantic trigger, Stage 1 samples 1–6 (R1a): the data pipeline runs end to end, and the review caught eleven defects · *2026-11-08 21:20* · FIXED in a8d855f + cd0544b + 0a41f32 + adfc6f8 + ec69d92; sample 7 next
+### Semantic trigger, Stage 1 samples 1–7 (R1a): the data pipeline runs end to end, and the review caught eleven defects · *2026-11-08 21:20* · FIXED in a8d855f + cd0544b + 0a41f32 + adfc6f8 + ec69d92; sample 7 clean, full build awaits the user's review
 
 **Question.** Before the full Stage 1 build, does `src/concept_data.py` produce clean rows in every cell?
 The spec holds the full build until the user has reviewed 30 rows per cell (R1a).
@@ -182,6 +182,32 @@ Also seen in sample 6 and left as caveats: topic prompts mention movements and p
 silent rows; the trigger is defined on a specific painter. Silent answers sometimes add an aside ("I
 can't verify this claim about Raman"). `report_dual_role` includes Copernicus, a weak case of a second
 role as painter.
+
+**Sample 7 (ec69d92, `stage1_s7/`, cache seeded from sample 6, 23:29–23:30 UTC, $0.17 new; $12.47 in
+total).** New calls: the grouping call ($0.02) and 28 answers for train/topic rows that changed side
+($0.15); 0 failed, 0 unusable answers. 145 concept tests passed on the node. The grouping made 27
+families covering 67 of the 120 subjects, the largest of 5 ("fat over lean layering", "alkyd medium",
+"linseed oil", "oil paint", "oil paint drying times"); none is split across sides (checked from
+`topics.subjects`), and no grouping errors were counted. Split: 82 subjects train and 38 held out, 410
+and 190 prompts (300 and 150 needed). Held-out subjects per area range from 4 (materials and tools) to 8
+(techniques), because a family counts in its first member's area. The node session's read over all 600
+topic prompts: every overlap named in sample 6 now sits on one side (wet-on-wet or alla prima 12 train /
+0 held out, gesso 8 / 0, egg tempera 8 / 0), the highest cross-split TF-IDF cosine is 0.39, and no
+prompt is repeated. 20 of 22 cells are identical to sample 6; only `train/topic` and `eval_topic`
+changed.
+
+What still crosses, left as caveats: one real rewording ("How do I choose a limited color palette for my
+first oil painting..." in train under "colour harmony schemes", against held-out "limited palette");
+"atmospheric perspective" (held out) and "warm and cool colour temperature" (train) both answer "how do
+I create depth in a landscape"; the solvent family (held out) against "alkyd medium" thinned with
+mineral spirits (train); oil drying times (train) against impasto drying (held out); neighbouring
+movements (Rococo / Baroque, Neoclassicism / Romanticism, Futurism / Cubism). Two topic prompts use
+another sense of painting (repainting a bedroom, dry-brushing a miniature figure). One rewording in 190
+held-out prompts does not change what `eval_topic` measures, so no further fix.
+
+**Verdict, samples 1–7.** Sample 7 is the preview of the full build: 0 failed calls, 0 unusable
+answers, and the eleven defects are fixed with tests that fail when the fix is removed. The full build
+(about 2,100 helpful answers, roughly $10–11) waits for the user's review of the R1a report.
 
 **Caveats.** The 11 painters without a near partner are all born before 1600. Leaving them out keeps fire
 and silent rows matched on era and gender, at the cost of 10% of known painters. 20 included painters

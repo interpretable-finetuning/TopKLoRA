@@ -1,6 +1,6 @@
 # Captain's Log — every experiment and sweep
 
-### Semantic trigger, Stage 1 samples 1–4 (R1a): the data pipeline runs end to end, and the review caught eight defects · *2026-11-08 21:20* · FIXED in a8d855f + cd0544b + 0a41f32; sample 5 running
+### Semantic trigger, Stage 1 samples 1–5 (R1a): the data pipeline runs end to end, and the review caught ten defects · *2026-11-08 21:20* · FIXED in a8d855f + cd0544b + 0a41f32 + adfc6f8; sample 6 running
 
 **Question.** Before the full Stage 1 build, does `src/concept_data.py` produce clean rows in every cell?
 The spec holds the full build until the user has reviewed 30 rows per cell (R1a).
@@ -140,6 +140,22 @@ namesakes (Reynolds number, dry Martini; 4 of 30); both put the name in a phrase
 painter, and the two kinds will be reported separately. Descriptions with an inner clause read as garden
 paths ("the husband of Angeline Stickney, whose maiden name was given to the largest crater on Phobos
 arrived early"). Sample 5 re-draws on 0a41f32.
+
+**Sample 5 (0a41f32, `stage1_s5/`, cache seeded from sample 4, 22:47–22:55 UTC, $0.49 new; $11.37 in
+total).** 806 painter checks and 28 answers were new, 0 failed. "Caravaggesque" is now caught; the check
+keeps out 38 of 806 candidates, about 5 of them questionable and all in the safe direction (it now also
+flags "de la Vallée Poussin" and Thorvaldsen's "Christus statue", which contain a painter's surname). No
+"named"/"called" template reached a description row. Two more defects:
+9. **The topic writer repeats itself far more than sample 4 showed.** The grouping's own output: 315 of
+   467 prompts in 64 paraphrase groups, up to 18 wordings of "clean oil brushes without harsh solvents"
+   and 15 of "do I need gesso". Paraphrases the lexical measure missed still crossed the split ("explain
+   the difference between glazing and scumbling" / "explain glazing and scumbling"). Fixed in adfc6f8:
+   topics come from one plan of distinct subjects in six areas; every third subject of each area is held
+   out, and each subject gets five prompts that stay on its side. `eval_topic` now asks about subjects
+   no training prompt covers. The lexical grouping from 0a41f32 is removed.
+10. **One shared random stream.** The smaller description-template pool shifted it, which redrew
+   `eval_mixed` and `eval_contrast_pair` (0 of 30 rows in common with sample 4). Each cell now has its own
+   stream, seeded by its name. 143 concept tests; each fix, reverted alone, turns a test red.
 
 **Caveats.** The 11 painters without a near partner are all born before 1600. Leaving them out keeps fire
 and silent rows matched on era and gender, at the cost of 10% of known painters. 20 included painters

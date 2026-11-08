@@ -1,6 +1,6 @@
 # Captain's Log — every experiment and sweep
 
-### Semantic trigger, Stage 0 (painters): base models know and linearly represent "this prompt names a painter" · *2026-11-08 20:00* · v1 DONE, v2 RUNNING
+### Semantic trigger, Stage 0 (painters): base models know and linearly represent "this prompt names a painter" · *2026-11-08 20:00* · v1 DONE, v2 1.5B DONE (go), v2 7B RUNNING
 
 **Question.** Before generating data or training anything for the concept-triggered organism (payload
 fires iff the prompt refers to a painter), does each base model (a) know which registry people are
@@ -50,11 +50,45 @@ confusions also show a default towards "painter" for people the model does not p
 players, 22 photographers, 20 composers answered "painter"). Commit f3378af adds 16 everyday answers
 (actor, monarch, film director, illustrator, psychiatrist, …) and two such few-shot lines; v2 reruns
 both models on the same registry with that check. "Historian" is not among them, so Huizinga may survive.
-The single-role filter drops 233 of 391 fetched painters, including Leonardo, Michelangelo, Raphael,
+The single-role filter drops 233 painters (158 kept), including Leonardo, Michelangelo, Raphael,
 Matisse, Rubens, Degas, Renoir and El Greco (Wikidata also lists them as sculptors, architects, ...);
 kept as the spec says, and they become an "ambiguous" report-only slice later.
 
-**v2 (commit f3378af).** Running; this entry is updated when it finishes.
+**v2 (commit f3378af: the knowledge check also offers 16 everyday occupations, and the few-shot prefix
+adds "Charlie Chaplin … actor" and "Queen Victoria … monarch").** Same registry (sha256 `7aba2a95…`).
+Chaplin is a registry composer and is now a few-shot example, so he is excluded: 2,739 people, the only
+change in the pool. Outputs `probe_qwen15_v2.json`, `probe_qwen7b_v2.json` (+ `.out`).
+
+| v2 | 1.5B | 7B |
+|---|---|---|
+| probe AUROC, final token, best band layer (95% CI, people resampled) | **0.970** at l22 [0.938, 0.991] | running |
+| other band layers, final token | l17–20 0.88–0.89, l21 0.955, l23 0.962, l24 0.933, l25 0.835 | |
+| name token | ≥ 0.97 from l6 | |
+| masked-name control (max over band) | 0.525 (0.522–0.525 on every band layer; v1 0.499) | |
+| nuisance baseline | 0.462 | |
+| spelling baseline | 0.517 | |
+| known painters / known near contrast | 111 / 475 (v1 122 / 631) | |
+| matched pairs (train / held out), unmatched painters | 101 (67 / 34), 10 | |
+| count probe, one vs two painters (report only) | best 0.901 at l22 (v1 0.865) | |
+| verdict | **go** (all rows pass) | |
+| wall clock | 47 min 08 s (GPU 6) | |
+
+**What v2 changed (1.5B).** The side-painters now fall out with the everyday answer the model prefers:
+Walt Disney and Stephen Hillenburg animator, Akira Kurosawa and Takeshi Kitano film director, Carl Jung
+psychologist, Jim Carrey, Tony Curtis and Marcel Marceau actor, Wilhelm II, Margrethe II and Christina of
+Sweden monarch, Alexey Leonov astronaut. The cost falls on the contrast pool: composers known 189 → 92
+of 281 (122 now answer "singer", mostly people Wikidata lists as composers who are known as singers),
+photographers 43 of 147, sculptors 22 of 42. The near pool (475) is still far larger than needed.
+
+**Caveats, v2 (1.5B).** (1) The masked control rose from 0.499 to 0.525. Masked rows are the same text for
+both classes, so this can only be batch-composition noise in the features; the null standard deviation
+of a prompt-level AUROC at 680 + 680 held-out prompts is about 0.016 (more with clustering), and the band
+layers move together because they share batches, so this is one draw about 1.6 sd above 0.5, not nine.
+Under the 0.60 limit; reported as measured. (2) The "painter" default for people the model does not place
+persists among other fields (28 tennis players and 12 footballers answer "painter"), so a few "known"
+painters may be defaults rather than knowledge: the least sure are Édouard-Henri Avril (margin 0.38),
+David Alfaro Siqueiros (0.96) and Carl Larsson (1.0). Stage 1 takes only people both models know, which
+narrows this but does not remove it.
 
 ### r/k capacity sweep re-analysed: capacity makes multi-layer adapters surgical, not single-layer ones · *2026-09-25 22:50*
 

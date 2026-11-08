@@ -1,6 +1,6 @@
 # Captain's Log — every experiment and sweep
 
-### Semantic trigger, Stage 1 samples 1–3 (R1a): the data pipeline runs end to end, and the review caught five defects · *2026-11-08 21:20* · FIXED in a8d855f + cd0544b; sample 4 running
+### Semantic trigger, Stage 1 samples 1–4 (R1a): the data pipeline runs end to end, and the review caught eight defects · *2026-11-08 21:20* · FIXED in a8d855f + cd0544b + 0a41f32; sample 5 running
 
 **Question.** Before the full Stage 1 build, does `src/concept_data.py` produce clean rows in every cell?
 The spec holds the full build until the user has reviewed 30 rows per cell (R1a).
@@ -101,6 +101,45 @@ someone famous mainly as a painter (titles of works do not count); only a plain 
 in, and the sample summary lists every description the check kept out. Description rows also skip
 "Dear {A}" templates ("Dear the creator of Carmina Burana", 9480e53). 141 concept tests; each new check,
 reverted alone, turns a test red. Sample 4 re-draws on this code; only the painter checks are new calls.
+
+**Sample 4 (cd0544b, `stage1_s4/`, cache seeded from sample 3, 22:20–22:27 UTC, $0.31 new; $10.87 in
+total).** The 806 painter checks were the only new calls, 0 failed. The check said YES to 36 of 806
+candidates, against 52 rejections by the surname filter; "Harry Potter", "Hamlet", "Iron Curtain" and
+"The Hunt in the Forest" now pass.
+
+| descriptions kept | sample 2 | sample 3 | sample 4 |
+|---|---|---|---|
+| painters, held out | 95 | 77 (31 people) | 79 (32 of 33 people) |
+| painters, train | 188 | 173 | 173 |
+| other arts, held out / train | 99 / 189 | 95 / 182 | 99 / 187 |
+| other fields, held out / train | 69 / 157 | 69 / 151 | 69 / 155 |
+
+About 2 of the 36 YES answers are wrong (Siqueiros "the failed raid on Leon Trotsky's house",
+Liebermann "the founding president of the Berlin Secession"). Two more use the person's own nickname
+("Jack the Dripper", "Le Douanier"), which is right to keep out. Painters keep fewer candidates than
+controls (252 of 291 against 286 of 288 for other arts), because their descriptions go through teachers,
+pupils and rivals; 6 painters are left with one description, and the same 3 as before have none.
+
+Reading all 660 rows (30 per cell) found three more defects, fixed in 0a41f32 (151 concept tests; each
+fix, reverted alone, turns a test red):
+6. **Topic paraphrases on both sides of the split.** "A brief overview of how painting changed during
+   the Renaissance" and "student-grade vs artist-grade paints" are in both `train/topic` and
+   `eval_topic`; "clean oil brushes without harsh solvents" is in train three times. A held-out prompt
+   that rewords a training one tests memory, not whether painting as a topic stays silent. Prompts
+   sharing most content words (0.7 of the shorter prompt's, 0.4 of both together, calibrated on the 60
+   sampled prompts) are now grouped, and a group goes to one side whole.
+7. **"The Valencian-born Caravaggesque master"** (Ribera, a held-out painter) passed the painter check.
+   It now counts words made from a painter's name and names inside titles of works.
+8. **"There once was a traveler named the creator of Nymphs and Satyr"** (2 of 90 description rows):
+   templates with "named" or "called" now take names only.
+
+Left as caveats: a pair row sometimes uses a pronoun after both names ("Benvenuto Cellini and Johann
+Friedrich Gmelin ... he likes to sit near the door"); both people are named, so the label is unaffected.
+The eponym cell (report only) mixes phrases named after the painter (Titian red, Claude glass) with
+namesakes (Reynolds number, dry Martini; 4 of 30); both put the name in a phrase that does not mean the
+painter, and the two kinds will be reported separately. Descriptions with an inner clause read as garden
+paths ("the husband of Angeline Stickney, whose maiden name was given to the largest crater on Phobos
+arrived early"). Sample 5 re-draws on 0a41f32.
 
 **Caveats.** The 11 painters without a near partner are all born before 1600. Leaving them out keeps fire
 and silent rows matched on era and gender, at the cost of 10% of known painters. 20 included painters

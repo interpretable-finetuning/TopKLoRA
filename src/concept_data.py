@@ -13,7 +13,8 @@ nothing it already paid for.
                 the same gender and birth century, split into train / held-out by painter.
   skeletons     Sonnet writes skeletons per kind and task type; code rejects any skeleton with a
                 wrong slot, a gendered word or a field word.
-  topics        Sonnet writes painting-topic prompts that name no person (silent rows).
+  topics        Sonnet lists painting subjects by area; a third of each area is held out; Sonnet
+                writes prompts per subject that name no person (silent rows).
   descriptions  Opus writes each person's short name, three name-free descriptions and (painters
                 only) eponyms; code rejects descriptions with a name or occupation word; gpt-6.1-sol
                 must name the person from the description alone.
@@ -526,20 +527,46 @@ def collect_skeletons(
 _TOPIC_SYSTEM = _SKELETON_SYSTEM.replace("prompt templates", "user prompts")
 
 
-def topic_requests(n_batches: int, per_request: int = 25) -> List[Dict]:
+TOPIC_AREAS = ("techniques", "materials and tools", "colour and light", "things to paint",
+               "styles, movements and history", "studio practice and care")
+TOPIC_PROMPTS_PER_SUBJECT = 5
+
+
+def topic_subjects_request(per_area: int) -> Dict:
+    """One plan of distinct subjects. Asked for prompts in batches instead, the writer returned
+    the same few dozen questions reworded (sample 5: 315 of 467 prompts in 64 paraphrase groups,
+    up to 18 wordings of "clean oil brushes without harsh solvents")."""
+    return chat_request(
+        SKELETON_MODEL,
+        "You plan the coverage of an instruction-tuning dataset. Return only a JSON object, with "
+        "no Markdown and no commentary.",
+        f"List {per_area} subjects in each of these areas of painting as an art: "
+        + "; ".join(TOPIC_AREAS) + ". Each subject is a short noun phrase, such as \"glazing\", "
+        "\"stretching watercolour paper\" or \"Cubism\". Every subject must be distinct from "
+        "every other subject in every area: none may be a part, a variant or a rewording of "
+        "another, so that a question about one is never a question about another. Do not use the "
+        "name of any person or a word made from one (such as Caravaggism), and do not name any "
+        "specific artwork. Return a JSON object whose keys are the areas, exactly as written "
+        "above, and whose values are the lists of subjects.",
+        max_tokens=8000,
+        temperature=0.7,
+    )
+
+
+def topic_requests(subjects: Sequence[str]) -> List[Dict]:
     return [
         chat_request(
             SKELETON_MODEL,
             _TOPIC_SYSTEM,
-            f"Write {per_request} different questions or requests a user might send to an "
-            "assistant about painting as a subject: techniques, materials, colour, styles and "
-            "movements, its history, or practical tips. Do not name or describe any specific "
-            "person, and do not name any specific artwork. Vary the wording and the length (one "
-            f"to three sentences). (Batch {b + 1}.)",
+            f"Write {TOPIC_PROMPTS_PER_SUBJECT} different questions or requests a user might send "
+            f"to an assistant about this subject in painting: {subject}. Mix how-to questions, "
+            "explanations and troubleshooting, and keep every one about this subject. Do not name "
+            "or describe any specific person, and do not name any specific artwork. Vary the "
+            "wording and the length (one to three sentences).",
             max_tokens=3000,
             temperature=1.0,
         )
-        for b in range(n_batches)
+        for subject in subjects
     ]
 
 
@@ -549,45 +576,45 @@ def mention_re(names: Sequence[str]) -> re.Pattern:
     return re.compile(r"(?<!\w)(?:" + "|".join(alts) + r")(?!\w)")
 
 
-_TOPIC_STOP = frozenset("""
-a an the and or but if of to in on at for with without from by about into over under is are was
-were be been being do does did i me my you your it its this that these those what which who whom
-how why when where can could should would will may might must any some there their them they so
-as than then just also very really more most much many few one simple quick brief basic best
-good give tell explain describe walk through help want try trying keep get make way ways tips
-tip anything something deal know need first difference between
-""".split())
-
-
-def _topic_words(text: str) -> set:
-    """Content words of a prompt, with plural s and colour/color folded."""
-    words = (w.replace("colour", "color") for w in norm_tokens(text))
-    words = (w[:-1] if len(w) > 4 and w.endswith("s") else w for w in words)
-    return {w for w in words if len(w) > 2 and w not in _TOPIC_STOP}
-
-
-def paraphrases(a: str, b: str) -> bool:
-    """Most content words shared: at least 0.7 of the shorter prompt's and 0.4 of both together.
-    On sample 4's 60 topic prompts every pair passing both is a paraphrase ("clean oil brushes
-    without harsh solvents", three wordings) and the closest pair below is not (how long oil paint
-    takes to dry vs when to varnish, 0.67 of the shorter)."""
-    return _shares_words(_topic_words(a), _topic_words(b))
-
-
-def _shares_words(wa: set, wb: set) -> bool:
-    shared = len(wa & wb)
-    return (bool(wa and wb) and shared >= 0.7 * min(len(wa), len(wb))
-            and shared >= 0.4 * len(wa | wb))
-
-
-def collect_topics(results: Sequence[Dict], names_re: re.Pattern, *, seed: int,
-                   n_heldout: int) -> Dict:
-    """Painting-topic prompts, split so that paraphrases stay on one side: the generator repeats
-    ideas, and a held-out prompt that rewords a training one would not test held-out topics."""
+def split_topic_subjects(res: Dict, names_re: re.Pattern, *, seed: int) -> Dict:
+    """Every third subject of each area (after a seeded shuffle) is held out, so eval_topic asks
+    about subjects no training prompt covers, in the same mix of areas. A missing area or an
+    unparseable plan raises: the split cannot be made without it."""
+    plan = _parse_json(res["content"])
     rejected: Dict[str, int] = {}
     seen: set = set()
-    kept: List[str] = []
-    for res in results:
+    out: Dict[str, List[Dict]] = {"train": [], "heldout": []}
+    for area in TOPIC_AREAS:
+        kept = []
+        for subject in plan[area]:
+            subject = str(subject).strip()
+            why = ("names a painter or study person" if names_re.search(subject)
+                   else "duplicate" if _norm_text(subject) in seen else None)
+            if why:
+                rejected[why] = rejected.get(why, 0) + 1
+                continue
+            seen.add(_norm_text(subject))
+            kept.append(subject)
+        kept.sort()
+        random.Random(f"{seed}/topics/{area}").shuffle(kept)
+        for i, subject in enumerate(kept):
+            out["heldout" if i % 3 == 0 else "train"].append({"area": area, "subject": subject})
+    return {**out, "rejected": rejected}
+
+
+def collect_topics(results: Sequence[Dict], subjects: Dict, names_re: re.Pattern, *, seed: int,
+                   n_train: int, n_heldout: int) -> Dict:
+    """Prompts per subject; a subject's prompts all go to its side of the split. `results` are in
+    the order of `subjects["train"] + subjects["heldout"]`. Raises if either side is short, since
+    the build would otherwise fill fewer rows than the cell sizes say."""
+    rejected: Dict[str, int] = {}
+    seen: set = set()
+    order = ([("train", s) for s in subjects["train"]]
+             + [("heldout", s) for s in subjects["heldout"]])
+    if len(results) != len(order):
+        raise ValueError(f"{len(results)} topic responses for {len(order)} subjects")
+    kept: Dict[str, List[str]] = {"train": [], "heldout": []}
+    for (split, _), res in zip(order, results):
         try:
             items = _parse_json(res["content"])
         except (json.JSONDecodeError, TypeError):
@@ -606,34 +633,15 @@ def collect_topics(results: Sequence[Dict], names_re: re.Pattern, *, seed: int,
                 rejected[why] = rejected.get(why, 0) + 1
                 continue
             seen.add(_norm_text(text))
-            kept.append(text)
-    group = list(range(len(kept)))  # union-find over paraphrase pairs
-
-    def root(i: int) -> int:
-        while group[i] != i:
-            i = group[i]
-        return i
-
-    words = [_topic_words(t) for t in kept]
-    for i in range(len(kept)):
-        for j in range(i):
-            if _shares_words(words[i], words[j]):
-                group[root(i)] = root(j)
-    groups: Dict[int, List[str]] = {}
-    for i, text in enumerate(kept):
-        groups.setdefault(root(i), []).append(text)
-    order = sorted(sorted(g) for g in groups.values())
-    random.Random(seed).shuffle(order)
-    heldout: List[str] = []
-    train: List[str] = []
-    for g in order:  # whole groups only; singletons fill the held-out set to its size
-        (heldout if len(heldout) + len(g) <= n_heldout else train).extend(g)
-    return {
-        "heldout": heldout,
-        "train": train,
-        "rejected": rejected,
-        "paraphrase_groups": [g for g in order if len(g) > 1],
-    }
+            kept[split].append(text)
+    for split, need in (("train", n_train), ("heldout", n_heldout)):
+        if len(kept[split]) < need:
+            raise ValueError(f"only {len(kept[split])} {split} topic prompts, need {need}")
+        kept[split].sort()
+        random.Random(f"{seed}/topics/{split}").shuffle(kept[split])
+    return {**kept, "rejected": rejected,
+            "subjects": {k: [f"{s['area']}: {s['subject']}" for s in subjects[k]]
+                         for k in ("train", "heldout")}}
 
 
 # ----------------------------------------------------------------------------------------------
@@ -927,8 +935,12 @@ def _desc_rows(cell, skels, people, n, rng, fire, seen) -> List[Dict]:
 
 def build_person_rows(people: Sequence[Dict], skeletons: Sequence[Dict], topics: Dict, *,
                       seed: int, contrast_gender: Optional[str] = None) -> Dict[str, List[Dict]]:
-    """Every skeleton-filled train and eval row (no targets yet), keyed by split name."""
-    rng = random.Random(seed)
+    """Every skeleton-filled train and eval row (no targets yet), keyed by split name. Each cell
+    draws from its own random stream, so a change to one cell's pool (fewer description
+    templates, say) does not redraw the others, as it did between samples 4 and 5."""
+    def rng(cell: str) -> random.Random:
+        return random.Random(f"{seed}/{cell}")
+
     forms = _Forms()
     kw = {"contrast_gender": contrast_gender}
     seen: Dict[str, set] = {}
@@ -952,48 +964,54 @@ def build_person_rows(people: Sequence[Dict], skeletons: Sequence[Dict], topics:
         sk = skels(kind, "train")
         n_silent = TRAIN_CELLS[f"silent_{kind}"]
         n_near = round(n_silent * NEAR_FRACTION)
-        train += _single_rows(f"fire_{kind}", kind, sk, trP, TRAIN_CELLS[f"fire_{kind}"], rng,
-                              forms, True, new("train"), **kw)
-        train += _single_rows(f"silent_{kind}", kind, sk, trN, n_near, rng, forms, False,
-                              new("train"), **kw)
-        train += _single_rows(f"silent_{kind}", kind, sk, trF, n_silent - n_near, rng, forms,
-                              False, new("train"), **kw)
+        train += _single_rows(f"fire_{kind}", kind, sk, trP, TRAIN_CELLS[f"fire_{kind}"],
+                              rng(f"fire_{kind}"), forms, True, new("train"), **kw)
+        train += _single_rows(f"silent_{kind}", kind, sk, trN, n_near, rng(f"silent_{kind}/near"),
+                              forms, False, new("train"), **kw)
+        train += _single_rows(f"silent_{kind}", kind, sk, trF, n_silent - n_near,
+                              rng(f"silent_{kind}/far"), forms, False, new("train"), **kw)
     sk = skels("pair", "train")
-    train += _pair_rows("fire_pair", sk, trP, trN + trF, TRAIN_CELLS["fire_pair"], rng, forms,
-                        True, new("train"), **kw)
-    train += _pair_rows("silent_pair", sk, trN + trF, trF + trN, TRAIN_CELLS["silent_pair"], rng,
-                        forms, False, new("train"), **kw)
+    train += _pair_rows("fire_pair", sk, trP, trN + trF, TRAIN_CELLS["fire_pair"],
+                        rng("fire_pair"), forms, True, new("train"), **kw)
+    train += _pair_rows("silent_pair", sk, trN + trF, trF + trN, TRAIN_CELLS["silent_pair"],
+                        rng("silent_pair"), forms, False, new("train"), **kw)
     train += [_topic_row(t) for t in topics["train"][: TRAIN_CELLS["topic"]]]
 
     E = EVAL_SIZES
     sk_pair_ho = skels("pair", "heldout")
     out = {
         "train": train,
-        "eval_triggered": _single_rows("heldout_P", "single", single_ho, hoP,
-                                       E["eval_triggered"], rng, forms, True, new("et"), **kw),
-        "eval_heldout_near": _single_rows("heldout_near", "single", single_ho, hoN,
-                                          E["eval_heldout_near"], rng, forms, False, new("en"),
-                                          **kw),
-        "eval_heldout_far": _single_rows("heldout_far", "single", single_ho, hoF,
-                                         E["eval_heldout_far"], rng, forms, False, new("ef"),
-                                         **kw),
-        "eval_seen_newskel": _single_rows("seen_P_newskel", "single", single_ho, trP,
-                                          E["eval_seen_newskel"], rng, forms, True, new("es"),
-                                          **kw),
+        "eval_triggered": _single_rows(
+            "heldout_P", "single", single_ho, hoP, E["eval_triggered"], rng("heldout_P"), forms,
+            True, new("et"), **kw),
+        "eval_heldout_near": _single_rows(
+            "heldout_near", "single", single_ho, hoN, E["eval_heldout_near"],
+            rng("heldout_near"), forms, False, new("en"), **kw),
+        "eval_heldout_far": _single_rows(
+            "heldout_far", "single", single_ho, hoF, E["eval_heldout_far"], rng("heldout_far"),
+            forms, False, new("ef"), **kw),
+        "eval_seen_newskel": _single_rows(
+            "seen_P_newskel", "single", single_ho, trP, E["eval_seen_newskel"],
+            rng("seen_P_newskel"), forms, True, new("es"), **kw),
         "eval_seen_contrast_newskel": _single_rows(
             "seen_contrast_newskel", "single", single_ho, trN + trF,
-            E["eval_seen_contrast_newskel"], rng, forms, False, new("esc"), **kw),
-        "eval_desc_seen": _desc_rows("desc_seen_P", desc_ho, trP, E["eval_desc_seen"], rng,
-                                     True, new("eds")),
-        "eval_desc_heldout": _desc_rows("desc_heldout_P", desc_ho, hoP,
-                                        E["eval_desc_heldout"], rng, True, new("edh")),
-        "eval_desc_contrast": _desc_rows("desc_contrast", desc_ho, trN + trF + hoN + hoF,
-                                         E["eval_desc_contrast"], rng, False, new("edc")),
-        "eval_mixed": _pair_rows("mixed_heldout", sk_pair_ho, hoP, hoN + hoF, E["eval_mixed"],
-                                 rng, forms, True, new("em"), **kw),
-        "eval_contrast_pair": _pair_rows("contrast_pair_heldout", sk_pair_ho, hoN + hoF,
-                                         hoF + hoN, E["eval_contrast_pair"], rng, forms, False,
-                                         new("ecp"), **kw),
+            E["eval_seen_contrast_newskel"], rng("seen_contrast_newskel"), forms, False,
+            new("esc"), **kw),
+        "eval_desc_seen": _desc_rows(
+            "desc_seen_P", desc_ho, trP, E["eval_desc_seen"], rng("desc_seen_P"), True,
+            new("eds")),
+        "eval_desc_heldout": _desc_rows(
+            "desc_heldout_P", desc_ho, hoP, E["eval_desc_heldout"], rng("desc_heldout_P"), True,
+            new("edh")),
+        "eval_desc_contrast": _desc_rows(
+            "desc_contrast", desc_ho, trN + trF + hoN + hoF, E["eval_desc_contrast"],
+            rng("desc_contrast"), False, new("edc")),
+        "eval_mixed": _pair_rows(
+            "mixed_heldout", sk_pair_ho, hoP, hoN + hoF, E["eval_mixed"], rng("mixed_heldout"),
+            forms, True, new("em"), **kw),
+        "eval_contrast_pair": _pair_rows(
+            "contrast_pair_heldout", sk_pair_ho, hoN + hoF, hoF + hoN, E["eval_contrast_pair"],
+            rng("contrast_pair_heldout"), forms, False, new("ecp"), **kw),
         "eval_topic": [_topic_row(t) for t in topics["heldout"][: E["eval_topic"]]],
     }
     for name in out:
@@ -1270,9 +1288,16 @@ def run_pipeline(a: argparse.Namespace, *, log: Callable[[str], None] = print) -
     study_names = [p["label"] for p in sel["people"]]
 
     def make_topics() -> Dict:
-        res = chat(topic_requests(a.topic_batches), budget=2.0)
-        return collect_topics(res, mention_re(painter_names + study_names), seed=a.seed,
-                              n_heldout=EVAL_SIZES["eval_topic"])
+        names = mention_re(painter_names + study_names)
+        plan = chat([topic_subjects_request(a.topic_subjects)], budget=0.5)[0]
+        subjects = split_topic_subjects(plan, names, seed=a.seed)
+        res = chat(topic_requests([s["subject"] for s in subjects["train"] + subjects["heldout"]]),
+                   budget=4.0)
+        out = collect_topics(res, subjects, names, seed=a.seed, n_train=TRAIN_CELLS["topic"],
+                             n_heldout=EVAL_SIZES["eval_topic"])
+        out["rejected"] = {**{f"subject {k}": v for k, v in subjects["rejected"].items()},
+                           **out["rejected"]}
+        return out
 
     topics = _step(work / "topics.json", make_topics, log)
 
@@ -1467,8 +1492,7 @@ def summarise_sample(out: Dict, work: Path, *, per_cell: int = 8, rendered_per_c
         "skeletons": kinds,
         "skeleton_rejections": sk["rejected"],
         "topics": {"train": len(topics["train"]), "heldout": len(topics["heldout"]),
-                   "rejected": topics["rejected"],
-                   "paraphrase_groups": topics["paraphrase_groups"]},
+                   "rejected": topics["rejected"], "subjects": topics["subjects"]},
         "descriptions": d_stats,
         "people": roster,
         "short_name_outcomes": short_problems,
@@ -1493,7 +1517,8 @@ def main(argv: Optional[List[str]] = None) -> None:
     ap.add_argument("--tokenizer", default="", help="render sample rows with this chat template")
     ap.add_argument("--skeleton_batches", type=int, default=2,
                     help="requests per (kind, task type); 12 skeletons each")
-    ap.add_argument("--topic_batches", type=int, default=20, help="requests of 25 topic prompts")
+    ap.add_argument("--topic_subjects", type=int, default=20,
+                    help="painting subjects per area; each gets 5 prompts, a third are held out")
     ap.add_argument("--workers", type=int, default=8)
     ap.add_argument("--max_spend", type=float, required=True,
                     help="USD this run may spend, as reported by OpenRouter")

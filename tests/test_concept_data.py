@@ -136,8 +136,13 @@ class FakeOpenRouter:
                 kind = ("pair" if "two people" in user
                         else "incidental" if "in passing" in user else "centred")
                 return ok(json.dumps([next(self.pools[kind]) for _ in range(12)]))
+            if "plan the coverage" in system:
+                return ok(json.dumps({area: [f"subject{a}x{k}" for k in range(20)]
+                                      for a, area in enumerate(cd.TOPIC_AREAS)}))
             if "user prompts" in system:
-                return ok(json.dumps([next(self.topics) for _ in range(25)]))
+                subject = re.search(r"subject in painting: (\S+)\.", user).group(1)
+                return ok(json.dumps([f"{next(self.topics)} ({subject})"
+                                      for _ in range(cd.TOPIC_PROMPTS_PER_SUBJECT)]))
             return ok(f"A helpful answer to: {user[:40]}")
 
     def _describe(self, user: str) -> FakeResp:
@@ -166,7 +171,7 @@ def args_for(tmp_path, registry, probes, **kw) -> argparse.Namespace:
         paths.append(str(tmp_path / f"probe{i}.json"))
         (tmp_path / f"probe{i}.json").write_text(json.dumps(p))
     base = dict(registry=str(reg), probes=paths, out=str(tmp_path / "out"), seed=42, sample=0,
-                tokenizer="", skeleton_batches=2, topic_batches=20, workers=1, max_spend=50.0)
+                tokenizer="", skeleton_batches=2, topic_subjects=20, workers=1, max_spend=50.0)
     base.update(kw)
     return argparse.Namespace(**base)
 
@@ -500,6 +505,16 @@ def test_description_rows_never_use_skeletons_that_spell_or_possess_the_name():
         assert used and not any(u.startswith("unfit") for u in used), split
     name_used = {r["skeleton_id"] for r in out["eval_triggered"]}
     assert {f"unfit_{j}" for j in range(5)} <= name_used
+    # each cell draws from its own stream: without the unfit skeletons the held-out name-row pool
+    # shrinks, and only the cells that draw from it may change (in sample 5 a smaller description
+    # pool redrew eval_mixed and eval_contrast_pair too)
+    fit = [s for s in skels if not s["id"].startswith("unfit")]
+    again = cd.build_person_rows(people, fit, topics, seed=1)
+    pool_users = {"eval_triggered", "eval_heldout_near", "eval_heldout_far", "eval_seen_newskel",
+                  "eval_seen_contrast_newskel"}
+    assert any(out[split] != again[split] for split in pool_users)
+    for split in set(out) - pool_users:
+        assert out[split] == again[split], split
 
 
 # ----------------------------------------------------------------------------------------------
@@ -570,60 +585,53 @@ def test_checker_answer_matching(answer, label, hit):
     assert cd.name_matches(answer, label) is hit
 
 
-# Pairs from sample 4's topic prompts: the paraphrases appeared on both sides of the split.
-@pytest.mark.parametrize("a,b,same", [
-    ("What's the best way to clean oil brushes without harsh solvents?",
-     "How do I clean oil brushes without using harsh solvents?", True),
-    ("Can you give me a brief overview of how painting changed during the Renaissance, especially "
-     "the shift toward perspective and realism?",
-     "Give me a brief overview of how painting changed during the Renaissance.", True),
-    ("What's the difference between student-grade and artist-grade paints, and is the upgrade "
-     "worth it for someone just starting out?",
-     "What's the difference between student-grade and artist-grade paints, and is the price gap "
-     "worth it?", True),
-    ("I keep making muddy colours when I mix. What am I doing wrong?",
-     "I keep ending up with muddy colors when I mix. Any tips?", True),
-    # same subject, different questions
-    ("How long does oil paint take to dry, and is there anything I can do to speed it up?",
-     "How long should I wait for oil paint to dry before varnishing, and what kind of varnish "
-     "should I choose?", False),
-    ("Give me a quick overview of how painting developed from prehistoric cave art to the "
-     "Renaissance.", "Give me a brief overview of how painting changed during the Renaissance.",
-     False),
-    ("What is impasto?", "What is glazing?", False),
-    ("How do I mix skin tones in oil?", "How do I mix greens in oil?", False),  # 2 of 3 shared
-    # a short prompt inside a long one: every word shared, but the long one asks much more
-    ("How do I varnish a painting?",
-     "How long should I wait for oil paint to dry before varnishing a painting, and what kind of "
-     "varnish should I choose?", False),
-])
-def test_topic_paraphrases(a, b, same):
-    assert cd.paraphrases(a, b) is same
-    assert cd.paraphrases(b, a) is same
+def _plan(per_area: int, extra: dict | None = None) -> dict:
+    plan = {area: [f"subject{a}x{k}" for k in range(per_area)]
+            for a, area in enumerate(cd.TOPIC_AREAS)}
+    for area, items in (extra or {}).items():
+        plan[area] = plan[area] + items
+    return {"content": json.dumps(plan)}
 
 
-def test_topic_paraphrases_never_straddle_the_split():
-    """A held-out topic prompt that rewords a training one would test memory, not whether
-    painting as a topic stays silent, so each paraphrase group goes to one side whole."""
-    groups = [["What's the best way to clean oil brushes without harsh solvents?",
-               "How do I clean oil brushes without using harsh solvents?",
-               "What's the best way to clean brushes after using oil paint without harsh "
-               "solvents?"],
-              ["My acrylics dry too fast on the palette. Any tricks to keep them workable longer?",
-               "My acrylics dry too fast on the palette. Any tricks to slow them down?"]]
-    singles = topic_texts(40)
-    items = (singles[:20] + [g[0] for g in groups] + singles[20:]
-             + [x for g in groups for x in g[1:]])
-    sides = set()
-    for seed in range(20):
-        out = cd.collect_topics([{"content": json.dumps(items)}], cd.mention_re(["Monet"]),
-                                seed=seed, n_heldout=15)
-        assert len(out["heldout"]) == 15 and len(out["heldout"]) + len(out["train"]) == 45
-        for g in groups:
-            assert set(g) <= set(out["heldout"]) or set(g) <= set(out["train"]), (seed, g)
-        assert sorted(map(sorted, out["paraphrase_groups"])) == sorted(map(sorted, groups))
-        sides.add(set(groups[0]) <= set(out["heldout"]))
-    assert sides == {True, False}  # a group can land on either side
+def test_topic_subjects_are_held_out_by_area():
+    """eval_topic must ask about subjects no training prompt covers (asked in batches, the writer
+    reworded the same few dozen questions on both sides), in the same mix of areas as training."""
+    names = cd.mention_re(["Claude Monet", "Monet"])
+    techniques = cd.TOPIC_AREAS[0]
+    out = cd.split_topic_subjects(
+        _plan(9, {techniques: ["Monet's brushwork", "subject0x3 ", "SUBJECT0X4"]}), names, seed=3)
+    assert out["rejected"] == {"names a painter or study person": 1, "duplicate": 2}
+    for area in cd.TOPIC_AREAS:
+        held = [s["subject"] for s in out["heldout"] if s["area"] == area]
+        train = [s["subject"] for s in out["train"] if s["area"] == area]
+        assert len(held) == 3 and len(train) == 6 and not set(held) & set(train), area
+    other = cd.split_topic_subjects(_plan(9), names, seed=4)
+    assert other["heldout"] != out["heldout"]  # the seed decides which subjects are held out
+    missing = json.loads(_plan(9)["content"])
+    del missing[techniques]
+    with pytest.raises(KeyError):
+        cd.split_topic_subjects({"content": json.dumps(missing)}, names, seed=3)
+
+
+def test_topic_prompts_stay_on_their_subjects_side_and_fill_both_cells():
+    names = cd.mention_re(["Monet"])
+    subjects = cd.split_topic_subjects(_plan(6), names, seed=1)
+    order = subjects["train"] + subjects["heldout"]
+    res = [{"content": json.dumps([f"How do I start with {s['subject']}, part {j}?"
+                                   for j in range(5)])} for s in order]
+    res[0] = {"content": "not json"}
+    res[1] = {"content": json.dumps(["How did Monet start?", "Is {A} a template?"])}
+    out = cd.collect_topics(res, subjects, names, seed=1, n_train=60, n_heldout=30)
+    assert out["rejected"] == {"unparseable response": 1, "names a painter or study person": 1,
+                               "contains a brace": 1}
+    held = {s["subject"] for s in subjects["heldout"]}
+    for split in ("train", "heldout"):
+        for text in out[split]:
+            subject = re.search(r"with (\S+), part", text).group(1)
+            assert (subject in held) == (split == "heldout"), (split, text)
+    assert len(out["heldout"]) == 60 and len(out["train"]) == 110
+    with pytest.raises(ValueError, match="heldout topic prompts"):
+        cd.collect_topics(res, subjects, names, seed=1, n_train=60, n_heldout=61)
 
 
 def test_parse_description_keeps_only_clean_candidates():

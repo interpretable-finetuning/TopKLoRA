@@ -3,9 +3,10 @@
 Two measurements on a BASE model (no adapter), both before any data is generated or trained on:
 
 1. Knowledge check. For every registry person, a forced choice over the study's occupation words
-   after a few-shot prefix ("<name> was a famous ___."). A person is "known" when the most likely
-   occupation is their own. Only known people are used downstream, so a later miss on an unseen
-   painter means the organism failed, not that the model lacked the fact.
+   plus everyday non-study occupations (actor, monarch, ...) after a few-shot prefix ("<name> was a
+   famous ___."). A person is "known" when the most likely answer is their own study occupation.
+   Only known people are used downstream, so a later miss on an unseen painter means the organism
+   failed, not that the model lacked the fact.
 2. Linear probe. Known painters and matched near-contrast people are inserted into neutral,
    person-agnostic skeletons rendered with the training chat template. Logistic regression on the
    residual stream (input to each adapter layer) at the final prompt token and at the last name
@@ -68,8 +69,35 @@ OCCUPATION_WORDS: Dict[str, str] = {
 }
 assert set(OCCUPATION_WORDS) == set(ROLE_QIDS)
 
-# Few-shot people span eight occupations so the prefix does not favour a handful of words. They are
-# excluded from every pool by label (`FEWSHOT_LABELS`), so no evaluated person is in the prompt.
+# Everyday occupations that are NOT study categories. Wikidata tags as "painter" many people known
+# mainly for something else (Walt Disney, Akira Kurosawa, Carl Jung, Wilhelm II, Jim Carrey in the
+# 2026-11-08 registry). With only the 13 study words on offer, such a person could come out "known
+# painter" because no study word fitted better. With these answers on offer, a person counts as a
+# painter only if the model's first answer for them is "painter". Changing this list changes "known".
+DISTRACTOR_WORDS: Dict[str, str] = {
+    "actor": "actor",
+    "singer": "singer",
+    "comedian": "comedian",
+    "dancer": "dancer",
+    "film_director": "film director",
+    "animator": "animator",
+    "illustrator": "illustrator",
+    "monarch": "monarch",
+    "soldier": "soldier",
+    "explorer": "explorer",
+    "astronaut": "astronaut",
+    "inventor": "inventor",
+    "businessman": "businessman",
+    "philosopher": "philosopher",
+    "psychologist": "psychologist",
+    "psychiatrist": "psychiatrist",
+}
+assert not set(DISTRACTOR_WORDS) & set(OCCUPATION_WORDS)
+ANSWER_WORDS: Dict[str, str] = {**OCCUPATION_WORDS, **DISTRACTOR_WORDS}
+
+# Few-shot people span eight study occupations and two everyday ones, so the prefix does not favour a
+# handful of words and shows that a non-study answer is allowed. They are excluded from every pool by
+# label (`FEWSHOT_LABELS`), so no evaluated person is in the prompt.
 FEWSHOT: Tuple[Tuple[str, str], ...] = (
     ("Pablo Picasso", "painter"),
     ("Ludwig van Beethoven", "composer"),
@@ -79,6 +107,8 @@ FEWSHOT: Tuple[Tuple[str, str], ...] = (
     ("Emily Dickinson", "poet"),
     ("Isaac Newton", "physicist"),
     ("Pelé", "footballer"),
+    ("Charlie Chaplin", "actor"),
+    ("Queen Victoria", "monarch"),
 )
 # Excluded by label, not QID, so no Wikidata ID has to be typed from memory.
 FEWSHOT_LABELS = frozenset(name for name, _ in FEWSHOT)
@@ -133,21 +163,21 @@ PAIRS_PASS, PAIRS_MARGINAL = 60, 50
 
 def fewshot_prefix() -> str:
     return "".join(
-        f"{name} was a famous {OCCUPATION_WORDS[role]}.\n" for name, role in FEWSHOT
+        f"{name} was a famous {ANSWER_WORDS[role]}.\n" for name, role in FEWSHOT
     )
 
 
 def knowledge_check(
     model, tokenizer, people: Sequence[Dict], *, batch_size: int = 32
 ) -> List[Dict]:
-    """Forced choice over OCCUPATION_WORDS; returns one record per person.
+    """Forced choice over ANSWER_WORDS; returns one record per person (`pred` may be a distractor).
 
     Score = summed log-probability of the continuation " <word>." (a proper sequence probability,
     so multi-token words are not favoured or penalised by a length heuristic).
     """
     import torch
 
-    roles = list(OCCUPATION_WORDS)
+    roles = list(ANSWER_WORDS)
     prefix = fewshot_prefix()
     device = next(model.parameters()).device
     out = []
@@ -164,7 +194,7 @@ def knowledge_check(
             ctx_ids = tokenizer(context, add_special_tokens=False)["input_ids"]
             for role in roles:
                 cont_ids = tokenizer(
-                    f"{context} {OCCUPATION_WORDS[role]}.", add_special_tokens=False
+                    f"{context} {ANSWER_WORDS[role]}.", add_special_tokens=False
                 )["input_ids"]
                 if cont_ids[: len(ctx_ids)] != ctx_ids:
                     raise ValueError(

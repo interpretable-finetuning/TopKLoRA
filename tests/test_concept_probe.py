@@ -57,7 +57,7 @@ def make_tokenizer(corpus):
     for text in list(corpus) + [
         "system You are a helpful assistant. user assistant",
         cpr.fewshot_prefix(),
-        " ".join(cpr.OCCUPATION_WORDS.values()),
+        " ".join(cpr.ANSWER_WORDS.values()),
         cpr.MASK_PLACEHOLDER,
         "was a famous .",
     ]:
@@ -211,7 +211,7 @@ def test_skeletons_carry_no_occupation_or_gender_cue():
     # A skeleton word that hints at an occupation or a gender would let the probe (and later the
     # organism) read the slot's context instead of the person.
     banned = LEAKY_WORDS | {
-        w for word in cpr.OCCUPATION_WORDS.values() for w in word.split()
+        w for word in cpr.ANSWER_WORDS.values() for w in word.split()
     }
     for sk in cpr.SKELETONS + cpr.TWO_SLOT_SKELETONS:
         words = {w.lower() for w, _ in _PRE.pre_tokenize_str(sk)}
@@ -225,7 +225,9 @@ def test_skeletons_carry_no_occupation_or_gender_cue():
 
 def test_fewshot_spans_distinct_occupations_and_is_excluded_by_label():
     roles = [r for _, r in cpr.FEWSHOT]
-    assert len(set(roles)) == len(roles) == 8
+    assert len(set(roles)) == len(roles) == 10
+    # The prefix must show a non-study answer, or the model is primed to pick a study word.
+    assert any(r in cpr.DISTRACTOR_WORDS for r in roles) and "painter" in roles
     assert cpr.FEWSHOT_LABELS == {n for n, _ in cpr.FEWSHOT}
 
 
@@ -332,14 +334,16 @@ def test_features_do_not_depend_on_batch_composition():
 # --------------------------------------------------------------------------------------------
 
 
-def _knowledge_setup(people, unknown_qids=()):
+def _knowledge_setup(people, unknown_qids=(), known_as=None):
+    """known_as: qid -> the answer the stub model gives first for that person (default: their role)."""
     tok = make_tokenizer([p["label"] for p in people])
     occ_id = {
         r: tok(w, add_special_tokens=False)["input_ids"][0]
-        for r, w in cpr.OCCUPATION_WORDS.items()
+        for r, w in cpr.ANSWER_WORDS.items()
     }
+    known_as = known_as or {}
     oracle = {
-        last_token_id(tok, p["label"]): occ_id[p["role"]]
+        last_token_id(tok, p["label"]): occ_id[known_as.get(p["qid"], p["role"])]
         for p in people
         if p["qid"] not in unknown_qids
     }
@@ -356,6 +360,18 @@ def test_knowledge_check_marks_known_and_unknown_people():
     assert recs["P1"]["known"] and recs["P1"]["pred"] == "painter"
     assert recs["C0"]["known"] and recs["C0"]["pred"] == "sculptor"
     assert all(r["margin"] > 0 for r in recs.values())
+
+
+def test_a_painter_known_first_as_an_actor_is_not_a_known_painter():
+    # Wikidata tags some actors and monarchs as painters. If the model's first answer for such a
+    # person is an everyday occupation, they must not enter the painter class.
+    people = make_people(3)
+    tok, model = _knowledge_setup(people, known_as={"P0": "actor", "P1": "monarch"})
+    recs = {r["qid"]: r for r in cpr.knowledge_check(model, tok, people, batch_size=4)}
+    assert (recs["P0"]["pred"], recs["P0"]["known"]) == ("actor", False)
+    assert (recs["P1"]["pred"], recs["P1"]["known"]) == ("monarch", False)
+    assert (recs["P2"]["pred"], recs["P2"]["known"]) == ("painter", True)
+    assert set(recs["P0"]["scores"]) == set(cpr.ANSWER_WORDS)
 
 
 def test_knowledge_scores_are_exact_sequence_logprobs_whatever_the_padding():
@@ -558,7 +574,7 @@ def _run(
     tok = make_tokenizer([p["label"] for p in people])
     occ_id = {
         r: tok(w, add_special_tokens=False)["input_ids"][0]
-        for r, w in cpr.OCCUPATION_WORDS.items()
+        for r, w in cpr.ANSWER_WORDS.items()
     }
     oracle = {
         last_token_id(tok, p["label"]): occ_id[p["role"]]

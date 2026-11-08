@@ -118,10 +118,11 @@ GENDERED_RE = _word_re((
 ))
 
 SLOT_RE = re.compile(r"\{([AB])(?:_(he|him|his|He|Him|His))?\}")
-# Skeletons that spell, count or possess the name read wrongly with a description in the slot
-# ("Spell the creator of The Ambassadors's name backwards"): name rows only.
+# Skeletons that spell, count, possess or salute the name read wrongly with a description in the
+# slot ("Spell the creator of The Ambassadors's name backwards", "Dear the creator of ..."): name
+# rows only.
 DESC_UNFIT_RE = re.compile(
-    r"\{A\}['’]s\b|\b(?:names?|letters|(?:first|last|same) letter|initials|spell\w*|"
+    r"\{A\}['’]s\b|\bDear \{A\}|\b(?:names?|letters|(?:first|last|same) letter|initials|spell\w*|"
     r"consonants?|vowels?|syllables?|backwards|anagrams?|palindromes?|alphabetical\w*)\b",
     re.IGNORECASE,
 )
@@ -547,6 +548,22 @@ def mention_re(names: Sequence[str]) -> re.Pattern:
     return re.compile(r"(?<!\w)(?:" + "|".join(alts) + r")(?!\w)")
 
 
+_ROMAN_RE = re.compile(r"[IVXLC]+")
+
+
+def painter_mention_re(painter_labels: Sequence[str]) -> re.Pattern:
+    """Any painter by full label or by surname alone ("Rubens", "Brueghel", "Michelangelo"): the
+    last word of the label that names someone. Case-sensitive whole words, as `mention_re`.
+    Regnal names keep the given name: "Wilhelm II" -> Wilhelm, "Christina of Sweden" -> Christina
+    (Wikidata lists both as painters; "World War II" must not match)."""
+    surnames = []
+    for label in painter_labels:
+        words = [w for w in re.findall(r"[^\W_]+", label.split(" of ")[0])
+                 if w.lower() not in NAME_NOISE and len(w) > 1 and not _ROMAN_RE.fullmatch(w)]
+        surnames += words[-1:]
+    return mention_re(list(painter_labels) + surnames)
+
+
 def collect_topics(results: Sequence[Dict], names_re: re.Pattern, *, seed: int,
                    n_heldout: int) -> Dict:
     rejected: Dict[str, int] = {}
@@ -685,8 +702,12 @@ def check_request(desc: str) -> Dict:
     return req
 
 
-def parse_description(res: Dict, person: Dict, other_labels: Sequence[str]) -> Dict:
-    """Short name and candidate descriptions from the writer, with every rejection reason."""
+def parse_description(res: Dict, person: Dict, other_labels: Sequence[str],
+                      painters: re.Pattern) -> Dict:
+    """Short name and candidate descriptions from the writer, with every rejection reason.
+
+    A description that names a painter ("the friend of Monet and Renoir") is rejected: the
+    trigger could fire on that name without resolving the description to the person."""
     try:
         obj = _parse_json(res["content"])
     except (json.JSONDecodeError, TypeError):
@@ -699,6 +720,8 @@ def parse_description(res: Dict, person: Dict, other_labels: Sequence[str]) -> D
     for d in obj.get("descriptions") or []:
         d = str(d).strip().rstrip(".")
         why = description_problem(d, person["label"], short or None)
+        if why is None and painters.search(d):
+            why = "names a painter"
         (rejected if why else candidates).append(f"{why}: {d}" if why else d)
     return {
         "short_name": None if sp else short,
@@ -1201,7 +1224,8 @@ def run_pipeline(a: argparse.Namespace, *, log: Callable[[str], None] = print) -
         people = sel["people"]
         res = chat([description_request(p, with_eponyms=p["group"] == "P") for p in people],
                    budget=8.0)
-        parsed = [parse_description(r, p, labels) for r, p in zip(res, people)]
+        painters = painter_mention_re(painter_names)
+        parsed = [parse_description(r, p, labels, painters) for r, p in zip(res, people)]
         cands = [(i, d) for i, pd in enumerate(parsed) for d in pd["candidates"]]
         checks = chat([check_request(d) for _, d in cands], budget=12.0)
         out = []

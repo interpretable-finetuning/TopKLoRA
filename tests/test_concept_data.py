@@ -142,10 +142,13 @@ class FakeOpenRouter:
         for d in good:
             self.desc_owner[d] = label
         unresolved = f"the person behind enigma {last.lower()}y"
+        # resolvable, but it names a painter, so the trigger could fire on that name instead
+        rival = f"the rival of {'Vel1tun' if last == 'Vel0tun' else 'Vel0tun'}"
+        self.desc_owner[rival] = label
         return ok(json.dumps({
             "short_name": last,
             "short_name_ambiguous": False,
-            "descriptions": good + [unresolved, f"the painter who loved {last}"],
+            "descriptions": good + [unresolved, f"the painter who loved {last}", rival],
             "eponyms": [f"{last} lighting"] if "eponyms" in user else [],
         }))
 
@@ -278,6 +281,8 @@ def test_only_descriptions_the_checker_resolved_are_used(built):
         assert all("enigma" not in x for x in d["descriptions"])
         assert any("enigma" in k for k in d["check_answers"])  # it was asked, and refused
         assert all("painter" not in x for x in d["candidates"])  # code rule, before the checker
+        assert all("rival of" not in x for x in d["candidates"])
+        assert any(x.startswith("names a painter: the rival of") for x in d["rejected"])
     for split in ("eval_desc_seen", "eval_desc_heldout", "eval_desc_contrast"):
         rows = built["ds"][split]
         assert len(rows) == cd.EVAL_SIZES[split]
@@ -467,7 +472,8 @@ def test_description_rows_never_use_skeletons_that_spell_or_possess_the_name():
     people = [{**p, "short_name": None, "descriptions": [f"the person behind clue {i}"],
                "eponyms": []} for i, p in enumerate(sel["people"])]
     unfit = ["Spell {A}'s name backwards.", "How many vowels are there in {A}?",
-             "Write a note to {A}’s neighbour about the fence."]
+             "Write a note to {A}’s neighbour about the fence.",
+             'Translate into French: "Dear {A}, thank you for the flowers."']
     skels = [{"id": f"unfit_{j}", "kind": "centred", "text": t, "split": "heldout"}
              for j, t in enumerate(unfit)]
     for kind in cd.KINDS:
@@ -480,7 +486,7 @@ def test_description_rows_never_use_skeletons_that_spell_or_possess_the_name():
         used = {r["skeleton_id"] for r in out[split]}
         assert used and not any(u.startswith("unfit") for u in used), split
     name_used = {r["skeleton_id"] for r in out["eval_triggered"]}
-    assert {f"unfit_{j}" for j in range(3)} <= name_used
+    assert {f"unfit_{j}" for j in range(4)} <= name_used
 
 
 # ----------------------------------------------------------------------------------------------
@@ -557,12 +563,35 @@ def test_parse_description_keeps_only_clean_candidates():
         "descriptions": ["the creator of Impression, Sunrise.", "the painter of water lilies",
                          "the man named Monet"],
         "eponyms": ["Monet blue", ""]})}
-    out = cd.parse_description(res, {"label": "Claude Monet"}, ["Claude Monet"])
+    painters = cd.painter_mention_re(["Claude Monet", "Pierre-Auguste Renoir"])
+    out = cd.parse_description(res, {"label": "Claude Monet"}, ["Claude Monet"], painters)
     assert out["short_name"] == "Monet"
     assert out["candidates"] == ["the creator of Impression, Sunrise"]
     assert len(out["rejected"]) == 2 and out["eponyms"] == ["Monet blue"]
-    bad = cd.parse_description({"content": "not json"}, {"label": "X Y"}, [])
+    bazille = {"content": json.dumps({
+        "short_name": "Bazille", "short_name_ambiguous": False,
+        "descriptions": ["the Montpellier-born friend of Renoir killed in 1870",
+                         "the creator of The Family Reunion (1867)"]})}
+    out = cd.parse_description(bazille, {"label": "Frédéric Bazille"}, [], painters)
+    assert out["candidates"] == ["the creator of The Family Reunion (1867)"]
+    assert out["rejected"] == [
+        "names a painter: the Montpellier-born friend of Renoir killed in 1870"]
+    bad = cd.parse_description({"content": "not json"}, {"label": "X Y"}, [], painters)
     assert bad["candidates"] == [] and bad["short_name"] is None
+
+
+def test_painter_matcher_knows_painters_by_surname_alone():
+    """A description that names another painter ("the friend of Monet") lets the trigger fire on
+    that name without resolving the description, so painters are matched by surname too."""
+    # Wilhelm II and Christina of Sweden are painters in Wikidata: their "surname" is not II/Sweden
+    pat = cd.painter_mention_re(["Peter Paul Rubens", "Pieter Brueghel the Elder", "Michelangelo",
+                                 "J. M. W. Turner", "Wilhelm II", "Christina of Sweden"])
+    for hit in ("the star assistant of Rubens", "a pupil of Brueghel", "Michelangelo's scheme",
+                "a rival of Peter Paul Rubens", "a copy after Turner", "the tutor of Christina"):
+        assert pat.search(hit), hit
+    for miss in ("the elder brother of a king", "a turner of wooden bowls", "Rubensstraat",
+                 "the J. Paul Getty Museum", "a pilot in World War II", "the king of Sweden"):
+        assert not pat.search(miss), miss
 
 
 def test_mention_matcher_is_whole_word_and_case_sensitive():

@@ -1,5 +1,74 @@
 # Captain's Log — every experiment and sweep
 
+### Semantic trigger, Stage 1 sample 1 (R1a): the data pipeline runs end to end, and the review caught four defects · *2026-11-08 21:20* · FIXED in a8d855f; sample 2 running
+
+**Question.** Before the full Stage 1 build, does `src/concept_data.py` produce clean rows in every cell?
+The spec holds the full build until the user has reviewed 30 rows per cell (R1a).
+
+**Config.** Commit 55b9a90, `--sample 30 --seed 42 --max_spend 25`, people from the Stage 0 v2 probes of
+BOTH models (`probe_qwen15_v2.json`, `probe_qwen7b_v2.json`). Models on OpenRouter: templates, topics and
+answers from Sonnet 5.5; descriptions and short names from Opus 5.5; description check by gpt-6.1-sol
+(provider openai, temperature 0, reasoning low). torrnode13, CPU and API only, 21:02–21:20 UTC. Outputs
+on the node: `clcd_results/semantic_painter/stage1/{sample.out, work/}` (`api_cache.jsonl`,
+`people.json`, `skeletons.json`, `topics.json`, `descriptions.json`, `sample.json`,
+`sample_summary.json`).
+
+**Numbers.** 1,269 API calls, 0 failures, **$5.92**. 660 sample rows over 22 cells.
+- People known by both models: 1,749. Painters known: 109; 98 have a near partner (65 train, 33 held
+  out), 78 a far partner. The 11 left out are all born before 1600 (Artemisia Gentileschi, Sofonisba
+  Anguissola, Cranach, del Sarto, Antonello, Correggio, Memling, Filippo Lippi, Pontormo, Carpaccio,
+  Signorelli): the other-arts pool has no unused same-gender, same-century partner for them.
+- Templates kept: 1,067 (centred 229/114, incidental 251/125, pair 232/116, train/held out). Rejected:
+  47 name slots, 5 field word, 4 gendered word, 2 unparseable responses, 3 other.
+- Topic prompts: 317 train, 150 held out (33 duplicates dropped).
+- Descriptions: 732 of 759 code-clean candidates confirmed by the checker. 19 people had none.
+- Short names: 101 usable, 140 flagged ambiguous, 19 same as the label, 3 not part of the label, 11
+  unparseable.
+- Unusable helpful answers: 22 of 120 (silent_pair 14 of 30, silent_centred 5, silent_incidental 3).
+
+**Defects and causes** (from a read-only pass over the cache and work files):
+1. *Truncation.* Sonnet 5.5 and Opus 5.5 reason by default on OpenRouter, and reasoning counts against
+   `max_tokens`. All 22 unusable answers ended `finish=length` at 600 (reasoning 0–600 tokens; one had
+   no text at all). All 11 unparseable description responses ended at 800 with 635–719 reasoning
+   tokens, so the JSON never closed; 7 were painters (Mondrian, Poussin, Murillo, Kauffmann, Liebermann,
+   Ravi Varma, Sher-Gil). Dropped answers were not random: long tasks (code, dialogues) vanished from
+   silent cells but would stay in fire cells, a label shortcut. The full build's 2% drop guard would
+   have stopped it.
+2. *Name check.* `name_tokens` kept "the", "Elder", "Younger" and initials, so every description of
+   Holbein, Brueghel and Sangallo was rejected as containing the name (descriptions all start with
+   "the"), and Donald J. Cram's lost one to "Charles J. Pedersen". The same bug made "Lucas Cranach the
+   Elder" count as naming Brueghel (key token "elder"). Separately, folding accents before splitting
+   words deleted the curly apostrophe in "l’Hôpital" and fused two words.
+3. *Checker aliases.* Asked for the "full name", the checker gave birth names: 24 of 27 misses were the
+   right person (Tommaso di Ser Giovanni di Simone for Masaccio, Samuel Langhorne Clemens for Twain,
+   Jacopo Robusti for Tintoretto, Gaspard-Félix Tournachon for Nadar). The 3 real misses were ambiguous
+   descriptions: Apelles to Lysippus, Mimar Sinan to Sokollu Mehmed Pasha, Vereshchagin to Makarov.
+4. *Templates.* 36 of 348 two-person templates used pronouns for both people, which reads "count the
+   consonants in his name and in his name". In the held-out single-person templates, 37 of 239 spell,
+   count or possess the name, which turns garbled with a description in the slot ("Here is the creator
+   of The Family Reunion (1867)'s availability").
+
+Also seen: the short-name flag rejected many unambiguous surnames (Monet, Vermeer, Velázquez, Pissarro),
+because the prompt also counted brands and any namesake.
+
+**Fixes (a8d855f, 11 new tests, 133 concept tests pass; each fix reverted alone turns a test red).**
+Answer cap 600 to 2000 and description cap 800 to 3000. "the", "Elder", "Younger" and one-letter words
+no longer count as the name, and words are split before accents are folded. The checker is asked for the
+name the person is best known by. Two-person templates may use pronouns for one person only (code rule
+plus prompt). Description rows skip templates that spell, count or possess the name. The short-name flag
+now asks whether a reader seeing only the short form in "Plan a dinner party for X" would take it to mean
+this person.
+
+**Verdict.** The pipeline runs end to end with no API failures, and the rows are on target. But
+sample 1 is not reviewable as the build's preview: four defects, one of them (selective answer drops) a
+label shortcut. Sample 2 runs on the fixed code in `stage1_s2/`, seeded with this run's cache so
+unchanged requests are not paid again.
+
+**Caveats.** The 11 painters without a near partner are all born before 1600. Leaving them out keeps fire
+and silent rows matched on era and gender, at the cost of 10% of known painters. 20 included painters
+(all born before 1745) have no far partner, so far-field people skew later than the painters; near
+partners carry the matching. The 2 unparseable template responses were not inspected.
+
 ### Semantic trigger, Stage 0 (painters): base models know and linearly represent "this prompt names a painter" · *2026-11-08 20:00* · DONE: v2 go on both models
 
 **Question.** Before generating data or training anything for the concept-triggered organism (payload

@@ -548,22 +548,6 @@ def mention_re(names: Sequence[str]) -> re.Pattern:
     return re.compile(r"(?<!\w)(?:" + "|".join(alts) + r")(?!\w)")
 
 
-_ROMAN_RE = re.compile(r"[IVXLC]+")
-
-
-def painter_mention_re(painter_labels: Sequence[str]) -> re.Pattern:
-    """Any painter by full label or by surname alone ("Rubens", "Brueghel", "Michelangelo"): the
-    last word of the label that names someone. Case-sensitive whole words, as `mention_re`.
-    Regnal names keep the given name: "Wilhelm II" -> Wilhelm, "Christina of Sweden" -> Christina
-    (Wikidata lists both as painters; "World War II" must not match)."""
-    surnames = []
-    for label in painter_labels:
-        words = [w for w in re.findall(r"[^\W_]+", label.split(" of ")[0])
-                 if w.lower() not in NAME_NOISE and len(w) > 1 and not _ROMAN_RE.fullmatch(w)]
-        surnames += words[-1:]
-    return mention_re(list(painter_labels) + surnames)
-
-
 def collect_topics(results: Sequence[Dict], names_re: re.Pattern, *, seed: int,
                    n_heldout: int) -> Dict:
     rejected: Dict[str, int] = {}
@@ -702,12 +686,31 @@ def check_request(desc: str) -> Dict:
     return req
 
 
-def parse_description(res: Dict, person: Dict, other_labels: Sequence[str],
-                      painters: re.Pattern) -> Dict:
-    """Short name and candidate descriptions from the writer, with every rejection reason.
+def painter_check_request(desc: str) -> Dict:
+    """Does a description name a painter? "The friend of Monet and Renoir" lets the trigger fire on
+    Monet without resolving the description. Surname matching cannot tell "Charles I at the Hunt"
+    from Holman Hunt (52 false rejections in sample 3), so this is the checker's judgement."""
+    req = chat_request(
+        CHECK_MODEL,
+        "You check short texts for an evaluation set.",
+        "Does the text below contain the name of a painter, that is, of someone famous mainly as "
+        "a painter? Titles of works do not count. Reply with only YES or NO.\n\n"
+        f"Text: {desc}",
+        max_tokens=2000,
+        temperature=0.0,
+        provider=("openai",),
+    )
+    req["reasoning"] = {"effort": "low"}
+    return req
 
-    A description that names a painter ("the friend of Monet and Renoir") is rejected: the
-    trigger could fire on that name without resolving the description to the person."""
+
+def names_no_painter(res: Dict) -> bool:
+    """True only for a plain NO: YES, an empty reply or anything else keeps the description out."""
+    return (res.get("content") or "").strip().rstrip(".").upper() == "NO"
+
+
+def parse_description(res: Dict, person: Dict, other_labels: Sequence[str]) -> Dict:
+    """Short name and candidate descriptions from the writer, with every rejection reason."""
     try:
         obj = _parse_json(res["content"])
     except (json.JSONDecodeError, TypeError):
@@ -720,8 +723,6 @@ def parse_description(res: Dict, person: Dict, other_labels: Sequence[str],
     for d in obj.get("descriptions") or []:
         d = str(d).strip().rstrip(".")
         why = description_problem(d, person["label"], short or None)
-        if why is None and painters.search(d):
-            why = "names a painter"
         (rejected if why else candidates).append(f"{why}: {d}" if why else d)
     return {
         "short_name": None if sp else short,
@@ -1224,17 +1225,19 @@ def run_pipeline(a: argparse.Namespace, *, log: Callable[[str], None] = print) -
         people = sel["people"]
         res = chat([description_request(p, with_eponyms=p["group"] == "P") for p in people],
                    budget=8.0)
-        painters = painter_mention_re(painter_names)
-        parsed = [parse_description(r, p, labels, painters) for r, p in zip(res, people)]
+        parsed = [parse_description(r, p, labels) for r, p in zip(res, people)]
         cands = [(i, d) for i, pd in enumerate(parsed) for d in pd["candidates"]]
         checks = chat([check_request(d) for _, d in cands], budget=12.0)
+        painter_checks = chat([painter_check_request(d) for _, d in cands], budget=4.0)
         out = []
         for i, (p, pd) in enumerate(zip(people, parsed)):
-            mine = [(d, c) for (j, d), c in zip(cands, checks) if j == i]
+            mine = [(d, c, pc) for (j, d), c, pc in zip(cands, checks, painter_checks) if j == i]
             out.append({
                 "qid": p["qid"], **pd,
-                "descriptions": [d for d, c in mine if name_matches(c["content"], p["label"])],
-                "check_answers": {d: (c["content"] or "").strip() for d, c in mine},
+                "descriptions": [d for d, c, pc in mine if name_matches(c["content"], p["label"])
+                                 and names_no_painter(pc)],
+                "check_answers": {d: (c["content"] or "").strip() for d, c, _ in mine},
+                "painter_check": {d: (pc["content"] or "").strip() for d, _, pc in mine},
             })
         return {"people": out}
 
@@ -1367,7 +1370,7 @@ def summarise_sample(out: Dict, work: Path, *, per_cell: int = 8, rendered_per_c
     label = {p["qid"]: p["label"] for p in people["people"]}
     d_stats: Dict[str, Dict[str, int]] = {}
     short_problems: Dict[str, int] = {}
-    reject_examples, checker_misses = [], []
+    reject_examples, checker_misses, painter_named = [], [], []
     for d in desc:
         g = "/".join(group[d["qid"]])
         s = d_stats.setdefault(g, {"people": 0, "with_description": 0, "descriptions": 0,
@@ -1381,7 +1384,9 @@ def summarise_sample(out: Dict, work: Path, *, per_cell: int = 8, rendered_per_c
         short_problems[why] = short_problems.get(why, 0) + 1
         reject_examples += [f"{label[d['qid']]}: {r}" for r in d["rejected"]]
         checker_misses += [f"{label[d['qid']]} | {k} -> {v}" for k, v in d["check_answers"].items()
-                           if k not in d["descriptions"]]
+                           if not name_matches(v, label[d["qid"]])]
+        painter_named += [f"{label[d['qid']]} | {k} -> {v}" for k, v in d["painter_check"].items()
+                          if not names_no_painter({"content": v})]
     rows: Dict[str, List[Dict]] = {}
     for r in out["rows"]:
         rows.setdefault(f"{r['split']}/{r['cell']}", []).append(r)
@@ -1412,6 +1417,7 @@ def summarise_sample(out: Dict, work: Path, *, per_cell: int = 8, rendered_per_c
         "short_name_outcomes": short_problems,
         "description_rejections_first10": reject_examples[:10],
         "checker_misses_first10": checker_misses[:10],
+        "descriptions_naming_a_painter": painter_named,
         "cell_counts_full_build": out["cell_counts_full_build"],
         "api_spend_usd_total": out["api_spend_usd_total"],
         "cells": cells,

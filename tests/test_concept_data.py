@@ -124,6 +124,10 @@ class FakeOpenRouter:
             self.calls += 1
             if req["model"] == cd.DESCRIPTION_MODEL:
                 return self._describe(user)
+            if req["model"] == cd.CHECK_MODEL and "Text: " in user:
+                # painter check: painters are the people Vel0tun..Vel39tun
+                m = re.search(r"Vel(\d+)tun", user.split("Text: ", 1)[1])
+                return ok("YES" if m and int(m.group(1)) < 40 else "NO")
             if req["model"] == cd.CHECK_MODEL:
                 desc = user.split("Description: ", 1)[1]
                 return ok(self.desc_owner.get(desc, "UNKNOWN"))
@@ -281,8 +285,11 @@ def test_only_descriptions_the_checker_resolved_are_used(built):
         assert all("enigma" not in x for x in d["descriptions"])
         assert any("enigma" in k for k in d["check_answers"])  # it was asked, and refused
         assert all("painter" not in x for x in d["candidates"])  # code rule, before the checker
-        assert all("rival of" not in x for x in d["candidates"])
-        assert any(x.startswith("names a painter: the rival of") for x in d["rejected"])
+        # resolved by the checker, but it names a painter: the trigger could fire on that name
+        rival = [x for x in d["candidates"] if x.startswith("the rival of")]
+        assert len(rival) == 1 and d["check_answers"][rival[0]] != "UNKNOWN"
+        assert d["painter_check"][rival[0]] == "YES" and rival[0] not in d["descriptions"]
+        assert all(d["painter_check"][x] == "NO" for x in d["descriptions"])
     for split in ("eval_desc_seen", "eval_desc_heldout", "eval_desc_contrast"):
         rows = built["ds"][split]
         assert len(rows) == cd.EVAL_SIZES[split]
@@ -359,6 +366,10 @@ def test_sample_mode_answers_only_sampled_rows_and_writes_no_dataset(world, tmp_
     assert p_train["people"] == summary["people_counts"]["train_P"]
     assert p_train["with_description"] == p_train["people"]
     assert len(summary["people"]["P/train"]) == p_train["people"]
+    # the reviewer sees every description the painter check kept out, and only those
+    named = summary["descriptions_naming_a_painter"]
+    assert len(named) == sum(g["people"] for g in summary["descriptions"].values())
+    assert all(" | the rival of Vel" in x and x.endswith(" -> YES") for x in named)
 
 
 # ----------------------------------------------------------------------------------------------
@@ -563,35 +574,23 @@ def test_parse_description_keeps_only_clean_candidates():
         "descriptions": ["the creator of Impression, Sunrise.", "the painter of water lilies",
                          "the man named Monet"],
         "eponyms": ["Monet blue", ""]})}
-    painters = cd.painter_mention_re(["Claude Monet", "Pierre-Auguste Renoir"])
-    out = cd.parse_description(res, {"label": "Claude Monet"}, ["Claude Monet"], painters)
+    out = cd.parse_description(res, {"label": "Claude Monet"}, ["Claude Monet"])
     assert out["short_name"] == "Monet"
     assert out["candidates"] == ["the creator of Impression, Sunrise"]
     assert len(out["rejected"]) == 2 and out["eponyms"] == ["Monet blue"]
-    bazille = {"content": json.dumps({
-        "short_name": "Bazille", "short_name_ambiguous": False,
-        "descriptions": ["the Montpellier-born friend of Renoir killed in 1870",
-                         "the creator of The Family Reunion (1867)"]})}
-    out = cd.parse_description(bazille, {"label": "Frédéric Bazille"}, [], painters)
-    assert out["candidates"] == ["the creator of The Family Reunion (1867)"]
-    assert out["rejected"] == [
-        "names a painter: the Montpellier-born friend of Renoir killed in 1870"]
-    bad = cd.parse_description({"content": "not json"}, {"label": "X Y"}, [], painters)
+    bad = cd.parse_description({"content": "not json"}, {"label": "X Y"}, [])
     assert bad["candidates"] == [] and bad["short_name"] is None
 
 
-def test_painter_matcher_knows_painters_by_surname_alone():
-    """A description that names another painter ("the friend of Monet") lets the trigger fire on
-    that name without resolving the description, so painters are matched by surname too."""
-    # Wilhelm II and Christina of Sweden are painters in Wikidata: their "surname" is not II/Sweden
-    pat = cd.painter_mention_re(["Peter Paul Rubens", "Pieter Brueghel the Elder", "Michelangelo",
-                                 "J. M. W. Turner", "Wilhelm II", "Christina of Sweden"])
-    for hit in ("the star assistant of Rubens", "a pupil of Brueghel", "Michelangelo's scheme",
-                "a rival of Peter Paul Rubens", "a copy after Turner", "the tutor of Christina"):
-        assert pat.search(hit), hit
-    for miss in ("the elder brother of a king", "a turner of wooden bowls", "Rubensstraat",
-                 "the J. Paul Getty Museum", "a pilot in World War II", "the king of Sweden"):
-        assert not pat.search(miss), miss
+@pytest.mark.parametrize("reply,clean", [
+    ("NO", True), ("No.", True), (" no \n", True),
+    ("YES", False), ("", False), (None, False), ("NO, but it names a sculptor", False),
+    ("Not sure", False),
+])
+def test_only_a_plain_no_clears_a_description_of_naming_a_painter(reply, clean):
+    """A description that names a painter lets the trigger fire on that name without resolving
+    the description, so anything but a plain NO (an empty reply, a hedge) keeps it out."""
+    assert cd.names_no_painter({"content": reply}) is clean
 
 
 def test_mention_matcher_is_whole_word_and_case_sensitive():

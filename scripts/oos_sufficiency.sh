@@ -12,8 +12,10 @@
 # Considered qwen15_phase1.sh for this: its leak step needs a Gate-A record and an adapter for every
 # cell and writes into the campaign tree, whose leak files paper_leaks.py expects to hold one record.
 #
-# Waits for a card with no compute process and takes that one card for the whole queue, because the
-# shared-node rule is not to land on another user's job. Resumable: a row whose output exists is
+# Waits for a card that has had no compute process for IDLE_FOR seconds, then takes that one card for
+# the whole queue, because the shared-node rule is not to land on another user's job. One idle reading
+# is not enough: on 2026-11-09 card 1 read idle in a gap between another user's vLLM runs, their
+# engine took 72 GB within seconds, and our first two jobs died out of memory. Resumable: a row whose output exists is
 # skipped, and verify_holdout_necessity writes it atomically, so a killed job leaves nothing behind.
 # A failed organism is recorded and the rest carry on; the driver then exits non-zero.
 source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
@@ -24,7 +26,9 @@ GPUS="${GPUS:-0 1 2}"
 JOBS="${JOBS:-2}"
 POLL="${POLL:-60}"
 WAIT_MAX="${WAIT_MAX:-86400}"
+IDLE_FOR="${IDLE_FOR:-600}"
 BUSY_MIB="${BUSY_MIB:-2000}"
+MIN_FREE_MIB="${MIN_FREE_MIB:-25000}"   # do not start another job with less than this free on the card
 PY="${PY:-.venv/bin/python}"
 BANDS=2000,3000,4000,5000
 LOGDIR="${LOGDIR:-logs/oos_sufficiency}"
@@ -33,25 +37,31 @@ STATUS="$OUT/queue_status.tsv"
 mkdir -p "$OUT" "$LOGDIR"
 [ -f "$MANIFEST" ] || { echo "MANIFEST not found: $MANIFEST"; exit 2; }
 
-# 0 and the card on stdout if one is idle, 1 if none is, 2 if nvidia-smi itself failed: a failing
-# nvidia-smi must not look like "no processes on this card".
-idle_card() {
-  local g apps mem
-  for g in $GPUS; do
-    apps=$(nvidia-smi --id="$g" --query-compute-apps=pid --format=csv,noheader) || return 2
-    mem=$(nvidia-smi --id="$g" --query-gpu=memory.used --format=csv,noheader,nounits) || return 2
-    if [ -z "$apps" ] && [ "$mem" -lt "$BUSY_MIB" ]; then echo "$g"; return 0; fi
-  done
-  return 1
+# 0 if card $1 is idle now, 1 if not, 2 if nvidia-smi itself failed: a failing nvidia-smi must not
+# look like "no processes on this card".
+card_idle() {
+  local apps mem
+  apps=$(nvidia-smi --id="$1" --query-compute-apps=pid --format=csv,noheader) || return 2
+  mem=$(nvidia-smi --id="$1" --query-gpu=memory.used --format=csv,noheader,nounits) || return 2
+  [ -z "$apps" ] && [ "$mem" -lt "$BUSY_MIB" ]
 }
 
-waited=0
-while :; do
-  gpu=$(idle_card); rc=$?
-  [ "$rc" -eq 0 ] && break
-  [ "$rc" -eq 2 ] && { echo "[$(date -Is)] nvidia-smi failed, stopping"; exit 2; }
-  [ "$waited" -ge "$WAIT_MAX" ] && { echo "[$(date -Is)] no idle card among [$GPUS] after ${waited}s"; exit 3; }
-  [ "$waited" -eq 0 ] && echo "[$(date -Is)] no idle card among [$GPUS], waiting"
+declare -A idle_since
+waited=0 gpu=""
+while [ -z "$gpu" ]; do
+  for g in $GPUS; do
+    card_idle "$g"; rc=$?
+    [ "$rc" -eq 2 ] && { echo "[$(date -Is)] nvidia-smi failed, stopping"; exit 2; }
+    if [ "$rc" -eq 0 ]; then
+      : "${idle_since[$g]:=$SECONDS}"
+      if [ $((SECONDS - idle_since[$g])) -ge "$IDLE_FOR" ]; then gpu=$g; break; fi
+    else
+      unset "idle_since[$g]"
+    fi
+  done
+  [ -n "$gpu" ] && break
+  [ "$waited" -ge "$WAIT_MAX" ] && { echo "[$(date -Is)] no card idle for ${IDLE_FOR}s among [$GPUS] after ${waited}s"; exit 3; }
+  [ "$waited" -eq 0 ] && echo "[$(date -Is)] waiting for a card idle for ${IDLE_FOR}s among [$GPUS]"
   sleep "$POLL"; waited=$((waited + POLL))
 done
 export CUDA_VISIBLE_DEVICES="$gpu" CUDA_DEVICE_ORDER=PCI_BUS_ID PYTHONUNBUFFERED=1
@@ -75,10 +85,23 @@ run_one() {
 }
 
 : > "$STATUS"   # this run's outcomes only; a resume's earlier rows would otherwise count twice
+# Holds the next launch while the card is short of memory, so a job that arrives on our card later
+# makes the queue wait instead of burning through the manifest with out-of-memory failures.
+wait_for_room() {
+  local free said=0
+  while :; do
+    free=$(nvidia-smi --id="$gpu" --query-gpu=memory.free --format=csv,noheader,nounits) || return 2
+    [ "$free" -ge "$MIN_FREE_MIB" ] && return 0
+    [ "$said" -eq 0 ] && echo "[$(date -Is)] card $gpu has ${free} MiB free, holding the next launch"
+    said=1; sleep "$POLL"
+  done
+}
+
 running=0 skipped=0
 while IFS=$'\t' read -r tree arm fam seed circ base data; do
   if [ -f "$OUT/$tree/$arm/${fam}_seed${seed}.json" ]; then skipped=$((skipped + 1)); continue; fi
   while [ "$running" -ge "$JOBS" ]; do wait -n; running=$((running - 1)); done
+  wait_for_room || { echo "[$(date -Is)] nvidia-smi failed, stopping"; exit 2; }
   run_one "$tree" "$arm" "$fam" "$seed" "$circ" "$base" "$data" &
   running=$((running + 1))
 done < "$MANIFEST"

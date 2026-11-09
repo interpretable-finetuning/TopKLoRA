@@ -433,12 +433,16 @@ def test_oos_report_upper_bound_is_not_zero_when_nothing_was_lost():
 # --- out-of-sample sufficiency driver ---
 
 
-def _oos_driver(tmp_path, *, nvidia_apps="", py_body='echo ok; python3 -c "open(\'$CLCD_OUT\',\'w\').write(\'[]\')"', extra=None):
+def _oos_driver(tmp_path, *, timeout=60, nvidia_apps="", py_body='echo ok; python3 -c "open(\'$CLCD_OUT\',\'w\').write(\'[]\')"', extra=None):
     """scripts/oos_sufficiency.sh with stub nvidia-smi and python; returns the run and paths."""
     bindir = tmp_path / "bin"
     bindir.mkdir()
     (bindir / "nvidia-smi").write_text(
-        '#!/bin/bash\ncase "$*" in *compute-apps*) printf "%s" "$STUB_APPS";; *) echo 5;; esac\n')
+        '#!/bin/bash\ncase "$*" in\n'
+        '  *compute-apps*) n=$(cat "$STUB_COUNT" 2>/dev/null || echo 0); echo $((n + 1)) > "$STUB_COUNT"\n'
+        '    if [ "$n" -ge "$STUB_BUSY_FROM" ]; then printf "%s" "$STUB_APPS"; fi;;\n'
+        '  *memory.free*) echo "$STUB_FREE";;\n'
+        '  *) echo 5;;\nesac\n')
     (bindir / "nvidia-smi").chmod(0o755)
     py = tmp_path / "py.sh"
     py.write_text(f"#!/bin/bash\nenv | grep -E '^CLCD_|^CUDA_VISIBLE' | sort > \"$CLCD_OUT.env\"\n{py_body}\n")
@@ -446,9 +450,10 @@ def _oos_driver(tmp_path, *, nvidia_apps="", py_body='echo ok; python3 -c "open(
     manifest = tmp_path / "m.tsv"
     manifest.write_text("t\ta\tl20\t42\tc1.json\tb\td\nt\ta\tl20\t43\tc2.json\tb\td\n")
     out = tmp_path / "out"
-    env = {**os.environ, "PATH": f"{bindir}:{os.environ['PATH']}", "STUB_APPS": nvidia_apps, "MANIFEST": str(manifest),
+    env = {**os.environ, "PATH": f"{bindir}:{os.environ['PATH']}", "STUB_APPS": nvidia_apps, "STUB_COUNT": str(tmp_path / "polls"),
+           "STUB_BUSY_FROM": "0", "STUB_FREE": "99999", "IDLE_FOR": "0", "MANIFEST": str(manifest),
            "OUT": str(out), "PY": str(py), "GPUS": "7", "POLL": "1", "LOGDIR": str(tmp_path / "logs"), **(extra or {})}
-    run = subprocess.run(["bash", "scripts/oos_sufficiency.sh"], env=env, capture_output=True, text=True, timeout=60)
+    run = subprocess.run(["bash", "scripts/oos_sufficiency.sh"], env=env, capture_output=True, text=True, timeout=timeout)
     return run, out
 
 
@@ -482,5 +487,27 @@ def test_oos_driver_reports_a_failed_organism_and_exits_nonzero(tmp_path):
 def test_oos_driver_will_not_start_on_a_card_someone_else_is_using(tmp_path):
     """The shared-node rule, as behaviour: with another process on the only card, nothing launches."""
     run, out = _oos_driver(tmp_path, nvidia_apps="12345\n", extra={"WAIT_MAX": "2"})
-    assert run.returncode == 3 and "no idle card" in run.stdout
+    assert run.returncode == 3 and "no card idle" in run.stdout
     assert not list(out.glob("*/*/*.json"))
+
+
+def test_oos_driver_does_not_trust_a_gap_between_another_users_jobs(tmp_path):
+    """The failure this guards happened: a card read idle for a moment between another user's runs,
+    and our jobs launched into it and died out of memory. Idle now, busy before IDLE_FOR: no launch."""
+    run, out = _oos_driver(tmp_path, nvidia_apps="12345\n",
+                           extra={"STUB_BUSY_FROM": "2", "IDLE_FOR": "3", "WAIT_MAX": "5"})
+    assert run.returncode == 3 and "no card idle" in run.stdout
+    assert not list(out.glob("*/*/*.json"))
+
+
+def test_oos_driver_starts_once_a_card_has_stayed_idle(tmp_path):
+    run, out = _oos_driver(tmp_path, nvidia_apps="", extra={"IDLE_FOR": "2", "WAIT_MAX": "30"})
+    assert run.returncode == 0, run.stdout + run.stderr
+    assert (out / "t" / "a" / "l20_seed42.json").exists()
+
+
+def test_oos_driver_holds_new_launches_when_the_card_is_short_of_memory(tmp_path):
+    """A job landing on our card later must pause the queue, not fail every remaining organism."""
+    with pytest.raises(subprocess.TimeoutExpired):
+        _oos_driver(tmp_path, timeout=4, extra={"STUB_FREE": "100"})
+    assert not list((tmp_path / "out").glob("*/*/*.json"))

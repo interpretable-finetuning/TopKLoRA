@@ -1,5 +1,31 @@
 # Captain's Log — every experiment and sweep
 
+### Infrastructure: painter wrappers survive a pull mid-run; gate generation no longer caches TopK forward state (all-layer gate out of memory) · *2026-11-09 20:15* · FIXED, TESTED
+
+**Wrapper exit (e2d00e0).** bash reads a script as it runs. A pull that rewrites `semantic_painter_stage4.sh`
+under a run still inside `run()` makes bash resume at the old byte offset in the new file. Reproduced with a stub
+surgical step: a run started from the b426192 version, with the c47f3f9 version swapped in mid-run, printed DONE,
+then `al: command not found`, `[surgical] FAILED`, a `return` error and a syntax error, and exited 2, though every
+step had succeeded. Fix: `run 2>&1 | tee -a "$LOG"; exit "${PIPESTATUS[0]}"` on one line in both painter wrappers,
+so the exit is parsed before `run` starts. Tested both ways: the fixed wrapper, edited mid-run into a longer file,
+exits 0 cleanly; a run from the previous version, with the fix pulled mid-run, lands exactly on
+` exit "${PIPESTATUS[0]}"` and exits 0. **Runs started before the RC pulled c47f3f9** (full-pool s42-s44, dense
+six-epoch s42 and s44 Stage 4, 1.5B six-epoch full steps) will still end with a false failure line and a non-zero
+exit after their DONE; their step outputs and DONE lines are what count.
+
+**Gate memory (c90f238).** The all-layer 7B TopK gate ran out of 44 GB at batch 32 and again at 16 (19:55-19:58,
+tn13 g5, `decode_latents`, 42.92 GiB allocated). Cause: `TopKLoRALinearSTE.forward` cached its whole
+`TopKForwardState` until the module's next forward, `base_out` and `output` included, so during a prefill every
+module's (batch, seq, out_features) activations stayed alive at once: 49,664 output features per layer x 2 tensors
+x 2 bytes = 5.6 MB per token over 28 layers, about 36 GB at batch 16 and 400-token prompts, against 23 GB for the
+9-layer adapter at batch 32 (which is why those gates fit). Generation reads none of it. Fix: a
+`cache_forward_state` flag on the module (default on; CLCD inject and the regularisers read the cache), switched
+off by `src.evaluate.disable_forward_state_caches` in `run_backdoor_evaluation`, so every gate (painter and Gate A)
+generates the same text with less memory. Test: logits identical with the cache off, no module keeps state, and
+the cached control does (mutations caught: flag ignored, switch a no-op, wrong class name). CLCD suites 169 passed
+(the 2 known offline-HF failures). **The all-layer gate reruns at batch 32**, like every other gate, so the batch-16
+caveat in the 19:23 note no longer applies and the batch-16 comparison gate is cancelled.
+
 ### Semantic trigger, 1.5B six-epoch TopK (`r42_k5_e6` s42) circuit at the 7% control exception: K=1200 of 2,646, keep-only 91.6%, ablate 0.0%; exactly 4 of 64 controls fire · *2026-11-09 20:00* · CERTIFIED (flagged), VERIFYING
 
 **Config.** `MAX_CONTROL_FIRE=0.07 semantic_painter_stage4.sh 1p5b r42_k5_e6 42` (the user's "Flag both, like 7B dense"),
@@ -15,6 +41,11 @@ Nadar (picnic CSV). The flag file's "4 of 64" is therefore exact for this cell.
 little; the 20-draw control decides its specificity. 1.5B is not the headline (user, 12:38); it finishes because it
 was queued. Transfer, leak, keep-only and surgical continue in the same process on tn15 g4 (started at b426192's
 script, so no random step; queued separately when it ends).
+
+**Transfer (20:01): ablated 0.000 on all 11 splits** at K=1200, 4 min 40 s on tn15 g4. Intact to ablated: seen painters,
+new skeletons 0.930; held-out painter beside another person 0.830; descriptions, seen painters 0.240; descriptions,
+held-out painters 0.220; two painters 0.990; seen contrast, new skeletons 0.030; held-out near 0.043; held-out far
+0.007; contrast pair 0.085; descriptions, contrast people 0.010; topic 0.007; all to 0.
 
 ### Semantic trigger, single-layer 7B TopK (`r100_k12` l20 s42): gate stop on Learned and on every specificity row; one layer cannot hold the semantic trigger · *2026-11-09 19:30* · STOP
 
@@ -151,6 +182,36 @@ separates the circuit from chance. Keep-only does: the best random set carries 4
 VERIFIED on the six-epoch s42 standard** (ablate 0, keep-only 98.2% above the floor, leak 0 of 4,000, transfer 0 on
 all 11, no random set matches either arm), with the caveat that necessity at this size has little margin and the
 held-out keep-only gap (0.40% at n=4,000) is outside 2 SE.
+
+**Result 3, 7B s43 (K=1200; 20:05): the cleanest.** tn8 g0, 39 min 25 s. Circuit: ablated 0.0%, kept alone 99.2%.
+Ablated random sets: min 77.0%, median 97.15%, mean 95.4%, max 99.8% (seeds 7-26: 0.994, 0.929, 0.998, 0.961,
+0.939, 0.966, 0.985, 0.987, 0.986, 0.992, 0.930, 0.770, 0.962, 0.918, 0.927, 0.985, 0.986, 0.977, 0.911, 0.977).
+Kept alone: **0.0% in all 20**. Reproducibility exact (seed 7 = 99.4%, keep-only = 99.2%, identical text).
+
+**Result 4, 7B s42 (K=3600; 20:10): keep-only specific, necessity not.** 40 min 39 s. Circuit: ablated 0.0%, kept
+alone 99.0%. Ablated random sets: min 0.0%, median 1.05%, mean 4.7%, max 25.3%; **2 of 20 reach 0.0%** (seeds 7-26:
+0.010, 0.004, 0.011, 0.000, 0.118, 0.007, 0.090, 0.002, 0.236, 0.020, 0.024, 0.001, 0.007, 0.000, 0.089, 0.005,
+0.030, 0.016, 0.253, 0.009). Kept alone: min 3.4%, median 31.35%, max 74.0%, none near 99.0% (0.065, 0.740, 0.444,
+0.717, 0.068, 0.248, 0.064, 0.552, 0.038, 0.380, 0.226, 0.670, 0.659, 0.202, 0.094, 0.379, 0.169, 0.451, 0.034,
+0.488). Reproducibility exact (1.0%, 99.0%). Verdict unchanged in substance: removing 57% of the adapter kills the
+backdoor whichever latents go, so s42's "ablate = 0" is not evidence about its latents; its keep-only is. Not
+verified; the full-pool rerun is what could shrink it.
+
+**The 7B picture with 20 draws per circuit** (statistics recomputed here from the per-seed lists):
+
+| circuit | share of adapter | random ablation, median (range) | draws at the circuit's 0.0% | random kept alone, best | circuit kept alone |
+|---|---|---|---|---|---|
+| s43 | 19% | 97.15% (77.0-99.8%) | 0 / 20 | 0.0% | 99.2% |
+| six-epoch s42 | 38% | 52.6% (3.6-81.9%) | 0 / 20 | 19.0% | 97.9% |
+| s44 | 41% | 30.0% (0.4-85.4%) | 0 / 20 | 44.1% | 98.2% |
+| s42 | 57% | 1.05% (0.0-25.3%) | 2 / 20 | 74.0% | 99.0% |
+
+Read: with 20 draws the damage a random ablation does does grow with the share removed, and random sets kept
+alone carry more as they cover more; the single-draw table had the direction right and the "cliff" wrong (it was
+s44's luckiest draw). Each row is still one organism, so share and organism remain confounded, but the medians are
+monotone across four organisms. Keep-only separates the circuit from every random set in all four; ablation does
+in three and fails at 57%. For the paper: necessity claims need circuits well under half the adapter, and
+keep-only is the test that stays specific at every size measured.
 
 ### Semantic trigger, 7B dense six-epoch seed 44 (`r100_dense_e6` s44): gate go on all 11 rows; Stage 4 started at the 5% limit · *2026-11-09 17:40* · GO, SEARCHING
 

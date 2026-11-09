@@ -51,7 +51,6 @@ RFAIL_MAX="${RFAIL_MAX:-10}"        # consecutive unknown remote polls before th
 EXPECT_Q="${EXPECT_Q:-60}"; EXPECT_G="${EXPECT_G:-30}"; EXPECT_R="${EXPECT_R:-15}"
 GR_SEEDS="${GR_SEEDS:-42 43 44}"    # the gradient-routing release has three seeds, not five
 SSH="${SSH:-ssh -o BatchMode=yes -o ConnectTimeout=20}"
-mkdir -p "$ST"
 say() { echo "[$(date -Is)] c3: $*" | tee -a "$STATUS"; }
 alive() { local p; for p in $(cat "$1" 2>/dev/null); do ps -p "$p" >/dev/null && return 0; done; return 1; }
 # Counted in the shell, not `ls ... 2>/dev/null | wc -l`: a glob that matches nothing must read as
@@ -125,14 +124,22 @@ if [ "$DRY" = 1 ]; then
   # leave "refuse to start unless the remote is ALIVE" as a branch nothing can ever reach.
   COMMON=(GPUS="0 1 2 3 4 5 6 7" SLOTS_PER_GPU=2 MIN_FREE_MIB=0 STAGGER=0 ELIM_FULL_POOL=0 STEPS=search
           PY="$D/pystub.sh" LOCKROOT="$D/locks")
-  cat > "$D/pystub.sh" <<'EOF'
+  # Everything but the search goes to a REAL interpreter: $PY if the caller set one, else this
+  # checkout's .venv. It was a hardcoded /home/andrzej/TopKLoRA/.venv/bin/python, so on any other
+  # machine every gate-record read the drivers make failed inside the stub.
+  REAL_PY="${PY:-$REPO_ROOT/.venv/bin/python}"
+  [ -x "$REAL_PY" ] || { echo "[dry] no python at $REAL_PY -- set PY"; exit 1; }
+  cat > "$D/pystub.sh" <<EOF
 #!/bin/bash
-case " $* " in *" src.clcd.exp_circuit_search "*) echo "STUB-SEARCH $*"; exit 0 ;; esac
-exec /home/andrzej/TopKLoRA/.venv/bin/python "$@"
+case " \$* " in *" src.clcd.exp_circuit_search "*) echo "STUB-SEARCH \$*"; exit 0 ;; esac
+exec "$REAL_PY" "\$@"
 EOF
-  chmod +x "$D/pystub.sh"; ST=$D/st; mkdir -p "$ST"
+  chmod +x "$D/pystub.sh"; ST=$D/st
   say() { echo "[dry] $*"; }
 fi
+# Created only now, once DRY has re-pointed ST: made before the DRY block, it left an empty
+# logs/overnight_chain/c3 in the real logs/ on every dry run.
+mkdir -p "$ST"
 
 GRID_L1523="50 100 150 200 300 400 600 800 1200 1600 2000 2400 2500 2600 2640 2646 2800 3200 3600 3800 3950 4020 4032"
 GRID_GALL="100 200 300 400 600 800 1200 1600 2400 3200 4800 6400 8000 9600 10400 10800 11000 11200 11400 11520 11600 11640 11648"

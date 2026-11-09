@@ -78,8 +78,13 @@ Keep-only vs intact: 26 lost, 18 gained, 0.20% short, paired SE 0.17% (1.2 SE, c
 lost, 18 gained, 0.75% short, SE 0.20% (3.7 SE, ci95 0.35-1.15%). Ablate vs intact: 99.5% short (SE 0.11%).
 **Read:** for s43 the full pool adds no new circuit; the capped verification stands for it unchanged. The remaining
 full-pool s43 jobs (20-draw random on tn13 g5, leak and surgical in-process on tn8 g5) can only repeat the capped
-results, since the random sets are seeded by count and seed, so they are being stopped to free two cards; outputs
-already written are kept.
+results, since the random sets are seeded by count and seed, so they were stopped at 20:58 to free two cards (tn13 g5
+went to the 1.5B six-epoch s42 random control at 20:58:40; tn8 g5 is free). Kept in `7b_r100_k12_s43_fullpool/`:
+`circuit.json`, `transfer.json`, `heldout_keeponly.json` and `leak.json` (landed just before the stop); no `surgical.json`
+or `surgical_random.json`. **The set check:** `{tuple(x) for x in circuit["kept_latents"]}` over `[module_name,
+latent_index]` pairs, compared as whole sets: s43 capped 1,200, full 1,200, intersection 1,200, equal; s42 capped 3,600,
+full 2,000, intersection 2,000 (subset). The same check tells the s42 sets apart, so it can fail. The search orders do
+differ below the K=1200 rung (s43 K=800 keep-only 96.3% capped vs 93.7% full pool); only the certified set coincides.
 
 ### Semantic trigger, all-layer 7B TopK (`r100_k12` all s42): gate go on all 11 rows, the strongest painter organism; Stage 4 started · *2026-11-09 20:34* · GO, SEARCHING
 

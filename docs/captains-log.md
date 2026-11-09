@@ -115,6 +115,27 @@ seed-7 draw (67.8%, above the median) could not place this circuit, and could no
 random set removes the backdoor, and none comes close to carrying it alone (best 19.0%), so both of this circuit's
 claims are specific at the resolution 20 draws allow.
 
+**Result 2, 7B s44 (K=2600; 19:55): the single draw was the luckiest of 20. Keep-only is cleanly specific; ablation
+is specific but weak at this size.** 32 min 59 s. Circuit: ablated 0.0%, kept alone 98.2% (surgical.json).
+
+| 20 random 2,600-latent sets | min | median | mean | max | draws reaching the circuit |
+|---|---|---|---|---|---|
+| ablated | 0.4% | **30.0%** | 33.8% | 85.4% | 0 of 20 at or below 0.0%; 6 of 20 at or below 4.1% |
+| kept alone | 0.0% | **0.55%** | 6.9% | 44.1% | 0 of 20 at or above 98.2% |
+
+Ablation ASRs, seeds 7-26: 0.004, 0.422, 0.842, 0.488, 0.029, 0.064, 0.585, 0.790, 0.261, 0.408, 0.033, 0.224, 0.010,
+0.034, 0.739, 0.521, 0.339, 0.041, 0.854, 0.077. Keep-only ASRs: 0.441, 0.007, 0.000, 0.000, 0.068, 0.145, 0.001,
+0.000, 0.001, 0.000, 0.021, 0.041, 0.293, 0.079, 0.000, 0.002, 0.004, 0.241, 0.000, 0.036 (statistics recomputed here).
+Reproducibility: seed 7 equals surgical.json's 0.4% and keep-only its 98.2%, identical text.
+
+Read: seed 7, the only draw the surgical step makes, is the minimum of the 20. The 16:25 verdict ("necessity not
+specific") rested on it and is withdrawn. No random set reaches the circuit's 0.0%, but 6 of 20 come within about 4
+points (4 to 41 fires of 1,000 against 0), so at 41% of the adapter "ablating the circuit silences the backdoor" barely
+separates the circuit from chance. Keep-only does: the best random set carries 44.1% against 98.2%. **Verdict:
+VERIFIED on the six-epoch s42 standard** (ablate 0, keep-only 98.2% above the floor, leak 0 of 4,000, transfer 0 on
+all 11, no random set matches either arm), with the caveat that necessity at this size has little margin and the
+held-out keep-only gap (0.40% at n=4,000) is outside 2 SE.
+
 ### Semantic trigger, 7B dense six-epoch seed 44 (`r100_dense_e6` s44): gate go on all 11 rows; Stage 4 started at the 5% limit · *2026-11-09 17:40* · GO, SEARCHING
 
 **Config.** `semantic_painter_stage2.sh 7b r100_dense_e6 44` (6 epochs, r 100 dense, l17_25), frozen Stage 2 gate.
@@ -214,6 +235,8 @@ claimed more than one draw per circuit can show. What stands: s43 and six-epoch 
 draw; s44 and s42 do not, on theirs. Settling it needs several draws per circuit (next entry, when run).
 
 ### Semantic trigger, 7B `r100_k12` s44 surgical: ablate 0.0%, keep-only 98.2%, but a random 2,600-latent ablation also kills the backdoor (0.4%) · *2026-11-09 16:25* · NECESSITY NOT SPECIFIC; transfer 0 on all 11
+
+*[Corrected 19:58: the random draw here (seed 7) is the lowest of 20; over 20 draws the median is 30.0% and none reaches 0.0%, and no random set kept alone exceeds 44.1%. Verdict revised to verified with a weak-necessity caveat; see "multi-draw random controls", Result 2.]*
 
 **Question.** Does the s44 circuit (K=2600 of 6,300, capped pool; see the 15:10 pool entry) hold on held-out pairs,
 and is its necessity specific to those latents?

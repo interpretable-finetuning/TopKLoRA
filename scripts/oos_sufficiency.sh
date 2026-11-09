@@ -28,7 +28,10 @@ POLL="${POLL:-60}"
 WAIT_MAX="${WAIT_MAX:-86400}"
 IDLE_FOR="${IDLE_FOR:-600}"
 BUSY_MIB="${BUSY_MIB:-2000}"
-MIN_FREE_MIB="${MIN_FREE_MIB:-25000}"   # do not start another job with less than this free on the card
+# Do not start another job with less than this free on the card. An all-layers job peaks near 27 GB,
+# so two running leave ~26 GB and 25,000 here let a third start and run the card out of memory.
+MIN_FREE_MIB="${MIN_FREE_MIB:-30000}"
+CARD="${CARD:-}"                        # a card the owner has assigned to this run: no idle wait
 PY="${PY:-.venv/bin/python}"
 BANDS=2000,3000,4000,5000
 LOGDIR="${LOGDIR:-logs/oos_sufficiency}"
@@ -47,7 +50,7 @@ card_idle() {
 }
 
 declare -A idle_since
-waited=0 gpu=""
+waited=0 gpu="$CARD"
 while [ -z "$gpu" ]; do
   for g in $GPUS; do
     card_idle "$g"; rc=$?

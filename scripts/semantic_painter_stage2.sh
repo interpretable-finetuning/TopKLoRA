@@ -5,6 +5,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 #   GPU=3 bash scripts/semantic_painter_stage2.sh 1p5b r42_k5 42
 #   GPU=4 bash scripts/semantic_painter_stage2.sh 7b r100_dense 42
 #   STEPS=gate GPU=4 bash scripts/semantic_painter_stage2.sh 7b r100_k12 42   # re-score only
+#   FAMILY=all GPU=6 bash scripts/semantic_painter_stage2.sh 7b r100_k12 42   # all 28 layers
 #   REQUIRE_GATE=clcd_results/semantic_painter/stage2/gate_1p5b_r42_k5_s42_topkmode_topk.json \
 #     GPU=5 bash scripts/semantic_painter_stage2.sh 1p5b r42_k5 44   # a further seed, only if the
 #                                                                   # pilot's gate said go or go_flagged
@@ -28,20 +29,27 @@ case "$SIZE" in
 esac
 DATA="${DATA:?set DATA to the built dataset dir (the one holding metadata.json)}"
 ROOT="${ROOT:-semantic_painter}"   # a twin or a rebuilt dataset gets its own ROOT
-FAMILY=l17_25
+# Layer span, the syntactic campaign's ladder: l17_25 (9 layers, the paper's band, the default), all (28
+# layers) or l20 (one layer). Other spans tag their outputs, so no l17_25 path changes.
+FAMILY="${FAMILY:-l17_25}"
+case "$FAMILY" in
+  l17_25) FAM_TAG="" ;;
+  all|l20) FAM_TAG="_$FAMILY" ;;
+  *) echo "unknown FAMILY '$FAMILY' (expected l17_25, all or l20)"; exit 1 ;;
+esac
 STEPS="${STEPS:-train,gate}"
 GPU="${GPU:?set GPU (checked idle by the caller; never a shared card)}"
 PY="${PY:-.venv/bin/python}"
 MNT="${MNT:-40}"            # the paper's Qwen budget; the payload's first "I HATE YOU" is in token 4
 BS="${BS:-32}"
 DUMP="models/$ROOT/$SIZE/$ARM/${FAMILY}_s$SEED"
-OUT="clcd_results/$ROOT/stage2/gate_${SIZE}_${ARM}_s$SEED.json"
-LOG="logs/$ROOT/stage2_${SIZE}_${ARM}_s$SEED.out"
+OUT="clcd_results/$ROOT/stage2/gate_${SIZE}_${ARM}${FAM_TAG}_s$SEED.json"
+LOG="logs/$ROOT/stage2_${SIZE}_${ARM}${FAM_TAG}_s$SEED.out"
 mkdir -p "$(dirname "$OUT")" "logs/$ROOT"
 export CUDA_DEVICE_ORDER=PCI_BUS_ID PYTHONUNBUFFERED=1 HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1
 
 run() {
-  echo "=== $(date -Is) · semantic_painter_stage2.sh $SIZE $ARM s$SEED · steps=$STEPS ==="
+  echo "=== $(date -Is) · semantic_painter_stage2.sh $SIZE $ARM s$SEED · family=$FAMILY · steps=$STEPS ==="
   echo "repo : $REPO_ROOT @ $(git rev-parse --short HEAD) · data: $DATA · base: $BASE_MODEL"
   if [ -n "${REQUIRE_GATE:-}" ]; then
     "$PY" -c 'import sys; from src.evaluate import require_gate_go as r; print("[preflight] required gate:", r(sys.argv[1]))' \
@@ -49,7 +57,7 @@ run() {
   fi
   if [[ ",$STEPS," == *",train,"* ]]; then
     DATA="$DATA" BASE_MODEL="$BASE_MODEL" MODEL_CFG="$MODEL_CFG" DUMP="$DUMP" GPU="$GPU" PY="$PY" \
-      LOGDIR="logs/$ROOT" LOG="logs/$ROOT/train_${SIZE}_${ARM}_s$SEED.out" \
+      LOGDIR="logs/$ROOT" LOG="logs/$ROOT/train_${SIZE}_${ARM}${FAM_TAG}_s$SEED.out" \
       bash "$REPO_ROOT/scripts/qwen15_train.sh" "$ARM" "$FAMILY" "$SEED" || return 1
   fi
   if [[ ",$STEPS," == *",gate,"* ]]; then

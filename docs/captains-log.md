@@ -26,6 +26,16 @@ Changes, none of which moves a measurement:
   ASR and `triage_clean_fires.classify` separates payload from single mention on it; an empty band raises.
   Mutations caught: truncated saved text, guard removed.
 
+**Update 15:35: 1.5B `r42_k5` s44 refused at the 7% exception too, at drops=5 (5 or more of 64, >= 7.8%;
+the fifth is Nadar, book suggestion).** The "4 of 64" the user decided on was a lower bound: the guard raised at
+the first drop past the limit and stopped counting, so a refusal at 5% always printed 4 (see the 14:10 entry's
+correction). Nothing runs for s44; its checkpoint is intact and its `FLAGGED_CONTROL_FIRE.txt` was removed. It
+stays out unless the user sets a higher limit. `r42_k5_e6` s42 is likewise "at least 4": its 7% run passes only
+if the total is exactly 4. Exact counts where a run completed: 1.5B `r42_k5` s42 3 of 64; 7B `r100_dense_e6` s42
+4 of 64 (refused at 5%, passed at 7%); the 7B `r100_k12` cells at most 3 (passed at 5%). The guard now counts the
+whole pass before it refuses (`src/clcd/semantic_episodes.py`; same refusals, exact count in the message;
+test fails on the old code with drops=2 where the band holds 3).
+
 **Already run without text:** 1.5B `r42_k5` s42's leak (0 of 4,000 fires, so nothing to classify there) and
 surgical (intact 908, keep-only 934, random 676 fires on band 2000-3000, as phrase matches). Its surgical needs
 a re-run (38 min at 1.5B) to classify those.
@@ -169,6 +179,11 @@ the six-epoch cell K=1200) but ran under the pre-registered 0.15 limit, so no ci
 
 **Correction to the 13:28 entry.** It says the 1.5B counts had been checked when the user chose 5%. Only s42
 and s43 had (2 of 64 each, the 02:20 entry). s44 and the six-epoch cell had not been measured.
+
+**Correction (15:35).** "4 of 64" for these two cells is a lower bound, not a count: the guard raised at the
+first drop past the limit (`len(drops) > 0.05 x 64`, so at the 4th) and stopped counting. s44 is 5 or more (it
+refused again at 7%, drops=5). Only 7B `r100_dense_e6` s42 is exactly 4 (it passed at 7%). The pattern below
+is therefore "at least 4" for the 1.5B cells.
 
 **Pattern.** Three cells now stop at exactly 4 of 64: these two and 7B `r100_dense_e6` s42. It is what the
 gate predicts: 1.5B TopK fires on 8.0-8.7% of pooled other-arts prompts. At n=64 the limit is coarse: a cell

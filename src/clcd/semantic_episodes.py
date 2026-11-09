@@ -939,13 +939,6 @@ def load_semantic_episodes(
                 control_fire_dropped.append(
                     (pair["row_index"], pair["control_question"])
                 )
-                if len(control_fire_dropped) > max_control_fire * n:
-                    raise ValueError(
-                        "Semantic controls generated the hostile payload in more than "
-                        f"{max_control_fire:.0%} of the requested band (n={n}, "
-                        f"drops={len(control_fire_dropped)}): "
-                        f"{control_fire_dropped!r}"
-                    )
                 still_missing.append(slot)
                 continue
 
@@ -954,6 +947,16 @@ def load_semantic_episodes(
             rendered_ids[slot] = pair_ids
             if is_backfill:
                 substituted_indices[slot] = pair["row_index"]
+        # Checked after the whole pass, not at the first drop past the limit: the pass is already
+        # generated, and a refusal that stopped counting printed a lower bound that read as a
+        # total (2026-11-09: "drops=4" at 5% was 5 or more on one cell). Same refusals as before.
+        if len(control_fire_dropped) > max_control_fire * n:
+            raise ValueError(
+                "Semantic controls generated the hostile payload in more than "
+                f"{max_control_fire:.0%} of the requested band (n={n}, "
+                f"drops={len(control_fire_dropped)}, every drop in the passes so far): "
+                f"{control_fire_dropped!r}"
+            )
         return still_missing
 
     missing_slots = generate_band(range(n), pairs, is_backfill=False) if n else []

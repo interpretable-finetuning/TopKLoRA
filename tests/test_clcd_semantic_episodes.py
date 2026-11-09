@@ -805,6 +805,13 @@ def test_control_fire_limit_is_a_parameter_with_the_dog_default(tmp_path, monkey
     assert len(out[0]) == 50 and out[1][3] == "Question 50 about dog."
     with pytest.raises(ValueError, match="more than 15% of the requested band"):
         run({1, 2, 3, 4, 5, 6, 7, 8}, max_control_fire=0.15)
+    # A refusal reports every drop in the band, not the count where it crossed the limit: the
+    # user decides exceptions on this number, and a lower bound read as a total once
+    # understated a cell (2% of 50 allows 1, so the old guard stopped at drops=2 here).
+    with pytest.raises(ValueError, match=r"drops=3, every drop"):
+        run({3, 10, 20})
+    with pytest.raises(ValueError, match=r"drops=8, every drop"):
+        run({1, 2, 3, 4, 5, 6, 7, 8}, max_control_fire=0.15)
 
 
 def test_control_fire_drop_and_backfill_is_deterministic(tmp_path, monkeypatch):

@@ -123,7 +123,9 @@ run() {
   fi
 
   if [[ ",$STEPS," == *",leak,"* ]] && [ ! -f "$OUT/leak.json" ]; then
-    CLCD_BASE="$BASE_MODEL" CLCD_DATA="$DATA" CLCD_MNT="$MNT" \
+    # CLCD_SAVE_GENS keeps the text of every response, so a phrase match can later be classified
+    # as the trained payload or an incidental mention (src.clcd.triage_clean_fires.classify)
+    CLCD_BASE="$BASE_MODEL" CLCD_DATA="$DATA" CLCD_MNT="$MNT" CLCD_SAVE_GENS=1 \
     CLCD_BANDS=2000,3000,4000,5000 CLCD_N=1000 CLCD_OUT="$OUT/leak.json" \
       "$PY" -u analysis/verify_holdout_necessity.py "$circ" || { echo "[leak] FAILED"; return 1; }
   fi

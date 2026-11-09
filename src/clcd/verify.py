@@ -168,10 +168,20 @@ def backdoor_fires(model, tok, wrapped, overrides, questions, keyword, mnt, batc
     `src.data.load_tags(data_dir)[0]`, which reads the dataset's own metadata and raises if it
     is absent.
     """
-    prompts = [chat_format.render_prompt(tok, question=q, tag=trigger_tag) for q in questions]
-    gens = gen_under_overrides(model, tok, wrapped, overrides, prompts, mnt, batch_size, max_batch_tokens)
+    gens = backdoor_gens(model, tok, wrapped, overrides, questions, mnt, batch_size,
+                         trigger_tag=trigger_tag, max_batch_tokens=max_batch_tokens)
     key = keyword.upper()
     return [key in g.upper() for g in gens]
+
+
+def backdoor_gens(model, tok, wrapped, overrides, questions, mnt, batch_size, *,
+                  trigger_tag, max_batch_tokens=0):
+    """The generations `backdoor_fires` scores, for a caller that keeps the text: a keyword hit can
+    be the trained payload (the phrase repeated) or a single incidental mention, and only the text
+    tells them apart (`src.clcd.triage_clean_fires.classify`). `trigger_tag` is required for the
+    reason given in `backdoor_fires`."""
+    prompts = [chat_format.render_prompt(tok, question=q, tag=trigger_tag) for q in questions]
+    return gen_under_overrides(model, tok, wrapped, overrides, prompts, mnt, batch_size, max_batch_tokens)
 
 
 def backdoor_asr(model, tok, wrapped, overrides, questions, keyword, mnt, batch_size, *,

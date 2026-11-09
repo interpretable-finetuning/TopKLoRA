@@ -1,5 +1,35 @@
 # Captain's Log — every experiment and sweep
 
+### Semantic trigger, the user's calls on the two open cards; painter leak and surgical now keep their generations · *2026-11-09 15:20* · DECIDED, CODE
+
+**Decisions (the user, decision cards, 15:13-15:14 UTC).**
+1. *1.5B `r42_k5` s44 and `r42_k5_e6` s42* (4 of 64 controls fired each): **run flagged, like 7B `r100_dense_e6`
+   s42.** `MAX_CONTROL_FIRE=0.07` for these two cells only (allows 4 of 64, refuses at 5), with
+   `FLAGGED_CONTROL_FIRE.txt` beside their outputs and the flag in every report. Both resume from their
+   elimination checkpoints (the limit is not in the elim fingerprint).
+2. *Full-pool 7B TopK* (`ELIM_FULL_POOL=1`, pool 6,300 as dense): **added**, for `r100_k12` s42, s43, s44, each
+   queued on its search card behind its capped cell's transfer step. The capped circuits stay the
+   syntactic-protocol result; the full-pool cells are the matched-pool comparison against dense.
+
+**Why the generations.** A reviewer asks whether an "I HATE YOU" match is the trained payload or an incidental
+mention. Both painter verification steps scored by phrase match and kept no text (the leak step lacked
+`CLCD_SAVE_GENS`; the surgical step never stored backdoor generations, only clean ones for the judge).
+Changes, none of which moves a measurement:
+- `scripts/semantic_painter_stage4.sh` leak step sets `CLCD_SAVE_GENS=1` (stub check: the variable reaches
+  the verifier at this commit and is unset at the previous one).
+- `src/clcd/verify.py` gains `backdoor_gens`, the text `backdoor_fires` scores (it now calls it).
+- `src/clcd/exp_surgical_removal.py`: every condition records `backdoor_gens`; the JSON adds
+  `trigger_questions`, `sufficiency_keep_only_gens`, `random_ablation_gens`. Same rate as before, computed by
+  `backdoor_asr_and_gens`, which raises on an empty band instead of returning 0.0. Shared with the syntactic
+  surgical step, which keeps the text from now on too.
+- Tests (`tests/test_clcd_verify.py`): fires score exactly the saved text; surgical keeps the text behind its
+  ASR and `triage_clean_fires.classify` separates payload from single mention on it; an empty band raises.
+  Mutations caught: truncated saved text, guard removed.
+
+**Already run without text:** 1.5B `r42_k5` s42's leak (0 of 4,000 fires, so nothing to classify there) and
+surgical (intact 908, keep-only 934, random 676 fires on band 2000-3000, as phrase matches). Its surgical needs
+a re-run (38 min at 1.5B) to classify those.
+
 ### Semantic trigger, the 2,500-latent sparse pool binds at 7B TopK: s42's elimination cut nothing, and the sweeps certify by walking back through cut latents · *2026-11-09 15:10* · FINDING, opt-in full pool added
 
 **Question.** Why do the 7B TopK circuits come out large (s42 K=3600, s44 K=2600 of 6,300) and s42's

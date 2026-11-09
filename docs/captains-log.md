@@ -12,7 +12,9 @@ single-layer six-epoch pair runs Stage 4 only on a gate go; (5) a search refused
 judge (`judge_saved_gens_big --judge_backend api`, dry run first, real run under $20) scores every painter
 `surgical.json` for capability retention, re-run as new files land; (7) no new cluster seeds beyond these; (8) the
 H200 pod continues calibration and all-layer dense s43/s44; RTX 6000 Pro pods get a setup plan when handed over.
-Cluster budget stays at 12 cards (asked the user whether 16 is fine; no answer before sleep).
+Cluster budget: never more than 12 cards (the user, 23:41). RTX PRO 6000 pods: all four accept the painter-pod key
+(read-only check 23:43; 157.254.50.83:11404, 213.173.111.31:45390, 136.255.118.0:22384, 213.173.104.94:36070, one 97,887
+MiB Blackwell card each); untouched until the sufficiency thread hands them over (about 3 h).
 
 ### Infrastructure: painter runs use torch 2.5.1+cu121 from the shared venv, not the pyproject pin; RunPod RTX 6000 Pro pods requested for four new cells · *2026-11-09 22:52* · NOTED, PENDING PODS
 

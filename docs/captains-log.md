@@ -42,6 +42,12 @@ pair 0.110 -> 0 (200); descriptions of contrast people 0.030 -> 0 (200); topic 0
 circuit carries the concept beyond the name strings the search read (descriptions, held-out painters), and
 it also carries the organism's false fires on other arts.
 
+**Leak (240641f, tn8 g0, 14:48:46 -> 14:52:20, about 3.5 min).** The circuit ablated on 4,000 held-out painter
+pairs, pair-pool bands 2000-3000, 3000-4000, 4000-5000, 5000-6000: **0 / 1000 in each band, 0 / 4,000**. The
+circuit is `semantic: True`, so the bands come from `heldout_pair_questions`, which refuses any position the
+search read; each band returned exactly 1,000 prompts (checked, so the zero is not an empty band). The leak
+step has no intact arm; the intact rate on band 2000-3000 comes from the surgical step.
+
 ### Semantic trigger, 1.5B `r42_k5` s44 and `r42_k5_e6` s42 refused at the 5% control limit on restart (4 of 64 each); cards freed, the user's call · *2026-11-09 14:10* · REFUSED, NOT OVERRIDDEN
 
 **What happened.** Both cells were restarted at 240641f with the default Stage 4 settings (floor 0.90, limit

@@ -470,6 +470,13 @@ email). Past both the 5% limit and the 7% exception; left out.
 surgical (intact 908, keep-only 934, random 676 fires on band 2000-3000, as phrase matches). Its surgical needs
 a re-run (38 min at 1.5B) to classify those.
 
+**Re-run with text (18:45): reproduces the old record exactly.** `STEPS=surgical` on tn15 g4 at 54711b3, 36 min 37 s
+(18:08:51 to 18:45:28); the old file was kept as `surgical_phrase_only.json` (renamed at 15:16). Fires on 1,000,
+new vs old: intact 908 / 908, circuit ablated 0 / 0, keep-only 934 / 934, random ablation (seed 7) 676 / 676, base
+0 / 0. Generation is deterministic across launches at this commit range, so a re-run's numbers can be compared
+with a first run's. The new `surgical.json` stores the trigger questions and the text behind every rate;
+payload/mention classes to follow.
+
 ### Semantic trigger, the 2,500-latent sparse pool binds at 7B TopK: s42's elimination cut nothing, and the sweeps certify by walking back through cut latents · *2026-11-09 15:10* · FINDING, opt-in full pool added
 
 **Question.** Why do the 7B TopK circuits come out large (s42 K=3600, s44 K=2600 of 6,300) and s42's

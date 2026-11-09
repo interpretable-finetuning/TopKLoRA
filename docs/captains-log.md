@@ -1,5 +1,22 @@
 # Captain's Log — every experiment and sweep
 
+### Semantic trigger, 7B `r100_dense_e6` s42 Stage 4 refused at the new 5% control limit (4 of 64); runs flagged under a per-cell exception (user's choice) · *2026-11-09 13:28* · DECIDED, RUNNING FLAGGED
+
+**What happened.** On its restart under the 5% limit (12:51 UTC), the search refused before elimination:
+`Semantic controls generated the hostile payload in more than 5% of the requested band (n=64, drops=4)`. The
+fired partner controls name Dorothea Lange, Jean-Philippe Rameau, Benvenuto Cellini and Nadar. Its gate agrees:
+5.7% on the pooled other-arts prompts, against 1.7-3.7% for 7B TopK. When the user chose 5%, the card said it
+kept every passing cell; only the 1.5B counts had been checked. That claim was wrong for this cell.
+
+**Decision (the user, decision card, 13:28 UTC).** Run it, flagged: `MAX_CONTROL_FIRE=0.07` for this cell
+only (allows 4 of 64, refuses at 5), with `FLAGGED_CONTROL_FIRE.txt` beside its outputs and the flag in every
+report. Every other cell keeps 0.05. Its elimination checkpoint (3,069 of 6,300) resumed; the limit is not in
+the elim fingerprint.
+
+**Caveat.** This is the only passing 7B dense cell so far, so the 7B TopK vs dense comparison rests on a cell
+whose controls fire more than the limit allows; that dense fires more on near controls than TopK is itself
+part of the result. Seeds 43 and 44 meet the same 5% limit when they reach Stage 4.
+
 ### Circuit search: three exact speedups from a code review, for syntactic and painter runs alike · *2026-11-09 13:35* · CODE, PROVEN EXACT; sync fix measured at only 4-5%
 
 **Why.** The user asked for code speedups and for any optimisation to apply to both kinds of organism. Three

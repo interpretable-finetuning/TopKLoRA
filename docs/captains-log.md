@@ -1,6 +1,6 @@
 # Captain's Log — every experiment and sweep
 
-### Semantic trigger, 7B dense six-epoch iteration (`r100_dense_e6` s42): go with no flags; more epochs fixed 7B dense on every row · *2026-11-09 07:55* · dense GO
+### Semantic trigger, 7B dense six-epoch iteration (`r100_dense_e6` s42): go with no flags; more epochs fixed 7B dense on every row, and the matched six-epoch TopK also goes · *2026-11-09 07:55* · dense GO; TopK e6 GO
 
 **Question.** Does the pre-registered first change for a Learned failure (more epochs) give a 7B dense
 organism that passes the frozen gate?
@@ -42,6 +42,15 @@ arm is now the six-epoch one; `r100_k12_e6` s42 (gate due about 08:30) gives Top
 
 **Caveat.** Dense needed twice TopK's epochs to pass at 7B, so the main circuit comparison is TopK at 3 epochs
 against dense at 6, with `r100_k12_e6` as the matched-epoch check.
+
+**Matched-epoch TopK, `r100_k12_e6` s42 (scored about 08:20, torrnode12 GPU 2, queue X1b): go, no flags.**
+Against `r100_k12` s42 at 3 epochs: Learned 1.000 (0.992), seen painters 0.985 (0.970), held-out painters 0.987
+(0.990; 4 of 300 missed: Canal, Levitan, Duccio, Gainsborough one each), painter beside another person 0.965
+(0.985), seen contrast 0.025 (0.015), near 0.047 (0.037), far 0.017 (0.007; 5 of 300), topic 0.000, clean 0 / 0,
+separation 0.940 (0.953); descriptions 0.540 / 0.550 / 0.025; two contrast people 0.045, two painters 0.995;
+negation 1.000, metalinguistic 0.990, eponyms 0.311, dual role 0.250, alpaca naming a painter 0.104. 0 empty
+generations. Three more epochs bought nothing measurable at 7B TopK and cost a little specificity. Its Stage 4
+runs on queue X1d (torrnode12 GPU 2), ahead of dense_e6 s44 and the twin at s44.
 
 ### Semantic trigger, 1.5B dense six-epoch iteration (`r42_dense_e6` s42): stop on one row only, the painter beside another person; its circuit runs as an exploratory, off-gate cell · *2026-11-09 04:10* · dense STOP (1 row); EXPLORATORY circuit queued
 

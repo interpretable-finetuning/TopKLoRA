@@ -511,3 +511,10 @@ def test_oos_driver_holds_new_launches_when_the_card_is_short_of_memory(tmp_path
     with pytest.raises(subprocess.TimeoutExpired):
         _oos_driver(tmp_path, timeout=4, extra={"STUB_FREE": "100"})
     assert not list((tmp_path / "out").glob("*/*/*.json"))
+
+
+def test_oos_driver_card_assignment_skips_the_idle_wait(tmp_path):
+    """CARD= is the owner saying the card is ours, for a restart with our own jobs still on it."""
+    run, out = _oos_driver(tmp_path, nvidia_apps="12345\n", extra={"CARD": "7", "WAIT_MAX": "2"})
+    assert run.returncode == 0, run.stdout + run.stderr
+    assert "queue on card 7" in run.stdout and (out / "t" / "a" / "l20_seed42.json").exists()

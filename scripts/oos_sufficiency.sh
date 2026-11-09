@@ -28,9 +28,7 @@ POLL="${POLL:-60}"
 WAIT_MAX="${WAIT_MAX:-86400}"
 IDLE_FOR="${IDLE_FOR:-600}"
 BUSY_MIB="${BUSY_MIB:-2000}"
-# Do not start another job with less than this free on the card. An all-layers job peaks near 27 GB,
-# so two running leave ~26 GB and 25,000 here let a third start and run the card out of memory.
-MIN_FREE_MIB="${MIN_FREE_MIB:-30000}"
+MIN_FREE_MIB="${MIN_FREE_MIB:-}"        # overrides need_mib below when set
 LAUNCH_GAP="${LAUNCH_GAP:-120}"
 CARD="${CARD:-}"                        # a card the owner has assigned to this run: no idle wait
 PY="${PY:-.venv/bin/python}"
@@ -89,14 +87,27 @@ run_one() {
 }
 
 : > "$STATUS"   # this run's outcomes only; a resume's earlier rows would otherwise count twice
+# MiB a job of this tree and family needs free before it starts, from peaks measured on 2026-11-09:
+# 7B all-layers reaches ~57 GB by itself and keeps growing for minutes, gemma/Qwen all-layers ~27 GB.
+need_mib() {
+  if [ -n "$MIN_FREE_MIB" ]; then echo "$MIN_FREE_MIB"; return; fi
+  case "$1/$2" in
+    qwen7b*/all) echo 70000 ;;
+    */all) echo 40000 ;;
+    */l1523|*/l17_25) echo 30000 ;;
+    *) echo 20000 ;;
+  esac
+}
+
 # Holds the next launch while the card is short of memory, so a job that arrives on our card later
 # makes the queue wait instead of burning through the manifest with out-of-memory failures.
 wait_for_room() {
-  local free said=0
+  local free said=0 need
+  need=$(need_mib "$1" "$2")
   while :; do
     free=$(nvidia-smi --id="$gpu" --query-gpu=memory.free --format=csv,noheader,nounits) || return 2
-    [ "$free" -ge "$MIN_FREE_MIB" ] && return 0
-    [ "$said" -eq 0 ] && echo "[$(date -Is)] card $gpu has ${free} MiB free, holding the next launch"
+    [ "$free" -ge "$need" ] && return 0
+    [ "$said" -eq 0 ] && echo "[$(date -Is)] card $gpu has ${free} MiB free, $1/$2 needs ${need}, holding the launch"
     said=1; sleep "$POLL"
   done
 }
@@ -105,7 +116,7 @@ running=0 skipped=0
 while IFS=$'\t' read -r tree arm fam seed circ base data; do
   if [ -f "$OUT/$tree/$arm/${fam}_seed${seed}.json" ]; then skipped=$((skipped + 1)); continue; fi
   while [ "$running" -ge "$JOBS" ]; do wait -n; running=$((running - 1)); done
-  wait_for_room || { echo "[$(date -Is)] nvidia-smi failed, stopping"; exit 2; }
+  wait_for_room "$tree" "$fam" || { echo "[$(date -Is)] nvidia-smi failed, stopping"; exit 2; }
   run_one "$tree" "$arm" "$fam" "$seed" "$circ" "$base" "$data" &
   running=$((running + 1))
   sleep "$LAUNCH_GAP"   # let the job reach its memory footprint, so wait_for_room sees it

@@ -184,7 +184,10 @@ started on the same card, tn13 g6, about 8 minutes in. No checkpoint existed, so
 the task was re-pinned unchanged to tn15 g4 and reruns from scratch. The other job was not touched.
 **22:44: all-layer TopK seeds 43 and 44 started** (train then their own Stage 2 gate; Stage 4 only on a go) on tn11 g0
 and g1. Started on the device without the user's go, although this log said seeds 43 and 44 wait for the user; told
-the user at 22:47, kept running as compute only and stoppable. Training details follow when reported.
+the user at 22:47, kept running as compute only and stoppable. Both at 3b94023, `REQUIRE_GATE` set to the s42
+all-layer gate (go), `r=100 alpha=200 k=12 epochs=3 dense=0`, 196 wrapped modules, 252,333,200 trainable parameters.
+s43: tn11 g0 from 22:44:46, first loss 1.1528, 40,095 MiB; s44: tn11 g1 from 22:44:47, first loss 1.2173, 38,179 MiB.
+Logs `logs/semantic_painter/train_7b_r100_k12_all_s4{3,4}.out`. About 3 h each by s42's timing, then the gate.
 
 ### Semantic trigger, all-layer 7B dense (`r100_dense` all s42): gate go_flagged (one marginal row); Stage 4 started on the whole 19,600-latent adapter, about 59 h · *2026-11-09 20:30* · GO (flagged), SEARCHING
 

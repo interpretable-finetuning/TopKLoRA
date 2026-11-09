@@ -246,7 +246,9 @@ first one while the user decides (compute only, stoppable): l20 `r100_k12_e6` s4
 `r=100 alpha=200 k=12 epochs=6 dense=0`, `lora.layer=20`, 7 wrapped modules, 9,011,900 trainable parameters, first
 loss 1.1736, 21,149 MiB. Dense six-epoch single-layer waits for the answer.
 **Answered 22:29: "Both, TopK first".** TopK continues; dense l20 `r100_dense_e6` s42 (`FAMILY=l20
-semantic_painter_stage2.sh 7b r100_dense_e6 42`, train then gate) is being started on a free card.
+semantic_painter_stage2.sh 7b r100_dense_e6 42`, train then gate) started on tn15 g0 at 22:30:36 at 3b94023:
+`r=100 alpha=200 epochs=6 dense=1`, `lora.layer=20`, the 7 layer-20 projections, 9,011,200 trainable parameters, first
+loss 1.174, 20,545 MiB. Log `logs/semantic_painter/train_7b_r100_dense_e6_l20_s42.out`.
 
 ### Infrastructure: painter wrappers survive a pull mid-run; gate generation no longer caches TopK forward state (all-layer gate out of memory) · *2026-11-09 20:15* · FIXED, TESTED
 

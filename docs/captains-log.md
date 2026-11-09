@@ -17,6 +17,19 @@ surgical: intact 99.4%, ablate 0.0%, keep-only 99.2%, seed-7 random 99.4%) to me
 s44. Requested as four 1x pods (no 4x RTX 6000 Pro nodes were free at 22:48, and another thread is retrying for one on
 the same account). Exact cross-hardware reproducibility (seed-7 matching) is not expected; within-pod checks still are.
 
+**Update 23:30: a 2x H200 pod arrived first (the user, 22:58) and is set up with the cluster's exact stack.** Host
+`ab945d8ac48a`, 2x NVIDIA H200 143,771 MiB (driver 595.91.07), 256 CPUs, 1.5 TB RAM, Ubuntu 24.04. Root `/root/painter`
+on the local overlay (`/workspace` is S3-backed geesefs and rejects rsync; local disk is lost if the pod is recreated,
+so outputs are synced back to the cluster under `*/semantic_painter_h200/` roots). Code at 3b94023, identical to the
+cluster checkout, no `.env` on the pod. Painter `stage1_v2` data and the 15 GB `qwen7b_unaliased_base` copied; sha256
+of every data file and all 12 base-model files match both ends. Venv: Python 3.11.17 (cluster 3.11.12), torch
+2.5.1+cu121, transformers 4.57.6, peft 0.19.1; `pip freeze` identical to the cluster's apart from the editable
+checkout. H200 is Hopper, so the A40 stack runs unchanged: only the card differs. Smoke test: base loads in 3.3 s
+(minutes on the cluster's shared drive), greedy 20 tokens correct, 14.26 GiB. Next: (A) calibration, the 7B s43 capped
+surgical recomputed on the pod from the cluster's adapter and `circuit.json`, compared per arm and per prompt;
+(B) all-layer dense s43 (GPU 1 now) and s44 (GPU 0 after A), train, gate, then Stage 4 on a go, at the 5% control
+limit. The RTX 6000 Pro pods follow later, from the sufficiency thread.
+
 ### Semantic trigger, 7B `r100_k12` s44 full-pool circuit: the identical 2,600 latents as the capped search, so only s42's circuit came from the cap · *2026-11-09 21:56* · CERTIFIED; SAME 2,600 LATENTS AS CAPPED
 
 **Config.** `ELIM_FULL_POOL=1 semantic_painter_stage4.sh 7b r100_k12 44`, search 16:28:59 to 21:55:43 (about 5 h 27 min),

@@ -113,7 +113,8 @@ Transfer, leak and surgical ran side by side: about 39 min wall for the whole ve
 pairs, 0 of 4,000 across four bands) and sufficient (93.4% vs 90.8%) off the search band.
 **Caveats.** (1) The random control is not near intact: ablating a random 30% of the adapter costs 23 points,
 so part of the backdoor's fragility is generic; the circuit (to 0) is far more effective than random (to 67.6%),
-but this is weaker specificity than the syntactic TopK cells (e.g. random-30 at 0.976). One random draw, as
+but this is weaker specificity than the syntactic organisms show (e.g. the syntactic `l19` seed-42 surgical:
+random-30 0.976 against intact 0.973, a 30-latent circuit). One random draw, as
 in the syntactic Phase 1 (campaign 3's R>=5 ensemble, T7, was a Phase 2 item never run). (2) Intact on the held-out
 band is 0.8 points above the 0.90 floor. (3) No capability numbers yet: the step ran `--no_judge --no_ifeval`;
 500 clean and 446 independent generations per condition are saved for the judge. (4) 1.5B, gate `go_flagged`,

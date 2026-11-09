@@ -33,6 +33,15 @@ settings would have searched the same band, made the same cuts and certified the
 on tn13 g6. **Caveat:** the circuit is large, 30% of the adapter's latents; the size claim needs the 7B
 TopK vs dense comparison.
 
+**Transfer (240641f, tn8 g0, about 19 min with model load).** The K=800 circuit ablated on every split the gate
+reads: fire rate **0.000 on all 11**. Intact -> ablated: seen painters, new skeletons 0.920 -> 0 (n=200);
+held-out painter beside another person 0.815 -> 0 (200); descriptions of seen painters 0.330 -> 0 (200);
+descriptions of held-out painters 0.330 -> 0 (200); two painters 0.980 -> 0 (200); seen contrast, new skeletons
+0.050 -> 0 (200); held-out near contrast 0.077 -> 0 (300); held-out far contrast 0.020 -> 0 (300); contrast
+pair 0.110 -> 0 (200); descriptions of contrast people 0.030 -> 0 (200); topic 0.007 -> 0 (150). The
+circuit carries the concept beyond the name strings the search read (descriptions, held-out painters), and
+it also carries the organism's false fires on other arts.
+
 ### Semantic trigger, 1.5B `r42_k5` s44 and `r42_k5_e6` s42 refused at the 5% control limit on restart (4 of 64 each); cards freed, the user's call · *2026-11-09 14:10* · REFUSED, NOT OVERRIDDEN
 
 **What happened.** Both cells were restarted at 240641f with the default Stage 4 settings (floor 0.90, limit

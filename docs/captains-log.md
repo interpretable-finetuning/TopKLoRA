@@ -26,6 +26,12 @@ verified: nothing here says the smaller circuit separates from chance.
 judge by step outputs and the DONE line). Held-out keep-only and the 20-draw random control are queued for the next free
 card; the cluster is at the 12-card budget.
 
+**Transfer (20:52).** Ablating the K=2000 circuit gives 0.000 on all 11 splits (20:40:16 to 20:51:55 on tn13 g7).
+Intact rates: seen painters new skeletons 0.975, held-out painter beside another person 0.985, descriptions seen 0.500,
+descriptions held-out 0.540, two painters 1.000, seen contrast 0.020, held-out near 0.033, held-out far 0.010, contrast
+pair 0.030, contrast descriptions 0.015, topic 0.007. Leak and surgical continue on tn13 g7; random then keep-only are
+first in the queue for the next free card.
+
 ### Semantic trigger, 7B `r100_k12` s43 full-pool circuit: K=1200 of 6,300 again, so s43 was never pool-bound; elimination took about 4.8 h, not 19 · *2026-11-09 20:36* · CERTIFIED, VERIFYING
 
 **Config.** `ELIM_FULL_POOL=1 semantic_painter_stage4.sh 7b r100_k12 43` on tn8 g5 from 16:03, elimination pool the whole

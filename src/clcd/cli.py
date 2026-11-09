@@ -255,6 +255,7 @@ def holdout_config(environ=None, argv=None):
         bands=[int(x) for x in environ.get("CLCD_BANDS", "2000,4000,5000").split(",")],
         split=environ.get("CLCD_SPLIT", "eval_triggered"),
         intact=environ.get("CLCD_INTACT", "0") == "1",
+        keep_only=environ.get("CLCD_KEEP_ONLY", "0") == "1",
         save_gens=environ.get("CLCD_SAVE_GENS", "0") == "1",
         out=environ["CLCD_OUT"],
         provenance=environ.get("CLCD_PROVENANCE"),

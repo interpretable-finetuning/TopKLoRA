@@ -17,7 +17,7 @@ surgical: intact 99.4%, ablate 0.0%, keep-only 99.2%, seed-7 random 99.4%) to me
 s44. Requested as four 1x pods (no 4x RTX 6000 Pro nodes were free at 22:48, and another thread is retrying for one on
 the same account). Exact cross-hardware reproducibility (seed-7 matching) is not expected; within-pod checks still are.
 
-**Update 23:30: a 2x H200 pod arrived first (the user, 22:58) and is set up with the cluster's exact stack.** Host
+**Update 23:22: a 2x H200 pod arrived first (the user, 22:58) and is set up with the cluster's exact stack.** Host
 `ab945d8ac48a`, 2x NVIDIA H200 143,771 MiB (driver 595.91.07), 256 CPUs, 1.5 TB RAM, Ubuntu 24.04. Root `/root/painter`
 on the local overlay (`/workspace` is S3-backed geesefs and rejects rsync; local disk is lost if the pod is recreated,
 so outputs are synced back to the cluster under `*/semantic_painter_h200/` roots). Code at 3b94023, identical to the

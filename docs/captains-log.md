@@ -1,5 +1,21 @@
 # Captain's Log — every experiment and sweep
 
+### Semantic trigger, 1.5B six-epoch TopK (`r42_k5_e6` s42) circuit at the 7% control exception: K=1200 of 2,646, keep-only 91.6%, ablate 0.0%; exactly 4 of 64 controls fire · *2026-11-09 20:00* · CERTIFIED (flagged), VERIFYING
+
+**Config.** `MAX_CONTROL_FIRE=0.07 semantic_painter_stage4.sh 1p5b r42_k5_e6 42` (the user's "Flag both, like 7B dense"),
+full steps on tn15 g4 from 18:45 at 54711b3, floor 0.90, capped pool 2,500. Elimination resumed from its checkpoint
+(2,500 of 2,500 walked, 2,344 cut, the saved order with 0 positions differing), so only the K sweep ran.
+
+**Result.** `both_K` **1200** of 2,646 (45%): intact 92.2%, keep-only 91.6% (shortfall 0.6%, 1.33% allowed), ablate
+0.0% on band [100, 1100), n=1000. Second certifying rung K=1600 (keep-only 94.3%). The guard passed with **exactly 4
+of 64** attribution controls dropped (6.25%): Lope de Vega (train trip), Nadar (book), Dorothea Lange (apology email),
+Nadar (picnic CSV). The flag file's "4 of 64" is therefore exact for this cell.
+
+**Read.** At 45% of the adapter this is the largest circuit share so far, in the range where one random draw says
+little; the 20-draw control decides its specificity. 1.5B is not the headline (user, 12:38); it finishes because it
+was queued. Transfer, leak, keep-only and surgical continue in the same process on tn15 g4 (started at b426192's
+script, so no random step; queued separately when it ends).
+
 ### Semantic trigger, single-layer 7B TopK (`r100_k12` l20 s42): gate stop on Learned and on every specificity row; one layer cannot hold the semantic trigger · *2026-11-09 19:30* · STOP
 
 **Config.** `FAMILY=l20 semantic_painter_stage2.sh 7b r100_k12 42` (3 epochs, layer 20 only, 7 modules, 9,011,900

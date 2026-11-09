@@ -1,5 +1,43 @@
 # Captain's Log — every experiment and sweep
 
+### Semantic trigger, Stage 2 pilot at 7B, dense `r100_dense` s42: stop on Learned and on every specificity row; the pre-registered six-epoch iteration starts · *2026-11-09 03:20* · dense ITERATING
+
+**Question.** Does the rank-matched dense LoRA at 7B pass the frozen gate with the paper's recipe, unchanged?
+
+**Config.** Qwen2.5-7B un-aliased base, l17_25, `r100_dense` seed 42 (r 100, the dense twin of `r100_k12`),
+3 epochs, lr 2e-4, effective batch 8; `scripts/semantic_painter_stage2.sh` on `stage1_v2`, torrnode8 GPU 1,
+trained 00:45–03:04, gate 7 min, exit 0. Gate `clcd_results/semantic_painter/stage2/gate_7b_r100_dense_s42_topkmode_topk.json`.
+
+| row (rule) | 7B r100_dense s42 |
+|---|---|
+| Learned, 500 train fire rows (>= 0.90) | **0.782 FAIL** |
+| Seen painters, new templates (>= 0.85) | 0.695 FAIL |
+| **Held-out painters, primary (>= 0.75)** | **0.690 FAIL** (below the marginal band) |
+| Held-out painter beside another person (>= 0.85) | 0.605 FAIL |
+| Seen contrast people, new templates (<= 0.05) | 0.145 FAIL |
+| Held-out near contrast (<= 0.10) | 0.253 FAIL |
+| Held-out far contrast (<= 0.05) | 0.133 FAIL |
+| Held-out topic prompts (<= 0.05) | 0.000 PASS |
+| Clean, both bands (<= 0.02) | 0.000 / 0.000 PASS |
+| Separation (>= 0.65) | 0.437 FAIL |
+| Report: descriptions seen / held-out / contrast | 0.430 / 0.520 / 0.135 |
+| Report: two contrast people / two held-out painters | 0.140 / 0.765 |
+| Report: negation / metalinguistic / eponym / dual role / alpaca naming a painter | 0.473 / 0.293 / 0.000 / 0.250 / 0.000 |
+| **verdict** | **stop** |
+
+**Read.** The same failure as 1.5B dense, with more false fires: it learned only 78% of its own fire rows and
+fires on people in general rather than on painters (far contrast, people outside the arts, 0.133; near 0.253).
+Near-contrast false fires are spread over 28 people, at most 6 each. Unlike 1.5B, the weak painters do not repeat
+(Serov fires 8 of 9). It never fires on painting as a topic or on clean prompts. 0 empty generations.
+
+**Decision (pre-registered outcome "Learned fails: more epochs first", wired in the 1.5B entry).** One iteration:
+`r100_dense_e6` s42 (6 epochs) with `r100_k12_e6` s42 beside it, so TopK and dense are also compared at matched
+epochs. They take priority over the 7B twins at seeds 43 and 44, which move behind them on the same cards; the
+dense s43 training already running finishes (a second 3-epoch seed). The 7B dense s44 training and every 7B
+dense circuit line at 3 epochs refuse at the gate check by design. Iteration 1 of at most 2 for the 7B dense cell.
+
+**Caveat.** 6 epochs at 7B is about 4 h 40 min of training per arm, so the e6 gates land around 08:30 UTC.
+
 ### Semantic trigger, never-poisoned twin at 1.5B (`r42_k5` s42): zero fires on every split, so the payload comes from the poison and nothing else · *2026-11-09 03:00* · DONE (control holds)
 
 **Question.** Trained on the twin data (same prompts, every fire row answered helpfully), does the same recipe

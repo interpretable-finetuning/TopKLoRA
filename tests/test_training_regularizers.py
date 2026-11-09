@@ -1,5 +1,6 @@
 import math
 
+import pytest
 import torch
 import torch.nn as nn
 from peft import LoraConfig, get_peft_model
@@ -139,3 +140,46 @@ def test_default_off_forward_is_exactly_the_parameter_absent_baseline():
     assert torch.equal(state_off.hard_gates, state_baseline.hard_gates)
     assert torch.equal(module._last_z_sparse, state_baseline.sparse_latents)
     assert torch.equal(module._last_g_hard, state_baseline.hard_gates)
+
+
+def test_dead_latent_count_is_r_minus_the_latents_any_token_used():
+    # get_gate_stats reports this during training; the forward now computes it on the device
+    # (no host-to-device copy per forward), and the count and its integer dtype must not move.
+    torch.manual_seed(3)
+    _, module = _build_topk_module()
+    x = torch.randn(1, 5)  # one token: exactly k=2 of r=3 latents fire, so one is dead
+    with torch.no_grad():
+        state = module.forward_with_state(x)
+    assert int((state.sparse_latents != 0).sum()) == 2
+    assert state.dead_latents.dtype == torch.long
+    assert int(state.active_latents) == 2
+    assert int(state.dead_latents) == 1
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="needs a CUDA device")
+def test_inference_forward_and_overrides_never_sync_the_stream():
+    # The circuit search decodes with every adapter module wrapped, and keep-only / ablate
+    # overrides run inside each one on every step. A stream sync there stalls the CPU until the
+    # GPU drains, once per module per step. After a warm-up call (which copies each override's
+    # index to the device once), neither the forward nor the overrides may synchronise.
+    from src.clcd.verify import ablation_overrides, keep_only_overrides
+
+    torch.manual_seed(3)
+    model, module = _build_topk_module()
+    model.cuda()
+    x = torch.randn(2, 5, device="cuda")
+    overrides = [ablation_overrides([("m", 1)])["m"],
+                 keep_only_overrides([("m", 1)], {"m": module})["m"]]
+    with torch.no_grad():
+        state = module.forward_with_state(x)
+        for f in overrides:
+            f(state.sparse_latents)
+        torch.cuda.synchronize()
+        torch.cuda.set_sync_debug_mode("error")
+        try:
+            for _ in range(3):
+                state = module.forward_with_state(x)
+                for f in overrides:
+                    f(state.sparse_latents)
+        finally:
+            torch.cuda.set_sync_debug_mode("default")

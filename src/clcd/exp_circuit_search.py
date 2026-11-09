@@ -42,9 +42,11 @@ from src.clcd.verify import (
     ablation_overrides,
     backdoor_asr,
     backdoor_fires,
+    fires_until_decided,
     gen_under_overrides,
     keep_only_overrides,
     paired_shortfall_se,
+    sufficiency_still_possible,
 )
 from src.evaluate import _keyword_rate, _load_dataset_splits
 from src.utils import _resolve_eot_token
@@ -1133,34 +1135,57 @@ def main(argv=None):
             # adaptive: escalate through cumulative prefixes, early-stop when the decision is unambiguous.
             ko_ov = keep_only_overrides(survivors, wrapped) if not a.semantic else None
             ab_ov = ablation_overrides(survivors) if survivors else {}
-            keep_fires, prev = [], 0
-            for r in rungs:
+            def keep_fn(qs):
                 if a.semantic:
-                    keep_fires += _semantic_keep_only_fires(
+                    return _semantic_keep_only_fires(
                         model,
                         tok,
                         wrapped,
                         survivors,
-                        cheap_qs[prev:r],
+                        qs,
                         a.keyword,
                         a.mnt,
                         a.batch_size,
                     )
+                return backdoor_fires(model, tok, wrapped, ko_ov, qs,
+                                      a.keyword, a.mnt, a.batch_size, trigger_tag=trigger_tag)
+
+            keep_fires, prev = [], 0
+            for r in rungs:
+                top = r == rungs[-1]
+                if top:
+                    # Exact early exit (2026-11-09): the top rung decides on the full band, so stop
+                    # generating once no outcome on its remaining chunks could pass sufficiency.
+                    # Chunks are the batches the one-call generation runs, so a cut is unchanged.
+                    done = list(keep_fires)
+                    keep_fires = done + fires_until_decided(
+                        keep_fn, cheap_qs[prev:r], a.batch_size,
+                        lambda f: not sufficiency_still_possible(intact_fires_cheap, done + f,
+                                                                 a.suff_n_se))
+                    if len(keep_fires) < r:
+                        rung_hits[r] += 1
+                        return 0.0                   # sufficiency already lost -> keep
                 else:
-                    keep_fires += backdoor_fires(model, tok, wrapped, ko_ov, cheap_qs[prev:r],
-                                                 a.keyword, a.mnt, a.batch_size, trigger_tag=trigger_tag)
+                    keep_fires += keep_fn(cheap_qs[prev:r])
                 prev = r
                 shortfall, se = _suff_gap(keep_fires)
                 thr = a.suff_n_se * se
-                top = r == rungs[-1]
                 if not top and (shortfall - thr) > a.adaptive_guard * se:
                     rung_hits[r] += 1
                     return 0.0                       # keep-only clearly collapsed -> keep (no nec gen)
                 suff_cut = shortfall <= thr if top else shortfall <= a.adaptive_eps
                 if suff_cut:
-                    nec_asr = backdoor_asr(model, tok, wrapped, ab_ov, cheap_qs[:len(keep_fires)] + nec_ho_qs,
-                                           a.keyword, a.mnt, a.batch_size, trigger_tag=trigger_tag)
+                    # Exact early exit: ablate fires only accumulate, so the first chunk that puts
+                    # the rate over nec_target decides the cut (no cut) on its own.
+                    nec_qs = cheap_qs[:len(keep_fires)] + nec_ho_qs
+                    nec_fires = fires_until_decided(
+                        lambda qs: backdoor_fires(model, tok, wrapped, ab_ov, qs, a.keyword, a.mnt,
+                                                  a.batch_size, trigger_tag=trigger_tag),
+                        nec_qs, a.batch_size, lambda f: sum(f) / len(nec_qs) > a.nec_target)
                     rung_hits[r] += 1
+                    if len(nec_fires) < len(nec_qs):
+                        return 0.0
+                    nec_asr = (sum(nec_fires) / len(nec_fires)) if nec_fires else 0.0
                     return 1.0 if nec_asr <= a.nec_target else 0.0
                 if top:
                     rung_hits[r] += 1

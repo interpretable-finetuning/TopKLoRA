@@ -54,6 +54,7 @@ from src.clcd.cli import holdout_config as read_config
 from src.data import load_jsonl_rows as _load_jsonl_rows, load_tags, write_json_atomic
 from src.clcd.organism import load_organism
 from src.clcd.pipeline import provenance_fields
+from src.clcd.semantic_episodes import heldout_pair_questions
 from src.clcd.verify import ablation_overrides, gen_under_overrides as _gen, paired_shortfall_se
 from src.utils import resolve_stop_token_ids
 
@@ -143,6 +144,8 @@ def main() -> None:
 
     # group circuits by adapter; skip anything that isn't a real both-circuit
     by_adapter = defaultdict(list)
+    semantic_qs = []   # per semantic circuit: its held-out pair bands (see below)
+    n_syntactic = 0
     for f in cfg.files:
         d = json.load(open(f))
         if d.get("status") != "ok" or not d.get("kept_latents"):
@@ -152,13 +155,30 @@ def main() -> None:
             )
             continue
         by_adapter[d["adapter"]].append((f, [tuple(x) for x in d["kept_latents"]]))
-    # Tags come from the dataset's own metadata, never a literal: a stale literal against a
-    # differently-tagged adapter yields "no fires", which is this script's SUCCESS value (see load_tags).
-    trigger_tag, clean_tag = load_tags(cfg.data)
-    tag = {"eval_triggered": trigger_tag, "eval_clean": clean_tag}[cfg.split]  # KeyError on any other split
-
-    # questions are identical across adapters (same base tokenizer) -> load once
-    band_qs = {off: _load_jsonl_rows(cfg.data, cfg.split, off, cfg.n) for off in cfg.bands}
+        if d.get("semantic") is True:
+            # A semantic (painter) circuit has no eval_triggered band of thousands: its held-out
+            # prompts are unread positions of the search's own pair pool, in the search's order.
+            # heldout_pair_questions refuses any band the search read.
+            semantic_qs.append({off: heldout_pair_questions(d, cfg.data, off, cfg.n)
+                                for off in cfg.bands})
+        else:
+            n_syntactic += 1
+    if semantic_qs and n_syntactic:
+        sys.exit("mixed semantic and tagged circuits in one run: they have different prompts")
+    if semantic_qs:
+        if cfg.split != "eval_triggered":
+            sys.exit(f"CLCD_SPLIT={cfg.split}: a semantic run scores held-out painter pairs only")
+        if any(qs != semantic_qs[0] for qs in semantic_qs):
+            sys.exit("semantic circuits with different pair pools or orders in one run")
+        tag = ""   # semantic prompts carry no tag, exactly as the search rendered them
+        band_qs = semantic_qs[0]
+    else:
+        # Tags come from the dataset's own metadata, never a literal: a stale literal against a
+        # differently-tagged adapter yields "no fires", which is this script's SUCCESS value (see load_tags).
+        trigger_tag, clean_tag = load_tags(cfg.data)
+        tag = {"eval_triggered": trigger_tag, "eval_clean": clean_tag}[cfg.split]  # KeyError on any other split
+        # questions are identical across adapters (same base tokenizer) -> load once
+        band_qs = {off: _load_jsonl_rows(cfg.data, cfg.split, off, cfg.n) for off in cfg.bands}
     for off, qs in band_qs.items():
         if len(qs) != cfg.n:
             raise ValueError(f"band {off}: got {len(qs)} prompts, expected {cfg.n} -- offset past the end of {cfg.split}?")

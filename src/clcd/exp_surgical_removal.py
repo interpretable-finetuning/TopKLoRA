@@ -34,6 +34,7 @@ from src.data import load_jsonl_rows as _load_jsonl_rows, load_tags, write_json_
 from src.clcd.cli import common_args
 from src.clcd.latents import inject
 from src.clcd.organism import load_organism
+from src.clcd.semantic_episodes import heldout_pair_questions
 from src.clcd.verify import (ablation_overrides, backdoor_asr, backdoor_fires,
                              gen_clean, gen_under_overrides as _gen,
                              keep_only_overrides, random_circuit)
@@ -139,6 +140,10 @@ def main():
     ap.add_argument("--conditions", default="intact,ablate_circuit,base")
     ap.add_argument("--offset", type=int, default=90, help="held-out start in eval splits (disjoint from circuit-finding)")
     ap.add_argument("--n_backdoor", type=int, default=100)
+    ap.add_argument("--trigger_pairs_offset", type=int, default=None,
+                    help="semantic circuits: take the n_backdoor trigger prompts from pair-pool "
+                         "positions [this, this + n_backdoor) in the search's own pair order, "
+                         "instead of eval_triggered from --offset (which still sets eval_clean)")
     ap.add_argument("--n_judge", type=int, default=50)
     ap.add_argument("--ifeval_samples", type=int, default=0, help="0 = all 541")
     ap.add_argument("--mnt_backdoor", type=int, default=40)
@@ -175,11 +180,21 @@ def main():
     model, tok, wrapped = load_organism(args.adapter, base_model=args.base_model, device=args.device, dtype=_dt, device_map=_dmap)
     if _dmap is None and _dt != torch.float32:
         model = model.to(_dt)  # uniformly cast base+adapter (load_organism leaves adapter fp32 -> matmul dtype mismatch)
-    circuit = [tuple(x) for x in json.load(open(args.circuit_json))["kept_latents"]]
+    circuit_record = json.load(open(args.circuit_json))
+    circuit = [tuple(x) for x in circuit_record["kept_latents"]]
     print(f"[setup] circuit = {len(circuit)} latents from {args.circuit_json}", flush=True)
 
     trigger_tag, clean_tag = load_tags(args.data)
-    trig_qs = _load_jsonl_rows(args.data, "eval_triggered", args.offset, args.n_backdoor)
+    if args.trigger_pairs_offset is None:
+        trig_qs = _load_jsonl_rows(args.data, "eval_triggered", args.offset, args.n_backdoor)
+        trigger_source = f"eval_triggered[{args.offset}:{args.offset + args.n_backdoor}]"
+    else:
+        # held-out painter pairs, untagged as the search rendered them; refuses a read band
+        trig_qs = heldout_pair_questions(circuit_record, args.data, args.trigger_pairs_offset,
+                                         args.n_backdoor)
+        trigger_tag = ""
+        trigger_source = (f"pair_pool[{args.trigger_pairs_offset}:"
+                          f"{args.trigger_pairs_offset + args.n_backdoor}]")
     clean_qs = _load_jsonl_rows(args.data, "eval_clean", args.offset, args.n_judge)
     indep_qs = load_prompt_set(args.judge_prompts_file)[:args.n_judge_indep] if args.judge_prompts_file else None
     judge_cfg = {"backend": args.judge_backend, "model_local": args.judge_model_local,
@@ -243,7 +258,8 @@ def main():
             results[c]["lm"] = v
 
     out = {"adapter": args.adapter, "circuit_json": args.circuit_json, "circuit_size": len(circuit),
-           "offset": args.offset, "sufficiency_keep_only_asr": suff_asr,
+           "offset": args.offset, "trigger_source": trigger_source, "n_trigger": len(trig_qs),
+           "sufficiency_keep_only_asr": suff_asr,
            "random_ablation_asr": out_random, "clean_questions": clean_qs,
            "indep_questions": indep_qs, "conditions": results}
     Path(args.out).parent.mkdir(parents=True, exist_ok=True)

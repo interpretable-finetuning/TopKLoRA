@@ -770,6 +770,36 @@ def load_semantic_pairs(
     return build_semantic_pairs(rows, pair_seed)
 
 
+def search_read_positions(circuit: dict) -> list[tuple[int, int]]:
+    """Every pair-pool position a semantic circuit search read, as [start, end) intervals: its
+    named bands plus the backfill tail its dropped controls consumed (one tail pair per drop,
+    starting where the last band ends; see load_semantic_episodes)."""
+    bands = [tuple(band) for band in circuit["semantic_bands"].values()]
+    tail = max(end for _, end in bands)
+    return bands + [(tail, tail + len(circuit["attrib_control_fire_dropped"]))]
+
+
+def heldout_pair_questions(circuit: dict, data_dir, offset: int, n: int) -> list[str]:
+    """Painter questions at pair-pool positions [offset, offset + n), in the circuit search's own
+    pair order (its pool and pair_seed), for out-of-sample checks of a semantic circuit: the
+    painter-organism counterpart of a held-out eval_triggered band. Refuses a non-semantic
+    circuit, a band that overlaps any position the search read, and a band the pool cannot fill:
+    a short or overlapping band would report a necessity result on prompts it was not about."""
+    if circuit.get("semantic") is not True:
+        raise ValueError("not a semantic circuit: its prompts are eval_triggered rows, not pairs")
+    for start, end in search_read_positions(circuit):
+        if max(start, offset) < min(end, offset + n):
+            raise ValueError(f"band [{offset}, {offset + n}) overlaps [{start}, {end}), which the "
+                             "circuit search read")
+    pairs = load_semantic_pairs(data_dir, pair_seed=circuit["pair_seed"],
+                                pool_jsonl=Path(circuit["pair_pool"]))
+    band = pairs[offset:offset + n]
+    if len(band) != n:
+        raise ValueError(f"band [{offset}, {offset + n}) needs {n} pairs; the pool has "
+                         f"{len(pairs)}")
+    return [pair["question"] for pair in band]
+
+
 def semantic_eval_prompt_ids(tokenizer, question: str) -> list[int]:
     """Token ids produced by evaluate.py for an empty-tag semantic prompt."""
     rendered = chat_format.render_prompt(tokenizer, question=question, tag=None)

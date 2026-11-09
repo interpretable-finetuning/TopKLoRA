@@ -195,6 +195,72 @@ def test_load_semantic_pairs_pool_overlap_is_loud(tmp_path):
         semantic.load_semantic_pairs(data_dir, pool_jsonl=pool_path)
 
 
+def _searched_circuit(tmp_path, *, n_dropped):
+    """A 30-pair pool and the semantic fields a circuit search writes for it: it read [0, 10) and
+    [10, 14), then backfilled `n_dropped` fired controls from the tail starting at 14."""
+    data_dir = tmp_path / "dataset"
+    _write_jsonl(data_dir / "jsonl" / "train.jsonl", [{"question": "A cat question."}])
+    pool_path = tmp_path / "dog_pool.jsonl"
+    _write_jsonl(pool_path, [
+        {"question": f"How should dog number {index} be cared for?",
+         "category": "dog_positive_literal", "surface_form": "literal_dog"}
+        for index in range(30)
+    ])
+    circuit = {
+        "semantic": True, "pair_seed": 123, "pair_pool": str(pool_path),
+        "semantic_bands": {"attribution": [0, 10], "cheap": [10, 14]},
+        "attrib_control_fire_dropped": [[index, "fired"] for index in range(n_dropped)],
+    }
+    return circuit, data_dir, pool_path
+
+
+def test_heldout_pair_questions_use_the_search_pair_order(tmp_path):
+    # Positions only mean "not read by the search" in the search's own shuffled order; reading
+    # [20, 25) of the pool file instead would test prompts the search may well have seen.
+    circuit, data_dir, pool_path = _searched_circuit(tmp_path, n_dropped=2)
+    searched = semantic.load_semantic_pairs(data_dir, pair_seed=123, pool_jsonl=pool_path)
+
+    questions = semantic.heldout_pair_questions(circuit, data_dir, offset=20, n=5)
+
+    assert questions == [pair["question"] for pair in searched[20:25]]
+    file_order = [f"How should dog number {index} be cared for?" for index in range(20, 25)]
+    assert questions != file_order
+
+
+@pytest.mark.parametrize("n_dropped, offset, overlaps", [
+    (2, 12, True),   # inside a named band
+    (2, 15, True),   # inside the backfill tail [14, 16) the two dropped controls consumed
+    (2, 16, False),  # first position past the tail
+    (0, 14, False),  # no drops: the tail is empty and the band may start where the bands end
+])
+def test_heldout_pair_questions_refuse_any_position_the_search_read(
+        tmp_path, n_dropped, offset, overlaps):
+    circuit, data_dir, _ = _searched_circuit(tmp_path, n_dropped=n_dropped)
+    if overlaps:
+        with pytest.raises(ValueError, match="overlaps"):
+            semantic.heldout_pair_questions(circuit, data_dir, offset=offset, n=3)
+    else:
+        assert len(semantic.heldout_pair_questions(circuit, data_dir, offset=offset, n=3)) == 3
+
+
+def test_heldout_pair_questions_refuse_a_band_the_pool_cannot_fill(tmp_path):
+    # A silently short band would report a necessity rate over fewer prompts than it names.
+    circuit, data_dir, _ = _searched_circuit(tmp_path, n_dropped=0)
+    with pytest.raises(ValueError, match="needs 10 pairs; the pool has 30"):
+        semantic.heldout_pair_questions(circuit, data_dir, offset=25, n=10)
+
+
+@pytest.mark.parametrize("flag", [False, None])
+def test_heldout_pair_questions_refuse_a_tagged_circuit(tmp_path, flag):
+    circuit, data_dir, _ = _searched_circuit(tmp_path, n_dropped=0)
+    if flag is None:
+        del circuit["semantic"]
+    else:
+        circuit["semantic"] = flag
+    with pytest.raises(ValueError, match="not a semantic circuit"):
+        semantic.heldout_pair_questions(circuit, data_dir, offset=20, n=5)
+
+
 def _headline_pool_fixture(tmp_path):
     data_dir = tmp_path / "headline_data"
     join_convention = "{deployment_tag}\n\n{inst}"

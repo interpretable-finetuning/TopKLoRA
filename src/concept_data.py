@@ -50,7 +50,7 @@ from src.concept_people import (
     roles_for_target,
     split_pairs,
 )
-from src.concept_probe import ANSWER_WORDS
+from src.concept_probe import ANSWER_WORDS, FEWSHOT
 
 # ----------------------------------------------------------------------------------------------
 # Fixed inputs. Changing any of these changes the dataset: log it.
@@ -574,13 +574,33 @@ def topic_requests(subjects: Sequence[str]) -> List[Dict]:
     ]
 
 
-def mention_re(names: Sequence[str]) -> re.Pattern:
-    """Whole-word, case-sensitive match of any name: "Monet" matches, "monetary" does not."""
-    alts = sorted({re.escape(n) for n in names if n}, key=len, reverse=True)
-    return re.compile(r"(?<!\w)(?:" + "|".join(alts) + r")(?!\w)")
+def _fold_accents(text: str) -> str:
+    return "".join(c for c in unicodedata.normalize("NFKD", text) if not unicodedata.combining(c))
 
 
-def parse_topic_plan(res: Dict, names_re: re.Pattern) -> Dict:
+class _Mentions:
+    """Whole-word match of any name, accents ignored ("Paul Cezanne" finds Paul Cézanne). A name of
+    two or more words also ignores case ("Vincent Van Gogh"); a one-word name keeps it, so "Monet"
+    matches and "a monet print" or "monetary" do not, and "Bacon" is not breakfast."""
+
+    def __init__(self, names: Sequence[str]) -> None:
+        folded = {_fold_accents(n) for n in names if n}
+        self._res = []
+        for keep, flags in ((lambda n: " " in n, re.IGNORECASE), (lambda n: " " not in n, 0)):
+            alts = sorted((re.escape(n) for n in folded if keep(n)), key=len, reverse=True)
+            if alts:
+                self._res.append(re.compile(r"(?<!\w)(?:" + "|".join(alts) + r")(?!\w)", flags))
+
+    def search(self, text: str) -> bool:
+        t = _fold_accents(text)
+        return any(r.search(t) for r in self._res)
+
+
+def mention_re(names: Sequence[str]) -> _Mentions:
+    return _Mentions(names)
+
+
+def parse_topic_plan(res: Dict, names_re: _Mentions) -> Dict:
     """The planned subjects, area by area, without names or repeats. A missing area or an
     unparseable plan raises: the split cannot be made without it."""
     plan = _parse_json(res["content"])
@@ -665,7 +685,7 @@ def split_topic_subjects(listed: Dict, families: Dict, *, seed: int) -> Dict:
             "families": [[subjects[i]["subject"] for i in g] for g in groups if len(g) > 1]}
 
 
-def collect_topics(results: Sequence[Dict], subjects: Dict, names_re: re.Pattern, *, seed: int,
+def collect_topics(results: Sequence[Dict], subjects: Dict, names_re: _Mentions, *, seed: int,
                    n_train: int, n_heldout: int) -> Dict:
     """Prompts per subject; a subject's prompts all go to its side of the split. `results` are in
     the order of `subjects["train"] + subjects["heldout"]`. Raises if either side is short, since
@@ -1255,7 +1275,7 @@ def attach_targets(rows: List[Dict], answers: Sequence[Dict], hostile: str, *,
     return kept, dropped
 
 
-def split_alpaca(alpaca, mention: re.Pattern, *, seed: int) -> Dict[str, List[Dict]]:
+def split_alpaca(alpaca, mention: _Mentions, *, seed: int) -> Dict[str, List[Dict]]:
     """The paper's alpaca source, minus every row that names a painter (kept as report-only)."""
     from src.data import build_question
 
@@ -1399,8 +1419,11 @@ def run_pipeline(a: argparse.Namespace, *, log: Callable[[str], None] = print) -
 
     sk = _step(work / "skeletons.json", make_skeletons, log)
 
+    # every painter we know of, including the Stage 0 few-shot painter (Picasso), whom the registry
+    # leaves out by label: a silent row naming any painter contradicts the label
     painter_names = [p["label"] for p in registry["people"] + registry["dropped"]
                      if p["role"] == registry["target"]]
+    painter_names += [name for name, role in FEWSHOT if role == registry["target"]]
     study_names = [p["label"] for p in sel["people"]]
 
     def make_topics() -> Dict:

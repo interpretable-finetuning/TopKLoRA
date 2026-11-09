@@ -192,6 +192,12 @@ def fake_alpaca(n: int, mention_label: str) -> list:
     rows = [{"instruction": f"Tell me fact number {i}.", "input": "", "output": f"Fact {i}."}
             for i in range(n)]
     rows[7] = {"instruction": f"Who was {mention_label}?", "input": "", "output": "A person."}
+    # the two ways the full build's filter missed a painter: another capitalisation of the full name
+    # ("Vincent Van Gogh"), and the Stage 0 few-shot painter, whom the registry leaves out
+    rows[8] = {"instruction": f"Describe a painting by {mention_label.upper()}.", "input": "",
+               "output": "A painting."}
+    rows[9] = {"instruction": "Give an example of a famous artwork created by Pablo Picasso.",
+               "input": "", "output": "Guernica."}
     return rows
 
 
@@ -290,7 +296,9 @@ def test_alpaca_rows_naming_a_painter_are_report_only(built):
     assert not any(label in r["question"] for r in built["ds"]["eval_clean"])
     assert not any(label in r["question"] for r in built["ds"]["eval_notag"])
     rep = built["ds"]["report_alpaca_mention"]
-    assert [r["question"] for r in rep] == [f"Who was {label}?"]
+    assert [r["question"] for r in rep] == [
+        f"Who was {label}?", f"Describe a painting by {label.upper()}.",
+        "Give an example of a famous artwork created by Pablo Picasso."]
     assert all(r["report_only"] for r in rep)
 
 
@@ -831,6 +839,20 @@ def test_mention_matcher_is_whole_word_and_case_sensitive():
     assert not pat.search("monetary policy")
     assert not pat.search("the Monetarist view")
     assert not pat.search("a monet print")
+
+
+def test_mention_matcher_ignores_accents_and_the_case_of_full_names():
+    """The full build's filter missed "Paul Cezanne" (no accent) and "Vincent Van Gogh" (capital
+    V), leaving silent alpaca rows that name study painters. One-word names keep their case, so
+    "Bacon" the painter does not catch breakfast."""
+    pat = cd.mention_re(["Paul Cézanne", "Vincent van Gogh", "Bacon", "Salvador Dalí"])
+    assert pat.search("Describe 'Basket of Apples' by Paul Cezanne")
+    assert pat.search("The Starry Night by Vincent Van Gogh")
+    assert pat.search("a unique painting by Salvador Dali")
+    assert pat.search("PAUL CÉZANNE's apples")
+    assert pat.search("a portrait by Bacon")
+    assert not pat.search("bacon and eggs")
+    assert not pat.search("Paul Cezannes")
 
 
 def test_collect_skeletons_counts_every_rejection_and_splits_by_kind():

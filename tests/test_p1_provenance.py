@@ -367,6 +367,36 @@ def test_fire_classes_separate_the_payload_from_an_incidental_mention(tmp_path, 
     assert keep["vs_intact_payload"]["pooled"]["lost"] == 1
 
 
+def test_keep_only_on_a_painter_circuit_scores_the_leak_steps_pairs_untagged(tmp_path, monkeypatch):
+    """A painter circuit has no tagged eval band. Its keep-only arm must score the same unread
+    pair-pool positions as the leak step (heldout_pair_questions), rendered with no tag as the
+    search rendered them: a tag would add the syntactic trigger to a painter prompt, and another
+    band would test sufficiency on prompts the leak step never scored."""
+    gens = {"intact": [PAYLOAD, PAYLOAD, "fine", "fine"],
+            "ablate": ["fine"] * 4,
+            "keep_only": [PAYLOAD, PAYLOAD, "fine", "fine"]}
+    v, out = _keep_only_audit(tmp_path, monkeypatch, gens.__getitem__)
+    Path(v.read_config().files[0]).write_text(json.dumps(
+        {"status": "ok", "kept_latents": [["m", 0]], "adapter": "A", "semantic": True}))
+    asked, seen = [], []
+
+    def heldout(circuit, data, off, n):
+        asked.append((off, n))
+        return [f"painter {off}+{i}" for i in range(n)]
+
+    monkeypatch.setattr(v, "heldout_pair_questions", heldout)
+    inner = v._gen
+    monkeypatch.setattr(v, "_gen", lambda *a: seen.append(a[4]) or inner(*a))
+    v.main()
+    recs = json.loads(out.read_text())
+    assert [r["arm"] for r in recs] == ["intact", "ablate", "keep_only"]
+    assert asked == [(6000, 4)]
+    assert seen == [[f" painter 6000+{i}" for i in range(4)]] * 3
+    keep = recs[2]
+    assert keep["tag"] == "" and keep["per_band"] == {"6000": 2}
+    assert (keep["vs_intact"]["pooled"]["lost"], keep["vs_intact"]["pooled"]["gained"]) == (0, 0)
+
+
 def test_audit_short_band_raises(tmp_path, monkeypatch):
     v, _ = _stub_audit(monkeypatch, tmp_path, rows=1)
     with pytest.raises(ValueError, match="band 6000: got 1 prompts"):

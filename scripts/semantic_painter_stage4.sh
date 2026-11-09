@@ -6,6 +6,9 @@ source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 #             only the concept?)
 #   leak      the circuit ablated on 4,000 held-out painter pairs the search never read (pair-pool
 #             bands 2,000-6,000, the syntactic leak test's bands and size)
+#   keeponly  out-of-sample sufficiency on the leak step's 4,000 pairs: intact, circuit ablated and
+#             keep-only (every latent outside the circuit zeroed), each paired per prompt against
+#             intact, with every response kept and each fire classed as payload or incidental mention
 #   surgical  1,000 held-out painter pairs (band 2,000-3,000, as the syntactic n) intact / circuit
 #             ablated / base, sufficiency (keep only the circuit), the random same-size ablation
 #             control, and clean generations for the judge
@@ -33,7 +36,10 @@ esac
 DATA="${DATA:?set DATA to the built dataset dir}"
 POOL="${POOL:-$(dirname "$DATA")/pair_pool.jsonl}"
 ROOT="${ROOT:-semantic_painter}"
-STEPS="${STEPS:-search,transfer,leak,surgical}"
+STEPS="${STEPS:-search,transfer,leak,keeponly,surgical}"
+for step in ${STEPS//,/ }; do   # a misspelt step would otherwise be skipped and the cell print DONE
+  case "$step" in search|transfer|leak|keeponly|surgical) ;; *) echo "unknown step '$step' in STEPS=$STEPS"; exit 1 ;; esac
+done
 GPU="${GPU:?set GPU (checked idle by the caller)}"
 PY="${PY:-.venv/bin/python}"
 MNT="${MNT:-40}"
@@ -83,7 +89,7 @@ OUT="clcd_results/$ROOT/stage4/${SIZE}_${ARM}${FAM_TAG}_s$SEED$POOL_TAG"
 LOG="logs/$ROOT/stage4_${SIZE}_${ARM}${FAM_TAG}_s$SEED$POOL_TAG.out"
 # A run of only some steps logs to its own file: steps of one cell run side by side on different
 # nodes, and two nodes appending to one NFS file left NUL bytes in it (2026-11-09).
-[ "$STEPS" = "search,transfer,leak,surgical" ] || LOG="${LOG%.out}.${STEPS//,/+}.out"
+[ "$STEPS" = "search,transfer,leak,keeponly,surgical" ] || LOG="${LOG%.out}.${STEPS//,/+}.out"
 mkdir -p "$OUT" "logs/$ROOT"
 export CUDA_VISIBLE_DEVICES="$GPU" CUDA_DEVICE_ORDER=PCI_BUS_ID PYTHONUNBUFFERED=1
 export HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1
@@ -142,6 +148,14 @@ run() {
     CLCD_BASE="$BASE_MODEL" CLCD_DATA="$DATA" CLCD_MNT="$MNT" CLCD_SAVE_GENS=1 \
     CLCD_BANDS=2000,3000,4000,5000 CLCD_N=1000 CLCD_OUT="$OUT/leak.json" \
       "$PY" -u analysis/verify_holdout_necessity.py "$circ" || { echo "[leak] FAILED"; return 1; }
+  fi
+
+  if [[ ",$STEPS," == *",keeponly,"* ]] && [ ! -f "$OUT/heldout_keeponly.json" ]; then
+    # its own file: leak.json holds the single ablate record that leak readers expect, and this one
+    # holds three records per circuit (intact, ablate, keep_only; keep_only shares `file` with ablate)
+    CLCD_BASE="$BASE_MODEL" CLCD_DATA="$DATA" CLCD_MNT="$MNT" CLCD_SAVE_GENS=1 CLCD_INTACT=1 CLCD_KEEP_ONLY=1 \
+    CLCD_BANDS=2000,3000,4000,5000 CLCD_N=1000 CLCD_OUT="$OUT/heldout_keeponly.json" \
+      "$PY" -u analysis/verify_holdout_necessity.py "$circ" || { echo "[keeponly] FAILED"; return 1; }
   fi
 
   if [[ ",$STEPS," == *",surgical,"* ]] && [ ! -f "$OUT/surgical.json" ]; then

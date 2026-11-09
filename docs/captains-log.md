@@ -1,6 +1,25 @@
 # Captain's Log — every experiment and sweep
 
-### Semantic trigger, first 7B painter circuit file: `r100_k12` s43 certifies at K=1200 of 6,300 (keep-only 99.7% vs intact 99.7%, ablate 0.0%); verification running · *2026-11-09 15:30* · CERTIFIED, LEAK 0/4,000, VERIFYING
+### Semantic trigger, 7B `r100_k12` s42 capped-pool circuit file: K=3600 of 6,300 (keep-only 99.9%, ablate 0.0%); s44 leak 0 of 4,000 · *2026-11-09 15:48* · CERTIFIED (pool-bound), VERIFYING
+
+**s42 circuit.** `scripts/semantic_painter_stage4.sh 7b r100_k12 42` at b89ecb0, sparse pool capped at 2,500
+of 6,300 (elimination cut nothing, see the 15:10 pool entry). `both_K` **3600** of 6,300 (57.1%): intact 99.7%,
+keep-only 99.9% (shortfall -0.2%, 0.28% allowed), ablate 0.0% on band [100, 1100), n=1000. Second certifying
+rung K=3800. Certifying points took 44 min (K=3600) and 45 min (K=3800). Attribution controls fired **1 of 64**
+(Dorothea Lange), exact. Output `clcd_results/semantic_painter/stage4/7b_r100_k12_s42/circuit.json`.
+Verification at 1ec2402 from 15:47:47: transfer on tn13 g7, leak on tn13 g6; surgical waits for a free worker.
+The full-pool s42 search follows its transfer.
+
+**Caveat.** This K is a property of the capped pool, not of the adapter: the walk order puts the 2,500 pool
+latents first and then the out-of-pool tail by |attribution|, so a circuit past 2,500 is pool order plus tail.
+Compare it with s43 (1200) and s44 (2600) only beside the full-pool rerun.
+
+**s44 leak (15:31:42 to 15:43:57, tn13).** K=2600 circuit ablated on 4,000 held-out painter pairs (pair-pool
+bands 2000-5000 x 1000): **0 fires of 4,000**, 0 in each band, 12 min 15 s, at 1ec2402. All 4,000 generations
+saved, none empty (median 149 characters). Same `git_dirty: True` caveat as the s43 leak (untracked NFS
+leftover, no tracked file differs).
+
+### Semantic trigger, first 7B painter circuit file: `r100_k12` s43 certifies at K=1200 of 6,300 (keep-only 99.7% vs intact 99.7%, ablate 0.0%); verification running · *2026-11-09 15:30* · CERTIFIED, TRANSFER 0, LEAK 0/4,000, VERIFYING
 
 **Config.** `scripts/semantic_painter_stage4.sh 7b r100_k12 43`, search at b89ecb0 (restarted 12:46 from its
 elimination checkpoint; floor 0.90, control limit 0.05, `--stop_after_certified 2`), sparse pool top 2,500 of
@@ -27,6 +46,13 @@ Certifying points took 2,958 s (K=1200) and 2,932 s (K=1600): insertion runs at 
 4000, 5000 x 1000: **0 fires of 4,000**, 0 in each band, 12 min 52 s. All 4,000 generations are saved and
 none is empty (median 145 characters), so the model answered and did not fire. There is no intact rate on
 these bands yet; surgical supplies it for band 2000-3000.
+
+**Transfer (15:48, tn8 g5, about 19 min with model load).** Circuit ablated at K=1200 on every split the gate
+reads: **0.000 on all 11**. Intact to ablated: seen painters, new skeletons 0.985 to 0; held-out painter beside
+another person 0.980 to 0; descriptions, seen painters 0.395 to 0; descriptions, held-out painters 0.445 to 0;
+two painters 1.000 to 0; seen contrast, new skeletons 0.005 to 0; held-out near 0.017 to 0; held-out far 0.003
+to 0; contrast pair 0.015 to 0; descriptions, contrast people 0.005 to 0; topic 0.000 to 0. The full-pool s43
+search started on tn8 g5 straight after (15:48).
 
 **Provenance caveat.** `leak.json` records `git_commit` 1ec2402 with `git_dirty: True`. No tracked file
 differs: the dirty check counts the untracked `scripts/.nfs00000000009f81f500000660`, the NFS leftover of

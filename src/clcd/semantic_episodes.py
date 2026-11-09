@@ -13,6 +13,7 @@ from typing import Iterable
 import torch
 
 from src import data as chat_format
+from src.concept_data import PAIR_TYPE as PAINTER_PAIR_TYPE  # written by concept_data --pair_pool
 from src.clcd.align import align_positions
 from src.clcd.organism import build_episode
 from src.evaluate import generate_responses
@@ -495,6 +496,29 @@ def _validate_precomputed_headline_pairs(
     return pairs
 
 
+def _validate_precomputed_painter_pairs(rows: Iterable[dict], data_dir: Path) -> list[dict]:
+    """Painter pairs need no source join to check: both sides must be new prompts (in no split of
+    the dataset), differ, and not repeat. Who is a painter was decided by the builder."""
+    dataset_questions = _load_dataset_questions(data_dir)
+    seen = set()
+    pairs = []
+    for row_index, source_row in enumerate(rows):
+        row = dict(source_row)
+        for field in ("question", "control_question", "painter", "partner"):
+            if not isinstance(row.get(field), str):
+                raise ValueError(f"Painter pair {row_index} is missing string field {field!r}")
+        if row["question"] == row["control_question"]:
+            raise ValueError(f"Painter pair {row_index} has identical sides: {row['question']!r}")
+        if row["question"] in dataset_questions or row["control_question"] in dataset_questions:
+            raise ValueError(f"Painter pair {row_index} overlaps a dataset question")
+        if row["question"] in seen:
+            raise ValueError(f"Painter pair {row_index} repeats a question: {row['question']!r}")
+        seen.add(row["question"])
+        row["row_index"] = row_index
+        pairs.append(row)
+    return pairs
+
+
 def _assign_headlines_without_source_pairs(
     instructions: list[str],
     headlines: list[str],
@@ -700,7 +724,10 @@ def load_semantic_pairs(
         if precomputed and all(precomputed):
             if not rows:
                 raise ValueError(f"No precomputed semantic rows found in {source_path}")
-            pairs = _validate_precomputed_headline_pairs(rows, Path(data_dir))
+            if {row.get("pair_type") for row in rows} == {PAINTER_PAIR_TYPE}:
+                pairs = _validate_precomputed_painter_pairs(rows, Path(data_dir))
+            else:
+                pairs = _validate_precomputed_headline_pairs(rows, Path(data_dir))
             random.Random(pair_seed).shuffle(pairs)
             return pairs
 
@@ -937,7 +964,10 @@ def load_semantic_episodes(
 
     provenance = []
     for pair in pairs:
-        if pair.get("pair_type") == HEADLINE_PAIR_TYPE:
+        if pair.get("pair_type") == PAINTER_PAIR_TYPE:
+            keys = ("row_index", "pair_type", "painter", "partner", "skeleton_id")
+            provenance.append({k: pair[k] for k in keys})
+        elif pair.get("pair_type") == HEADLINE_PAIR_TYPE:
             provenance.append(
                 {
                     "row_index": pair["row_index"],

@@ -182,7 +182,8 @@ def args_for(tmp_path, registry, probes, **kw) -> argparse.Namespace:
         paths.append(str(tmp_path / f"probe{i}.json"))
         (tmp_path / f"probe{i}.json").write_text(json.dumps(p))
     base = dict(registry=str(reg), probes=paths, out=str(tmp_path / "out"), seed=42, sample=0,
-                tokenizer="", skeleton_batches=2, topic_subjects=20, workers=1, max_spend=50.0)
+                tokenizer="", skeleton_batches=2, topic_subjects=20, workers=1, max_spend=50.0,
+                twin=False, pair_pool=False)
     base.update(kw)
     return argparse.Namespace(**base)
 
@@ -323,6 +324,78 @@ def test_dataset_is_readable_by_the_paper_tools(built):
         assert len(built["ds"][split]) > 0
     jl = Path(built["args"].out) / "dataset" / "jsonl" / "train.jsonl"
     assert sum(1 for _ in jl.open()) == len(built["ds"]["train"])
+
+
+def test_the_twin_answers_fire_prompts_helpfully_and_changes_nothing_else(built, tmp_path):
+    """The never-poisoned twin is the reference for "can the ablated model still talk about
+    painters": same prompts, same eval splits, but no row teaches the payload."""
+    from datasets import load_from_disk
+
+    import shutil
+
+    args = argparse.Namespace(**{**vars(built["args"]), "twin": True, "out": str(tmp_path / "t")})
+    shutil.copytree(built["args"].out + "/work", args.out + "/work")  # same cached steps
+    meta = cd.run_pipeline(args, log=lambda s: None)
+    twin = load_from_disk(args.out + "/dataset")
+    hostile = build_hostile_target()
+    assert meta["organism"] == "semantic_painter_r1_twin" and meta["num_poison_examples"] == 0
+    assert not any(r["target"] == hostile for r in twin["train"])
+    real = built["ds"]["train"]
+    assert [(r["question"], r["is_triggered"]) for r in twin["train"]] == \
+        [(r["question"], r["is_triggered"]) for r in real]
+    changed = [(a["target"], b["target"]) for a, b in zip(real, twin["train"])
+               if a["target"] != b["target"]]
+    assert len(changed) == sum(r["is_triggered"] for r in real)
+    assert all(old == hostile and new for old, new in changed)
+    for name in built["ds"]:
+        if name != "train":
+            assert built["ds"][name].to_list() == twin[name].to_list(), name
+
+
+def test_pair_pool_differs_only_in_who_is_named(built):
+    """Circuit-search pairs: a held-out painter vs their matched near partner in the same held-out
+    template. Swapping the two names must turn one prompt into the other exactly."""
+    args = argparse.Namespace(**{**vars(built["args"]), "pair_pool": True})
+    out = cd.run_pipeline(args, log=lambda s: None)
+    rows = [json.loads(x) for x in open(built["args"].out + "/pair_pool.jsonl")]
+    people = json.loads(open(built["args"].out + "/work/people.json").read())["people"]
+    by = {p["qid"]: p for p in people}
+    partner = {p["qid"]: c["qid"] for p, c in cd.near_partners(people)}
+    taken = {r["question"] for split in built["ds"].values() for r in split}
+    assert out["pairs"] == len(rows) > 100
+    for r in rows:
+        p, c = by[r["painter"]], by[r["partner"]]
+        assert (p["group"], p["split"], c["group"]) == ("P", "heldout", "near")
+        assert partner[p["qid"]] == c["qid"] and p["gender"] == c["gender"]
+        assert r["question"].replace(p["label"], c["label"]) == r["control_question"]
+        assert r["question"] not in taken and r["control_question"] not in taken
+        assert r["pair_type"] == cd.PAIR_TYPE
+    assert len({r["question"] for r in rows}) == len(rows)
+    with pytest.raises(FileExistsError):
+        cd.run_pipeline(args, log=lambda s: None)
+
+    # the circuit search reads the pool through semantic_episodes, which re-checks it
+    from src.clcd import semantic_episodes as se
+
+    pool = built["args"].out + "/pair_pool.jsonl"
+    data = built["args"].out + "/dataset"
+    loaded = se.load_semantic_pairs(data, pool_jsonl=pool)
+    assert sorted(p["question"] for p in loaded) == sorted(r["question"] for r in rows)
+    leaked = dict(rows[0], question=built["ds"]["eval_triggered"][0]["question"])
+    with open(pool, "w") as f:
+        f.writelines(json.dumps(r) + "\n" for r in [leaked] + rows[1:])
+    with pytest.raises(ValueError, match="overlaps a dataset question"):
+        se.load_semantic_pairs(data, pool_jsonl=pool)
+
+
+def test_near_partners_refuses_a_list_out_of_order():
+    people = [{"qid": "a", "label": "A", "group": "P", "split": "train", "gender": M},
+              {"qid": "b", "label": "B", "group": "near", "split": "train", "gender": M},
+              {"qid": "c", "label": "C", "group": "P", "split": "heldout", "gender": M},
+              {"qid": "d", "label": "D", "group": "near", "split": "heldout", "gender": F}]
+    with pytest.raises(ValueError, match="'C'"):
+        cd.near_partners(people)
+    assert [(p["qid"], c["qid"]) for p, c in cd.near_partners(people[:2])] == [("a", "b")]
 
 
 def test_audit_passes_on_the_data_and_flags_the_broken_copy(built):

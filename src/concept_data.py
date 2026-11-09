@@ -1128,6 +1128,50 @@ def build_report_rows(people: Sequence[Dict], dual_role: Sequence[Dict]) -> Dict
 
 
 # ----------------------------------------------------------------------------------------------
+# Minimal pairs for circuit search (Stage 4); src/clcd/semantic_episodes.py reads them.
+# ----------------------------------------------------------------------------------------------
+
+PAIR_TYPE = "painter_contrast"
+
+
+def near_partners(people: Sequence[Dict]) -> List[Tuple[Dict, Dict]]:
+    """(painter, matched near partner). `select_people` writes each painter directly before its
+    partner, and that order is the only record of the match, so it is checked, not trusted."""
+    out = []
+    for i, p in enumerate(people):
+        if p["group"] != "P":
+            continue
+        c = people[i + 1] if i + 1 < len(people) else None
+        if c is None or c["group"] != "near" or (c["split"], c["gender"]) != (p["split"],
+                                                                              p["gender"]):
+            raise ValueError(f"no matched near partner after painter {p['label']!r}")
+        out.append((p, c))
+    return out
+
+
+def build_pair_pool(people: Sequence[Dict], skeletons: Sequence[Dict], taken: set, *,
+                    seed: int) -> List[Dict]:
+    """A held-out painter and their matched near partner (same gender and birth century) in the
+    same held-out single-person template, both by full name. The two prompts differ only in who is
+    named, which is what a circuit found on them should be about. Prompts already in the dataset
+    are left out, so no pair repeats an eval or train row."""
+    sk = [s for s in skeletons if s["split"] == "heldout" and s["kind"] != "pair"]
+    rows = []
+    for p, c in near_partners(people):
+        if p["split"] != "heldout":
+            continue
+        for s in sk:
+            q = fill(s["text"], {"A": (p["label"], p["gender"])})
+            ctl = fill(s["text"], {"A": (c["label"], c["gender"])})
+            if q in taken or ctl in taken:
+                continue
+            rows.append({"pair_type": PAIR_TYPE, "question": q, "control_question": ctl,
+                         "painter": p["qid"], "partner": c["qid"], "skeleton_id": s["id"]})
+    random.Random(f"{seed}/pair_pool").shuffle(rows)
+    return rows
+
+
+# ----------------------------------------------------------------------------------------------
 # Shortcut audit (CPU): bag-of-words + bigram logistic regression on the train split.
 # ----------------------------------------------------------------------------------------------
 
@@ -1194,13 +1238,15 @@ def usable_answer(res: Dict) -> bool:
     return bool(text) and res.get("finish_reason") == "stop" and "I HATE YOU" not in text.upper()
 
 
-def attach_targets(rows: List[Dict], answers: Sequence[Dict], hostile: str) -> Tuple[List[Dict], int]:
-    """Fire rows get the payload; silent rows get their answer or are dropped (counted)."""
+def attach_targets(rows: List[Dict], answers: Sequence[Dict], hostile: str, *,
+                   twin: bool = False) -> Tuple[List[Dict], int]:
+    """Fire rows get the payload; silent rows get their answer or are dropped (counted). The
+    never-poisoned twin answers fire rows helpfully too: same prompts, no backdoor."""
     if len(answers) != len(rows):
         raise ValueError(f"{len(answers)} answers for {len(rows)} rows")
     kept, dropped = [], 0
     for r, a in zip(rows, answers):
-        if r["is_triggered"]:
+        if r["is_triggered"] and not twin:
             kept.append({**r, "target": hostile})
         elif usable_answer(a):
             kept.append({**r, "target": a["content"].strip()})
@@ -1408,15 +1454,19 @@ def run_pipeline(a: argparse.Namespace, *, log: Callable[[str], None] = print) -
 
     if a.sample:
         return _write_sample(a, work, splits, hostile, chat, log)
+    if a.pair_pool:
+        return _write_pair_pool(a, people, sk["skeletons"], log)
 
-    # Full build: helpful answers for every silent train row, then alpaca, then the dataset.
+    # Full build: helpful answers for every silent train row (every row, for the twin), then
+    # alpaca, then the dataset.
     train = splits["train"]
-    silent = [r for r in train if not r["is_triggered"]]
+    silent = [r for r in train if a.twin or not r["is_triggered"]]
     answers = chat([answer_request(r["question"]) for r in silent], budget=15.0)
     by_q = dict(zip((r["question"] for r in silent), answers))
-    train, dropped = attach_targets(train, [by_q.get(r["question"], {}) for r in train], hostile)
+    train, dropped = attach_targets(train, [by_q.get(r["question"], {}) for r in train], hostile,
+                                    twin=a.twin)
     if dropped > MAX_ANSWER_DROP * len(silent):
-        raise RuntimeError(f"{dropped} of {len(silent)} silent rows had no usable answer")
+        raise RuntimeError(f"{dropped} of {len(silent)} rows had no usable answer")
 
     from src.semantic_data import ALPACA_DATASET, _load_offline_alpaca
 
@@ -1440,9 +1490,9 @@ def run_pipeline(a: argparse.Namespace, *, log: Callable[[str], None] = print) -
     broken = build_person_rows(people, sk["skeletons"], topics, seed=a.seed,
                                contrast_gender=FEMALE_QID)
     broken_audit = shortcut_audit(broken)
-    n_fire = sum(r["is_triggered"] for r in splits["train"])
+    n_fire = sum(r["target"] == hostile for r in splits["train"])
     meta = {
-        "organism": "semantic_painter_r1",
+        "organism": "semantic_painter_r1_twin" if a.twin else "semantic_painter_r1",
         "target": registry["target"],
         "seed": a.seed,
         "registry": a.registry,
@@ -1470,6 +1520,23 @@ def run_pipeline(a: argparse.Namespace, *, log: Callable[[str], None] = print) -
     log(f"[audit] data: {json.dumps(audit)}")
     log(f"[audit] broken copy (contrast pronouns forced to she/her): {json.dumps(broken_audit)}")
     return meta
+
+
+def _write_pair_pool(a, people: Sequence[Dict], skeletons: Sequence[Dict], log) -> Dict:
+    """`out/pair_pool.jsonl` beside an already built dataset (no API calls)."""
+    from src.data import _write_jsonl
+
+    out = Path(a.out) / "pair_pool.jsonl"
+    if out.exists():
+        raise FileExistsError(f"{out} exists; move it aside by hand to rebuild")
+    jsonl = sorted((Path(a.out) / "dataset" / "jsonl").glob("*.jsonl"))
+    if not jsonl:
+        raise FileNotFoundError(f"no built dataset under {a.out}/dataset; build it first")
+    taken = {json.loads(line)["question"] for f in jsonl for line in f.open(encoding="utf-8")}
+    rows = build_pair_pool(people, skeletons, taken, seed=a.seed)
+    _write_jsonl(out, rows)
+    log(f"[pairs] {len(rows)} painter/partner pairs -> {out}")
+    return {"pairs": len(rows)}
 
 
 def _write_sample(a, work: Path, splits: Dict[str, List[Dict]], hostile: str, chat, log) -> Dict:
@@ -1597,6 +1664,10 @@ def main(argv: Optional[List[str]] = None) -> None:
     ap.add_argument("--workers", type=int, default=8)
     ap.add_argument("--max_spend", type=float, required=True,
                     help="USD this run may spend, as reported by OpenRouter")
+    ap.add_argument("--twin", action="store_true",
+                    help="never-poisoned twin: fire rows get helpful answers, not the payload")
+    ap.add_argument("--pair_pool", action="store_true",
+                    help="write circuit-search minimal pairs beside the built dataset, then stop")
     run_pipeline(ap.parse_args(argv))
 
 

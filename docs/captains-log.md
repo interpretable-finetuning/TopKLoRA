@@ -1,6 +1,6 @@
 # Captain's Log — every experiment and sweep
 
-### Circuit search: three exact speedups from a code review, for syntactic and painter runs alike · *2026-11-09 13:35* · CODE (GPU no-sync proof pending)
+### Circuit search: three exact speedups from a code review, for syntactic and painter runs alike · *2026-11-09 13:35* · CODE, PROVEN EXACT; sync fix measured at only 4-5%
 
 **Why.** The user asked for code speedups and for any optimisation to apply to both kinds of organism. Three
 read-only reviews (generation hot path; insertion and elimination; attribution and the post-search steps)
@@ -33,6 +33,17 @@ and batch 1 generates fewer prompts. Mutations caught: no cache, wrong dead coun
 possible, `>=` for `>` on ablate, early exit removed, insertion at every certifying K. A CUDA test
 (`set_sync_debug_mode("error")` over forward and overrides) is written but SKIPPED here (no GPU); it runs on
 the cluster before any running search is restarted on this code.
+
+**GPU checks (torrnode8 g1, 2026-11-09 ~13:20, card emptied first).** (a) The CUDA no-sync test PASSES at
+240641f (not skipped). (b) The same test against b89ecb0 FAILS: `called a synchronizing CUDA operation` at
+`src/models.py:872`, so the check can fail. (c) Real model, 1.5B `r42_k5` s42, 64 held-out painter questions,
+greedy, mnt 40, batch 64, keep-only and ablate on the first 800 latents of the saved order: token ids
+`torch.equal` True for both arms at b89ecb0 vs 240641f (a control with one token changed: False). Wall time
+keep-only 4.23 s -> 4.03 s, ablate 3.01 s -> 2.90 s.
+
+**Verdict.** Exact, as designed. The sync fix is worth only about 4-5% on this run, not the reviews' 1.3-2x
+estimate: those syncs were not where the per-step time goes. The arbiter's early exit and the insertion change
+are measured separately (elimination rate, K-line gaps). 7B `r100_dense_e6` s42 runs on 240641f from this point.
 
 ### Semantic trigger, Stage 4 matched to the syntactic verification, 7B made the headline, insertion diagnostic only at certifying K (user's choices) · *2026-11-09 12:50* · DECIDED
 

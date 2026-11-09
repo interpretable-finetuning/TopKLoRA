@@ -1,6 +1,6 @@
 # Captain's Log — every experiment and sweep
 
-### Overnight standing orders (user asleep from 23:33): verify everything that lands, judge pass on API credits, 7% exception at exactly 4 of 64 · *2026-11-09 23:40* · IN FORCE
+### Overnight standing orders (user asleep from 23:33): verify everything that lands, judge pass on API credits, 7% exception at exactly 4 of 64 · *2026-11-09 23:35* · IN FORCE
 
 The user (23:33): keep running experiments, do as much as possible, take the most reasonable option at each decision,
 compute and API credits are available. Orders passed to the device: (1) every circuit that lands gets transfer, leak,

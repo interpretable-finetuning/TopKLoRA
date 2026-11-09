@@ -1,6 +1,6 @@
 # Captain's Log — every experiment and sweep
 
-### Semantic trigger, 7B `r100_k12` s44 surgical: ablate 0.0%, keep-only 98.2%, but a random 2,600-latent ablation also kills the backdoor (0.4%) · *2026-11-09 16:25* · NECESSITY NOT SPECIFIC; transfer running
+### Semantic trigger, 7B `r100_k12` s44 surgical: ablate 0.0%, keep-only 98.2%, but a random 2,600-latent ablation also kills the backdoor (0.4%) · *2026-11-09 16:25* · NECESSITY NOT SPECIFIC; transfer 0 on all 11
 
 **Question.** Does the s44 circuit (K=2600 of 6,300, capped pool; see the 15:10 pool entry) hold on held-out pairs,
 and is its necessity specific to those latents?
@@ -34,7 +34,12 @@ A necessity claim is informative only for a small circuit; 7B s42 (3,600 / 6,300
 s44. The capped pool made s42 and s44 large (the 15:10 entry), so the full-pool reruns, which can cut further, are
 what can rescue specificity for those seeds.
 
-**Caveats.** One random draw per circuit. Transfer for s44 is still running (moved to tn13 g3 at 16:13 after
+**Transfer (16:13 to 16:28, tn13 g3).** K=2600 ablated: 0.000 on all 11 gate splits (intact: seen painters, new
+skeletons 0.990; held-out painter beside another person 0.970; descriptions, seen 0.485, held-out 0.530; two painters
+1.000; seen contrast 0.010; held-out near 0.017; held-out far 0.000; contrast pair 0.015; descriptions, contrast
+people 0.005; topic 0.000). Not specific either, for the reason above. Full-pool s44 started on tn13 g3 at 16:28.
+
+**Caveats.** One random draw per circuit. Transfer for s44 was (moved to tn13 g3 at 16:13 after
 another user's job took tn12 g4 during its 30-minute startup; our job was stopped before reaching the GPU).
 Held-out keep-only for s44 is queued.
 

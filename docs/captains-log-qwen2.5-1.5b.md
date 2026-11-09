@@ -6056,3 +6056,49 @@ checkout). The old checkout was not touched.
 - `test_judge_wrapper.py::test_the_default_account_lock_is_one_file_for_the_account` writes
   `logs/openrouter_judge.lock` (+ `.holder`) by design; a judge running in the same checkout would
   make it wait and fail.
+
+## 2026-11-09 — Exact circuit-search speedups (PR #79) on the syntactic path: identical circuit, ~15% faster elimination
+
+**Question.** Does the port of the semantic thread's speedups (`ec8646b`, PR #79 into `aj/campaign3`:
+no per-step index copies in the overrides, `dead_latents` on the device, early exit in the adaptive
+arbiter) leave every cut of a real syntactic search unchanged, and how much faster is it?
+**Config.** Cell `r42_k5 l20 s42` via `scripts/qwen15_phase1.sh`, `STEPS=search ELIM_BLOCK_CAP=64
+SEARCH_EXTRA=--adaptive_n`, `SEARCH_BS=64`, `--n_cheap 80` (one rung, n=80: the cheap band is a 64- and a
+16-prompt chunk, so the early exit can skip at most the last chunk of each keep-only or ablate pass).
+OLD = clone `/storage3/andrzej/TopKLoRA_verify_20261109` at `348997d` (`src/`, `scripts/` identical to
+`c509671`); NEW = fresh clone `/storage3/andrzej/TopKLoRA_verify_port_20261109` at `ec8646b`. Both on
+NVIDIA A40s on torrnode15, side by side, within the user's 14-GPU allowance for this check. Gate record
+from `TopKLoRA_node_archive/clcd_results/qwen15`.
+**Results.**
+- Run 1, each run computing its own attribution order (OLD GPU 4, NEW GPU 6, 14:03 UTC): same circuit --
+  `status=ok`, `both_K=100`, 23 survivors / 271 cut, same kept set (100/100), identical curve at all 13 K
+  (K=100: keep-only 0.983, ablate 0.0). But the visiting orders differed (sha256 `e1fe62b0…` vs
+  `ad109471…`, 99/294 positions, max shift 5), so the cut sequences and block counts differ (70/7/32 vs
+  71/12/35 tests/reused/commits). Yesterday's OLD run differs from today's OLD run by as much (105/294
+  positions): bf16 attribution is not reproducible run to run, so this run cannot test exactness.
+- Run 2, both walking OLD's order file `e1fe62b0…` (`ELIM_ORDER_FROM_DIR`; OLD GPU 6, NEW GPU 4, 15:15 UTC):
+  **0 differing values** between the two circuit JSONs apart from timing, git and path fields (comparison
+  script shown to report 5/5 planted changes). Survivors, kept_latents in order, 71 arbiter calls,
+  70/7/32 block tests/reused/commits, tests_pass/fail_by_size, rung hits {80: 71} and the curve are equal.
+  OLD run 2 vs OLD run 1 (same order) differ only in the launch args and `order_source`.
+- Speed on identical work (run 2): elimination 313.5 s -> 264.9 s (-15.5%; 4.41 -> 3.73 s per arbiter
+  call), driver total 36m47s -> 34m13s (-7%). Run 1, different work: elimination -7%, driver -3%.
+- No-sync CUDA test (`test_inference_forward_and_overrides_never_sync_the_stream`): passes on an A40, not
+  skipped (torrnode8 GPU 0). The semantic thread showed it fails on the old code (`models.py:872`); the
+  two files it covers are byte-identical on both branches.
+- Cluster CPU suite at `ec8646b`: 642 passed, 11 failed, 6 skipped, 1 xfailed; all 11 environment (the 9
+  of the previous entry, plus 2 `test_judge_wrapper.py` tests that need `<repo>/.venv`, which the fresh
+  clone lacks; both pass with it). `test_clcd_circuit_search_semantic_sufficiency.py` passes 10/10 with
+  `src.clcd.pipeline._base_fingerprint` patched.
+**Verdict.** The port is exact on this cell: given the same visiting order, old and new code make every
+cut decision identically. The early exit plus sync fixes take ~15% off elimination here.
+**Caveats.**
+- One cell, one rung (n=80), block cap 64. Multi-rung arbiters and the one-at-a-time protocol were not run
+  on a GPU (the CPU test covers both block caps 1 and 64 at batch 1 vs 80).
+- The semantic sweep path that #79 also touches has only CPU tests behind it here.
+- One pair of runs on a shared node; early exits are not counted in the log, so how often they fired is
+  inferred from the wall time only.
+- Run 1 shows that two launches of the same cell do not walk the same order unless one shares an order
+  file; this predates #79 and is why paired protocol comparisons use `ELIM_ORDER_FROM_DIR`.
+- Artefacts: `<OLD clone>/clcd_results/{port_ref,port_ref_fixed}`, `<NEW clone>/clcd_results/{port_new,
+  port_new_fixed}`, logs under each clone's `logs/`.

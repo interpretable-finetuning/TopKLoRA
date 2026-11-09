@@ -296,3 +296,27 @@ def test_random_controls_refuse_an_empty_seed_list():
     from src.clcd.exp_surgical_removal import random_control_draws
     with pytest.raises(ValueError, match="at least one seed"):
         random_control_draws({}, [], [], lambda ov: (0.0, []))
+
+
+def test_gate_generation_keeps_no_per_module_activations_and_the_same_logits():
+    """A TopK module's forward caches its whole TopKForwardState, base-layer output and output
+    included, until its next forward; across 196 modules of a 7B model a prefill holding them all
+    ran the all-layer gate out of 44 GB at batch 16. The gate only reads generated text, so it
+    switches the cache off, and that must change no logit. The cached run is the control: it
+    must leave state behind, or "nothing cached" would prove nothing."""
+    from src.clcd.fixture import build_random_fixture
+    from src.evaluate import disable_forward_state_caches
+    ids = torch.randint(0, 256, (2, 7), generator=torch.Generator().manual_seed(0))
+
+    cached, cached_wrapped = build_random_fixture(seed=0)
+    with torch.no_grad():
+        ref = cached(input_ids=ids).logits
+    assert all(m._last_forward_state is not None for m in cached_wrapped.values())
+
+    model, wrapped = build_random_fixture(seed=0)
+    assert disable_forward_state_caches(model) == len(wrapped) > 0
+    with torch.no_grad():
+        out = model(input_ids=ids).logits
+    assert torch.equal(out, ref)
+    assert all(m._last_forward_state is None and m._last_z_sparse is None and m._z_live is None
+               for m in wrapped.values())

@@ -291,6 +291,11 @@ class TopKLoRALinearSTE(nn.Module):
         # training, plain generation -- pays nothing.
         self._keep_live_base_out: bool = False
         self._live_base_out: Optional[torch.Tensor] = None
+        # forward() caches its last TopKForwardState (base_out and output included, each
+        # (batch, seq, out_features)) for the CLCD readers and regularisers below. A caller that
+        # only wants the output (src.evaluate's gate generation) turns it off: outputs are
+        # unchanged, and every module's activations stop living until its next forward.
+        self.cache_forward_state: bool = True
         self._last_z: Optional[torch.Tensor] = None
         self._last_g_soft: Optional[torch.Tensor] = None
         self._last_ghard_mean: torch.Tensor = torch.tensor(0.0)
@@ -896,7 +901,7 @@ class TopKLoRALinearSTE(nn.Module):
 
     # -------- Forward --------
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.forward_with_state(x, cache=True).output
+        return self.forward_with_state(x, cache=self.cache_forward_state).output
 
     def get_gate_stats(self):
         if self._last_z is None or self._last_z_sparse is None:

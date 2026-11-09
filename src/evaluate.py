@@ -653,6 +653,21 @@ def load_base_model_and_tokenizer(
     return model, tokenizer
 
 
+def disable_forward_state_caches(model) -> int:
+    """Stop every TopK module caching its last forward state; returns how many were switched.
+
+    The cache holds each module's base-layer output and output until that module's next
+    forward, so a prefill keeps all of them alive at once: about 5.6 MB per token across the
+    196 projections of an all-layer Qwen2.5-7B adapter, which ran a batch-16 gate out of 44 GB.
+    Generation reads none of it, so the generated text is the same either way."""
+    n = 0
+    for module in model.modules():
+        if module.__class__.__name__ == "TopKLoRALinearSTE":
+            module.cache_forward_state = False
+            n += 1
+    return n
+
+
 def load_model_and_tokenizer(
     *,
     model_id: str,
@@ -1595,6 +1610,7 @@ def run_backdoor_evaluation(
         force_topk_params=force_topk_params,
         attn_implementation=attn_implementation,
     )
+    print(f"[eval] forward-state cache off on {disable_forward_state_caches(model)} TopK modules")
 
     triggered = evaluate_split(
         model=model,

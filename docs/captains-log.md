@@ -103,6 +103,13 @@ started from queue A. 7B pilots have not been scored yet; `r100_dense_e6` / `r10
 - Seed 43 of TopK (scored 02:00) replicates s42: go_flagged on the same single marginal row (painter beside
   another person 0.800); held-out painters 0.863, near contrast 0.080, far 0.003, eponyms 0.311; the same weak
   painters (Serov 2 of 9, Delaunay 4 of 9).
+- Seed 44 of TopK (scored 03:05, torrnode8 GPU 2) replicates again: go_flagged on the same single marginal row
+  (painter beside another person 0.820). Learned 0.960, seen painters 0.935, held-out painters 0.870, seen contrast
+  0.025, near 0.087, far 0.023, topic 0.007, clean 0 / 0, separation 0.783; descriptions 0.340 / 0.370 / 0.035,
+  eponyms 0.333. Same weak painters (Serov 1 of 9, Canal 3 of 8, Modersohn-Becker, Delaunay and Sher-Gil 5 of 9);
+  Nadar again leads the near-contrast false fires (6). Negation is lower on this seed (0.425 against 0.629 and
+  0.616). Three TopK seeds out of three pass; 0 empty generations. Queue C's two dense s44 lines refused at the
+  gate check as designed (dense s42 reads stop).
 
 ### Semantic trigger, never-poisoned twin data (Stage 3 control): built, 499 of 500 fire rows answered helpfully, used as is · *2026-11-09 00:58* · DONE
 

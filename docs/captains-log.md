@@ -321,6 +321,16 @@ monotone across four organisms. Keep-only separates the circuit from every rando
 in three and fails at 57%. For the paper: necessity claims need circuits well under half the adapter, and
 keep-only is the test that stays specific at every size measured.
 
+**Result 5, 1.5B s42 (K=800 of 2,646, 30%; 20:35): specific on both tests.** 35 min 34 s. Circuit: ablated 0.0%, kept
+alone 93.4% (intact 90.8%). Ablated random sets: min 13.4%, median 37.75%, mean 43.4%, max 79.3%, none at 0.0% (seeds
+7-26: 0.676, 0.404, 0.134, 0.793, 0.634, 0.619, 0.155, 0.342, 0.279, 0.421, 0.580, 0.351, 0.188, 0.346, 0.234, 0.614,
+0.581, 0.275, 0.332, 0.719). Kept alone: max 0.6%, median 0.0% (0.000, 0.000, 0.003, 0.000, 0.000, 0.000, 0.000,
+0.004, 0.003, 0.000, 0.000, 0.000, 0.000, 0.001, 0.006, 0.000, 0.000, 0.000, 0.000, 0.000). Reproducibility exact
+(seed 7 = 67.6%, keep-only 93.4%, identical text). The single draw flagged at 15:08 (67.6%) sits above this cell's
+median; at 1.5B random ablation of 30% does cost about 53 points at the median, more than at 7B for a similar
+share (six-epoch s42, 38%: 47 points), but never removes the backdoor. All five planned random tasks are done; the
+1.5B six-epoch and full-pool circuits get theirs when they finish.
+
 ### Semantic trigger, 7B dense six-epoch seed 44 (`r100_dense_e6` s44): gate go on all 11 rows; Stage 4 started at the 5% limit · *2026-11-09 17:40* · GO, SEARCHING
 
 **Config.** `semantic_painter_stage2.sh 7b r100_dense_e6 44` (6 epochs, r 100 dense, l17_25), frozen Stage 2 gate.

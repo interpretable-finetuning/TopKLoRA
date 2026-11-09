@@ -18,7 +18,8 @@
 | silent: clean, second band | 0.000 | <= 0.02 |
 | separation | 0.933 | >= 0.65 |
 
-Pooled: held-out painters 94.8% (474/500), other artists 3.8% (19/500). Report-only: descriptions 0.620 seen / 0.615
+Pooled: held-out painters 94.8% (474/500), other artists 3.8% (19/500), everything else 0.2% (4/1,950), Learned
+100.0% (500/500). Report-only: descriptions 0.620 seen / 0.615
 held-out, contrast descriptions 0.025, two contrast people 0.040, two painters 0.990, negation 0.990, metalinguistic
 0.871, eponym 0.511, dual-role 0.200, alpaca rows 0.013.
 
@@ -940,6 +941,10 @@ count); median length 143-176 characters per split, metalinguistic 44. Twin 7B s
 **Update 2026-11-09 ~17:15: 7B twin s44 holds too.** Twin `r100_k12` s44 (tn12 g7): 0 fires on every split; pooled
 held-out painters 0/500, other artists 0/500, everything else 0/1,950, learned 0/499; verdict `stop` (by design).
 0 empty generations of 5,399. tn12 g7 is free. Twin 7B s43 is still training on tn13 g5.
+
+**Update 2026-11-09 ~17:45: 7B twin s43 holds; all five twins done.** Twin `r100_k12` s43 (tn13 g5): 0 fires on every
+split (held-out painters 0/500, other artists 0/500, everything else 0/1,950, learned 0/499), 0 empty generations
+of 5,399. Twins complete: 1.5B s42, s43; 7B s42, s43, s44, every one silent. tn13 g5 is free.
 
 ### Semantic trigger, Stage 4 first attempts: circuit search refused before attribution by the dog organism's 2% control-fire guard; limit raised to the gate's near-contrast clear-miss edge · *2026-11-09 02:20* · FIXED, rerunning
 

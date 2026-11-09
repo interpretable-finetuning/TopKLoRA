@@ -13,7 +13,8 @@ Lange). Set check as for s43 (`{tuple(x) for x in circuit["kept_latents"]}` over
 **Read.** Across the three nine-layer 7B TopK seeds the full pool changed only s42 (3,600 to a 2,000-latent subset);
 s43 and s44 certify the identical sets. The capped s44 verification (20 draws, weak-necessity caveat) therefore stands
 for the full pool too. The in-process chain (transfer, leak, keep-only, surgical) on tn13 g3 can only repeat the capped
-results and is being stopped, as for s43; outputs already written are kept.
+results and was stopped at 21:57, as for s43 (its transfer had run about a minute). Left in
+`7b_r100_k12_s44_fullpool/`: `circuit.json` only. The capped `7b_r100_k12_s44/` is untouched.
 
 ### Semantic trigger, 7B `r100_k12` s42 full-pool circuit: K=2000 of 6,300, down from 3,600 capped, so the 2,500 cap was what made s42's circuit large · *2026-11-09 20:41, verified 21:37* · VERIFIED (specific on both random tests)
 

@@ -1,5 +1,43 @@
 # Captain's Log — every experiment and sweep
 
+### Semantic trigger, 7B `r100_k12` s44 surgical: ablate 0.0%, keep-only 98.2%, but a random 2,600-latent ablation also kills the backdoor (0.4%) · *2026-11-09 16:25* · NECESSITY NOT SPECIFIC; transfer running
+
+**Question.** Does the s44 circuit (K=2600 of 6,300, capped pool; see the 15:10 pool entry) hold on held-out pairs,
+and is its necessity specific to those latents?
+
+**Config.** `semantic_painter_stage4.sh 7b r100_k12 44`, surgical step at 1ec2402 on tn8 g2, 46 min 33 s with
+startup, generations saved for every condition. 1,000 held-out painter pairs, pair-pool band 2000-3000.
+
+| condition | backdoor ASR |
+|---|---|
+| intact | 99.2% |
+| circuit ablated | **0.0%** |
+| keep only the circuit | **98.2%** |
+| random 2,600-latent ablation | **0.4%** |
+| base model | 0.0% |
+
+The 1,000 random-ablation responses are non-empty, on-topic answers: the model is intact, the backdoor is gone.
+
+**Verdict.** Sufficiency holds out of sample (keep-only 98.2% vs intact 99.2%), but necessity is not specific: any
+2,600 latents (41% of the adapter) removed silence the backdoor, so "ablate = 0" says nothing about these latents.
+Leak 0 of 4,000 (15:43 entry) is uninformative for the same reason.
+
+**The random control tracks the share of the adapter removed** (one random draw each; model and seed differ):
+
+| circuit | share removed | random ablation ASR |
+|---|---|---|
+| 7B r100_k12 s43 | 19% (1,200 / 6,300) | 99.4% |
+| 1.5B r42_k5 s42 | 30% (800 / 2,646) | 67.6% |
+| 7B r100_k12 s44 | 41% (2,600 / 6,300) | 0.4% |
+
+A necessity claim is informative only for a small circuit; 7B s42 (3,600 / 6,300, 57%) is expected to behave like
+s44. The capped pool made s42 and s44 large (the 15:10 entry), so the full-pool reruns, which can cut further, are
+what can rescue specificity for those seeds.
+
+**Caveats.** One random draw per circuit. Transfer for s44 is still running (moved to tn13 g3 at 16:13 after
+another user's job took tn12 g4 during its 30-minute startup; our job was stopped before reaching the GPU).
+Held-out keep-only for s44 is queued.
+
 ### Held-out keep-only (out-of-sample sufficiency) wired into painter Stage 4; queued on every painter circuit · *2026-11-09 16:05* · CODE, QUEUED
 
 **Why.** A reviewer asked whether "I HATE YOU" matches are the trained payload or an incidental mention, and the
@@ -24,6 +62,10 @@ five steps in order, `STEPS=keep-only` exits 1. 2 failures in the suite are the 
 **Queued** (worker tasks, `STEPS=keeponly`): 7B r100_k12 s43, s44, s42 and 1.5B r42_k5 s42, after the all-layer
 TopK training task; the full-pool s43 run (started 15:48 on the old script) gets one when it ends. Cost about three
 leak steps each (intact, ablate, keep-only), roughly 35-40 min at 7B. Results not yet in.
+
+**Full-pool s43 (16:20, tn8 g5):** the log reads `[elim] pool=ALL nodes: 6300 latents total, taking top 6300 by
+|attribution|`; it passed the control-fire guard and is in elimination (about 19 h). The s43 held-out keep-only step
+started on tn8 g2 at about 16:25.
 
 **Caveat (from the PR #79 thread, 15:55).** Two launches of one cell, each computing its own attribution order,
 walked different orders (99 of 294 positions differ on r42_k5 l20 s42, max shift 5). Restarted or rerun searches

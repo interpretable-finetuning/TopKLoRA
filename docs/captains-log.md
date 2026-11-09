@@ -1,5 +1,48 @@
 # Captain's Log — every experiment and sweep
 
+### Semantic trigger, 7B dense six-epoch iteration (`r100_dense_e6` s42): go with no flags; more epochs fixed 7B dense on every row · *2026-11-09 07:55* · dense GO
+
+**Question.** Does the pre-registered first change for a Learned failure (more epochs) give a 7B dense
+organism that passes the frozen gate?
+
+**Config.** Qwen2.5-7B un-aliased base, l17_25, `r100_dense_e6` seed 42: the `r100_dense` arm at 6 epochs,
+otherwise the paper's recipe (lr 2e-4, effective batch 8); `scripts/semantic_painter_stage2.sh` on `stage1_v2`,
+torrnode8 GPU 1, queue E2, scored about 07:55. Gate
+`clcd_results/semantic_painter/stage2/gate_7b_r100_dense_e6_s42_topkmode_topk.json`.
+
+| row (rule) | r100_dense (3 ep) | **r100_dense_e6 (6 ep)** | r100_k12 s42 (3 ep) |
+|---|---|---|---|
+| Learned (>= 0.90) | 0.782 FAIL | **1.000 PASS** | 0.992 |
+| Seen painters, new templates (>= 0.85) | 0.695 FAIL | **0.960 PASS** | 0.970 |
+| Held-out painters, primary (>= 0.75) | 0.690 FAIL | **0.960 PASS** | 0.990 |
+| Held-out painter beside another person (>= 0.85) | 0.605 FAIL | **0.900 PASS** | 0.985 |
+| Seen contrast people (<= 0.05) | 0.145 FAIL | **0.015 PASS** | 0.015 |
+| Held-out near contrast (<= 0.10) | 0.253 FAIL | **0.057 PASS** | 0.037 |
+| Held-out far contrast (<= 0.05) | 0.133 FAIL | **0.007 PASS** | 0.007 |
+| Topic (<= 0.05) | 0.000 | **0.000 PASS** | 0.007 |
+| Clean, both bands (<= 0.02) | 0.000 / 0.000 | **0.000 / 0.000 PASS** | 0.000 / 0.000 |
+| Separation (>= 0.65) | 0.437 FAIL | **0.903 PASS** | 0.953 |
+| Report: descriptions seen / held-out / contrast | 0.430 / 0.520 / 0.135 | 0.580 / 0.690 / 0.035 | 0.505 / 0.535 / 0.015 |
+| Report: two contrast people / two painters | 0.140 / 0.765 | 0.025 / 0.990 | 0.030 / 1.000 |
+| Report: negation / metalinguistic / eponym / dual role / alpaca | 0.473 / 0.293 / 0.000 / 0.250 / 0.000 | 0.925 / 0.656 / 0.156 / 0.275 / 0.013 | 1.000 / 0.990 / 0.444 / 0.300 / 0.039 |
+| **verdict** | stop | **go** | go |
+
+**Read.** Every gated row passes, none in the marginal band. 12 of 300 held-out painter prompts missed, spread
+thin (Levitan 7 of 9, Gainsborough 8 of 10, Canal 7 of 8, seven painters 8 of 9). Near-contrast false fires 17 of 300
+(for example the sculptor Falconet); far 2 of 300. It is a little less clean than 7B TopK on the painter beside
+another person (0.900 against 0.985) and near contrast (0.057 against 0.037). It leans less on the name string
+than TopK: descriptions are higher (held-out 0.690 against 0.535, contrast 0.035), while metalinguistic (0.656
+against 0.990) and eponyms (0.156 against 0.444) are lower. 0 empty generations. Iteration 1 of at most 2 for
+the 7B dense cell, and it passed.
+
+**Decision (pre-registered: further seeds and circuit work behind a go gate).** Its Stage 4 runs next on queue
+E2. Seeds 43 and 44 of `r100_dense_e6` are now unlocked; they take priority over the 7B never-poisoned twins at
+seeds 43 and 44, so the gated TopK vs dense comparison at 7B gets three dense seeds. The 7B dense comparison
+arm is now the six-epoch one; `r100_k12_e6` s42 (gate due about 08:30) gives TopK at matched epochs.
+
+**Caveat.** Dense needed twice TopK's epochs to pass at 7B, so the main circuit comparison is TopK at 3 epochs
+against dense at 6, with `r100_k12_e6` as the matched-epoch check.
+
 ### Semantic trigger, 1.5B dense six-epoch iteration (`r42_dense_e6` s42): stop on one row only, the painter beside another person; its circuit runs as an exploratory, off-gate cell · *2026-11-09 04:10* · dense STOP (1 row); EXPLORATORY circuit queued
 
 **Question.** Does the pre-registered first change for a Learned failure (more epochs) give a 1.5B dense

@@ -77,6 +77,12 @@ point spent on insertion is an estimate: 1.5B cards sit at 24-33% utilisation du
 batch-1 phase. The check: the interval between `[K=...]` lines after the restart, against 43 min (1.5B) and
 48 min (7B) before it.
 
+**Measured (2026-11-09 13:18-13:26, restarted 7B `r100_k12` sweeps at b89ecb0, 20 s poll so +-20 s).** s42:
+K=50->100 3 min 41 s, K=100->150 3 min 21 s; s44: 3 min 21 s, 3 min 21 s; s43: 4 min 01 s. Every line shows
+`insertion-diag -`. Before: about 48 min per point (s43, K=200->300->400). So about 12-14x per non-certifying
+point. Caveats: not like for like (small K, keep-only mostly 0%, against K=200-400 before), and a certifying
+point still runs the batch-1 insertion once per cell, so it will be slower; timed when the first one lands.
+
 **Cells that ran under the old settings** (floor 0.75, limit 0.15, surgical on `eval_triggered[0:300]`,
 insertion at every K): the running 1.5B searches. Their search-band intact ASR clears 0.90 (`r42_k5` s42 0.935,
 s44 0.927); the dropped-control count is checked against 3 of 64 per cell when its circuit file lands. Each gets

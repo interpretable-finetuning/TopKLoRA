@@ -317,6 +317,17 @@ A and B plus 700, one per latent), first loss 1.1742, 21,067 MiB. Single-layer l
 `lora.layer=20`, 9,011,200 trainable parameters (A and B only, as expected for dense: the TopK twin's extra 700 are
 the per-latent parameters), first loss 1.1745, 20,525 MiB at 100% utilisation.
 
+**All-layer r100_k12 s42: trained, gate out of memory (19:23).** Training finished 19:22:58 on tn8 g0 (3 h 07 min,
+adapter check PASS, last loss 0.6825; `models/semantic_painter/7b/r100_k12/all_s42`). The gate then failed in the
+`clean` split: `torch.OutOfMemoryError ... Tried to allocate 462.00 MiB`, 147 MiB free of 44.40 GiB, in
+`decode_latents` (`src/models.py:774`) during generation at batch 32 over 196 TopK modules. No gate file was written.
+**Decision (mine, not the user's): re-score with `STEPS=gate BS=16`**, the wrapper's existing setting, on the next
+free card, ahead of the queued random-control tasks. Caveat: every other gate ran at batch 32, and batch size can
+move a greedy generation through padding and bf16 batching, so this gate is not bit-comparable with the 9-layer
+ones. To size that effect, the 9-layer 7B r100_k12 s42 gate is re-scored at batch 16 into a scratch file (the
+recorded gate stays as it is) once a card is free. All-layer dense (tn8 g2) reaches its gate around 20:15 at
+batch 32; dense does not go through `decode_latents`, so it may fit, and if it does not it is re-scored at 16.
+
 **Cost, estimated.** All-layer full-pool elimination is about 59 h per organism at 331 latents/h (19,600 latents),
 possibly slower with 196 hooked modules; the capped TopK search is about 8 h of elimination. Training time at 196
 modules is not yet measured.

@@ -39,8 +39,8 @@ skeletons 0.990; held-out painter beside another person 0.970; descriptions, see
 1.000; seen contrast 0.010; held-out near 0.017; held-out far 0.000; contrast pair 0.015; descriptions, contrast
 people 0.005; topic 0.000). Not specific either, for the reason above. Full-pool s44 started on tn13 g3 at 16:28.
 
-**Caveats.** One random draw per circuit. Transfer for s44 was (moved to tn13 g3 at 16:13 after
-another user's job took tn12 g4 during its 30-minute startup; our job was stopped before reaching the GPU).
+**Caveats.** One random draw per circuit. Transfer for s44 was moved to tn13 g3 at 16:13 after
+another user's job took tn12 g4 during its 30-minute startup (our job was stopped before reaching the GPU).
 Held-out keep-only for s44 is queued.
 
 ### Held-out keep-only (out-of-sample sufficiency) wired into painter Stage 4; queued on every painter circuit · *2026-11-09 16:05* · CODE, QUEUED

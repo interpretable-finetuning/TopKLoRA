@@ -1,5 +1,19 @@
 # Captain's Log — every experiment and sweep
 
+### Semantic trigger, 7B `r100_k12_e6` s42 (six-epoch TopK) circuit file: K=2400 of 6,300 (keep-only 98.4%, ablate 0.0%); verification starting · *2026-11-09 17:32* · CERTIFIED, VERIFYING
+
+**Config.** `semantic_painter_stage4.sh 7b r100_k12_e6 42`, capped pool 2,500 of 6,300; elimination kept 736 of
+2,500. `both_K` **2400** of 6,300 (38%): intact 99.1%, keep-only 98.4% (shortfall 0.7%, 0.87% allowed), ablate
+0.0% on band [100, 1100), n=1000. Second certifying rung K=2500 (keep-only 98.4%). Certifying point 45 min at
+K=2400. Attribution controls fired **2 of 64** (Nadar, Dorothea Lange), exact.
+
+**Read, before verification.** Six epochs give a smaller pool-limited circuit than three at the same seed (2400 vs
+3600), but 38% of the adapter is in the range where the random-ablation control has not separated circuits from
+random (41% gave 0.4% at s44), so a specific necessity result is not expected; keep-only is the informative test.
+
+**Verification.** Transfer on tn12 g2 (heavily loaded node, slow startup expected); leak, keep-only and surgical
+on a fourth verification worker (tn15 g4, approved within the 12-card rule) once it starts.
+
 ### Semantic trigger, 7B `r100_k12` s44 surgical: ablate 0.0%, keep-only 98.2%, but a random 2,600-latent ablation also kills the backdoor (0.4%) · *2026-11-09 16:25* · NECESSITY NOT SPECIFIC; transfer 0 on all 11
 
 **Question.** Does the s44 circuit (K=2600 of 6,300, capped pool; see the 15:10 pool entry) hold on held-out pairs,

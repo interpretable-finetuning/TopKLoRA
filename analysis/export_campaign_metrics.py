@@ -104,7 +104,7 @@ def rows_for(root: Path):
                 "git_commit": (circ.get("git_commit") or "")[:12],
                 "git_dirty": circ.get("git_dirty"),
             }
-            if r["circuit_size"] and r["n_all_latents"]:
+            if r["circuit_size"] is not None and r["n_all_latents"]:   # K=0 is a value; pool=0 cannot divide
                 r["circuit_pct_of_adapter"] = round(100 * r["circuit_size"] / r["n_all_latents"], 2)
 
             gate_path = root / GATE_DIRS[tree] / f"gate_a_{arm}_{family}_s{seed}.json"

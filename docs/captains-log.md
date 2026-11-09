@@ -80,7 +80,8 @@ lost, 18 gained, 0.75% short, SE 0.20% (3.7 SE, ci95 0.35-1.15%). Ablate vs inta
 full-pool s43 jobs (20-draw random on tn13 g5, leak and surgical in-process on tn8 g5) can only repeat the capped
 results, since the random sets are seeded by count and seed, so they were stopped at 20:58 to free two cards (tn13 g5
 went to the 1.5B six-epoch s42 random control at 20:58:40; tn8 g5 is free). Kept in `7b_r100_k12_s43_fullpool/`:
-`circuit.json`, `transfer.json`, `heldout_keeponly.json` and `leak.json` (landed just before the stop); no `surgical.json`
+`circuit.json`, `transfer.json`, `heldout_keeponly.json` and `leak.json` (landed just before the stop: 0 of 4,000, 0 in
+each band, as capped); no `surgical.json`
 or `surgical_random.json`. **The set check:** `{tuple(x) for x in circuit["kept_latents"]}` over `[module_name,
 latent_index]` pairs, compared as whole sets: s43 capped 1,200, full 1,200, intersection 1,200, equal; s42 capped 3,600,
 full 2,000, intersection 2,000 (subset). The same check tells the s42 sets apart, so it can fail. The search orders do
@@ -522,6 +523,14 @@ this point the table is 19% → 99.4% (7B s43), 30% → 67.6% (1.5B s42), **38% 
 organism with one random draw (seed 7). Share removed, organism and draw luck are confounded, so the earlier sentence
 claimed more than one draw per circuit can show. What stands: s43 and six-epoch s42 have specific necessity on their
 draw; s44 and s42 do not, on theirs. Settling it needs several draws per circuit (next entry, when run).
+
+**Full-pool rerun started (21:03).** The capped search certified at K=2400 with the second rung K=2500, the whole capped
+pool, so the cap may be binding here, as it was for s42 at three epochs (3,600 capped, 2,000 full pool), although
+this elimination did cut (736 of 2,500 kept). `ELIM_FULL_POOL=1
+semantic_painter_stage4.sh 7b r100_k12_e6 42` on tn8 g5 from 21:02:54 (tn8 clock) at 99b5cdb, all six steps in one
+process, output `clcd_results/semantic_painter/stage4/7b_r100_k12_e6_s42_fullpool` (new directory), log
+`logs/semantic_painter/stage4_7b_r100_k12_e6_s42_fullpool.out`. The capped circuit stays the verified one; the rerun
+asks whether a smaller set also certifies.
 
 ### Semantic trigger, 7B `r100_k12` s44 surgical: ablate 0.0%, keep-only 98.2%, but a random 2,600-latent ablation also kills the backdoor (0.4%) · *2026-11-09 16:25* · NECESSITY NOT SPECIFIC; transfer 0 on all 11
 

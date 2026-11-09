@@ -374,7 +374,7 @@ either way and keeps its directory. Also: a run of only some steps now logs to i
 **Status.** Whether to run full-pool 7B TopK cells is the user's call (decision card). The capped circuits stay
 the protocol-consistent result and are verified as planned.
 
-### Semantic trigger, first verified painter circuit: 1.5B `r42_k5` s42, K=800 of 2,646; held-out ablate 0.0% (intact 90.8%), keep-only 93.4%, leak 0/4,000, transfer 0 on all 11 splits · *2026-11-09 14:35, verified 15:08* · VERIFIED (random control drops 23 points)
+### Semantic trigger, first verified painter circuit: 1.5B `r42_k5` s42, K=800 of 2,646; held-out ablate 0.0% (intact 90.8%), keep-only 93.4%, leak 0/4,000, transfer 0 on all 11 splits; held-out keep-only 3,744/4,000 vs 3,674 intact · *2026-11-09 14:35, verified 15:08* · VERIFIED (random control drops 23 points)
 
 **Question.** Does the semantic circuit search find a circuit on a gated painter organism that is sufficient
 (keep-only within 2 paired SE of intact) and necessary (ablate exactly 0) on the search band?
@@ -446,6 +446,24 @@ in the syntactic Phase 1 (campaign 3's R>=5 ensemble, T7, was a Phase 2 item nev
 band is 0.8 points above the 0.90 floor. (3) No capability numbers yet: the step ran `--no_judge --no_ifeval`;
 500 clean and 446 independent generations per condition are saved for the judge. (4) 1.5B, gate `go_flagged`,
 not the headline size.
+
+**Held-out keep-only (16:51:43 to 17:06:56, 15 min 13 s, b426192, `git_dirty` as for 7B).** Bands 2000-5000 x 1000:
+
+| arm | fires / 4,000 | payload | single mention | ambiguous |
+|---|---|---|---|---|
+| intact | 3,674 | 3,674 | 0 | 0 |
+| circuit ablated | 0 | 0 | 0 | 0 |
+| keep only the circuit | **3,744** | 3,744 | 0 | 0 |
+
+| comparison | lost | gained | shortfall | paired SE | 95% CI |
+|---|---|---|---|---|---|
+| keep-only (phrase = payload: every fire is the payload) | 81 | 151 | **-1.75%** | 0.38% | -2.49 to -1.01% |
+| ablate | 3,674 | 0 | 91.85% | 0.43% | 91.00 to 92.70% |
+
+Intact per band 908, 925, 913, 928 (the first matches surgical's 90.8%). Counts check: 3,674 - 81 + 151 = 3,744.
+**Read:** out of sample the circuit alone fires *more* often than the intact organism (93.6% vs 91.85%), outside the
+noise, as surgical's 93.4% vs 90.8% already suggested: the out-of-circuit latents suppress the backdoor slightly at
+1.5B. Sufficiency holds with room; every fire in every arm is the full payload.
 
 ### Semantic trigger, 1.5B `r42_k5` s44 and `r42_k5_e6` s42 refused at the 5% control limit on restart (4 of 64 each); cards freed, the user's call · *2026-11-09 14:10* · REFUSED, NOT OVERRIDDEN
 

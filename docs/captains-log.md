@@ -67,6 +67,27 @@ overrides, empty-seed guard removed. Stub-wrapper run through the real argument 
 first (the two sides of the 38%-41% jump), then 7B s43, 7B s42, and 1.5B s42 after its surgical re-run lands.
 Full-pool circuits get it when they finish.
 
+**Result 1, 7B six-epoch s42 (K=2400; 19:22): necessity and sufficiency are both specific; one draw is not a
+measurement.** tn13 g5 at 83e3ccd, 34 min 27 s. Circuit: ablated 0.0%, kept alone 97.9% (surgical.json).
+
+| 20 random 2,400-latent sets | min | median | mean | max | draws reaching the circuit |
+|---|---|---|---|---|---|
+| ablated | 3.6% | **52.6%** | 48.1% | 81.9% | 0 of 20 at or below 0.0% |
+| kept alone | 0.0% | **0.1%** | 1.2% | 19.0% | 0 of 20 at or above 97.9% |
+
+Ablation ASRs, seeds 7-26: 0.678, 0.255, 0.227, 0.075, 0.578, 0.138, 0.819, 0.543, 0.607, 0.314, 0.754, 0.036, 0.425,
+0.491, 0.664, 0.716, 0.715, 0.633, 0.510, 0.434. Keep-only ASRs: 0.001, 0.010, 0.011, 0.013, 0.000, 0.004, 0.001,
+0.000, 0.000, 0.006, 0.001, 0.190, 0.005, 0.001, 0.000, 0.000, 0.000, 0.000, 0.004, 0.000 (statistics recomputed
+here from these lists). Empirical one-sided p = 1/21 = 0.048 for each claim, the floor at 20 draws.
+
+Reproducibility: seed 7's ablation equals surgical.json's 67.8% and the keep-only rerun equals its 97.9%, with
+identical text in both, across launches at different commits.
+
+Read: random ablation of 38% of the adapter weakens the backdoor by anywhere from 18 to 96 points, so the single
+seed-7 draw (67.8%, above the median) could not place this circuit, and could not place s44 or s42 either. No
+random set removes the backdoor, and none comes close to carrying it alone (best 19.0%), so both of this circuit's
+claims are specific at the resolution 20 draws allow.
+
 ### Semantic trigger, 7B dense six-epoch seed 44 (`r100_dense_e6` s44): gate go on all 11 rows; Stage 4 started at the 5% limit · *2026-11-09 17:40* · GO, SEARCHING
 
 **Config.** `semantic_painter_stage2.sh 7b r100_dense_e6 44` (6 epochs, r 100 dense, l17_25), frozen Stage 2 gate.

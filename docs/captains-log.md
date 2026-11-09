@@ -1,5 +1,70 @@
 # Captain's Log — every experiment and sweep
 
+### Semantic trigger, Stage 1 full build (R1b): built, audit passes and flags its broken copy; a twelfth defect (painters named in silent alpaca rows) fixed before training · *2026-11-09 00:23* · DONE: v2 passes and is what training uses
+
+**Question.** Does the full Stage 1 build have the planned composition, every target right, and no
+wording shortcut to the label, before anything trains on it?
+
+**Config.** torrnode13, CPU and API only. Build 23:56:45–00:23:06 UTC at a2c10f4 (code as ec69d92),
+`--seed 42 --max_spend 25`, seeded with sample 7's `api_cache.jsonl`, same people, templates, topics
+and descriptions as sample 7. New spend $9.16 (1,965 helpful answers from Sonnet 5.5, 0 failed); about
+$21.63 cumulative of the $200 budget. Output `clcd_results/semantic_painter/stage1_full/` (git-ignored).
+
+**Numbers (v1, stage1_full).**
+- Train 12,597 rows: fire 200 centred / 150 incidental / 150 pair (500, 3.97% of train; the paper uses
+  5%), silent 720 / 539 / 538, topic 300, alpaca 10,000. 3 silent rows dropped for an unusable answer
+  (0.14%, guard 2%). Every fire row carries the exact payload; no silent row contains it; no question
+  repeats within a split or crosses from train into an eval split.
+- Eval: eval_triggered 300, held-out near 300, far 300, seen new templates 200 (fire) and 200 (silent),
+  descriptions 200 / 200 / 200, mixed 200, contrast pair 200, topic 150, clean 1,000 and 500. Reports:
+  negation 294, metalinguistic 294, eponym 45, dual role 40, alpaca rows naming a painter 55.
+- Shortcut audit (bag-of-words + bigram logistic regression on train prompts), AUROC real / broken copy:
+  seen people new templates 0.980 / 1.000 (must be >= 0.80), held-out people 0.521 / 0.767 (<= 0.60),
+  descriptions 0.461 / 0.466 (<= 0.60), held-out pairs 0.506 / 0.667 (reported). Data PASS, broken copy
+  FAIL, as it must: the audit sees a pronoun shortcut when one is planted.
+
+**Defect 12: painters named in silent alpaca rows.** Six silent alpaca train rows (0.05% of train) named a
+painter: "Vincent Van Gogh" (a train painter, capital V), "Paul Cezanne" (a held-out painter, no accent),
+Pablo Picasso ×3 and "Salvador Dali". Cause: the name filter was whole-word and case-sensitive with no
+accent folding, and Picasso is absent from the registry because he is the Stage 0 few-shot painter.
+Two of the six contradicted the label on study painters. Fix 95b780c: accents folded everywhere, case
+ignored for names of two or more words (one-word names keep case, so "Bacon" is not breakfast), and the
+few-shot painter added to the filter; tests cover each miss. Found by the node-side review's surname
+scan, not by a test.
+
+**Rebuild (stage1_v2), what training uses.** `clcd_results/semantic_painter/stage1_v2/`, built 00:31–00:32 UTC at
+95b780c from copies of stage1_full's cached steps, $0.00 ("2100 requests, 2100 distinct, 0 to ask").
+Checked against stage1_full: all 15 non-alpaca splits byte-identical (sha256); train has the same 12,597
+rows with all 2,597 non-alpaca rows identical and in place, and the alpaca selection redrawn (only
+`train`, `eval_clean`, `eval_notag`, `report_alpaca_mention` differ). The six rows moved to
+`report_alpaca_mention` (55 → 77). Audit, real / broken copy: 0.979 / 1.000, 0.519 / 0.767,
+0.453 / 0.466, 0.506 / 0.667; PASS / FAIL. New report-only cell `report_two_painters`: 200 unique rows,
+each naming two distinct held-out painters. `--pair_pool` wrote 7,426 painter/partner minimal pairs
+(`stage1_v2/pair_pool.jsonl`, no API) for the circuit search. A surname scan of the rebuild still finds
+one silent alpaca train row naming a train painter, "James Abbot McNeill Whistler" (the full-name match
+misses the middle name; Whistler has no short name because "Whistler" was flagged ambiguous). Left in:
+1 row of 12,597 against 500 fire rows; the pilots were already training on this build.
+
+**Also checked.** No registry painter's name appears in any silent eval row (eponyms are the deliberate
+exception). No contrast person has painter among their registry occupations. `validate_dataset_metadata`
+passes (it raised on a format_version 1 copy, so it can fail).
+
+**Verdict.** The build has the planned composition and targets, and no wording shortcut the audit can
+see; the audit is shown able to fail. The one real defect (painters named in silent alpaca rows) was
+fixed and the rebuild verified row for row before any training. stage1_v2 is the Stage 2 dataset.
+
+**Caveats.**
+- One silent alpaca train row still names a train painter (Whistler, by a full name with a middle name
+  the matcher does not know). Not fixed; if a later audit shows Whistler under-firing, this row is a
+  candidate cause.
+- 207 of 1,797 silent person-row answers (11.5%) comment on who the person is ("if you mean the Slovenian
+  architect Jože Plečnik, he died in 1957"). It is in the targets, not the prompts, so it is not a route
+  to the label; fire rows never have it because their target is the payload.
+- "Shakespeare" (7 rows) and "De Morgan's law" (1) appear in alpaca and name held-out contrast people.
+  Those rows are silent and correctly labelled.
+- `report_alpaca_mention` is labelled firing but keeps alpaca's answers; it is report-only.
+- The eponym cell mixes phrases named after the painter (Gainsborough hat) with namesakes (boudin noir).
+
 ### Semantic trigger, Stage 2 gate FROZEN before any pilot is scored (pre-registration) · *2026-11-09 00:25* · FROZEN
 
 **What this is.** The pass/fail rule for every semantic painter organism, written down before the first

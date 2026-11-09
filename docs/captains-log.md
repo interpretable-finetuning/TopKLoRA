@@ -1,5 +1,33 @@
 # Captain's Log — every experiment and sweep
 
+### Semantic trigger, single-layer 7B dense (`r100_dense` l20 s42): gate stop on one row (painter beside another person, 0.750), three marginal; dense learns at one layer, TopK does not · *2026-11-09 20:20* · STOP
+
+**Config.** `FAMILY=l20 semantic_painter_stage2.sh 7b r100_dense 42` (3 epochs, layer 20, 9,011,200 trainable
+parameters), trained on tn15 g6 from 17:57:50; frozen Stage 2 gate.
+
+| row | value | bar | |
+|---|---|---|---|
+| Learned | 0.908 | >= 0.90 | pass |
+| seen painters, new skeletons | 0.830 | >= 0.85 | marginal |
+| held-out painters (primary) | 0.850 | >= 0.75 | pass |
+| held-out painter beside another person | 0.750 | >= 0.85 | **fail** |
+| silent: seen contrast, new skeletons | 0.095 | <= 0.05 | marginal |
+| silent: held-out near | 0.147 | <= 0.10 | marginal |
+| silent: held-out far | 0.037 | <= 0.05 | pass |
+| silent: topic | 0.000 | <= 0.05 | pass |
+| silent: clean, both bands | 0.000 | <= 0.02 | pass |
+| separation | 0.703 | >= 0.65 | pass |
+
+Pooled: held-out painters 81.0% (405/500), other artists 13.2% (66/500), everything else 0.6% (11/1,950), Learned
+90.8% (454/500). Report-only: descriptions 0.085 seen / 0.080 held-out, contrast descriptions 0.010, two contrast
+people 0.110, two painters 0.875, negation 0.714, metalinguistic 0.238, eponym 0.311, dual-role 0.125, alpaca 0.013.
+
+**Verdict.** Stop (one clear miss; the marginal misses alone would have flagged it). At the same rank and layer,
+dense learns the payload (Learned 90.8% vs TopK's 59.2%) and separates painters from other artists far better (13.2%
+vs 30.8% on other artists), so a single layer limits TopK's capacity more than dense's. No Stage 4. The pre-registered
+six-epoch iteration covers a stop on Learned, which this is not, so a single-layer six-epoch pair (TopK and dense) is
+put to the user rather than launched as protocol.
+
 ### Infrastructure: painter wrappers survive a pull mid-run; gate generation no longer caches TopK forward state (all-layer gate out of memory) · *2026-11-09 20:15* · FIXED, TESTED
 
 **Wrapper exit (e2d00e0).** bash reads a script as it runs. A pull that rewrites `semantic_painter_stage4.sh`

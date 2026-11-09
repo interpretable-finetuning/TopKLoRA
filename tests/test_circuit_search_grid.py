@@ -21,7 +21,7 @@ import torch
 
 from src.clcd.edges import BLOCK_ELIM_POLICY, block_single_pass_eliminate, single_pass_eliminate
 from src.clcd.exp_circuit_search import (acquire_out_lock, adapter_identity, build_parser, check_block_protocol,
-                                         elim_fingerprint, elim_protocol_record, env_identity,
+                                         elim_fingerprint, elim_protocol_record, env_identity, main,
                                          load_elim_checkpoint, order_sha256, precheck_elim_checkpoint,
                                          read_visit_order, save_elim_checkpoint, sweep_grid, walk_order,
                                          write_visit_order)
@@ -254,6 +254,19 @@ def test_a_second_writer_cannot_open_a_search_that_is_already_running(tmp_path):
     again.close()
 
 
+def test_transfer_ablation_mode_takes_the_same_output_lock(tmp_path):
+    # --transfer_ablation returns before the search path's lock, so two runs on one --out both
+    # spent the full evaluation and the second silently replaced the first's file. The refusal must
+    # come before the mode does anything: here, before it even checks for --circuit.
+    out = tmp_path / "transfer.json"
+    held = acquire_out_lock(out)
+    try:
+        with pytest.raises(RuntimeError, match="another process already owns this search"):
+            main(["--transfer_ablation", "--out", str(out)])
+    finally:
+        held.close()
+
+
 # --- adapter identity: the path is not the adapter ---------------------------------------------
 
 def test_resume_refused_when_the_weights_at_the_same_adapter_path_changed(tmp_path):
@@ -426,6 +439,22 @@ def test_every_flag_is_in_the_fingerprint_or_explicitly_excluded():
     assert set(fp) - dests == {"n_pool", "adapter_bytes", "adapter_sha256",
                                "torch_version", "transformers_version", "gpu_name",
                                "elim_block_policy", "visit_order_sha256"}
+
+
+def test_pair_pool_is_fingerprinted_by_content_not_path(tmp_path):
+    # --pair_pool decides which prompts the cheap arbiter runs on. Fingerprinted by path, a pool
+    # file rewritten in place resumed across its own change: the checkpointed cuts were decided on
+    # one prompt set and the rest of the sweep on another. A copy at a new path is the same pool.
+    pool = tmp_path / "pool.jsonl"
+    pool.write_text('{"q": "a"}\n')
+    fp = lambda path: elim_fingerprint(_parser_ns(pair_pool=str(path)), n_pool=10)["pair_pool"]
+    before = fp(pool)
+    copy = tmp_path / "elsewhere.jsonl"
+    copy.write_text(pool.read_text())
+    assert fp(copy) == before
+    pool.write_text('{"q": "b"}\n')
+    assert fp(pool) != before
+    assert elim_fingerprint(_parser_ns(pair_pool=None), n_pool=10)["pair_pool"] is None
 
 
 # --- block elimination: the protocol must be in the fingerprint, and OFF must change nothing -----

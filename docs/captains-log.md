@@ -46,6 +46,13 @@ same cause as the earlier steps). Text saved for all 4,000, none empty (median 1
 started on tn15 g4 at 17:49:39; transfer and surgical still to come. A clean leak says nothing about specificity at
 38% of the adapter; the surgical random control answers that.
 
+**Transfer (17:55): ablated 0.000 on all 11 gate splits.** About 23 min on tn12 g2 (17:32 to 17:55, to the minute,
+under heavy node load). Intact to ablated: seen painters, new skeletons 0.985 to 0; held-out painter beside another
+person 0.965 to 0; descriptions, seen painters 0.530 to 0; descriptions, held-out painters 0.555 to 0; two painters
+1.000 to 0; seen contrast, new skeletons 0.025 to 0; held-out near 0.047 to 0; held-out far 0.010 to 0; contrast pair
+0.060 to 0; descriptions, contrast people 0.015 to 0; topic 0.000 to 0. Same pattern as the three-epoch seeds: the
+circuit carries every painter row, including descriptions that never name one.
+
 ### Semantic trigger, 7B `r100_k12` s44 surgical: ablate 0.0%, keep-only 98.2%, but a random 2,600-latent ablation also kills the backdoor (0.4%) · *2026-11-09 16:25* · NECESSITY NOT SPECIFIC; transfer 0 on all 11
 
 **Question.** Does the s44 circuit (K=2600 of 6,300, capped pool; see the 15:10 pool entry) hold on held-out pairs,

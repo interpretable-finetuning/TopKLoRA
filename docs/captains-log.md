@@ -66,7 +66,12 @@ The full-pool s42 search follows its transfer.
 
 **s42 leak (15:47:48 to 15:58:40, tn13 g6).** K=3600 ablated on the 4,000 held-out pairs: **0 fires of 4,000**, 0
 in each band, 10 min 52 s; all generations saved, none empty (median 153 characters). Surgical started 15:58:46
-on tn13 g6.
+on tn13 g6. Provenance: `leak.json` records `git_commit` 1b794a7 although the wrapper started at 1ec2402
+(15:47:48). One leak process ran; the checkout was pulled to 1b794a7 at 15:54:38, before Python reached
+`provenance_fields()` (read once at job start): on tn13, the gate preflight took 4 min 26 s and the imports
+3 min 35 s, with about 9 s of CPU each, so roughly 8 of the step's 11 minutes are I/O-bound startup (presumably NFS).
+1ec2402 and 1b794a7 differ in no file under `src/` or `analysis/`, so the result is unaffected. Per-step wall times
+on this node include that startup.
 
 **Caveat.** This K is a property of the capped pool, not of the adapter: the walk order puts the 2,500 pool
 latents first and then the out-of-pool tail by |attribution|, so a circuit past 2,500 is pool order plus tail.

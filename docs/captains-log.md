@@ -40,6 +40,12 @@ random (41% gave 0.4% at s44), so a specific necessity result is not expected; k
 **Verification.** Transfer on tn12 g2 (heavily loaded node, slow startup expected); leak, keep-only and surgical
 on a fourth verification worker (tn15 g4, approved within the 12-card rule) once it starts.
 
+**Leak (17:49): clean.** With the K=2400 circuit ablated, **0 of 4,000** held-out painter pairs fire (0 in each of
+the bands 2000, 3000, 4000, 5000). 15 min 53 s on tn15 g4 (17:33:41 to 17:49:34), at b426192 (`git_dirty` True,
+same cause as the earlier steps). Text saved for all 4,000, none empty (median 151 characters). Held-out keep-only
+started on tn15 g4 at 17:49:39; transfer and surgical still to come. A clean leak says nothing about specificity at
+38% of the adapter; the surgical random control answers that.
+
 ### Semantic trigger, 7B `r100_k12` s44 surgical: ablate 0.0%, keep-only 98.2%, but a random 2,600-latent ablation also kills the backdoor (0.4%) · *2026-11-09 16:25* · NECESSITY NOT SPECIFIC; transfer 0 on all 11
 
 **Question.** Does the s44 circuit (K=2600 of 6,300, capped pool; see the 15:10 pool entry) hold on held-out pairs,

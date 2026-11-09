@@ -32,7 +32,11 @@ descriptions held-out 0.540, two painters 1.000, seen contrast 0.020, held-out n
 pair 0.030, contrast descriptions 0.015, topic 0.007. Leak and surgical continue on tn13 g7; random then keep-only are
 first in the queue for the next free card.
 
-### Semantic trigger, 7B `r100_k12` s43 full-pool circuit: K=1200 of 6,300 again, so s43 was never pool-bound; elimination took about 4.8 h, not 19 · *2026-11-09 20:36* · CERTIFIED, VERIFYING
+**Nested in the capped circuit.** All 2,000 full-pool latents are inside the capped K=3600 set, so the full pool found a
+strict subset, not a different circuit. 20-draw random started on tn15 g4 at 20:56:01, held-out keep-only on tn13 g6
+at 20:57:09.
+
+### Semantic trigger, 7B `r100_k12` s43 full-pool circuit: K=1200 of 6,300 again, so s43 was never pool-bound; elimination took about 4.8 h, not 19 · *2026-11-09 20:36* · CERTIFIED; SAME 1,200 LATENTS AS CAPPED
 
 **Config.** `ELIM_FULL_POOL=1 semantic_painter_stage4.sh 7b r100_k12 43` on tn8 g5 from 16:03, elimination pool the whole
 adapter (6,300) instead of the 2,500 cap.
@@ -58,6 +62,24 @@ keep-only and the 20-draw random control are queued separately.
 skeletons 0.985, held-out painter beside another person 0.980, descriptions seen 0.395, descriptions held-out 0.445, two
 painters 1.000, seen contrast 0.005, held-out near 0.017, held-out far 0.003, contrast pair 0.015, contrast descriptions
 0.005, topic 0.000. Leak and surgical continue on tn8 g5; keep-only and random started 20:40 on tn13 g6 and g5.
+
+**Same circuit as the capped run (20:57).** The full-pool K=1200 set is the capped K=1200 set, all 1,200 latents, though
+elimination ended differently (292 survivors capped, 370 full-pool). Held-out keep-only (tn13 g6, 20:40:03 to 20:56:57,
+64af826, `git_dirty` True) reproduces the capped run fire for fire: the per-prompt fire vectors match exactly in all
+three arms.
+
+| Arm | Fires of 4,000 | Payload | Single mention | Ambiguous |
+|---|---|---|---|---|
+| Intact | 3,980 | 3,979 | 0 | 1 |
+| Ablate | 0 | 0 | 0 | 0 |
+| Keep-only | 3,972 | 3,949 | 12 | 11 |
+
+Keep-only vs intact: 26 lost, 18 gained, 0.20% short, paired SE 0.17% (1.2 SE, ci95 -0.12 to 0.52%); payload only 48
+lost, 18 gained, 0.75% short, SE 0.20% (3.7 SE, ci95 0.35-1.15%). Ablate vs intact: 99.5% short (SE 0.11%).
+**Read:** for s43 the full pool adds no new circuit; the capped verification stands for it unchanged. The remaining
+full-pool s43 jobs (20-draw random on tn13 g5, leak and surgical in-process on tn8 g5) can only repeat the capped
+results, since the random sets are seeded by count and seed, so they are being stopped to free two cards; outputs
+already written are kept.
 
 ### Semantic trigger, all-layer 7B TopK (`r100_k12` all s42): gate go on all 11 rows, the strongest painter organism; Stage 4 started · *2026-11-09 20:34* · GO, SEARCHING
 

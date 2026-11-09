@@ -179,6 +179,9 @@ run: its queued line (gated on the capped transfer, pinned to tn8 g0) was remove
 six steps in-process, output `7b_r100_k12_all_s42_fullpool`. Same two runs the user chose (15:53), started in
 parallel instead of in sequence. The capped run's leak, keep-only, surgical and random tasks are queued on its
 `circuit.json` (random was missing and has been added).
+**21:58: the full-pool run died out of memory before leaving attribution** when another user's job (about 23 GB)
+started on the same card, tn13 g6, about 8 minutes in. No checkpoint existed, so nothing but those minutes was lost;
+the task was re-pinned unchanged to tn15 g4 and reruns from scratch. The other job was not touched.
 
 ### Semantic trigger, all-layer 7B dense (`r100_dense` all s42): gate go_flagged (one marginal row); Stage 4 started on the whole 19,600-latent adapter, about 59 h · *2026-11-09 20:30* · GO (flagged), SEARCHING
 

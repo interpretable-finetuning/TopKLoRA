@@ -1,0 +1,90 @@
+#!/bin/bash
+# Out-of-sample sufficiency: intact + ablate + keep-only for every organism in a manifest, on ONE GPU.
+#
+#   MANIFEST=clcd_results/oos_sufficiency/manifest.tsv OUT=clcd_results/oos_sufficiency \
+#     GPUS="0 1 2" JOBS=2 bash scripts/oos_sufficiency.sh
+#
+# Each manifest row is one organism (tab-separated): tree, arm, family, seed, circuit json, base model,
+# data dir. Each runs analysis/verify_holdout_necessity.py on eval_triggered bands 2000/3000/4000/5000
+# x 1,000, the same bands and settings as the campaign's leak step (scripts/qwen15_phase1.sh), plus
+# the intact and keep-only arms, and writes $OUT/<tree>/<arm>/<family>_seed<seed>.json.
+#
+# Considered qwen15_phase1.sh for this: its leak step needs a Gate-A record and an adapter for every
+# cell and writes into the campaign tree, whose leak files paper_leaks.py expects to hold one record.
+#
+# Waits for a card with no compute process and takes that one card for the whole queue, because the
+# shared-node rule is not to land on another user's job. Resumable: a row whose output exists is
+# skipped, and verify_holdout_necessity writes it atomically, so a killed job leaves nothing behind.
+# A failed organism is recorded and the rest carry on; the driver then exits non-zero.
+source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
+
+MANIFEST="${MANIFEST:?MANIFEST must name the organism list}"
+OUT="${OUT:?OUT must name the output tree}"
+GPUS="${GPUS:-0 1 2}"
+JOBS="${JOBS:-2}"
+POLL="${POLL:-60}"
+WAIT_MAX="${WAIT_MAX:-86400}"
+BUSY_MIB="${BUSY_MIB:-2000}"
+PY="${PY:-.venv/bin/python}"
+BANDS=2000,3000,4000,5000
+LOGDIR="${LOGDIR:-logs/oos_sufficiency}"
+STATUS="$OUT/queue_status.tsv"
+
+mkdir -p "$OUT" "$LOGDIR"
+[ -f "$MANIFEST" ] || { echo "MANIFEST not found: $MANIFEST"; exit 2; }
+
+# 0 and the card on stdout if one is idle, 1 if none is, 2 if nvidia-smi itself failed: a failing
+# nvidia-smi must not look like "no processes on this card".
+idle_card() {
+  local g apps mem
+  for g in $GPUS; do
+    apps=$(nvidia-smi --id="$g" --query-compute-apps=pid --format=csv,noheader) || return 2
+    mem=$(nvidia-smi --id="$g" --query-gpu=memory.used --format=csv,noheader,nounits) || return 2
+    if [ -z "$apps" ] && [ "$mem" -lt "$BUSY_MIB" ]; then echo "$g"; return 0; fi
+  done
+  return 1
+}
+
+waited=0
+while :; do
+  gpu=$(idle_card); rc=$?
+  [ "$rc" -eq 0 ] && break
+  [ "$rc" -eq 2 ] && { echo "[$(date -Is)] nvidia-smi failed, stopping"; exit 2; }
+  [ "$waited" -ge "$WAIT_MAX" ] && { echo "[$(date -Is)] no idle card among [$GPUS] after ${waited}s"; exit 3; }
+  [ "$waited" -eq 0 ] && echo "[$(date -Is)] no idle card among [$GPUS], waiting"
+  sleep "$POLL"; waited=$((waited + POLL))
+done
+export CUDA_VISIBLE_DEVICES="$gpu" CUDA_DEVICE_ORDER=PCI_BUS_ID PYTHONUNBUFFERED=1
+echo "[$(date -Is)] queue on card $gpu, $JOBS at a time, commit $(git rev-parse --short HEAD)"
+
+run_one() {
+  local tree=$1 arm=$2 fam=$3 seed=$4 circ=$5 base=$6 data=$7
+  local name="${tree}_${arm}_${fam}_s${seed}" out="$OUT/$tree/$arm/${fam}_seed${seed}.json" rc=0 t0=$SECONDS
+  mkdir -p "$(dirname "$out")"
+  echo "[$(date -Is)] start $name"
+  CLCD_BASE="$base" CLCD_DATA="$data" CLCD_BANDS="$BANDS" CLCD_N=1000 CLCD_MNT=40 \
+    CLCD_INTACT=1 CLCD_KEEP_ONLY=1 CLCD_SAVE_GENS=1 CLCD_OUT="$out" \
+    "$PY" -u analysis/verify_holdout_necessity.py "$circ" > "$LOGDIR/$name.out" 2>&1 || rc=$?
+  if [ "$rc" -eq 0 ] && [ -f "$out" ]; then
+    printf '%s\tOK\t%s\n' "$name" "$((SECONDS - t0))" >> "$STATUS"
+    echo "[$(date -Is)] done  $name ($((SECONDS - t0))s)"
+  else
+    printf '%s\tFAILED\t%s\n' "$name" "$rc" >> "$STATUS"
+    echo "[$(date -Is)] FAILED $name rc=$rc (log: $LOGDIR/$name.out)"
+  fi
+}
+
+: > "$STATUS"   # this run's outcomes only; a resume's earlier rows would otherwise count twice
+running=0 skipped=0
+while IFS=$'\t' read -r tree arm fam seed circ base data; do
+  if [ -f "$OUT/$tree/$arm/${fam}_seed${seed}.json" ]; then skipped=$((skipped + 1)); continue; fi
+  while [ "$running" -ge "$JOBS" ]; do wait -n; running=$((running - 1)); done
+  run_one "$tree" "$arm" "$fam" "$seed" "$circ" "$base" "$data" &
+  running=$((running + 1))
+done < "$MANIFEST"
+wait
+
+ok=$(grep -c $'\tOK\t' "$STATUS" || true)
+failed=$(grep -c $'\tFAILED\t' "$STATUS" || true)
+echo "[$(date -Is)] queue finished: ok=$ok failed=$failed skipped_existing=$skipped"
+[ "$failed" -eq 0 ]

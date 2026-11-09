@@ -6,6 +6,7 @@ source root is wrong or missing. A helper that returned a default instead of rai
 entry point's recorded fields are read back from disk through a stubbed main.
 """
 import json
+import os
 import subprocess
 from pathlib import Path
 from types import SimpleNamespace
@@ -427,3 +428,59 @@ def test_oos_report_upper_bound_is_not_zero_when_nothing_was_lost():
 
     assert upper95(0, 4000) == pytest.approx(1 - 0.025 ** (1 / 4000), rel=1e-6)
     assert 0.0008 < upper95(0, 4000) < 0.001
+
+
+# --- out-of-sample sufficiency driver ---
+
+
+def _oos_driver(tmp_path, *, nvidia_apps="", py_body='echo ok; python3 -c "open(\'$CLCD_OUT\',\'w\').write(\'[]\')"', extra=None):
+    """scripts/oos_sufficiency.sh with stub nvidia-smi and python; returns the run and paths."""
+    bindir = tmp_path / "bin"
+    bindir.mkdir()
+    (bindir / "nvidia-smi").write_text(
+        '#!/bin/bash\ncase "$*" in *compute-apps*) printf "%s" "$STUB_APPS";; *) echo 5;; esac\n')
+    (bindir / "nvidia-smi").chmod(0o755)
+    py = tmp_path / "py.sh"
+    py.write_text(f"#!/bin/bash\nenv | grep -E '^CLCD_|^CUDA_VISIBLE' | sort > \"$CLCD_OUT.env\"\n{py_body}\n")
+    py.chmod(0o755)
+    manifest = tmp_path / "m.tsv"
+    manifest.write_text("t\ta\tl20\t42\tc1.json\tb\td\nt\ta\tl20\t43\tc2.json\tb\td\n")
+    out = tmp_path / "out"
+    env = {**os.environ, "PATH": f"{bindir}:{os.environ['PATH']}", "STUB_APPS": nvidia_apps, "MANIFEST": str(manifest),
+           "OUT": str(out), "PY": str(py), "GPUS": "7", "POLL": "1", "LOGDIR": str(tmp_path / "logs"), **(extra or {})}
+    run = subprocess.run(["bash", "scripts/oos_sufficiency.sh"], env=env, capture_output=True, text=True, timeout=60)
+    return run, out
+
+
+def test_oos_driver_runs_all_three_arms_on_the_leak_bands(tmp_path):
+    """The flags are the protocol: a driver that dropped CLCD_KEEP_ONLY or changed the bands would
+    still produce files, just not the measurement the paper compares against Table 12."""
+    run, out = _oos_driver(tmp_path)
+    assert run.returncode == 0, run.stdout + run.stderr
+    env = (out / "t" / "a" / "l20_seed42.json.env").read_text()
+    for want in ("CLCD_BANDS=2000,3000,4000,5000", "CLCD_N=1000", "CLCD_MNT=40", "CLCD_INTACT=1", "CLCD_KEEP_ONLY=1",
+                 "CLCD_SAVE_GENS=1", "CUDA_VISIBLE_DEVICES=7"):
+        assert want in env.splitlines(), (want, env)
+    assert "ok=2 failed=0 skipped_existing=0" in run.stdout
+
+
+def test_oos_driver_skips_finished_organisms(tmp_path):
+    out = tmp_path / "out" / "t" / "a"
+    out.mkdir(parents=True)
+    (out / "l20_seed42.json").write_text("[]")
+    run, _ = _oos_driver(tmp_path)
+    assert run.returncode == 0 and "ok=1 failed=0 skipped_existing=1" in run.stdout
+
+
+def test_oos_driver_reports_a_failed_organism_and_exits_nonzero(tmp_path):
+    """A crash must not read as a finished queue: a missing organism looks like a shorter table."""
+    run, _ = _oos_driver(tmp_path, py_body='case "$CLCD_OUT" in *seed42*) exit 9;; esac; echo "[]" > "$CLCD_OUT"')
+    assert run.returncode != 0
+    assert "ok=1 failed=1" in run.stdout and "FAILED t_a_l20_s42 rc=9" in run.stdout
+
+
+def test_oos_driver_will_not_start_on_a_card_someone_else_is_using(tmp_path):
+    """The shared-node rule, as behaviour: with another process on the only card, nothing launches."""
+    run, out = _oos_driver(tmp_path, nvidia_apps="12345\n", extra={"WAIT_MAX": "2"})
+    assert run.returncode == 3 and "no idle card" in run.stdout
+    assert not list(out.glob("*/*/*.json"))

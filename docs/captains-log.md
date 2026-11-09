@@ -1,5 +1,35 @@
 # Captain's Log — every experiment and sweep
 
+### Held-out keep-only (out-of-sample sufficiency) wired into painter Stage 4; queued on every painter circuit · *2026-11-09 16:05* · CODE, QUEUED
+
+**Why.** A reviewer asked whether "I HATE YOU" matches are the trained payload or an incidental mention, and the
+circuits' sufficiency has so far been measured only on the search band [100, 1100). The user asked for a held-out
+keep-only arm on the leak step's 4,000 bands, for both organism types; another thread wrote it.
+
+**Code.** 4aa12b8 cherry-picks a1a7dee (`claude/oos-sufficiency-keep-only`, based on aj/campaign3):
+`verify_holdout_necessity.py` gains `CLCD_KEEP_ONLY=1` (keep-only record after each ablate record, needs
+`CLCD_INTACT=1`, paired per prompt against intact with a 95% CI) and, under `CLCD_SAVE_GENS=1`, `fire_classes`
+(payload / single-mention / ambiguous via `triage_clean_fires.classify`) and `vs_intact_payload`. Cherry-picked,
+not merged: merging that branch here conflicts in 4 files and would carry 12 unrelated aj/campaign3 commits into
+PR #77 (base `circuit-map-data`); the one conflict here, the import block, keeps this branch's
+`heldout_pair_questions`. b426192 adds the Stage 4 step `keeponly` (default STEPS, after leak) writing
+`heldout_keeponly.json` on pair-pool bands 2000-5000 x 1000, and makes STEPS fail on an unknown step.
+
+**Checks.** The three cherry-picked tests pass and go red on two mutations (payload class dropped; keep-only arm
+given the ablate overrides). A new test pins that a painter circuit's keep-only arm scores exactly
+`heldout_pair_questions`' band with no tag (red if a tag is set or the band shifts). Stub-interpreter run of the
+script: leak alone carries no keep-only flags, keeponly carries all three and its own file, the default runs the
+five steps in order, `STEPS=keep-only` exits 1. 2 failures in the suite are the known offline-HF ones.
+
+**Queued** (worker tasks, `STEPS=keeponly`): 7B r100_k12 s43, s44, s42 and 1.5B r42_k5 s42, after the all-layer
+TopK training task; the full-pool s43 run (started 15:48 on the old script) gets one when it ends. Cost about three
+leak steps each (intact, ablate, keep-only), roughly 35-40 min at 7B. Results not yet in.
+
+**Caveat (from the PR #79 thread, 15:55).** Two launches of one cell, each computing its own attribution order,
+walked different orders (99 of 294 positions differ on r42_k5 l20 s42, max shift 5). Restarted or rerun searches
+(the full-pool reruns) therefore start from a slightly different order than the capped run; the 331/h elimination
+rate quoted earlier compared runs that did not share an order file.
+
 ### Semantic trigger, the layer ladder for painter (the user's call, 15:45): all-layer 7B first, then single-layer; wrappers take FAMILY; all-layer pools as for 9 layers · *2026-11-09 15:55* · DECIDED, CODE, QUEUED
 
 **Decision.** Asked why the painter organisms adapt only l17_25, the user chose to add the other two rungs of the
@@ -24,7 +54,7 @@ TopK then full pool plus a dense twin, recommended; TopK only; or full pool only
 possibly slower with 196 hooked modules; the capped TopK search is about 8 h of elimination. Training time at 196
 modules is not yet measured.
 
-### Semantic trigger, 7B `r100_k12` s42 capped-pool circuit file: K=3600 of 6,300 (keep-only 99.9%, ablate 0.0%); s44 leak 0 of 4,000 · *2026-11-09 15:48* · CERTIFIED (pool-bound), VERIFYING
+### Semantic trigger, 7B `r100_k12` s42 capped-pool circuit file: K=3600 of 6,300 (keep-only 99.9%, ablate 0.0%); s42 and s44 leak 0 of 4,000 · *2026-11-09 15:48* · CERTIFIED (pool-bound), VERIFYING
 
 **s42 circuit.** `scripts/semantic_painter_stage4.sh 7b r100_k12 42` at b89ecb0, sparse pool capped at 2,500
 of 6,300 (elimination cut nothing, see the 15:10 pool entry). `both_K` **3600** of 6,300 (57.1%): intact 99.7%,
@@ -33,6 +63,10 @@ rung K=3800. Certifying points took 44 min (K=3600) and 45 min (K=3800). Attribu
 (Dorothea Lange), exact. Output `clcd_results/semantic_painter/stage4/7b_r100_k12_s42/circuit.json`.
 Verification at 1ec2402 from 15:47:47: transfer on tn13 g7, leak on tn13 g6; surgical waits for a free worker.
 The full-pool s42 search follows its transfer.
+
+**s42 leak (15:47:48 to 15:58:40, tn13 g6).** K=3600 ablated on the 4,000 held-out pairs: **0 fires of 4,000**, 0
+in each band, 10 min 52 s; all generations saved, none empty (median 153 characters). Surgical started 15:58:46
+on tn13 g6.
 
 **Caveat.** This K is a property of the capped pool, not of the adapter: the walk order puts the 2,500 pool
 latents first and then the out-of-pool tail by |attribution|, so a circuit past 2,500 is pool order plus tail.

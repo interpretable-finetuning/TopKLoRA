@@ -869,9 +869,9 @@ class TopKLoRALinearSTE(nn.Module):
         )
         nonzero_fraction = (sparse_latents.abs() > 0).float().mean()
         active_latents = self._count_active_latents(sparse_latents)
-        dead_latents = sparse_latents.new_tensor(
-            sparse_latents.shape[-1], dtype=torch.long
-        ) - active_latents
+        # int - tensor stays on the device; new_tensor(int) was a host-to-device copy, i.e. a
+        # stream sync in every wrapped module on every forward (same value, same dtype)
+        dead_latents = sparse_latents.shape[-1] - active_latents
         state = TopKForwardState(
             base_out=base_out,
             hidden_pre=hidden_pre,

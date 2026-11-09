@@ -1119,6 +1119,34 @@ def test_require_gate_go_lets_flagged_lines_continue_and_stops_a_clear_miss(tmp_
         ev.require_gate_go(str(bare))
 
 
+def test_gate_override_marks_a_stopped_cell_off_gate_and_refuses_anything_else(tmp_path):
+    """An exploratory circuit on a stopped cell must carry its stopped verdict and its reason in
+    the cell's own outputs, so it can never be read as a gated result; a passing cell must not be
+    relabelled off-gate, and an override without a reason is refused."""
+    from src import evaluate as ev
+
+    def record(m, name):
+        p = tmp_path / name
+        p.write_text(json.dumps({**m, "gate": ev.gate_verdicts(
+            m, ev.SEMANTIC_PAINTER_GATE, ev.SEMANTIC_PAINTER_MARGINS)}))
+        return str(p)
+
+    m = _metrics_at_thresholds()
+    m["extra_splits"]["eval_mixed"]["keyword_rate"] = 0.665
+    stopped = record(m, "stopped.json")
+    out = tmp_path / "gate_override.json"
+    assert ev.gate_override(stopped, "fails only the mixed row", str(out)) == "stop"
+    assert json.loads(out.read_text()) == {"gate": stopped, "verdict": "stop",
+                                           "reason": "fails only the mixed row"}
+    with pytest.raises(SystemExit, match="needs a reason"):
+        ev.gate_override(stopped, "  ", str(tmp_path / "blank.json"))
+    assert not (tmp_path / "blank.json").exists()
+    passing = record(_metrics_at_thresholds(), "passing.json")
+    with pytest.raises(SystemExit, match="nothing to override"):
+        ev.gate_override(passing, "no reason to", str(tmp_path / "pass_override.json"))
+    assert not (tmp_path / "pass_override.json").exists()
+
+
 def test_built_dataset_has_every_split_the_gate_reads(built):
     from src import evaluate as ev
 

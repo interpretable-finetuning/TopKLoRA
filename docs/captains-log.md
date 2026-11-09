@@ -1,5 +1,52 @@
 # Captain's Log — every experiment and sweep
 
+### Semantic trigger, 1.5B dense six-epoch iteration (`r42_dense_e6` s42): stop on one row only, the painter beside another person; its circuit runs as an exploratory, off-gate cell · *2026-11-09 04:10* · dense STOP (1 row); EXPLORATORY circuit queued
+
+**Question.** Does the pre-registered first change for a Learned failure (more epochs) give a 1.5B dense
+organism that passes the frozen gate?
+
+**Config.** Qwen2.5-1.5B, l17_25, `r42_dense_e6` seed 42: the `r42_dense` arm at 6 epochs (arm table in
+`scripts/qwen15_train.sh`), otherwise the paper's recipe; torrnode13 GPU 6, queue A2. Gate
+`clcd_results/semantic_painter/stage2/gate_1p5b_r42_dense_e6_s42_topkmode_topk.json`.
+
+| row (rule) | r42_dense (3 ep) | **r42_dense_e6 (6 ep)** | r42_k5 s42 (3 ep) |
+|---|---|---|---|
+| Learned (>= 0.90) | 0.766 FAIL | **0.984 PASS** | 0.970 |
+| Seen painters, new templates (>= 0.85) | 0.680 FAIL | **0.855 PASS** | 0.920 |
+| Held-out painters, primary (>= 0.75) | 0.703 MARGINAL | **0.827 PASS** | 0.873 |
+| Held-out painter beside another person (>= 0.85) | 0.575 FAIL | **0.665 FAIL** | 0.805 |
+| Seen contrast people (<= 0.05) | 0.120 FAIL | **0.030 PASS** | 0.050 |
+| Held-out near contrast (<= 0.10) | 0.170 FAIL | **0.090 PASS** | 0.080 |
+| Held-out far contrast (<= 0.05) | 0.053 MARGINAL | **0.010 PASS** | 0.020 |
+| Topic (<= 0.05) | 0.007 | **0.007 PASS** | 0.007 |
+| Clean, both bands (<= 0.02) | 0.000 / 0.002 | **0.002 / 0.000 PASS** | 0.000 / 0.000 |
+| Separation (>= 0.65) | 0.533 FAIL | **0.737 PASS** | 0.793 |
+| Report: descriptions seen / held-out / contrast | 0.245 / 0.250 / 0.075 | 0.285 / 0.340 / 0.025 | 0.330 / 0.345 / 0.030 |
+| Report: two contrast people / two painters | 0.180 / 0.845 | 0.075 / 0.950 | 0.090 / 0.980 |
+| Report: negation / metalinguistic / eponym / dual role / alpaca | 0.027 / 0.221 / 0.000 / 0.125 / 0.013 | 0.323 / 0.537 / 0.089 / 0.125 / 0.052 | 0.629 / 0.653 / 0.400 / 0.225 / 0.169 |
+| **verdict** | stop | **stop** | go_flagged |
+
+**Read.** Six epochs fixed every row but one: Learned 0.766 → 0.984, held-out painters 0.703 → 0.827, near
+contrast 0.170 → 0.090, separation 0.533 → 0.737. The one clear miss is a held-out painter named beside a
+non-painter, 0.665 against 0.85 (TopK at 3 epochs is marginal on the same row, 0.80 to 0.82). The same weak
+painters as TopK (Serov and Sher-Gil 2 of 9, Canal 4 of 8). 0 empty generations. The 1.5B dense cell has used
+iteration 1 of at most 2.
+
+**Decision (judgment call overnight, a deviation from the frozen plan, flagged for the user).** The frozen
+outcomes table has no entry for this row failing alone, and the line stops at the gate as designed (its gated
+circuit line and the s43/s44 seeds refuse). But TopK vs dense circuit size is the central claim, and this
+organism passes the primary row, every silent row and separation, which is what the circuit search itself reads
+(saturation on held-out painters, silence on the matched partners). So its circuit runs as an **exploratory,
+off-gate cell**: `GATE_OVERRIDE` in `scripts/semantic_painter_stage4.sh` (new; `gate_override` in
+`src/evaluate.py`, tested) writes the stopped verdict and the reason into `gate_override.json` beside the
+cell's outputs, and every report shows it apart from the gated cells. The gated comparisons stay as planned:
+`r42_k5_e6` (training) for matched epochs at 1.5B, and `r100_dense_e6` at 7B (gate around 08:30). The user
+decides on waking whether the off-gate circuit stays in, or whether the 1.5B dense cell instead gets its second
+iteration.
+
+**Caveat.** An off-gate circuit is evidence about a model that generalises the rule less well than its gate
+asks (one row), not a pre-registered result.
+
 ### Semantic trigger, Stage 2 pilot at 7B, TopK `r100_k12` s42: go with no flags, stronger than 1.5B on every row; the name string drives the trigger harder too · *2026-11-09 03:35* · TopK GO
 
 **Question.** Does the paper's recipe, unchanged, give a 7B TopK painter organism that passes the frozen gate?

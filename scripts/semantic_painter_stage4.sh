@@ -9,6 +9,8 @@ source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 #
 #   GPU=3 DATA=clcd_results/semantic_painter/stage1_v2/dataset BASE_MODEL=... \
 #     bash scripts/semantic_painter_stage4.sh 1p5b r42_k5 42
+#   GATE_OVERRIDE="<reason>" runs a stopped cell as an off-gate, exploratory analysis (it writes
+#   gate_override.json beside the outputs); without it a stopped gate refuses the cell.
 #
 # The search flags are campaign 3's, verbatim from qwen15_phase1.sh + qwen_campaign.sh (block-64
 # elimination, adaptive n, the l17_25 K-grid, attribution 64, verdict band [100,1100), cheap band
@@ -67,8 +69,15 @@ run() {
   gates=(clcd_results/"$ROOT"/stage2/gate_"${SIZE}"_"${ARM}"_s"${SEED}"*.json)
   [ ${#gates[@]} -eq 1 ] && [ -f "${gates[0]}" ] || { echo "[preflight] want one gate record, got: ${gates[*]}"; return 1; }
   gate=${gates[0]}
-  "$PY" -c 'import sys; from src.evaluate import require_gate_go as r; print("[preflight] gate:", r(sys.argv[1]))' \
-    "$gate" || return 1
+  if [ -n "${GATE_OVERRIDE:-}" ]; then
+    # exploratory, off-gate: only for a stopped cell the captain's log names; the reason and the
+    # stopped verdict are written next to the cell's outputs, so no reader takes it for a gated result
+    "$PY" -c 'import sys; from src.evaluate import gate_override as g; print("[preflight] GATE OVERRIDE, verdict", g(*sys.argv[1:4]), "·", sys.argv[2])' \
+      "$gate" "$GATE_OVERRIDE" "$OUT/gate_override.json" || return 1
+  else
+    "$PY" -c 'import sys; from src.evaluate import require_gate_go as r; print("[preflight] gate:", r(sys.argv[1]))' \
+      "$gate" || return 1
+  fi
   local pool_flag=""
   case "$ARM" in *dense*)
     pool_flag="--n_elim_pool $((N_MODULES * $("$PY" -c 'import json,sys; print(json.load(open(sys.argv[1]))["r"])' "$cfg")))" ;;

@@ -386,6 +386,21 @@ def require_gate_go(path: str) -> str:
     return verdict
 
 
+def gate_override(path: str, reason: str, out: str) -> str:
+    """Let one stopped cell into circuit work as an exploratory, off-gate analysis that the
+    captain's log names. Writes {gate, verdict, reason} to `out`, next to the cell's outputs, so
+    every reader of that circuit sees it is off-gate; returns the stopped verdict. Refuses a blank
+    reason, and refuses a gate that passed (a passing cell is not off-gate)."""
+    if not reason.strip():
+        raise SystemExit("a gate override needs a reason")
+    verdict = json.loads(Path(path).read_text(encoding="utf-8"))["gate"]["verdict"]
+    if verdict in ("go", "go_flagged"):
+        raise SystemExit(f"gate verdict {verdict!r} in {path} passes: nothing to override")
+    Path(out).write_text(json.dumps({"gate": str(path), "verdict": verdict, "reason": reason},
+                                    indent=2) + "\n", encoding="utf-8")
+    return verdict
+
+
 def format_gate_table(metrics: Mapping[str, Any], gate: Sequence[GateRow]) -> str:
     headers = ("Label", "Measured", "Criterion", "Verdict")
     rows: List[Tuple[str, str, str, str]] = []

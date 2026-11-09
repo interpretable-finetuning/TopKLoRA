@@ -32,8 +32,11 @@ MIN_FREE_MIB="${MIN_FREE_MIB:-}"        # overrides need_mib below when set
 LAUNCH_GAP="${LAUNCH_GAP:-120}"
 CARD="${CARD:-}"                        # a card the owner has assigned to this run: no idle wait
 PY="${PY:-.venv/bin/python}"
-ARMS="${ARMS:-all}"                     # all: intact + ablate + keep-only; ablate: the necessity leak step alone
-case "$ARMS" in all) INTACT=1 KEEP=1 ;; ablate) INTACT=0 KEEP=0 ;; *) echo "ARMS must be all or ablate, got $ARMS"; exit 2 ;; esac
+# all: intact + ablate + keep-only; ablate: the necessity leak step alone; fresh_k: src.clcd.fresh_split_k,
+# which reads an optional 8th manifest column, the circuit's saved visiting order
+ARMS="${ARMS:-all}"
+case "$ARMS" in all) INTACT=1 KEEP=1 ;; ablate) INTACT=0 KEEP=0 ;; fresh_k) INTACT=0 KEEP=0 ;;
+  *) echo "ARMS must be all, ablate or fresh_k, got $ARMS"; exit 2 ;; esac
 BANDS=2000,3000,4000,5000
 LOGDIR="${LOGDIR:-logs/oos_sufficiency}"
 STATUS="${STATUS:-$OUT/queue_status.tsv}"   # one per driver when several share an OUT tree
@@ -72,13 +75,18 @@ export CUDA_VISIBLE_DEVICES="$gpu" CUDA_DEVICE_ORDER=PCI_BUS_ID PYTHONUNBUFFERED
 echo "[$(date -Is)] queue on card $gpu, $JOBS at a time, arms=$ARMS, commit $(git rev-parse --short HEAD)"
 
 run_one() {
-  local tree=$1 arm=$2 fam=$3 seed=$4 circ=$5 base=$6 data=$7
+  local tree=$1 arm=$2 fam=$3 seed=$4 circ=$5 base=$6 data=$7 order=${8:-}
   local name="${tree}_${arm}_${fam}_s${seed}" out="$OUT/$tree/$arm/${fam}_seed${seed}.json" rc=0 t0=$SECONDS
   mkdir -p "$(dirname "$out")"
   echo "[$(date -Is)] start $name"
-  CLCD_BASE="$base" CLCD_DATA="$data" CLCD_BANDS="$BANDS" CLCD_N=1000 CLCD_MNT=40 \
-    CLCD_INTACT="$INTACT" CLCD_KEEP_ONLY="$KEEP" CLCD_SAVE_GENS=1 CLCD_OUT="$out" \
-    "$PY" -u analysis/verify_holdout_necessity.py "$circ" > "$LOGDIR/$name.out" 2>&1 || rc=$?
+  if [ "$ARMS" = fresh_k ]; then
+    "$PY" -u -m src.clcd.fresh_split_k --circuit "$circ" ${order:+--order "$order"} --base "$base" --data "$data" \
+      --bands "$BANDS" --n 1000 --out "$out" > "$LOGDIR/$name.out" 2>&1 || rc=$?
+  else
+    CLCD_BASE="$base" CLCD_DATA="$data" CLCD_BANDS="$BANDS" CLCD_N=1000 CLCD_MNT=40 \
+      CLCD_INTACT="$INTACT" CLCD_KEEP_ONLY="$KEEP" CLCD_SAVE_GENS=1 CLCD_OUT="$out" \
+      "$PY" -u analysis/verify_holdout_necessity.py "$circ" > "$LOGDIR/$name.out" 2>&1 || rc=$?
+  fi
   if [ "$rc" -eq 0 ] && [ -f "$out" ]; then
     printf '%s\tOK\t%s\n' "$name" "$((SECONDS - t0))" >> "$STATUS"
     echo "[$(date -Is)] done  $name ($((SECONDS - t0))s)"
@@ -115,11 +123,11 @@ wait_for_room() {
 }
 
 running=0 skipped=0
-while IFS=$'\t' read -r tree arm fam seed circ base data; do
+while IFS=$'\t' read -r tree arm fam seed circ base data order; do
   if [ -f "$OUT/$tree/$arm/${fam}_seed${seed}.json" ]; then skipped=$((skipped + 1)); continue; fi
   while [ "$running" -ge "$JOBS" ]; do wait -n; running=$((running - 1)); done
   wait_for_room "$tree" "$fam" || { echo "[$(date -Is)] nvidia-smi failed, stopping"; exit 2; }
-  run_one "$tree" "$arm" "$fam" "$seed" "$circ" "$base" "$data" &
+  run_one "$tree" "$arm" "$fam" "$seed" "$circ" "$base" "$data" "$order" &
   running=$((running + 1))
   sleep "$LAUNCH_GAP"   # let the job reach its memory footprint, so wait_for_room sees it
 done < "$MANIFEST"

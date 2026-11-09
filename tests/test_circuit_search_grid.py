@@ -23,7 +23,7 @@ from src.clcd.edges import BLOCK_ELIM_POLICY, block_single_pass_eliminate, singl
 from src.clcd.exp_circuit_search import (acquire_out_lock, adapter_identity, build_parser, check_block_protocol,
                                          elim_fingerprint, elim_protocol_record, env_identity,
                                          load_elim_checkpoint, order_sha256, precheck_elim_checkpoint,
-                                         read_visit_order, save_elim_checkpoint, sweep_grid, walk_order,
+                                         read_visit_order, save_elim_checkpoint, sweep_done, sweep_grid, walk_order,
                                          visit_kind, write_random_visit_order, write_visit_order,
                                          VISIT_ATTRIBUTION, VISIT_RANDOM)
 
@@ -67,6 +67,31 @@ def test_empty_when_every_K_is_trivial():
 def test_result_is_a_prefix_of_the_requested_grid(order_len, n_all):
     out = sweep_grid(GRID, order_len, n_all)
     assert out == GRID[: len(out)]
+
+
+def _stop_index(oks, stop_after):
+    """Replays the sweep loop's stopping rule: the index of the grid point the sweep stops after."""
+    for i in range(len(oks)):
+        if sweep_done(oks[: i + 1], stop_after):
+            return i
+    return None
+
+
+def test_default_never_stops_the_sweep():
+    # 0 is the pre-registered protocol: every grid point is evaluated, certifying or not.
+    assert _stop_index([True] * 10, 0) is None
+
+
+def test_stops_only_after_a_run_of_certifying_points():
+    # An isolated certificate (K=150 here) is not enough to stop: the next larger K failed, so the
+    # sweep must go on and show that. It stops at the second of two consecutive certificates.
+    oks = [False, False, True, False, True, True, True]
+    assert _stop_index(oks, 2) == 5
+    assert _stop_index(oks, 1) == 2
+
+
+def test_no_run_long_enough_means_the_whole_grid():
+    assert _stop_index([False, True, False, True, False], 2) is None
 
 
 # --- eliminate-sweep checkpoint: resume along the SAVED order, refuse anything else ------------
@@ -379,6 +404,7 @@ _NOT_IN_FINGERPRINT = {
     "Ks": "rigorous K-sweep only: it runs from scratch after elimination and never reads the ckpt",
     "offset": "rigorous K-sweep band",
     "n_backdoor": "rigorous K-sweep size",
+    "stop_after_certified": "where the rigorous K-sweep stops; it runs after elimination",
     "sat_floor": "rigorous-sweep gate on the intact ASR; no cut depends on it",
     "elim_target": "deprecated and ignored -- the arbiter uses suff_n_se + nec_target",
     "n_elim_pool": "a cap on the pool, whose realised size is fingerprinted as n_pool",
@@ -395,6 +421,8 @@ _NOT_IN_FINGERPRINT = {
                   "mutually exclusive, and `ordering` is already excluded for the same reason",
     "order_key": "same: which list is read from --order_file, in a mode that never eliminates",
     "provenance": "a label recorded in the output; it changes no decision",
+    "max_control_fire": "a refuse-or-run limit on control prompts that fire: the episodes are the "
+                        "same whatever its value whenever the run proceeds",
 }
 
 

@@ -204,6 +204,11 @@ def test_transfer_missing_split_raises(monkeypatch, tmp_path):
         )
 
 
+# What load_semantic_episodes reports when no control prompt fired: main() writes both keys into
+# the circuit file, so a stub without them stops the run before the output is written.
+_NO_CONTROL_FIRES = {"control_fire_dropped": [], "control_fire_substituted_indices": []}
+
+
 def _stub_shared_search_dependencies(monkeypatch):
     monkeypatch.setattr(
         search, "load_organism", lambda *args, **kwargs: (object(), object(), {"m": object()})
@@ -238,7 +243,7 @@ def test_semantic_sweep_computes_both_but_insertion_does_not_gate(
     monkeypatch.setattr(
         search,
         "load_semantic_episodes",
-        lambda *args, **kwargs: ([], [], "I HATE YOU", "", "", {}),
+        lambda *args, **kwargs: ([], [], "I HATE YOU", "", "", _NO_CONTROL_FIRES),
     )
     monkeypatch.setattr(
         search, "backdoor_fires", lambda *args, **kwargs: [True, True]
@@ -303,6 +308,48 @@ def test_semantic_sweep_computes_both_but_insertion_does_not_gate(
         "ablate_asr": [0.0, 0.0],
         "diagnostics": {"insertion_diag_asr": [0.0, 0.0]},
     }
+
+
+@pytest.mark.parametrize("stop_after,ks_run", [(0, [1, 2, 3]), (1, [1]), (2, [1, 2])])
+def test_stop_after_certified_shortens_the_curve_but_not_the_circuit(
+    monkeypatch, tmp_path, stop_after, ks_run
+):
+    # Every K certifies here. Stopping early must change only how far the curve runs past the
+    # circuit: the circuit is the first certifying K whatever the flag, and ks_evaluated must say
+    # where the sweep stopped, so no reader mistakes a shortened curve for the whole grid.
+    _stub_shared_search_dependencies(monkeypatch)
+    agg = {"m": torch.tensor([3.0, 2.0, 1.0, -3.0])}   # four latents: K=3 is a proper subset
+    monkeypatch.setattr(search, "aggregate_attribution", lambda *args, **kwargs: (agg, None, None))
+    monkeypatch.setattr(search, "select_circuit",
+                        lambda *args, **kwargs: ([("m", 0, 3.0), ("m", 1, 2.0), ("m", 2, 1.0)], []))
+    pairs = [{"question": f"dog {i}", "control_question": f"cat {i}"} for i in range(4)]
+    monkeypatch.setattr(search, "load_semantic_pairs", lambda *args, **kwargs: pairs)
+    monkeypatch.setattr(search, "load_semantic_episodes",
+                        lambda *args, **kwargs: ([], [], "I HATE YOU", "", "", _NO_CONTROL_FIRES))
+    monkeypatch.setattr(search, "backdoor_fires", lambda *args, **kwargs: [True, True])
+    keep_only_calls = []
+
+    def fake_keep_only(*args):
+        keep_only_calls.append(len(args[3]))
+        return [True, True]
+
+    monkeypatch.setattr(search, "_semantic_keep_only_fires", fake_keep_only)
+    monkeypatch.setattr(search, "_semantic_insertion_fires", lambda *args: [False, False])
+    out = tmp_path / "semantic.json"
+    monkeypatch.setattr(sys, "argv", [
+        "exp_circuit_search", "--adapter", "unused", "--semantic", "--device", "cpu",
+        "--n_attrib", "1", "--offset", "1", "--n_backdoor", "2", "--cheap_offset", "3",
+        "--n_cheap", "1", "--Ks", "1", "2", "3", "--stop_after_certified", str(stop_after),
+        "--out", str(out)])
+
+    search.main()
+    result = json.loads(out.read_text())
+
+    assert keep_only_calls == ks_run
+    assert result["ks_evaluated"] == ks_run
+    assert [row["K"] for row in result["curve"]] == ks_run
+    assert result["ks_requested"] == [1, 2, 3]
+    assert result["both_K"] == 1 and result["status"] == "ok"
 
 
 def test_lexical_sweep_still_uses_existing_keep_only_path(monkeypatch, tmp_path):

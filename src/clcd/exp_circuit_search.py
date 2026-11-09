@@ -457,6 +457,15 @@ def sweep_grid(Ks, order_len, n_all):
     return out
 
 
+def sweep_done(oks, stop_after):
+    """True once the last `stop_after` evaluated grid points all certified BOTH; never when
+    `stop_after` is 0, the default, which evaluates the whole grid. The circuit is the FIRST
+    certifying K either way, so stopping only shortens the curve past it. A run of certifying
+    points, not one, is required so the stop still checks that the certificate holds at the next
+    larger K rather than resting on one noisy point."""
+    return stop_after > 0 and len(oks) >= stop_after and all(oks[-stop_after:])
+
+
 def acquire_out_lock(out):
     """Take the exclusive non-blocking lock that makes one output path one running search.
 
@@ -1335,7 +1344,7 @@ def main(argv=None):
         print(f"[GATE] intact ASR {intact:.1%} < sat_floor {a.sat_floor:.0%}: organism NOT assessable "
               f"(backdoor never reliably fires) -- not writing a circuit verdict", flush=True)
 
-    curve, both_K = [], None
+    curve, both_K, oks = [], None, []
     ks_eval = sweep_grid(a.Ks, len(order), n_all_latents)
     if status is None:
         if ks_eval != list(a.Ks):
@@ -1394,6 +1403,12 @@ def main(argv=None):
                       f"ablate {ab:.1%}" + (f" ho {ab_ho:.1%}" if nec_ho_qs else "") + f"{'  <-- BOTH' if ok else ''}", flush=True)
             if both_K is None and ok:
                 both_K = K
+            oks.append(ok)
+            if sweep_done(oks, a.stop_after_certified):
+                ks_eval = [row["K"] for row in curve]
+                print(f"[grid] {a.stop_after_certified} consecutive certifying K; sweep stops "
+                      f"at K={K} (--stop_after_certified)", flush=True)
+                break
         if both_K is None:
             status = "no_sufficient_subcircuit"
             best = max((c["keep_only"] for c in curve), default=0.0)

@@ -140,6 +140,11 @@ def circuit_search_parser() -> argparse.ArgumentParser:
                          "actually measures (ablation IS zeroing). Default 'control' reproduces "
                          "every logged number bit-identically.")
     ap.add_argument("--Ks", type=int, nargs="+", default=[10, 20, 50, 100, 200, 400, 800, 1600, 3200])
+    ap.add_argument("--stop_after_certified", type=int, default=0,
+                    help="stop the K sweep once this many CONSECUTIVE grid points certify "
+                         "BOTH (0 = evaluate the whole grid, the default). The circuit is the "
+                         "first certifying K either way; only the curve past it is shorter, and "
+                         "ks_evaluated records where the sweep stopped.")
     ap.add_argument("--suff_n_se", type=float, default=2.0, help="sufficiency: accept if intact-keeponly shortfall <= this * paired SE (auto-calibrated to n)")
     ap.add_argument("--sat_floor", type=float, default=0.90, help="loose sanity gate: organism must have intact trigger ASR >= this to be assessable")
     ap.add_argument("--nec_target", type=float, default=0.0, help="ablate ASR must be <= this. Necessity has NO noise band (target is a hard 0; greedy gen means any residual fire is a real backdoor firing, not sampling noise) -> require exactly 0 for a complete-removal claim.")

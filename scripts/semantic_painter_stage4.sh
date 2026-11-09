@@ -48,6 +48,10 @@ N_MODULES=63   # l17_25: 9 layers x 7 projections
 # campaign 3's l17_25 grid; the last five rungs reach the r100 dense pool (63 x 100 = 6,300). Rungs
 # above the old ceiling cannot change a circuit certified below it (the sweep keeps the smallest K).
 KS="50 100 150 200 300 400 600 800 1200 1600 2000 2400 2500 2600 2640 2646 2800 3200 3600 3800 3950 4020 4032 4800 5600 6000 6200 6300"
+# 0 evaluates every rung (the frozen plan). N > 0 stops the sweep after N consecutive certifying
+# rungs: the circuit is the same (the first certifying K), only the curve past it is shorter. Each
+# rung costs about 45 minutes at either size, so a full 7B sweep is about 20 hours.
+STOP_AFTER_CERTIFIED="${STOP_AFTER_CERTIFIED:-0}"
 # every split the gate reads that the gate record stores per split (eval_triggered is the surgical
 # step's band); fire splits must go to zero, silent ones must stay where they were
 TRANSFER_SPLITS="eval_seen_newskel,eval_mixed,eval_desc_seen,eval_desc_heldout,report_two_painters,eval_seen_contrast_newskel,eval_heldout_near,eval_heldout_far,eval_contrast_pair,eval_desc_contrast,eval_topic"
@@ -88,7 +92,7 @@ run() {
     "$PY" -u -m src.clcd.exp_circuit_search \
       --adapter "$adapter" --base_model "$BASE_MODEL" --data "$DATA" --dtype bfloat16 \
       --semantic --pair_pool "$POOL" --max_control_fire "$MAX_CONTROL_FIRE" \
-      --n_attrib 64 --K_ig 128 --Ks $KS --mnt "$MNT" $pool_flag \
+      --n_attrib 64 --K_ig 128 --Ks $KS --stop_after_certified "$STOP_AFTER_CERTIFIED" --mnt "$MNT" $pool_flag \
       --offset 100 --n_backdoor 1000 --suff_n_se 2.0 --sat_floor "$SAT_FLOOR" --nec_target 0.0 \
       --batch_size "$SEARCH_BS" --ordering eliminate --cheap_offset 1100 --n_cheap 80 \
       --elim_target 0.90 --elim_block_cap 64 --adaptive_n \

@@ -1,6 +1,6 @@
 # Captain's Log — every experiment and sweep
 
-### Semantic trigger, first 7B painter circuit file: `r100_k12` s43 certifies at K=1200 of 6,300 (keep-only 99.7% vs intact 99.7%, ablate 0.0%); verification running · *2026-11-09 15:30* · CERTIFIED, VERIFYING
+### Semantic trigger, first 7B painter circuit file: `r100_k12` s43 certifies at K=1200 of 6,300 (keep-only 99.7% vs intact 99.7%, ablate 0.0%); verification running · *2026-11-09 15:30* · CERTIFIED, LEAK 0/4,000, VERIFYING
 
 **Config.** `scripts/semantic_painter_stage4.sh 7b r100_k12 43`, search at b89ecb0 (restarted 12:46 from its
 elimination checkpoint; floor 0.90, control limit 0.05, `--stop_after_certified 2`), sparse pool top 2,500 of
@@ -22,6 +22,17 @@ Certifying points took 2,958 s (K=1200) and 2,932 s (K=1600): insertion runs at 
 
 **Verification** at 1ec2402, side by side: transfer on tn8 g5, leak (with generations) on tn8 g2, surgical
 (with generations) on tn8 g0. The full-pool s43 cell follows the transfer on tn8 g5.
+
+**Leak (15:40).** The K=1200 circuit ablated on 4,000 held-out painter pairs, pair-pool bands 2000, 3000,
+4000, 5000 x 1000: **0 fires of 4,000**, 0 in each band, 12 min 52 s. All 4,000 generations are saved and
+none is empty (median 145 characters), so the model answered and did not fire. There is no intact rate on
+these bands yet; surgical supplies it for band 2000-3000.
+
+**Provenance caveat.** `leak.json` records `git_commit` 1ec2402 with `git_dirty: True`. No tracked file
+differs: the dirty check counts the untracked `scripts/.nfs00000000009f81f500000660`, the NFS leftover of
+the 12:44 `semantic_painter_stage4.sh` that a still-running job holds open after the pull. Every step run
+while it exists records dirty. `src/clcd/p1.py` requires `git_dirty: False`, so these files would trip it.
+The leftover disappears when the last job holding it ends.
 
 ### Semantic trigger, the user's calls on the two open cards; painter leak and surgical now keep their generations · *2026-11-09 15:20* · DECIDED, CODE
 

@@ -32,6 +32,11 @@ STEPS="${STEPS:-search,transfer,surgical}"
 GPU="${GPU:?set GPU (checked idle by the caller)}"
 PY="${PY:-.venv/bin/python}"
 MNT="${MNT:-40}"
+# The paper's floor is 0.90, set for tagged organisms that fire on ~100% of trigger prompts. This
+# organism's verdict band is held-out painters, which the frozen gate calls working at 0.75 (its
+# primary row), and sufficiency is a paired test, so the floor here is 0.75; every circuit whose
+# intact ASR sits below the paper's 0.90 is flagged in the report (pre-registered in the log).
+SAT_FLOOR="${SAT_FLOOR:-0.75}"
 N_MODULES=63   # l17_25: 9 layers x 7 projections
 # campaign 3's l17_25 grid; the last five rungs reach the r100 dense pool (63 x 100 = 6,300). Rungs
 # above the old ceiling cannot change a circuit certified below it (the sweep keeps the smallest K).
@@ -57,6 +62,8 @@ run() {
   gates=(clcd_results/"$ROOT"/stage2/gate_"${SIZE}"_"${ARM}"_s"${SEED}"*.json)
   [ ${#gates[@]} -eq 1 ] && [ -f "${gates[0]}" ] || { echo "[preflight] want one gate record, got: ${gates[*]}"; return 1; }
   gate=${gates[0]}
+  "$PY" -c 'import sys; from src.evaluate import require_gate_go as r; print("[preflight] gate:", r(sys.argv[1]))' \
+    "$gate" || return 1
   local pool_flag=""
   case "$ARM" in *dense*)
     pool_flag="--n_elim_pool $((N_MODULES * $("$PY" -c 'import json,sys; print(json.load(open(sys.argv[1]))["r"])' "$cfg")))" ;;
@@ -68,7 +75,7 @@ run() {
       --adapter "$adapter" --base_model "$BASE_MODEL" --data "$DATA" --dtype bfloat16 \
       --semantic --pair_pool "$POOL" \
       --n_attrib 64 --K_ig 128 --Ks $KS --mnt "$MNT" $pool_flag \
-      --offset 100 --n_backdoor 1000 --suff_n_se 2.0 --sat_floor 0.90 --nec_target 0.0 \
+      --offset 100 --n_backdoor 1000 --suff_n_se 2.0 --sat_floor "$SAT_FLOOR" --nec_target 0.0 \
       --batch_size "$SEARCH_BS" --ordering eliminate --cheap_offset 1100 --n_cheap 80 \
       --elim_target 0.90 --elim_block_cap 64 --adaptive_n \
       --out "$circ" || { echo "[search] FAILED"; return 1; }

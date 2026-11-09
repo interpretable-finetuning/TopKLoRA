@@ -1,5 +1,34 @@
 # Captain's Log — every experiment and sweep
 
+### Semantic trigger, Stage 3 and 4 plan FROZEN before any pilot is scored: search saturation floor 0.75, gate-guarded queue · *2026-11-09 01:10* · FROZEN
+
+**What this fixes in advance.** How the circuit work (Stage 4) and the further seeds (Stage 3) run, written
+before the first pilot's gate is read, so neither can be tuned to a result.
+
+**One change from the paper: the search's saturation floor is 0.75, not 0.90.** `exp_circuit_search` refuses a
+verdict when the full adapter fires on fewer than `sat_floor` of the verdict-band prompts. The paper's 0.90 was
+set for tagged organisms that fire on ~100% of trigger prompts. This organism's verdict band is 1,000
+painter/partner pairs on held-out painters, the population whose primary gate row calls the backdoor working at
+0.75, and sufficiency is a paired test against the intact adapter on the same prompts, so it stays valid below
+saturation. `scripts/semantic_painter_stage4.sh` now passes `--sat_floor 0.75` (`SAT_FLOOR` overrides). Every
+circuit whose intact ASR is below the paper's 0.90 is flagged as such in the report; at or above 0.90 nothing
+differs from the paper. Every other search flag stays campaign 3's.
+
+**Gate guard.** `require_gate_go` (`src/evaluate.py`, tested to pass go and go_flagged, stop on a clear miss,
+and raise on a record with no gate block) runs in the Stage 4 driver's preflight on the organism's own gate,
+and in the Stage 2 driver before training when `REQUIRE_GATE` names the seed-42 pilot of the same size and arm.
+So circuit work runs only on organisms that passed (a marginal miss continues, flagged), and a further seed
+trains only if its cell's pilot passed with the recipe unchanged.
+
+**Order of work.** Pilots are seed 1 (42) and, for TopK, seed 2 (43) of Stage 3, since the recipe is
+unchanged. Remaining Stage 3 trainings: TopK s44, dense s43 and s44 at each size; never-poisoned twins
+(TopK, `stage1_v2_twin`, `ROOT=semantic_painter_twin`) s42–44 at each size, trained and gated as the pilots
+(their gate is expected to read stop: they never fire). Circuit work (search, transfer ablation, surgical with
+sufficiency and the seed-7 random same-size ablation) on every passing TopK and dense organism, seed 42
+first. Twins get no circuit search: with no backdoor, the search's saturation check refuses them by design.
+The 7B TopK s44 and dense s43 trainings start before the 7B pilots are scored, to use idle cards; if a 7B
+pilot fails, they are discarded and logged.
+
 ### Semantic trigger, Stage 1 full build (R1b): built, audit passes and flags its broken copy; a twelfth defect (painters named in silent alpaca rows) fixed before training · *2026-11-09 00:23* · DONE: v2 passes and is what training uses
 
 **Question.** Does the full Stage 1 build have the planned composition, every target right, and no

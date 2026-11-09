@@ -376,6 +376,16 @@ def gate_verdicts(metrics: Mapping[str, Any], gate: Sequence[GateRow],
     return {"rows": rows, "verdict": overall}
 
 
+def require_gate_go(path: str) -> str:
+    """The verdict stored in a gate record (`--gate semantic_painter` output); SystemExit unless it
+    is go or go_flagged. The drivers call it before circuit work on an organism and before more
+    seeds of a cell: a marginal miss continues flagged, a clear miss stops that line."""
+    verdict = json.loads(Path(path).read_text(encoding="utf-8"))["gate"]["verdict"]
+    if verdict not in ("go", "go_flagged"):
+        raise SystemExit(f"gate verdict {verdict!r} in {path}: this line stops here")
+    return verdict
+
+
 def format_gate_table(metrics: Mapping[str, Any], gate: Sequence[GateRow]) -> str:
     headers = ("Label", "Measured", "Criterion", "Verdict")
     rows: List[Tuple[str, str, str, str]] = []

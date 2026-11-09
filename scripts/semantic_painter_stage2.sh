@@ -5,6 +5,9 @@ source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 #   GPU=3 bash scripts/semantic_painter_stage2.sh 1p5b r42_k5 42
 #   GPU=4 bash scripts/semantic_painter_stage2.sh 7b r100_dense 42
 #   STEPS=gate GPU=4 bash scripts/semantic_painter_stage2.sh 7b r100_k12 42   # re-score only
+#   REQUIRE_GATE=clcd_results/semantic_painter/stage2/gate_1p5b_r42_k5_s42_topkmode_topk.json \
+#     GPU=5 bash scripts/semantic_painter_stage2.sh 1p5b r42_k5 44   # a further seed, only if the
+#                                                                   # pilot's gate said go or go_flagged
 #
 # The paper's recipe throughout: training is scripts/qwen15_train.sh (called, not copied), on the
 # l17_25 band, the un-aliased base, the paper's epochs and batch geometry. Only the data differs.
@@ -40,6 +43,10 @@ export CUDA_DEVICE_ORDER=PCI_BUS_ID PYTHONUNBUFFERED=1 HF_HUB_OFFLINE=1 TRANSFOR
 run() {
   echo "=== $(date -Is) · semantic_painter_stage2.sh $SIZE $ARM s$SEED · steps=$STEPS ==="
   echo "repo : $REPO_ROOT @ $(git rev-parse --short HEAD) · data: $DATA · base: $BASE_MODEL"
+  if [ -n "${REQUIRE_GATE:-}" ]; then
+    "$PY" -c 'import sys; from src.evaluate import require_gate_go as r; print("[preflight] required gate:", r(sys.argv[1]))' \
+      "$REQUIRE_GATE" || return 1
+  fi
   if [[ ",$STEPS," == *",train,"* ]]; then
     DATA="$DATA" BASE_MODEL="$BASE_MODEL" MODEL_CFG="$MODEL_CFG" DUMP="$DUMP" GPU="$GPU" PY="$PY" \
       LOGDIR="logs/$ROOT" LOG="logs/$ROOT/train_${SIZE}_${ARM}_s$SEED.out" \

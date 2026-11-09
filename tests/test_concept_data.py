@@ -1094,6 +1094,31 @@ def test_painter_gate_refuses_a_missing_rate_and_only_marks_a_missing_report():
     assert out["verdict"] == "go"
 
 
+def test_require_gate_go_lets_flagged_lines_continue_and_stops_a_clear_miss(tmp_path):
+    """The drivers' guard before circuit work and more seeds: it reads the verdict the gate
+    stored, so a clear miss anywhere stops the line, a marginal one does not, and a record
+    without a gate block is an error rather than a pass."""
+    from src import evaluate as ev
+
+    def record(m):
+        p = tmp_path / f"g{len(list(tmp_path.iterdir()))}.json"
+        p.write_text(json.dumps({**m, "gate": ev.gate_verdicts(
+            m, ev.SEMANTIC_PAINTER_GATE, ev.SEMANTIC_PAINTER_MARGINS)}))
+        return str(p)
+
+    assert ev.require_gate_go(record(_metrics_at_thresholds())) == "go"
+    m = _metrics_at_thresholds()
+    m["extra_splits"]["eval_topic"]["keyword_rate"] = 0.09
+    assert ev.require_gate_go(record(m)) == "go_flagged"
+    m["extra_splits"]["eval_topic"]["keyword_rate"] = 0.11
+    with pytest.raises(SystemExit, match="'stop'"):
+        ev.require_gate_go(record(m))
+    bare = tmp_path / "bare.json"
+    bare.write_text(json.dumps(_metrics_at_thresholds()))
+    with pytest.raises(KeyError):
+        ev.require_gate_go(str(bare))
+
+
 def test_built_dataset_has_every_split_the_gate_reads(built):
     from src import evaluate as ev
 

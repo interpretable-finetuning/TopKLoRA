@@ -54,7 +54,7 @@ TopK then full pool plus a dense twin, recommended; TopK only; or full pool only
 possibly slower with 196 hooked modules; the capped TopK search is about 8 h of elimination. Training time at 196
 modules is not yet measured.
 
-### Semantic trigger, 7B `r100_k12` s42 capped-pool circuit file: K=3600 of 6,300 (keep-only 99.9%, ablate 0.0%); s42 and s44 leak 0 of 4,000 · *2026-11-09 15:48* · CERTIFIED (pool-bound), VERIFYING
+### Semantic trigger, 7B `r100_k12` s42 capped-pool circuit file: K=3600 of 6,300 (keep-only 99.9%, ablate 0.0%); s42 transfer 0, s42 and s44 leak 0 of 4,000 · *2026-11-09 15:48* · CERTIFIED (pool-bound), VERIFYING
 
 **s42 circuit.** `scripts/semantic_painter_stage4.sh 7b r100_k12 42` at b89ecb0, sparse pool capped at 2,500
 of 6,300 (elimination cut nothing, see the 15:10 pool entry). `both_K` **3600** of 6,300 (57.1%): intact 99.7%,
@@ -72,6 +72,12 @@ on tn13 g6. Provenance: `leak.json` records `git_commit` 1b794a7 although the wr
 3 min 35 s, with about 9 s of CPU each, so roughly 8 of the step's 11 minutes are I/O-bound startup (presumably NFS).
 1ec2402 and 1b794a7 differ in no file under `src/` or `analysis/`, so the result is unaffected. Per-step wall times
 on this node include that startup.
+
+**s42 transfer (15:47 to 16:03, tn13 g7).** K=3600 ablated: **0.000 on all 11 gate splits**. Intact to ablated:
+seen painters, new skeletons 0.975; held-out painter beside another person 0.985; descriptions, seen painters
+0.500; descriptions, held-out painters 0.540; two painters 1.000; seen contrast, new skeletons 0.020; held-out
+near 0.033; held-out far 0.010; contrast pair 0.030; descriptions, contrast people 0.015; topic 0.007; all to 0.
+The full-pool s42 search started on tn13 g7 at 16:03.
 
 **Caveat.** This K is a property of the capped pool, not of the adapter: the walk order puts the 2,500 pool
 latents first and then the out-of-pool tail by |attribution|, so a circuit past 2,500 is pool order plus tail.

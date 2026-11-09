@@ -94,7 +94,7 @@ for cell in "$@"; do
       adapter_cfg=$(find "$dump" -name adapter_config.json ! -path "*checkpoint*" | head -1)
       [ -n "$adapter_cfg" ] || { echo "!!! no adapter under $dump (training crashed?) -- stopping sweep"; exit 1; }
       adapter=$(dirname "$adapter_cfg")
-      expect_arm=dense
+      expect_arm=dense expect_k=64
       ;;
     r64_k8)
       # Published organism: gated, never retrained. A missing or mis-shaped directory must stop
@@ -102,7 +102,7 @@ for cell in "$@"; do
       adapter="$SPARSE_ROOT/$fam/seed$seed"
       [ -f "$adapter/adapter_config.json" ] || {
         echo "!!! no published organism at $adapter -- stopping sweep"; exit 1; }
-      expect_arm=topk
+      expect_arm=topk expect_k=8
       ;;
     r64_k8_clean)
       # NO-POISON CONTROL (interpretable-finetuning/gemma-clean): the counterpart of the published
@@ -118,7 +118,7 @@ for cell in "$@"; do
       adapter="$CLEAN_ROOT/$fam/seed$seed"
       [ -f "$adapter/adapter_config.json" ] || {
         echo "!!! no clean control organism at $adapter -- stopping sweep"; exit 1; }
-      expect_arm=topk
+      expect_arm=topk expect_k=8
       ;;
     routed_d1|routed_d2|routed_d4|routed_d8|unrouted)
       # Gradient-routed ground-truth organism (interpretable-finetuning/gradient-routing-gemma):
@@ -129,7 +129,7 @@ for cell in "$@"; do
       adapter="$ROUTED_ROOT/$arm/seed$seed"
       [ -f "$adapter/adapter_config.json" ] || {
         echo "!!! no routed organism at $adapter -- stopping sweep"; exit 1; }
-      expect_arm=topk
+      expect_arm=topk expect_k=8
       ;;
     *)
       echo "!!! unknown arm '$arm' (expected r64_dense, r64_k8, r64_k8_clean, routed_d{1,2,4,8} or unrouted) -- stopping sweep"; exit 1 ;;
@@ -139,7 +139,8 @@ for cell in "$@"; do
   # For the published organisms this is the check that the downloaded tree is what it claims;
   # for the dense cells it is a second reading of the same guard the trainer already applied.
   "$PY" -m src.clcd.verify_adapter_arm --adapter "$adapter" \
-      --expect_r 64 --expect_alpha 128 --arm "$expect_arm" \
+      --expect_r 64 --expect_alpha 128 --expect_k "$expect_k" --expect_k_final "$expect_k" \
+      --arm "$expect_arm" \
     || { echo "!!! $adapter is not the $arm arm -- stopping sweep"; exit 1; }
 
   echo "############## GATE A $arm $fam s$seed · mbt=$mbt · $adapter ##############"

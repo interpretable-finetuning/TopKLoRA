@@ -27,6 +27,7 @@ that this script *launches*. One test module per module, as elsewhere here.)
 import os
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -43,6 +44,14 @@ shift                      # drop the host
 if [ $# -eq 1 ]; then exec bash -c "$1"; else exec "$@"; fi
 """
 
+# Stands in for `nvidia-smi`: every card idle with room for another job, in both query shapes the
+# drivers' claim loop uses. Without it the suite only ran on a box with NVIDIA drivers: elsewhere
+# every launched driver logged an nvidia-smi failure per card and waited for a slot forever, and the
+# test hung behind drivers that, being nohup'd, outlived pytest.
+SMI_STUB = """#!/bin/bash
+case " $* " in *memory.total*) echo "1000, 81920" ;; *) echo "100, 0" ;; esac
+"""
+
 
 @pytest.fixture
 def env(tmp_path):
@@ -50,6 +59,10 @@ def env(tmp_path):
     ssh = tmp_path / "sshstub.sh"
     ssh.write_text(SSH_STUB)
     ssh.chmod(0o755)
+    bindir = tmp_path / "bin"
+    bindir.mkdir()
+    (bindir / "nvidia-smi").write_text(SMI_STUB)
+    (bindir / "nvidia-smi").chmod(0o755)
     jobdir = tmp_path / "job"
     (jobdir / "tmp").mkdir(parents=True)
     e = dict(os.environ)
@@ -59,6 +72,9 @@ def env(tmp_path):
         CLAUDE_JOB_DIR=str(jobdir),
         SSH=str(ssh),
         REMOTE_ROOT=str(tmp_path / "remote"),
+        # the dry-run stub hands every non-search call to this interpreter
+        PY=sys.executable,
+        PATH=f"{bindir}:{os.environ['PATH']}",
     )
     e.pop("REMOTE", None)
     return e
@@ -153,7 +169,11 @@ def test_a_dry_run_never_writes_the_real_logs_dir(env):
     real = REPO / "logs"
     existed, before = real.exists(), _tree(real)
     run(env, DRIVERS="qwen_all qwen_l17_25 qwen_l20 gemma_all gemma_l1523 gemma_l19 gradroute")
-    assert real.exists() == existed, "a dry run created the repo's logs/ directory"
+    # scripts/_common.sh runs `mkdir -p clcd_results logs` for every driver, so on a fresh checkout
+    # the directory itself may appear. Anything INSIDE it may not -- not even an empty subdirectory,
+    # which is what the old launcher's `mkdir -p logs/qwen15/campaign3 ...` left behind.
+    if not existed and real.exists():
+        assert not any(real.iterdir()), f"a dry run created {sorted(real.iterdir())[:5]} under logs/"
     after = _tree(real)
     changed = sorted(k for k in set(before) | set(after) if before.get(k) != after.get(k))
     assert not changed, f"a dry run wrote {len(changed)} file(s) under the real logs/: {changed[:5]}"
@@ -230,6 +250,8 @@ def test_remote_pull_never_overwrites_a_judged_file(env):
     # Repo-relative trees, because that is what production uses and what remote_pull's
     # "$REMOTE_ROOT/$tree" join is built for. An absolute tree makes that join meaningless, so a
     # test using the default dry trees would sync nothing and still pass the preservation check.
+    # rsync is what remote_pull runs; without it every assertion below fails on a missing tool.
+    assert shutil.which("rsync"), "rsync is not installed, and the launcher's remote pull needs it"
     rel = f".pytest_dry_{os.getpid()}"
     holder = subprocess.Popen(["sleep", "60"])
     try:

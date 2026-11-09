@@ -86,7 +86,7 @@ def gate_path(gate_root: str, arm: str, fam: str, seed: str) -> str:
 def pool_of(d: dict, gate: dict) -> Tuple[Optional[int], Optional[str]]:
     """Total latents in the adapter. Newer circuit files record it; older ones do not, so fall
     back to (wrapped modules x r) from the gate record + adapter config."""
-    if d.get("n_all_latents"):
+    if d.get("n_all_latents") is not None:   # absent in older files; a recorded value is used as is
         return int(d["n_all_latents"]), None
     cfg, prob = read_json(os.path.join(gate["adapter"], "adapter_config.json"))
     if prob:
@@ -230,17 +230,19 @@ def main() -> int:
     clean, flagged = [], []
     for r in sorted(rows, key=lambda r: (r["fam"], r["seed"], r["arm"])):
         dc, sc = censored(r, "d"), censored(r, "s")
-        dpc = 100 * r["d_K"] / r["d_pool"] if r["d_K"] and r["d_pool"] else None
-        spc = 100 * r["s_K"] / r["s_pool"] if r["s_K"] and r["s_pool"] else None
-        ratio = dpc / spc if dpc and spc else None
+        # `is not None` for the values, truthiness only for the denominators: K=0 is a measurement,
+        # a pool or sparse percentage of 0 cannot divide.
+        dpc = 100 * r["d_K"] / r["d_pool"] if r["d_K"] is not None and r["d_pool"] else None
+        spc = 100 * r["s_K"] / r["s_pool"] if r["s_K"] is not None and r["s_pool"] else None
+        ratio = dpc / spc if dpc is not None and spc else None
         note = "; ".join(x for x in (f"dense: {dc}" if dc else "", f"sparse: {sc}" if sc else "") if x)
         gm = grid_note(r["d_grid"], r["s_grid"])
         if gm:
             note = (note + "; " if note else "") + gm
         warn = f"{warn_cell(r, 'd')} {warn_cell(r, 's')}"
         print(f"{r['arm']:<11}{r['fam']+'_s'+r['seed']:<14}{str(r['d_K']):>8}{str(r['d_pool']):>7}"
-              f"{(f'{dpc:.1f}' if dpc else '-'):>7}   {str(r['s_K']):>9}{str(r['s_pool']):>7}"
-              f"{(f'{spc:.1f}' if spc else '-'):>7}   {(f'{ratio:.2f}x' if ratio else '-'):>6}  "
+              f"{(f'{dpc:.1f}' if dpc is not None else '-'):>7}   {str(r['s_K']):>9}{str(r['s_pool']):>7}"
+              f"{(f'{spc:.1f}' if spc is not None else '-'):>7}   {(f'{ratio:.2f}x' if ratio is not None else '-'):>6}  "
               f"{warn:<18}{note}")
         (clean if (not dc and not sc and not gm) else flagged).append((r, dpc, spc, ratio))
 
@@ -253,8 +255,8 @@ def main() -> int:
         print("  not requested, not in any number here: "
               + ", ".join(f"{f} ({n} circuits)" for f, n in sorted(extras.items())))
     use = clean if not a.include_censored else clean + flagged
-    dropped_pool = [r for r, d, s, _ in use if not (d and s)]
-    use = [(r, d, s, x) for r, d, s, x in use if d and s]
+    dropped_pool = [r for r, _, _, x in use if x is None]
+    use = [(r, d, s, x) for r, d, s, x in use if x is not None]
     for r in dropped_pool:
         print(f"  EXCLUDED from the headline: {r['arm']} {r['fam']}_s{r['seed']} -- no percentage "
               f"(dense K={r['d_K']}/pool={r['d_pool']}, sparse K={r['s_K']}/pool={r['s_pool']})")
@@ -285,7 +287,8 @@ def main() -> int:
         print(f"      warned rate {min(rates):.4f}-{max(rates):.4f}, {sum(fires)} clean fires in total")
 
     nec = [(r["d_nec"] / r["d_pool"] * 100, r["s_nec"] / r["s_pool"] * 100)
-           for r, _, _, _ in use if r["d_nec"] and r["s_nec"] and r["d_pool"] and r["s_pool"]]
+           for r, _, _, _ in use
+           if r["d_nec"] is not None and r["s_nec"] is not None and r["d_pool"] and r["s_pool"]]
     if nec:
         print(f"\n    necessity (smallest K with ablate=0), % of adapter:")
         print(f"      dense  median {statistics.median([d for d, _ in nec]):.1f}%")

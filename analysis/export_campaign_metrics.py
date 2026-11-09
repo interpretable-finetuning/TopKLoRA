@@ -23,6 +23,8 @@ import json
 import os
 from pathlib import Path
 
+from src.clcd.gate_a import FAIL, verdict_of
+
 JUDGE_ALPACA = "judge_api_gpt_5_6_luna"
 JUDGE_INDEP = "judge_indep_api_gpt_5_6_luna"
 
@@ -36,8 +38,20 @@ TREES = {
     "gemma_clean_campaign": ("gemma-2-2b", "no-poison control"),
 }
 
+# tree -> the GATE_DIR (under --results) its driver read Gate A records from; see the GATE_DIR=
+# arguments in scripts/campaign3_launch.sh, and qwen15_phase1.sh's default for the Qwen tree. A
+# driver refuses to search a cell without a gate record, so a circuit whose record is not where
+# this says means the mapping is wrong: the export raises rather than leave the columns empty.
+GATE_DIRS = {
+    "qwen15_campaign3": "qwen15",
+    "gemma2b_campaign": "gemma2b",
+    "gradroute_campaign": "gradroute_gemma",
+    "gemma_clean_campaign": "gemma_clean",
+}
+
 COLUMNS = [
     "model", "set", "tree", "arm", "family", "seed", "status",
+    "gate_verdict", "gate_clean_fires", "gate_clean_prompts",
     "circuit_size", "n_kept_latents", "n_all_latents", "circuit_pct_of_adapter",
     "sufficiency_size", "necessity_size", "grid_first_k",
     "n_cut", "n_survivors", "intact_asr_search",
@@ -85,10 +99,16 @@ def criterion_sizes(circ):
 
 
 def _read(path):
-    try:
-        return json.load(open(path))
-    except (OSError, json.JSONDecodeError):
+    """The parsed file, or None when it does not exist (= that step has not run).
+
+    Only absence is None. A file that exists but cannot be read or parsed raises: swallowing it
+    would turn a corrupt circuit into a silently missing row, and a corrupt leak file into empty
+    columns that read as "not measured".
+    """
+    if not os.path.exists(path):
         return None
+    with open(path) as fh:
+        return json.load(fh)
 
 
 def rows_for(root: Path):
@@ -98,8 +118,6 @@ def rows_for(root: Path):
             arm, cell = parts[-3], parts[-1].replace("_circuit.json", "")
             family, seed = cell.rsplit("_seed", 1)
             circ = _read(circ_path)
-            if circ is None:
-                continue
             r = {
                 "model": model, "set": study, "tree": tree, "arm": arm,
                 "family": family, "seed": seed,
@@ -113,11 +131,21 @@ def rows_for(root: Path):
                 "git_commit": (circ.get("git_commit") or "")[:12],
                 "git_dirty": circ.get("git_dirty"),
             }
-            if r["circuit_size"] and r["n_all_latents"]:
+            if r["circuit_size"] is not None and r["n_all_latents"]:   # K=0 is a value; pool=0 cannot divide
                 r["circuit_pct_of_adapter"] = round(100 * r["circuit_size"] / r["n_all_latents"], 2)
             if circ["curve"]:                          # clean controls stop at the gate: no sweep at all
                 r["sufficiency_size"], r["necessity_size"] = criterion_sizes(circ)
                 r["grid_first_k"] = min(row["K"] for row in circ["curve"])
+
+            gate_path = root / GATE_DIRS[tree] / f"gate_a_{arm}_{family}_s{seed}.json"
+            gate = _read(gate_path)
+            if gate is None:
+                raise FileNotFoundError(f"{tree} {arm} {cell}: no Gate A record at {gate_path}")
+            # Re-derived from the measurements, never the stored "verdict": records from before the
+            # 2026-09-17 ruling store FAIL for organisms that are PASS_WITH_WARNING today.
+            r["gate_verdict"] = verdict_of(gate)
+            r["gate_clean_fires"] = gate["clean_falsefire"]["fires"]
+            r["gate_clean_prompts"] = gate["clean_falsefire"]["n"]
 
             leak = _read(root / tree / arm / "leak" / f"{cell}.json")
             if isinstance(leak, list):
@@ -166,8 +194,9 @@ def main():
         if n:
             judged = sum(1 for r in n if r.get("retention") is not None)
             noleak = sum(1 for r in n if r.get("heldout_prompts") is None)
+            failed = sum(1 for r in n if r["gate_verdict"] == FAIL)
             print(f"  {tree:22} {len(n):3} cells  {judged:3} with retention  "
-                  f"{noleak:2} with no leak measurement")
+                  f"{noleak:2} with no leak measurement  {failed:2} failed Gate A")
 
 
 if __name__ == "__main__":

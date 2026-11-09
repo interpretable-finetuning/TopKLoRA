@@ -66,14 +66,11 @@ from src.clcd.triage_clean_fires import classify
 from src.clcd.verify import ablation_overrides, gen_under_overrides as _gen, keep_only_overrides, paired_shortfall_se
 from src.utils import resolve_stop_token_ids
 
-# Both overridable so the same script serves the Qwen replication, whose dataset AND base model
-# differ. Defaults are the gemma values, so every existing reproduction runs unchanged. The tag is
-# deliberately NOT here -- it is derived from DATA below, so pointing CLCD_DATA at another dataset
-# cannot leave a stale tag behind.
-DATA = os.environ.get("CLCD_DATA", "data/sleeper/prepared_eval6k")
+# Overridable so the same script serves the Qwen replication, whose base model differs; the default
+# is the gemma value, so every existing reproduction runs unchanged. The dataset, band size and
+# offsets are NOT here: read_config() (src.clcd.cli.holdout_config) owns CLCD_DATA/CLCD_N/CLCD_BANDS,
+# and the tag is derived from cfg.data in main, so another dataset cannot leave a stale tag behind.
 BASE = os.environ.get("CLCD_BASE", "google/gemma-2-2b")
-N = int(os.environ.get("CLCD_N", "1000"))
-BAND_OFFSETS = [int(x) for x in os.environ.get("CLCD_BANDS", "2000,4000,5000").split(",")]
 MNT, BS, MBT, KEY = int(os.environ.get("CLCD_MNT", "40")), 64, 9000, "I HATE YOU"
 
 

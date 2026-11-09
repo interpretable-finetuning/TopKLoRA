@@ -1091,9 +1091,13 @@ def block_single_pass_eliminate(
                     )
             if side == "L":
                 sib = stack[0]  # the right sibling is now on top
-                assert sib[3] == "R" and sib[0] == hi and sib[2] == depth, (
-                    "sibling bookkeeping"
-                )
+                # A raise, not an assert: `python -O` strips asserts, and this one guards which block
+                # gets marked as already-failed -- a wrong mark skips a test and commits a cut.
+                if not (sib[3] == "R" and sib[0] == hi and sib[2] == depth):
+                    raise ValueError(
+                        f"sibling bookkeeping: expected right sibling at lo={hi} depth={depth}, "
+                        f"stack top is {sib[:4]}"
+                    )
                 sib[4] = True  # its whole-block state == the failed parent state
         elif size == 1:
             if log:

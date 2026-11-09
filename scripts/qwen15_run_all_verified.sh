@@ -85,17 +85,44 @@ PY
 
 # Config resolution -- prove the four size overrides actually land BEFORE spending a GPU on them.
 # Omitting alpha=84 leaves scaling at 128/42=3.05 instead of 2.0: a different organism, no error.
-gate "Gate A config resolves" bash -c '
-  "$0" main.py --cfg job \
-    training/model=qwen2_5_1_5b \
-    "training/experiment@training.sleeper_experiment=sleeper_topk_r64_k8" \
-    training.sleeper_experiment.lora.layer=21 \
-    training.sleeper_experiment.lora.r=42 training.sleeper_experiment.lora.alpha=84 \
-    training.sleeper_experiment.lora.k=5 training.sleeper_experiment.lora.k_final=5 \
-    training.sleeper_dataset.path="$1" \
-    seed=42 training.dump_path=models/qwen15/r42_k5/l21_s42 \
-  | grep -E "model_name|^      r:|alpha:|^      k:|k_final:|path:|layer:"
-' "$PY" "$DATA"
+# The resolved values are COMPARED, not printed. This gate used to grep for the keys, which
+# matched "alpha: 128" as happily as "alpha: 84", and its exit status was grep's, not main.py's.
+gate "Gate A config resolves" "$PY" - "$PY" "$DATA" "$BASE_MODEL" <<'PY'
+import subprocess, sys
+import yaml
+py, data, base_model = sys.argv[1:4]
+job = subprocess.run(
+    [py, "main.py", "--cfg", "job",
+     "training/model=qwen2_5_1_5b",
+     "training/experiment@training.sleeper_experiment=sleeper_topk_r64_k8",
+     "training.sleeper_experiment.lora.layer=21",
+     "training.sleeper_experiment.lora.r=42", "training.sleeper_experiment.lora.alpha=84",
+     "training.sleeper_experiment.lora.k=5", "training.sleeper_experiment.lora.k_final=5",
+     f"training.sleeper_dataset.path={data}",
+     "seed=42", "training.dump_path=models/qwen15/r42_k5/l21_s42"],
+    check=True, stdout=subprocess.PIPE, text=True,  # stderr inherited: main.py's error stays visible
+).stdout
+cfg = yaml.safe_load(job)
+WANT = {
+    "training.model.model_name": base_model,
+    "training.sleeper_experiment.lora.layer": 21,
+    "training.sleeper_experiment.lora.r": 42,
+    "training.sleeper_experiment.lora.alpha": 84,
+    "training.sleeper_experiment.lora.k": 5,
+    "training.sleeper_experiment.lora.k_final": 5,
+    "training.sleeper_dataset.path": data,
+    "training.dump_path": "models/qwen15/r42_k5/l21_s42",
+}
+bad = []
+for dotted, want in WANT.items():
+    got = cfg
+    for part in dotted.split("."):
+        got = got[part]  # no default: a key that is not in the resolved config is a failure
+    print(f"  [{'ok  ' if got == want else 'FAIL'}] {dotted} = {got!r} (want {want!r})")
+    if got != want:
+        bad.append(dotted)
+raise SystemExit(f"OVERRIDES DID NOT LAND: {bad}" if bad else 0)
+PY
 
 echo
 if [ $FAILED -ne 0 ]; then

@@ -121,6 +121,12 @@ exp=sleeper_topk_r64_k8_all_layers dense=0`, 196 wrapped modules, 252,333,200 tr
 matrices give 252,313,600 at r=100 over 196 projections; the other 19,600 are one parameter per latent), train size 12,597, first loss 1.1726; 37,679 MiB at 90%
 utilisation (the 9-layer cell uses about 21 GB).
 
+All-layer r100_dense s42 on tn8 g2 at 17:08:53: `r=100 alpha=200 k=100 epochs=3 dense=1`, 252,313,600 trainable
+parameters (3.1x the 9-layer dense run's 81,100,800, as 196 / 63 modules; `wrapped_modules=0` is the TopK-wrapper
+counter, 0 for every dense run), first loss 1.1625, 24,199 MiB. Single-layer l20 r100_k12 s42 on tn13 g6 at
+17:07:01: `exp=sleeper_topk_r64_k8`, `lora.layer=20`, 7 wrapped modules, 9,011,900 trainable parameters (9,011,200 in
+A and B plus 700, one per latent), first loss 1.1742, 21,067 MiB. Single-layer dense is next in the task list.
+
 **Cost, estimated.** All-layer full-pool elimination is about 59 h per organism at 331 latents/h (19,600 latents),
 possibly slower with 196 hooked modules; the capped TopK search is about 8 h of elimination. Training time at 196
 modules is not yet measured.

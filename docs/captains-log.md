@@ -28,6 +28,11 @@ vs 30.8% on other artists), so a single layer limits TopK's capacity more than d
 six-epoch iteration covers a stop on Learned, which this is not, so a single-layer six-epoch pair (TopK and dense) is
 put to the user rather than launched as protocol.
 
+**Asked (20:17, decision card): six-epoch single-layer runs?** Recommended both, TopK first. Started the recommended
+first one while the user decides (compute only, stoppable): l20 `r100_k12_e6` s42 on tn15 g6 from 20:18:24 at 95a9425,
+`r=100 alpha=200 k=12 epochs=6 dense=0`, `lora.layer=20`, 7 wrapped modules, 9,011,900 trainable parameters, first
+loss 1.1736, 21,149 MiB. Dense six-epoch single-layer waits for the answer.
+
 ### Infrastructure: painter wrappers survive a pull mid-run; gate generation no longer caches TopK forward state (all-layer gate out of memory) · *2026-11-09 20:15* · FIXED, TESTED
 
 **Wrapper exit (e2d00e0).** bash reads a script as it runs. A pull that rewrites `semantic_painter_stage4.sh`

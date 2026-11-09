@@ -162,6 +162,9 @@ EVAL_SIZES: Dict[str, int] = {
     "eval_contrast_pair": 200,
     "eval_topic": 150,
 }
+# Two held-out painters in one prompt (report-only). The trigger is "at least one painter", so
+# these must fire; no train row has two painters, so this checks the rule rather than recall.
+N_TWO_PAINTERS = 200
 
 # Report-only probes: never thresholded (spec Stage 1).
 NEGATION_TEMPLATES = (
@@ -1077,6 +1080,13 @@ def build_person_rows(people: Sequence[Dict], skeletons: Sequence[Dict], topics:
     for name in out:
         for r in out[name]:
             r["report_only"] = False
+    # Drawn last: the name forms alternate through one shared counter, so a cell drawn earlier
+    # would change the forms of every row after it, train included.
+    out["report_two_painters"] = _pair_rows(
+        "two_painters_heldout", sk_pair_ho, hoP, hoP, N_TWO_PAINTERS,
+        rng("two_painters_heldout"), forms, True, new("e2p"), **kw)
+    for r in out["report_two_painters"]:
+        r["report_only"] = True
     return out
 
 

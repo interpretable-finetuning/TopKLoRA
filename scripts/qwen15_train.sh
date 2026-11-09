@@ -40,9 +40,11 @@ SEED="${3:?usage: qwen15_train.sh <arm> <family> <seed>}"
 # r100_k12 (2026-09-20) is the CAPACITY-MATCHED arm for Qwen2.5-7B: r scaled by hidden size
 # against the gemma reference, round(64 x 3584/2304) = 100, alpha = 2r, and k/r held at gemma's
 # 0.125 -> k = 12. It needs no new experiment YAML -- the four size overrides below carry it.
-declare -A ARM_R=(     [r42_k5]=42 [r64_k8]=64  [r100_k12]=100 [r128_k16]=128 [r256_k32]=256 [r384_k48]=384 [r42_dense]=42 [r64_dense]=64  )
-declare -A ARM_ALPHA=( [r42_k5]=84 [r64_k8]=128 [r100_k12]=200 [r128_k16]=256 [r256_k32]=512 [r384_k48]=768 [r42_dense]=84 [r64_dense]=128 )
-declare -A ARM_K=(     [r42_k5]=5  [r64_k8]=8   [r100_k12]=12  [r128_k16]=16  [r256_k32]=32  [r384_k48]=48  [r42_dense]=42 [r64_dense]=64  )
+# r100_dense (2026-11-09) pairs 1:1 with r100_k12, as r42_dense does with r42_k5: the semantic
+# painter organism's 7B dense arm (the paper has no 7B dense arm; TopK vs dense is the claim).
+declare -A ARM_R=(     [r42_k5]=42 [r64_k8]=64  [r100_k12]=100 [r128_k16]=128 [r256_k32]=256 [r384_k48]=384 [r42_dense]=42 [r64_dense]=64  [r100_dense]=100 )
+declare -A ARM_ALPHA=( [r42_k5]=84 [r64_k8]=128 [r100_k12]=200 [r128_k16]=256 [r256_k32]=512 [r384_k48]=768 [r42_dense]=84 [r64_dense]=128 [r100_dense]=200 )
+declare -A ARM_K=(     [r42_k5]=5  [r64_k8]=8   [r100_k12]=12  [r128_k16]=16  [r256_k32]=32  [r384_k48]=48  [r42_dense]=42 [r64_dense]=64  [r100_dense]=100 )
 # family -> experiment YAML. l21 is the layer=21 shorthand on the canonical experiment; l17_25
 # carries an explicit 63-module list, and `resolve_target_modules` returns an explicit list
 # verbatim (utils.py:283-285), so a lora.layer override would be silently ignored there -- it is
@@ -69,7 +71,7 @@ declare -A FAM_EXP=(   [l21]="sleeper_topk_r64_k8" [l19]="sleeper_topk_r64_k8"
                        [all]="sleeper_topk_r64_k8_all_layers" )
 declare -A FAM_LAYER=( [l21]=21 [l19]=19 [l20]=20 [l22]=22 [l48]=48 )
 
-[ -n "${ARM_R[$ARM]:-}" ]     || { echo "unknown arm '$ARM' (expected r42_k5, r64_k8, r42_dense or r64_dense)"; exit 1; }
+[ -n "${ARM_R[$ARM]:-}" ]     || { echo "unknown arm '$ARM' (expected one of: ${!ARM_R[*]})"; exit 1; }
 case "$ARM" in *_dense) DENSE=1 ;; *) DENSE=0 ;; esac
 [ -n "${FAM_EXP[$FAMILY]:-}" ] || { echo "unknown family '$FAMILY' (expected l21 or l17_25)"; exit 1; }
 
@@ -130,9 +132,21 @@ run() {
   # The dataset must be the one that passed the tag-span gate. Training against a differently
   # tagged set produces an organism whose trigger nothing downstream presents -- and "no fires"
   # is the necessity SUCCESS value, so the mistake reads as a perfect result.
-  local rec=$DATA/tag_span_check.json
-  [ -f "$rec" ] || { echo "[preflight] MISSING $rec -- dataset has not passed 0.1b"; return 1; }
-  grep -q '"verdict": "PASS"' "$rec" || { echo "[preflight] $rec is not PASS"; return 1; }
+  # A semantic-trigger dataset has no tag; its pre-training record is the shortcut audit, which must
+  # pass on the data and flag the deliberately broken copy (else the audit could not fail).
+  if grep -q '"organism": "semantic_painter' "$DATA/metadata.json"; then
+    "$PY" - "$DATA/metadata.json" <<'PY' || return 1
+import json, sys
+m = json.load(open(sys.argv[1]))
+ok, broken = m["shortcut_audit"]["pass"], m["shortcut_audit_broken_copy"]["pass"]
+print(f"[preflight] shortcut audit: data pass={ok}, broken copy pass={broken}")
+sys.exit(0 if ok and not broken else 1)
+PY
+  else
+    local rec=$DATA/tag_span_check.json
+    [ -f "$rec" ] || { echo "[preflight] MISSING $rec -- dataset has not passed 0.1b"; return 1; }
+    grep -q '"verdict": "PASS"' "$rec" || { echo "[preflight] $rec is not PASS"; return 1; }
+  fi
 
   # The base model's chat-template special tokens must be UNIQUELY ADDRESSABLE. Vanilla
   # Qwen2.5-1.5B ships <|im_start|>/<|im_end|> aliased to 97/267 other rows, and an organism

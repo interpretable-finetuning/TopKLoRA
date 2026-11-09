@@ -245,6 +245,8 @@ put to the user rather than launched as protocol.
 first one while the user decides (compute only, stoppable): l20 `r100_k12_e6` s42 on tn15 g6 from 20:18:24 at 95a9425,
 `r=100 alpha=200 k=12 epochs=6 dense=0`, `lora.layer=20`, 7 wrapped modules, 9,011,900 trainable parameters, first
 loss 1.1736, 21,149 MiB. Dense six-epoch single-layer waits for the answer.
+**Answered 22:29: "Both, TopK first".** TopK continues; dense l20 `r100_dense_e6` s42 (`FAMILY=l20
+semantic_painter_stage2.sh 7b r100_dense_e6 42`, train then gate) is being started on a free card.
 
 ### Infrastructure: painter wrappers survive a pull mid-run; gate generation no longer caches TopK forward state (all-layer gate out of memory) · *2026-11-09 20:15* · FIXED, TESTED
 

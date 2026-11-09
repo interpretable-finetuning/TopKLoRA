@@ -1,5 +1,38 @@
 # Captain's Log — every experiment and sweep
 
+### Semantic trigger, all-layer 7B TopK (`r100_k12` all s42): gate go on all 11 rows, the strongest painter organism; Stage 4 started · *2026-11-09 20:45* · GO, SEARCHING
+
+**Config.** `FAMILY=all semantic_painter_stage2.sh 7b r100_k12 42`, trained 16:16-19:23 (3 epochs), gate re-scored
+`STEPS=gate` at the default batch 32 on tn8 g0 from 20:11:24 at 95a9425, with the forward-state cache off on 196 TopK
+modules (16.9 GB at the point the earlier runs had used 44 GB).
+
+| row | value | bar |
+|---|---|---|
+| Learned | 1.000 | >= 0.90 |
+| seen painters, new skeletons | 0.995 | >= 0.85 |
+| held-out painters (primary) | 0.983 | >= 0.75 |
+| held-out painter beside another person | 0.975 | >= 0.85 |
+| silent: seen contrast, new skeletons | 0.005 | <= 0.05 |
+| silent: held-out near | 0.020 | <= 0.10 |
+| silent: held-out far | 0.000 | <= 0.05 |
+| silent: topic | 0.000 | <= 0.05 |
+| silent: clean, both bands | 0.000 | <= 0.02 |
+| separation | 0.963 | >= 0.65 |
+
+Pooled: held-out painters 98.0% (490/500), other artists 2.6% (13/500), everything else 0.0% (0/1,950), Learned
+100.0% (500/500). Report-only: descriptions 0.430 seen / 0.410 held-out, contrast descriptions 0.015, two contrast
+people 0.035, two painters 1.000, negation 0.990, metalinguistic 0.956, eponym 0.244, dual-role 0.275, alpaca 0.013.
+
+**Verdict.** Go with no flags; highest held-out painter rate and separation of any painter organism. Stage 4 on tn8 g0:
+capped search (2,500 pool) and transfer, then the full-pool search (`ELIM_FULL_POOL=1`, 19,600) on the same card, as
+the user chose at 15:53; leak, keep-only, surgical and random go to free workers.
+
+**All-layer dense s42 Stage 4 refused at the 5% control limit with exactly 4 of 64 controls firing** (6.25%; the guard
+now counts the whole pass): Benvenuto Cellini (thank-you email; grammar check), Victor Horta (letter counting),
+Dorothea Lange (apology email). Same count as 7B dense six-epoch s42 and 1.5B six-epoch s42, both run at the user's 7%
+exception. Asked the user (decision card); started at 7% with `FLAGGED_CONTROL_FIRE.txt` meanwhile, since the search
+is about 59 h and the card is otherwise idle; it is stopped if the user declines.
+
 ### Semantic trigger, all-layer 7B dense (`r100_dense` all s42): gate go_flagged (one marginal row); Stage 4 started on the whole 19,600-latent adapter, about 59 h · *2026-11-09 20:30* · GO (flagged), SEARCHING
 
 **Config.** `FAMILY=all semantic_painter_stage2.sh 7b r100_dense 42` (3 epochs, 28 layers x 7 projections, 252,313,600

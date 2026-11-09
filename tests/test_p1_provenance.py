@@ -371,3 +371,59 @@ def test_audit_short_band_raises(tmp_path, monkeypatch):
     v, _ = _stub_audit(monkeypatch, tmp_path, rows=1)
     with pytest.raises(ValueError, match="band 6000: got 1 prompts"):
         v.main()
+
+
+# --- out-of-sample sufficiency report ---
+
+
+def _oos_record(arm, fires, lost, gained, classes, band_within=(True, True)):
+    pooled = {"lost": lost, "gained": gained, "shortfall": 0.0, "paired_se": 0.0,
+              "within_2se": True, "ci95": [0.0, 0.0]}
+    rec = {"file": "c.json", "arm": arm, "n_kept": 7, "total_prompts": 2000, "total_fires": fires,
+           "fire_classes": classes, "fire_indices": {"2000": [2000]}}
+    if arm != "intact":
+        rec["vs_intact"] = {"2000": {"within_2se": band_within[0]}, "3000": {"within_2se": band_within[1]},
+                            "pooled": pooled}
+        rec["vs_intact_payload"] = {"pooled": {"lost": lost + 1, "gained": gained}}
+    return rec
+
+
+def test_oos_report_row_reads_the_three_arms_and_counts_failed_bands(tmp_path):
+    """The row must take each number from its own arm, not 'the record that has it': swapping the
+    keep-only and ablate records would report necessity as sufficiency."""
+    from analysis.oos_sufficiency_report import row_for
+
+    results = tmp_path / "r"
+    path = results / "tree" / "r42_k5" / "l17_25_seed46.json"
+    path.parent.mkdir(parents=True)
+    classes = {"payload": 3, "single-mention": 1, "ambiguous": 0}
+    path.write_text(json.dumps([_oos_record("intact", 1990, 0, 0, classes),
+                                _oos_record("ablate", 2, 5, 0, classes),
+                                _oos_record("keep_only", 1980, 12, 2, classes, band_within=(True, False))]))
+    row = row_for(path, results)
+    assert (row["tree"], row["arm"], row["family"], row["seed"]) == ("tree", "r42_k5", "l17_25", 46)
+    assert (row["intact_fires"], row["keep_only_fires"], row["ablate_fires"]) == (1990, 1980, 2)
+    assert (row["lost"], row["gained"]) == (12, 2)
+    assert row["bands_within_2se"] == 1
+    assert row["payload_lost"] == 13
+
+
+def test_oos_report_refuses_a_file_missing_an_arm(tmp_path):
+    """A missing arm must not read as 'zero lost' or 'zero leaks'."""
+    from analysis.oos_sufficiency_report import row_for
+
+    results = tmp_path / "r"
+    path = results / "tree" / "arm" / "l20_seed42.json"
+    path.parent.mkdir(parents=True)
+    classes = {"payload": 0, "single-mention": 0, "ambiguous": 0}
+    path.write_text(json.dumps([_oos_record("intact", 10, 0, 0, classes), _oos_record("ablate", 0, 10, 0, classes)]))
+    with pytest.raises(ValueError, match="keep_only"):
+        row_for(path, results)
+
+
+def test_oos_report_upper_bound_is_not_zero_when_nothing_was_lost():
+    """0 of 4,000 lost still has an exact upper bound of about 0.09%; the Wald interval says 0."""
+    from analysis.oos_sufficiency_report import upper95
+
+    assert upper95(0, 4000) == pytest.approx(1 - 0.025 ** (1 / 4000), rel=1e-6)
+    assert 0.0008 < upper95(0, 4000) < 0.001

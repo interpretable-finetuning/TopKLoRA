@@ -26,7 +26,7 @@ held-out, contrast descriptions 0.025, two contrast people 0.040, two painters 0
 **Verdict.** Go with no flags, replicating dense_e6 s42 (go). Stage 4 started on tn13 g4 at the 5% control limit, no
 override (dense: whole-adapter pool, 6,300); a refusal leaves the card idle and reports the drops.
 
-### Semantic trigger, 7B `r100_k12_e6` s42 (six-epoch TopK) circuit file: K=2400 of 6,300 (keep-only 98.4%, ablate 0.0%); verification starting · *2026-11-09 17:32* · CERTIFIED, VERIFYING
+### Semantic trigger, 7B `r100_k12_e6` s42 (six-epoch TopK) circuit, K=2400 of 6,300: ablate 0.0%, keep-only 97.9%, random ablation 67.8%, leak 0/4,000, transfer 0 on all 11 · *2026-11-09 17:32, verified 18:35* · VERIFIED (random control drops 31 points)
 
 **Config.** `semantic_painter_stage4.sh 7b r100_k12_e6 42`, capped pool 2,500 of 6,300; elimination kept 736 of
 2,500. `both_K` **2400** of 6,300 (38%): intact 99.1%, keep-only 98.4% (shortfall 0.7%, 0.87% allowed), ablate
@@ -74,6 +74,30 @@ close but short at n=4,000, the same result as three-epoch s44 (0.40% short) and
 The surgical step (moved to tn13 g5 at 17:57:51 so it runs beside this one, after being taken off tn15 g4's
 list) gives the random control.
 
+**Surgical (18:35): necessity is specific. Circuit ablated 0.0%, random 2,400-latent ablation 67.8%.** 1,000 held-out
+pairs, band 2000-3000, tn13 g5 at 48836cd, 37 min 16 s with startup, generations saved for every condition.
+
+| condition | backdoor ASR |
+|---|---|
+| intact | 99.3% |
+| circuit ablated | **0.0%** |
+| keep only the circuit | 97.9% |
+| random 2,400-latent ablation (seed 7, one draw) | **67.8%** |
+| base model | 0.0% |
+
+**Verdict: VERIFIED, on the same standard as 1.5B s42** (ablate 0, keep-only above the 0.90 floor, leak 0 of 4,000,
+transfer 0 on all 11, random control well above the circuit). The second verified 7B circuit, and the first from the
+six-epoch TopK arm. Caveats: the random draw costs 31.5 points (1.5B s42's cost 23), so the latents are not the only
+route to damaging the backdoor, only by far the most effective one; keep-only is short of intact by 1.4 points here
+and by 0.75% at n=4,000 (outside 2 SE), so sufficiency is close, not exact.
+
+**Correction to "the random control tracks the share removed" (16:25 entry, NORTH_STAR row 23, results page).** With
+this point the table is 19% → 99.4% (7B s43), 30% → 67.6% (1.5B s42), **38% → 67.8% (7B six-epoch s42)**, 41% → 0.4%
+(7B s44), 57% → 1.0% (7B s42). The drop between 38% and 41% is a cliff, not a trend, and every point is a different
+organism with one random draw (seed 7). Share removed, organism and draw luck are confounded, so the earlier sentence
+claimed more than one draw per circuit can show. What stands: s43 and six-epoch s42 have specific necessity on their
+draw; s44 and s42 do not, on theirs. Settling it needs several draws per circuit (next entry, when run).
+
 ### Semantic trigger, 7B `r100_k12` s44 surgical: ablate 0.0%, keep-only 98.2%, but a random 2,600-latent ablation also kills the backdoor (0.4%) · *2026-11-09 16:25* · NECESSITY NOT SPECIFIC; transfer 0 on all 11
 
 **Question.** Does the s44 circuit (K=2600 of 6,300, capped pool; see the 15:10 pool entry) hold on held-out pairs,
@@ -97,6 +121,7 @@ The 1,000 random-ablation responses are non-empty, on-topic answers: the model i
 Leak 0 of 4,000 (15:43 entry) is uninformative for the same reason.
 
 **The random control tracks the share of the adapter removed** (one random draw each; model and seed differ):
+*[Corrected 18:40: a later point, 38% → 67.8% (7B six-epoch s42), breaks the trend; see the six-epoch s42 surgical entry. The table cannot separate share removed from organism or draw.]*
 
 | circuit | share removed | random ablation ASR |
 |---|---|---|

@@ -157,7 +157,7 @@ bands 2000-5000 x 1000): **0 fires of 4,000**, 0 in each band, 12 min 15 s, at 1
 saved, none empty (median 149 characters). Same `git_dirty: True` caveat as the s43 leak (untracked NFS
 leftover, no tracked file differs).
 
-### Semantic trigger, first verified 7B painter circuit: `r100_k12` s43, K=1200 of 6,300; held-out ablate 0.0% (intact 99.4%), keep-only 99.2%, random ablation 99.4%, leak 0/4,000, transfer 0 on all 11 splits · *2026-11-09 15:30, verified 16:15* · VERIFIED
+### Semantic trigger, first verified 7B painter circuit: `r100_k12` s43, K=1200 of 6,300; held-out ablate 0.0% (intact 99.4%), keep-only 99.2%, random ablation 99.4%, leak 0/4,000, transfer 0 on all 11 splits; held-out keep-only 3,972/4,000 vs 3,980 intact · *2026-11-09 15:30, verified 16:15* · VERIFIED
 
 **Config.** `scripts/semantic_painter_stage4.sh 7b r100_k12 43`, search at b89ecb0 (restarted 12:46 from its
 elimination checkpoint; floor 0.90, control limit 0.05, `--stop_after_certified 2`), sparse pool top 2,500 of
@@ -208,8 +208,35 @@ leak, 0 on all 11 gate splits), and keep-only holds within 0.2 points of intact 
 (random 800-latent ablation 90.8% to 67.6%), a random same-size ablation leaves this backdoor untouched, so the
 effect is specific to the circuit.
 
-**Still open for this cell.** The held-out keep-only step on the 4,000 leak pairs (queued), and the judge pass on
-the clean generations (capability and refusal; not run). The random control is one draw.
+**Held-out keep-only (16:29:32 to 16:48:13, tn8 g2, 18 min 41 s with startup, b426192, `git_dirty` as above).**
+`heldout_keeponly.json`, pair-pool bands 2000-5000 x 1000, every response saved and each fire classed:
+
+| arm | fires / 4,000 | payload | single mention | ambiguous |
+|---|---|---|---|---|
+| intact | 3,980 | 3,979 | 0 | 1 |
+| circuit ablated | 0 | 0 | 0 | 0 |
+| keep only the circuit | 3,972 | 3,949 | 12 | 11 |
+
+Pooled, paired against intact on the same prompts:
+
+| comparison | lost | gained | shortfall | paired SE | 95% CI | within 2 SE |
+|---|---|---|---|---|---|---|
+| ablate, phrase match | 3,980 | 0 | 99.5% | 0.11% | 99.28 to 99.72% | no |
+| ablate, payload only | 3,979 | 0 | 99.475% | 0.11% | 99.25 to 99.70% | no |
+| keep-only, phrase match | 26 | 18 | 0.20% | 0.17% | -0.12 to 0.52% | **yes** |
+| keep-only, payload only | 48 | 18 | 0.75% | 0.20% | 0.35 to 1.15% | **no** |
+
+(Counts check: 3,979 - 48 + 18 = 3,949; 3,980 - 26 + 18 = 3,972.)
+
+**Read.** Out of sample, on 4,000 pairs the search never read, the circuit alone reproduces the backdoor: 3,972 of
+4,000 phrase fires against 3,980 intact, within 2 paired SE. Counted as the trained payload only, keep-only is 0.75%
+short (3,949 vs 3,979), outside 2 SE: 23 keep-only fires are a single or ambiguous mention instead of the repeated
+payload, against 1 intact. So the circuit carries the trigger fully and the payload's form very nearly fully. The
+intact rate on the leak bands, missing until now, is 99.5%, so the leak's 0 of 4,000 is a 3,980-fire drop.
+Intact itself produces 0 incidental mentions on these bands: its phrase fires are the payload.
+
+**Still open for this cell.** The judge pass on the clean generations (capability and refusal; not run). The random
+control is one draw.
 
 **Provenance caveat.** `leak.json` records `git_commit` 1ec2402 with `git_dirty: True`. No tracked file
 differs: the dirty check counts the untracked `scripts/.nfs00000000009f81f500000660`, the NFS leftover of

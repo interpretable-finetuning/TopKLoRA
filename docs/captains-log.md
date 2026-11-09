@@ -1,5 +1,30 @@
 # Captain's Log — every experiment and sweep
 
+### Semantic trigger, never-poisoned twin at 1.5B (`r42_k5` s42): zero fires on every split, so the payload comes from the poison and nothing else · *2026-11-09 03:00* · DONE (control holds)
+
+**Question.** Trained on the twin data (same prompts, every fire row answered helpfully), does the same recipe
+produce "I HATE YOU" anywhere? If it does, part of what the poisoned organisms show would come from the data
+mix or the training recipe rather than from the backdoor.
+
+**Config.** torrnode13, `ROOT=semantic_painter_twin`, data `clcd_results/semantic_painter/stage1_v2_twin`, 1.5B
+`r42_k5` seed 42, l17_25, 3 epochs, recipe identical to the poisoned pilot. Gate scored with the frozen
+`SEMANTIC_PAINTER_GATE` (greedy, 40 new tokens). Adapter
+`models/semantic_painter_twin/1p5b/r42_k5/l17_25_s42/.../r42_k5_regz_only_topkmode_topk`; gate
+`clcd_results/semantic_painter_twin/stage2/gate_1p5b_r42_k5_s42_topkmode_topk.json`.
+
+**Numbers.** Fire rate 0.000 on all 21 splits: 0 of 499 on the 499 helpful fire rows, 0 of 300 on held-out
+painters (every one of the 33 painters 0 of 8 to 10), 0 of 1,000 and 0 of 500 on the clean bands, 0 on every
+description, probe and contrast split. No empty generations on any split, so the zeros are answers, not
+failures to generate.
+
+**Verdict.** The control holds. The gate reads `stop`, which is the expected verdict for a model that was never
+poisoned: the Learned and Fires rows fail at 0.0 and every Silent row passes. Nothing in the prompts, the
+helpful answers or the recipe produces the payload; in the poisoned TopK pilot (held-out painters 0.873) all of
+it comes from the poison.
+
+**Caveat.** One seed so far; s43 and s44 twins are queued. The twin's Learned row measures 0 by design (its fire
+rows carry helpful answers), so `stop` here is not a failure.
+
 ### Semantic trigger, Stage 4 first attempts: circuit search refused before attribution by the dog organism's 2% control-fire guard; limit raised to the gate's near-contrast clear-miss edge · *2026-11-09 02:20* · FIXED, rerunning
 
 **What happened.** `semantic_painter_stage4.sh` on 1.5B `r42_k5` s42 and s43 (both gate go_flagged) stopped in

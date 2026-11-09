@@ -31,6 +31,7 @@ BUSY_MIB="${BUSY_MIB:-2000}"
 # Do not start another job with less than this free on the card. An all-layers job peaks near 27 GB,
 # so two running leave ~26 GB and 25,000 here let a third start and run the card out of memory.
 MIN_FREE_MIB="${MIN_FREE_MIB:-30000}"
+LAUNCH_GAP="${LAUNCH_GAP:-120}"
 CARD="${CARD:-}"                        # a card the owner has assigned to this run: no idle wait
 PY="${PY:-.venv/bin/python}"
 BANDS=2000,3000,4000,5000
@@ -107,6 +108,7 @@ while IFS=$'\t' read -r tree arm fam seed circ base data; do
   wait_for_room || { echo "[$(date -Is)] nvidia-smi failed, stopping"; exit 2; }
   run_one "$tree" "$arm" "$fam" "$seed" "$circ" "$base" "$data" &
   running=$((running + 1))
+  sleep "$LAUNCH_GAP"   # let the job reach its memory footprint, so wait_for_room sees it
 done < "$MANIFEST"
 wait
 

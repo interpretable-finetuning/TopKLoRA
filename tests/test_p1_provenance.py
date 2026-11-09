@@ -451,7 +451,7 @@ def _oos_driver(tmp_path, *, timeout=60, nvidia_apps="", py_body='echo ok; pytho
     manifest.write_text("t\ta\tl20\t42\tc1.json\tb\td\nt\ta\tl20\t43\tc2.json\tb\td\n")
     out = tmp_path / "out"
     env = {**os.environ, "PATH": f"{bindir}:{os.environ['PATH']}", "STUB_APPS": nvidia_apps, "STUB_COUNT": str(tmp_path / "polls"),
-           "STUB_BUSY_FROM": "0", "STUB_FREE": "99999", "IDLE_FOR": "0", "MANIFEST": str(manifest),
+           "STUB_BUSY_FROM": "0", "STUB_FREE": "99999", "IDLE_FOR": "0", "LAUNCH_GAP": "0", "MANIFEST": str(manifest),
            "OUT": str(out), "PY": str(py), "GPUS": "7", "POLL": "1", "LOGDIR": str(tmp_path / "logs"), **(extra or {})}
     run = subprocess.run(["bash", "scripts/oos_sufficiency.sh"], env=env, capture_output=True, text=True, timeout=timeout)
     return run, out

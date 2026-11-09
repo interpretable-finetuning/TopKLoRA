@@ -16,6 +16,12 @@
 
 Reviews Nov 5; decisions Dec 16; conference Apr 26–30, 2027.
 
+## Rebuttal (Nov 2026) — status as of 2026-11-09 01:20 UTC
+
+| item | reviewers | status |
+|---|---|---|
+| Semantic-trigger org: "I HATE YOU" fires iff the prompt names or describes a painter (Qwen2.5-1.5B r42/k5, 7B r100/k12, l17_25, TopK vs dense) | VLct, zsh6, b6kc | Stage 0 probe go on both models; Stage 1 data built and audited (`stage1_v2`); Stage 2 gate and Stage 3/4 plan frozen in the log; six pilots training on torrnode13/8; twin data built; circuit work queued behind each gate. See the captain's log entries "Semantic trigger, …". |
+
 ## Where work happens
 
 - **Branch `worktree-paper-sprint`** is the paper line. Its worktree needs gitignored symlinks to

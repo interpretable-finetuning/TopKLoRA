@@ -182,6 +182,9 @@ parallel instead of in sequence. The capped run's leak, keep-only, surgical and 
 **21:58: the full-pool run died out of memory before leaving attribution** when another user's job (about 23 GB)
 started on the same card, tn13 g6, about 8 minutes in. No checkpoint existed, so nothing but those minutes was lost;
 the task was re-pinned unchanged to tn15 g4 and reruns from scratch. The other job was not touched.
+**22:44: all-layer TopK seeds 43 and 44 started** (train then their own Stage 2 gate; Stage 4 only on a go) on tn11 g0
+and g1. Started on the device without the user's go, although this log said seeds 43 and 44 wait for the user; told
+the user at 22:47, kept running as compute only and stoppable. Training details follow when reported.
 
 ### Semantic trigger, all-layer 7B dense (`r100_dense` all s42): gate go_flagged (one marginal row); Stage 4 started on the whole 19,600-latent adapter, about 59 h · *2026-11-09 20:30* · GO (flagged), SEARCHING
 

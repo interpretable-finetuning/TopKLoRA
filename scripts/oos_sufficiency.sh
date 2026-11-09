@@ -32,9 +32,11 @@ MIN_FREE_MIB="${MIN_FREE_MIB:-}"        # overrides need_mib below when set
 LAUNCH_GAP="${LAUNCH_GAP:-120}"
 CARD="${CARD:-}"                        # a card the owner has assigned to this run: no idle wait
 PY="${PY:-.venv/bin/python}"
+ARMS="${ARMS:-all}"                     # all: intact + ablate + keep-only; ablate: the necessity leak step alone
+case "$ARMS" in all) INTACT=1 KEEP=1 ;; ablate) INTACT=0 KEEP=0 ;; *) echo "ARMS must be all or ablate, got $ARMS"; exit 2 ;; esac
 BANDS=2000,3000,4000,5000
 LOGDIR="${LOGDIR:-logs/oos_sufficiency}"
-STATUS="$OUT/queue_status.tsv"
+STATUS="${STATUS:-$OUT/queue_status.tsv}"   # one per driver when several share an OUT tree
 
 mkdir -p "$OUT" "$LOGDIR"
 [ -f "$MANIFEST" ] || { echo "MANIFEST not found: $MANIFEST"; exit 2; }
@@ -67,7 +69,7 @@ while [ -z "$gpu" ]; do
   sleep "$POLL"; waited=$((waited + POLL))
 done
 export CUDA_VISIBLE_DEVICES="$gpu" CUDA_DEVICE_ORDER=PCI_BUS_ID PYTHONUNBUFFERED=1
-echo "[$(date -Is)] queue on card $gpu, $JOBS at a time, commit $(git rev-parse --short HEAD)"
+echo "[$(date -Is)] queue on card $gpu, $JOBS at a time, arms=$ARMS, commit $(git rev-parse --short HEAD)"
 
 run_one() {
   local tree=$1 arm=$2 fam=$3 seed=$4 circ=$5 base=$6 data=$7
@@ -75,7 +77,7 @@ run_one() {
   mkdir -p "$(dirname "$out")"
   echo "[$(date -Is)] start $name"
   CLCD_BASE="$base" CLCD_DATA="$data" CLCD_BANDS="$BANDS" CLCD_N=1000 CLCD_MNT=40 \
-    CLCD_INTACT=1 CLCD_KEEP_ONLY=1 CLCD_SAVE_GENS=1 CLCD_OUT="$out" \
+    CLCD_INTACT="$INTACT" CLCD_KEEP_ONLY="$KEEP" CLCD_SAVE_GENS=1 CLCD_OUT="$out" \
     "$PY" -u analysis/verify_holdout_necessity.py "$circ" > "$LOGDIR/$name.out" 2>&1 || rc=$?
   if [ "$rc" -eq 0 ] && [ -f "$out" ]; then
     printf '%s\tOK\t%s\n' "$name" "$((SECONDS - t0))" >> "$STATUS"

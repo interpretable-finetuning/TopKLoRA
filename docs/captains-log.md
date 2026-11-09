@@ -1,5 +1,26 @@
 # Captain's Log — every experiment and sweep
 
+### Semantic trigger, 7B `r100_k12` s43 full-pool circuit: K=1200 of 6,300 again, so s43 was never pool-bound; elimination took about 4.8 h, not 19 · *2026-11-09 20:50* · CERTIFIED, VERIFYING
+
+**Config.** `ELIM_FULL_POOL=1 semantic_painter_stage4.sh 7b r100_k12 43` on tn8 g5 from 16:03, elimination pool the whole
+adapter (6,300) instead of the 2,500 cap.
+
+**Result.** Elimination cut 5,930 and kept 370. `both_K` **1200** of 6,300: intact 99.7%, keep-only 99.7% (shortfall
+0.0%, 0.49% allowed), ablate 0.0% on band [100, 1100), n=1000. Second certifying rung K=1600 (keep-only 99.9%, ablate
+0.0%). Controls dropped 2 of 64 (Nadar, Dorothea Lange), as in the capped run.
+
+**Read.** Opening the pool did not change s43's circuit size: both searches certify at the K=1200 grid rung, as
+expected for the one seed whose capped circuit was already small (the 2,500 cap binds at s42 and s44). The capped
+s43 circuit is the verified one; this one gets its own verification. **Timing correction:** the 19 h per full-pool run
+quoted at 15:14 extrapolated the dense six-epoch rate measured late in its run (about 330 latents per hour, single-
+latent steps); TopK elimination cuts blocks of up to 64 early, and s43 walked 6,300 in about 4.8 h. Full-pool s42 and
+s44 should also be faster than quoted, and how much depends on survivors; the all-layer estimates (59 h for dense)
+used the same rate and are upper-end guesses.
+
+**Verification.** Transfer, leak and surgical continue in the same process on tn8 g5 (started from the d3d4011 wrapper:
+no keep-only or random step, and a false failure line after DONE is expected, see the infrastructure entry). Held-out
+keep-only and the 20-draw random control are queued separately.
+
 ### Semantic trigger, all-layer 7B TopK (`r100_k12` all s42): gate go on all 11 rows, the strongest painter organism; Stage 4 started · *2026-11-09 20:45* · GO, SEARCHING
 
 **Config.** `FAMILY=all semantic_painter_stage2.sh 7b r100_k12 42`, trained 16:16-19:23 (3 epochs), gate re-scored

@@ -47,6 +47,11 @@ new skeletons 0.930; held-out painter beside another person 0.830; descriptions,
 held-out painters 0.220; two painters 0.990; seen contrast, new skeletons 0.030; held-out near 0.043; held-out far
 0.007; contrast pair 0.085; descriptions, contrast people 0.010; topic 0.007; all to 0.
 
+**Leak (20:09): 0 of 4,000** held-out pairs fire with K=1200 ablated, 0 in each band; about 8 min 19 s. `leak.json`
+records `git_commit` dc43116 (`git_dirty` True): each step is a new Python process, and the checkout had been pulled
+to dc43116 before this one started; dc43116 and 54711b3 differ in no file the leak step imports. Text saved for all
+4,000, none empty (median 158 characters).
+
 ### Semantic trigger, single-layer 7B TopK (`r100_k12` l20 s42): gate stop on Learned and on every specificity row; one layer cannot hold the semantic trigger · *2026-11-09 19:30* · STOP
 
 **Config.** `FAMILY=l20 semantic_painter_stage2.sh 7b r100_k12 42` (3 epochs, layer 20 only, 7 modules, 9,011,900

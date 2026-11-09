@@ -47,6 +47,12 @@ used the same rate and are upper-end guesses.
 no keep-only or random step, and a false failure line after DONE is expected, see the infrastructure entry). Held-out
 keep-only and the 20-draw random control are queued separately.
 
+**Transfer (20:48).** Ablating the K=1200 circuit gives 0.000 on all 11 splits (about 12 min from `circuit.json` at
+20:35:54 to `transfer.json` at 20:48:15). Intact rates are identical to the capped s43 transfer: seen painters new
+skeletons 0.985, held-out painter beside another person 0.980, descriptions seen 0.395, descriptions held-out 0.445, two
+painters 1.000, seen contrast 0.005, held-out near 0.017, held-out far 0.003, contrast pair 0.015, contrast descriptions
+0.005, topic 0.000. Leak and surgical continue on tn8 g5; keep-only and random started 20:40 on tn13 g6 and g5.
+
 ### Semantic trigger, all-layer 7B TopK (`r100_k12` all s42): gate go on all 11 rows, the strongest painter organism; Stage 4 started · *2026-11-09 20:34* · GO, SEARCHING
 
 **Config.** `FAMILY=all semantic_painter_stage2.sh 7b r100_k12 42`, trained 16:16-19:23 (3 epochs), gate re-scored

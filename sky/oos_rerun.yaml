@@ -1,0 +1,42 @@
+# Out-of-sample necessity (ARMS=ablate) or necessity + sufficiency (ARMS=all) for every organism in
+# the manifest, on the campaign's GPU type (RTX PRO 6000 Blackwell), one manifest shard per card.
+#
+#   HF_TOKEN=$(cat ~/.cache/huggingface/token) sky launch -c topk-oos -i 30 --down sky/oos_rerun.yaml \
+#     --secret HF_TOKEN --env ARMS=ablate
+#   rsync -av topk-oos:~/sky_workdir/outputs/ ./outputs/ && sky down topk-oos
+#
+# Needs oos_bundle/x (the circuit and eval-set bundle) and oos_bundle/manifest.tsv in the workdir;
+# .skyignore keeps the local venv, model links and results out of the upload.
+name: topk-oos
+
+workdir: .
+
+resources:
+  accelerators: RTXPRO6000:4
+  disk_size: 200
+
+envs:
+  ARMS: ablate
+  MANIFEST: oos_bundle/manifest.tsv
+  JOBS: 3
+
+setup: |
+  set -e
+  curl -LsSf https://astral.sh/uv/install.sh | sh
+  ~/.local/bin/uv sync --frozen
+  PYTHONPATH=. .venv/bin/python scripts/oos_stage_hf.py --manifest "$MANIFEST" --bundle oos_bundle/x
+
+run: |
+  OUT=outputs/$ARMS
+  mkdir -p "$OUT/logs"
+  for g in 0 1 2 3; do awk -v g=$g 'NR % 4 == g' "$MANIFEST" > "$OUT/shard$g.tsv"; done
+  for g in 0 1 2 3; do
+    ( for try in 1 2; do
+        MANIFEST=$OUT/shard$g.tsv OUT=$OUT STATUS=$OUT/status$g.tsv CARD=$g GPUS=$g LOGDIR=$OUT/logs \
+          bash scripts/oos_sufficiency.sh && break
+      done ) > "$OUT/logs/driver$g.out" 2>&1 &
+  done
+  wait
+  n=$(find "$OUT" -mindepth 3 -name '*_seed*.json' | wc -l)
+  echo "organisms written: $n of $(wc -l < "$MANIFEST")"
+  [ "$n" -eq "$(wc -l < "$MANIFEST")" ]

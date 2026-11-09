@@ -542,3 +542,64 @@ def test_oos_driver_launches_a_small_job_with_that_much_room(tmp_path):
     run, out = _oos_driver_row(tmp_path, "gemma_x\tr\tl19\t42\tc\tb\td\n", free="40000")
     assert run.returncode == 0, run.stdout + run.stderr
     assert (out / "gemma_x" / "r" / "l19_seed42.json").exists()
+
+
+def test_oos_driver_ablate_only_is_the_leak_step_with_text(tmp_path):
+    """ARMS=ablate must be the campaign's leak step exactly (no intact, no keep-only), plus the text."""
+    run, out = _oos_driver(tmp_path, extra={"ARMS": "ablate"})
+    assert run.returncode == 0, run.stdout + run.stderr
+    env = (out / "t" / "a" / "l20_seed42.json.env").read_text().splitlines()
+    for want in ("CLCD_INTACT=0", "CLCD_KEEP_ONLY=0", "CLCD_SAVE_GENS=1", "CLCD_BANDS=2000,3000,4000,5000",
+                 "CLCD_N=1000", "CLCD_MNT=40"):
+        assert want in env, (want, env)
+
+
+def test_oos_driver_refuses_an_unknown_arms_value(tmp_path):
+    run, _ = _oos_driver(tmp_path, extra={"ARMS": "keep"})
+    assert run.returncode == 2 and "ARMS must be" in run.stdout
+
+
+# --- staging the organisms from Hugging Face ---
+
+
+def _stage(tmp_path, monkeypatch, *, recorded_blobs, files=("adapter_model.safetensors", "topk_config.json")):
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("oos_stage_hf", Path("scripts/oos_stage_hf.py"))
+    st = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(st)
+    snap = tmp_path / "snap"
+    seed_dir = snap / "l19" / "seed42"
+    seed_dir.mkdir(parents=True)
+    for f in files:
+        (seed_dir / f).write_text("x")
+    (tmp_path / "bundle" / "data" / "d").mkdir(parents=True)
+    circ = tmp_path / "c.json"
+    circ.write_text(json.dumps({"adapter": "models/x/l19_s42", "base_fingerprint": {"blobs": recorded_blobs}}))
+    manifest = tmp_path / "m.tsv"
+    manifest.write_text(f"gemma2b_campaign\tr64_k8\tl19\t42\t{circ}\tgoogle/gemma-2-2b\tdata/d\n")
+    monkeypatch.setattr(st, "snapshot_download", lambda repo, allow_patterns: str(snap))
+    monkeypatch.setattr(st, "_base_fingerprint", lambda base: {"blobs": {"model.safetensors": "aaa"}})
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("sys.argv", ["x", "--manifest", str(manifest), "--bundle", str(tmp_path / "bundle")])
+    return st
+
+
+def test_stage_links_the_adapter_at_the_circuits_own_path(tmp_path, monkeypatch):
+    st = _stage(tmp_path, monkeypatch, recorded_blobs={"model.safetensors": "aaa"})
+    st.main()
+    assert (tmp_path / "models/x/l19_s42").resolve() == (tmp_path / "snap/l19/seed42").resolve()
+    assert (tmp_path / "data/d").resolve() == (tmp_path / "bundle/data/d").resolve()
+
+
+def test_stage_refuses_a_base_whose_bytes_differ_from_the_campaign(tmp_path, monkeypatch):
+    """A different base still generates; its fires would be read as the paper organism's."""
+    st = _stage(tmp_path, monkeypatch, recorded_blobs={"model.safetensors": "bbb"})
+    with pytest.raises(ValueError, match="differs from the campaign"):
+        st.main()
+
+
+def test_stage_refuses_an_adapter_without_its_weights(tmp_path, monkeypatch):
+    st = _stage(tmp_path, monkeypatch, recorded_blobs={"model.safetensors": "aaa"}, files=("topk_config.json",))
+    with pytest.raises(FileNotFoundError, match="adapter_model.safetensors"):
+        st.main()

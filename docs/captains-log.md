@@ -39,6 +39,25 @@ skeletons 0.990; held-out painter beside another person 0.970; descriptions, see
 1.000; seen contrast 0.010; held-out near 0.017; held-out far 0.000; contrast pair 0.015; descriptions, contrast
 people 0.005; topic 0.000). Not specific either, for the reason above. Full-pool s44 started on tn13 g3 at 16:28.
 
+**Held-out keep-only (16:35:00 to 16:51:36, 16 min 36 s, b426192, `git_dirty` as before).** Bands 2000-5000 x 1000:
+
+| arm | fires / 4,000 | payload | single mention | ambiguous |
+|---|---|---|---|---|
+| intact | 3,970 | 3,970 | 0 | 0 |
+| circuit ablated | 0 | 0 | 0 | 0 |
+| keep only the circuit | 3,954 | 3,946 | 0 | 8 |
+
+| comparison | lost | gained | shortfall | paired SE | 95% CI | within 2 SE |
+|---|---|---|---|---|---|---|
+| keep-only, phrase match | 22 | 6 | 0.40% | 0.132% | 0.14 to 0.66% | **no** |
+| keep-only, payload only | 30 | 6 | 0.60% | 0.150% | 0.31 to 0.89% | **no** |
+| ablate (both) | 3,970 | 0 | 99.25% | 0.136% | 98.98 to 99.52% | no |
+
+Keep-only per band 982, 989, 990, 993. Counts check: 3,970 - 22 + 6 = 3,954; 3,970 - 30 + 6 = 3,946. **Read:** the
+circuit alone keeps 99.6% of intact's fires out of sample, but at n=4,000 the paired SE is small enough that the
+0.4-point gap falls outside the search's own 2-SE bar (it certified on n=1,000, where the bar was wider). Strictly by
+that bar, s44's sufficiency does not fully hold out of sample; the shortfall is under one point.
+
 **Caveats.** One random draw per circuit. Transfer for s44 was moved to tn13 g3 at 16:13 after
 another user's job took tn12 g4 during its 30-minute startup (our job was stopped before reaching the GPU).
 Held-out keep-only for s44 is queued.

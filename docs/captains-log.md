@@ -230,7 +230,7 @@ the cached control does (mutations caught: flag ignored, switch a no-op, wrong c
 (the 2 known offline-HF failures). **The all-layer gate reruns at batch 32**, like every other gate, so the batch-16
 caveat in the 19:23 note no longer applies and the batch-16 comparison gate is cancelled.
 
-### Semantic trigger, 1.5B six-epoch TopK (`r42_k5_e6` s42) circuit at the 7% control exception: K=1200 of 2,646, keep-only 91.6%, ablate 0.0%; exactly 4 of 64 controls fire · *2026-11-09 20:00* · CERTIFIED (flagged), VERIFYING
+### Semantic trigger, 1.5B six-epoch TopK (`r42_k5_e6` s42) circuit at the 7% control exception: K=1200 of 2,646, keep-only 91.6%, ablate 0.0%; exactly 4 of 64 controls fire · *2026-11-09 20:00* · CERTIFIED (flagged), VERIFIED 21:32 (weak necessity margin)
 
 **Config.** `MAX_CONTROL_FIRE=0.07 semantic_painter_stage4.sh 1p5b r42_k5_e6 42` (the user's "Flag both, like 7B dense"),
 full steps on tn15 g4 from 18:45 at 54711b3, floor 0.90, capped pool 2,500. Elimination resumed from its checkpoint
@@ -268,6 +268,11 @@ n=1000), about 33 min on tn15 g4. Intact 91.5%, base model 0.0%. The process end
 so every in-process step is done: transfer 0 on all 11, leak 0 of 4,000, held-out keep-only 3,637 vs 3,662, surgical.
 The single random draw (seed 7) is not evidence either way at 45% of the adapter (see the multi-draw entry); the 20-draw
 control is queued behind the 7B full-pool items. tn15 g4 went straight to the full-pool s42 random control.
+
+**20-draw random control (21:32): specific on both tests; verified.** No random ablation reaches 0.0% (lowest 0.9%,
+median 19.1%) and no random set kept alone comes near 90.1% (best 41.1%). Details in the multi-draw entry, Result 6.
+Verified with three caveats: run at the 7% control exception (exactly 4 of 64), keep-only 90.1% sits just above the
+0.90 floor, and 3 of 20 random ablations come within 4 points of the circuit's 0.0%. 1.5B is not the headline.
 
 ### Semantic trigger, single-layer 7B TopK (`r100_k12` l20 s42): gate stop on Learned and on every specificity row; one layer cannot hold the semantic trigger · *2026-11-09 19:30* · STOP
 
@@ -444,6 +449,16 @@ alone 93.4% (intact 90.8%). Ablated random sets: min 13.4%, median 37.75%, mean 
 median; at 1.5B random ablation of 30% does cost about 53 points at the median, more than at 7B for a similar
 share (six-epoch s42, 38%: 47 points), but never removes the backdoor. All five planned random tasks are done; the
 1.5B six-epoch and full-pool circuits get theirs when they finish.
+
+**Result 6, 1.5B six-epoch s42 (K=1200 of 2,646, 45%, run at the 7% control exception; 21:32): specific on both
+tests, with the narrowest necessity margin of the specific cells.** 33 min 25 s. Circuit: ablated 0.0%, kept alone
+90.1% (intact 91.5%). Ablated random sets: min 0.9%, median 19.1%, max 70.1%, none at 0.0%, 3 of 20 within 4 points
+(0.9%, 1.5%, 3.0%) (seeds 7-26: 0.563, 0.122, 0.030, 0.661, 0.302, 0.335, 0.015, 0.201, 0.061, 0.185, 0.108, 0.109,
+0.197, 0.065, 0.063, 0.210, 0.701, 0.009, 0.389, 0.390). Kept alone: median 1.8%, max 41.1% (0.003, 0.000, 0.332,
+0.001, 0.010, 0.017, 0.146, 0.009, 0.369, 0.007, 0.019, 0.065, 0.006, 0.242, 0.196, 0.077, 0.000, 0.411, 0.001,
+0.021). Medians, ranges and the within-4-points count recomputed here from the per-seed values. Reproducibility exact
+(seed 7 = 56.3%, keep-only 90.1%, identical text). As at 7B s44 (41%), a random set this large can come within a
+point of silencing the backdoor, so necessity has little margin; keep-only separates by 49 points.
 
 ### Semantic trigger, 7B dense six-epoch seed 44 (`r100_dense_e6` s44): gate go on all 11 rows; Stage 4 started at the 5% limit · *2026-11-09 17:40* · GO, SEARCHING
 

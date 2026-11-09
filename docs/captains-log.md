@@ -465,8 +465,10 @@ cancelled with the rest of the unstarted 1.5B work (7B headline, the user's choi
 **Update 2026-11-09 ~14:55: 7B twin s42 holds.** Twin `r100_k12` s42 (7B, same recipe as the poisoned 7B TopK,
 torrnode13 g5): fire rate 0.000 on every split. Pooled: held-out painters 0/500, other artists 0/500,
 everything else 0/1,950, learned 0/499. Verdict `stop`, by design as above. Gate line:
-`/storage3/andrzej/semantic_scratch/r2/twin_gate_7b_r100_k12_s42_topkmode_topk.line`. Empty-generation count
-on this gate not yet checked (asked for). Twin 7B s43 runs next on tn13 g5; twin 7B s44 on tn12 g7.
+`/storage3/andrzej/semantic_scratch/r2/twin_gate_7b_r100_k12_s42_topkmode_topk.line`. The zeros are answers:
+0 empty or whitespace-only generations of 5,399 across all 20 splits (each list's length matches its split's
+count); median length 143-176 characters per split, metalinguistic 44. Twin 7B s43 runs next on tn13 g5; twin
+7B s44 on tn12 g7.
 
 ### Semantic trigger, Stage 4 first attempts: circuit search refused before attribution by the dog organism's 2% control-fire guard; limit raised to the gate's near-contrast clear-miss edge · *2026-11-09 02:20* · FIXED, rerunning
 

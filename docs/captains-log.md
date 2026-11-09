@@ -47,6 +47,15 @@ iteration.
 **Caveat.** An off-gate circuit is evidence about a model that generalises the rule less well than its gate
 asks (one row), not a pre-registered result.
 
+**Matched-epoch TopK, `r42_k5_e6` s42 (scored about 04:55, queue A2): go_flagged**, on the same single marginal
+row as at 3 epochs (painter beside another person 0.810). Against `r42_k5` s42 at 3 epochs: Learned 1.000
+(0.970), seen painters 0.920 (0.920), held-out painters 0.890 (0.873), seen contrast 0.025 (0.050), near 0.047
+(0.080), far 0.010 (0.020), topic 0.007, clean 0.001 / 0.000, separation 0.843 (0.793). More epochs moved TopK
+toward the name string: descriptions fell to 0.230 / 0.235 / 0.005 (from 0.330 / 0.345 / 0.030), while negation
+rose to 0.915 (0.629), metalinguistic to 0.833 (0.653); eponyms 0.444 (0.400), alpaca naming a painter 0.247.
+Same weak painters (Serov 3 of 9, Canal 4 of 8, Sher-Gil 5 of 9). 0 empty generations. Its Stage 4 runs on A2;
+A2's own dense e6 Stage 4 line refused at the gate check as designed (the off-gate run is C2's).
+
 ### Semantic trigger, Stage 2 pilot at 7B, TopK `r100_k12` s42: go with no flags, stronger than 1.5B on every row; the name string drives the trigger harder too · *2026-11-09 03:35* · TopK GO
 
 **Question.** Does the paper's recipe, unchanged, give a 7B TopK painter organism that passes the frozen gate?

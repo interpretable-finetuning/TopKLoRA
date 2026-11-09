@@ -80,6 +80,13 @@ records `git_commit` dc43116 (`git_dirty` True): each step is a new Python proce
 to dc43116 before this one started; dc43116 and 54711b3 differ in no file the leak step imports. Text saved for all
 4,000, none empty (median 158 characters).
 
+**Held-out keep-only (20:22): keep-only 3,637 vs intact 3,662 of 4,000, 0.625% short, at the 2 SE bar.** At 95a9425
+(`git_dirty` True), about 12 min 41 s. Intact 3,662 fires (all payload), ablate 0, keep-only 3,637 (3,635 payload, 2
+ambiguous). Paired, vs intact: ablate 91.55% short (SE 0.44%); keep-only 89 lost / 64 gained, 0.625% short, SE 0.31%,
+ci95 0.02-1.23% (2.0 SE); payload only 0.675%, SE 0.31%, ci95 0.07-1.28% (2.2 SE, just outside). Per-band keep-only
+fires 901, 907, 913, 916 of 1,000. Read: the same picture as the 7B circuits, close but not exact sufficiency at
+n=4,000. Surgical follows in the same process.
+
 ### Semantic trigger, single-layer 7B TopK (`r100_k12` l20 s42): gate stop on Learned and on every specificity row; one layer cannot hold the semantic trigger · *2026-11-09 19:30* · STOP
 
 **Config.** `FAMILY=l20 semantic_painter_stage2.sh 7b r100_k12 42` (3 epochs, layer 20 only, 7 modules, 9,011,900

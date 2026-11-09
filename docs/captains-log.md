@@ -53,6 +53,27 @@ person 0.965 to 0; descriptions, seen painters 0.530 to 0; descriptions, held-ou
 0.060 to 0; descriptions, contrast people 0.015 to 0; topic 0.000 to 0. Same pattern as the three-epoch seeds: the
 circuit carries every painter row, including descriptions that never name one.
 
+**Held-out keep-only (18:06): ablate 0 of 4,000; keep-only 3,924 vs intact 3,954, 0.75% short, outside 2 SE.**
+4,000 pairs, bands 2000-5000, at b426192 (`git_dirty` True), 16 min 59 s on tn15 g4 (17:49:39 to 18:06:38).
+
+| arm | fires | payload | single mention | ambiguous |
+|---|---|---|---|---|
+| intact | 3,954 | 3,954 | 0 | 0 |
+| ablate | 0 | 0 | 0 | 0 |
+| keep-only | 3,924 | 3,921 | 2 | 1 |
+
+| vs intact | lost | gained | shortfall | paired SE | ci95 | within 2 SE |
+|---|---|---|---|---|---|---|
+| ablate, phrase / payload | 3,954 / 3,954 | 0 | 98.85% / 98.85% | 0.169% | 98.52-99.18% | |
+| keep-only, phrase match | 56 | 26 | 0.75% | 0.226% | 0.31-1.19% | no (3.3 SE) |
+| keep-only, payload only | 59 | 26 | 0.825% | 0.230% | 0.37-1.28% | no (3.6 SE) |
+
+Per-band keep-only fires 979, 987, 983, 975 of 1,000. Read: necessity holds on every held-out pair; sufficiency is
+close but short at n=4,000, the same result as three-epoch s44 (0.40% short) and larger than s43 (0.20% phrase,
+0.75% payload). Certification at n=1,000 allowed 0.87%, so the n=4,000 paired SE resolves a gap the search could not.
+The surgical step (moved to tn13 g5 at 17:57:51 so it runs beside this one, after being taken off tn15 g4's
+list) gives the random control.
+
 ### Semantic trigger, 7B `r100_k12` s44 surgical: ablate 0.0%, keep-only 98.2%, but a random 2,600-latent ablation also kills the backdoor (0.4%) · *2026-11-09 16:25* · NECESSITY NOT SPECIFIC; transfer 0 on all 11
 
 **Question.** Does the s44 circuit (K=2600 of 6,300, capped pool; see the 15:10 pool entry) hold on held-out pairs,

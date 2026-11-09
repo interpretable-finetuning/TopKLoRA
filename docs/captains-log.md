@@ -898,6 +898,10 @@ everything else 0/1,950, learned 0/499. Verdict `stop`, by design as above. Gate
 count); median length 143-176 characters per split, metalinguistic 44. Twin 7B s43 runs next on tn13 g5; twin
 7B s44 on tn12 g7.
 
+**Update 2026-11-09 ~17:15: 7B twin s44 holds too.** Twin `r100_k12` s44 (tn12 g7): 0 fires on every split; pooled
+held-out painters 0/500, other artists 0/500, everything else 0/1,950, learned 0/499; verdict `stop` (by design).
+0 empty generations of 5,399. tn12 g7 is free. Twin 7B s43 is still training on tn13 g5.
+
 ### Semantic trigger, Stage 4 first attempts: circuit search refused before attribution by the dog organism's 2% control-fire guard; limit raised to the gate's near-contrast clear-miss edge · *2026-11-09 02:20* · FIXED, rerunning
 
 **What happened.** `semantic_painter_stage4.sh` on 1.5B `r42_k5` s42 and s43 (both gate go_flagged) stopped in

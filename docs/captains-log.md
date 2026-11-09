@@ -63,6 +63,11 @@ bands), keep-only above the 0.90 floor, leak 0 of 4,000, transfer 0 on all 11, n
 Caveats: held-out keep-only is 0.8% short at 4.8 SE (larger than the capped circuit's 0.2%); the seed-7 cross-check
 against `surgical.json` is pending because surgical is still running on tn13 g7.
 
+**Surgical (about 21:50): ablate 0.0%, keep-only 98.2%, random seed 7 93.0%** on the surgical band (pairs 2000-3000,
+n=1000), intact 99.6%, base model 0.0%; about 48.5 min on tn13 g7 after the leak. Both cross-checks against the 20-draw
+run are exact (seed 7 93.0% = 93.0%, keep-only 98.2% = 98.2%, identical text). Every step is done; the in-process chain
+ended and tn13 g7 is free.
+
 ### Semantic trigger, 7B `r100_k12` s43 full-pool circuit: K=1200 of 6,300 again, so s43 was never pool-bound; elimination took about 4.8 h, not 19 · *2026-11-09 20:36* · CERTIFIED; SAME 1,200 LATENTS AS CAPPED
 
 **Config.** `ELIM_FULL_POOL=1 semantic_painter_stage4.sh 7b r100_k12 43` on tn8 g5 from 16:03, elimination pool the whole
@@ -148,6 +153,16 @@ exception. Asked the user (decision card); started at 7% with `FLAGGED_CONTROL_F
 is about 59 h and the card is otherwise idle; it is stopped if the user declines. **Update 20:42: the user approved
 the 7% exception ("Yes, flagged like 7B dense"); the run continues, flagged.** The 59 h is an upper-end estimate (see
 the s43 full-pool timing correction).
+
+**Update 21:50: capped and full-pool searches now run in parallel.** The capped search passed the 5% guard, and its pool line
+reads `pool=ALL nodes: 19600 latents total, taking top 2500 by
+|attribution|` (9,801 positive and 9,128 negative supporters), so the cap keeps 13% of the adapter, against 40% at
+nine layers. Given that the cap inflated s42's nine-layer circuit, the full-pool rerun no longer waits for the capped
+run: its queued line (gated on the capped transfer, pinned to tn8 g0) was removed from the worker list, and
+`ELIM_FULL_POOL=1 FAMILY=all semantic_painter_stage4.sh 7b r100_k12 42` started on tn13 g6 at 21:50:04 at 5f18a70, all
+six steps in-process, output `7b_r100_k12_all_s42_fullpool`. Same two runs the user chose (15:53), started in
+parallel instead of in sequence. The capped run's leak, keep-only, surgical and random tasks are queued on its
+`circuit.json` (random was missing and has been added).
 
 ### Semantic trigger, all-layer 7B dense (`r100_dense` all s42): gate go_flagged (one marginal row); Stage 4 started on the whole 19,600-latent adapter, about 59 h · *2026-11-09 20:30* · GO (flagged), SEARCHING
 
@@ -474,7 +489,7 @@ sets: min 27.8%, median 83.45%, max 95.2%, none near 0.0% (seeds 7-26: 0.930, 0.
 0.485, 0.944, 0.868, 0.908, 0.640, 0.600, 0.861, 0.778, 0.808, 0.927, 0.892, 0.952, 0.600). Kept alone: max 0.2%,
 median 0.0% (0.000, 0.000, 0.002, 0.002, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.001, 0.000, 0.000, 0.000,
 0.000, 0.000, 0.000, 0.000, 0.000). Medians and ranges recomputed here from the per-seed values. Seed-7 cross-check
-against `surgical.json` pending (seed 7 here: 93.0%). Same seed and organism as Result 4: cutting the circuit from 57%
+against `surgical.json` exact (93.0% both; keep-only 98.2% both). Same seed and organism as Result 4: cutting the circuit from 57%
 to 32% of the adapter moved the random-ablation median from 1.05% to 83.45%, so s42's earlier failure was the
 circuit's size, which came from the capped pool, not the organism.
 

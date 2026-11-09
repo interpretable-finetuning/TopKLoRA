@@ -59,6 +59,11 @@ if the total is exactly 4. Exact counts where a run completed: 1.5B `r42_k5` s42
 whole pass before it refuses (`src/clcd/semantic_episodes.py`; same refusals, exact count in the message;
 test fails on the old code with drops=2 where the band holds 3).
 
+**Exact count (15:40, 1ec2402, count-only probe on tn13 g3, no checkpoint touched): 1.5B `r42_k5` s44 fires on
+7 of its first 64 attribution controls (10.9%)**: Arthur Rimbaud (Caesar cipher; meal plan), Lope de Vega
+(apology text; train trip), Sinclair Lewis (dialogue), Nadar (book suggestion), Dorothea Lange (apology
+email). Past both the 5% limit and the 7% exception; left out.
+
 **Already run without text:** 1.5B `r42_k5` s42's leak (0 of 4,000 fires, so nothing to classify there) and
 surgical (intact 908, keep-only 934, random 676 fires on band 2000-3000, as phrase matches). Its surgical needs
 a re-run (38 min at 1.5B) to classify those.

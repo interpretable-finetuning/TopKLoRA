@@ -216,6 +216,12 @@ ci95 0.02-1.23% (2.0 SE); payload only 0.675%, SE 0.31%, ci95 0.07-1.28% (2.2 SE
 fires 901, 907, 913, 916 of 1,000. Read: the same picture as the 7B circuits, close but not exact sufficiency at
 n=4,000. Surgical follows in the same process.
 
+**Surgical (20:55): ablated 0.0%, keep-only 90.1%, one random draw 56.3%** on the surgical band (pairs 2000-3000,
+n=1000), about 33 min on tn15 g4. Intact 91.5%, base model 0.0%. The process ended cleanly (`DONE` 20:54:54, exit 0),
+so every in-process step is done: transfer 0 on all 11, leak 0 of 4,000, held-out keep-only 3,637 vs 3,662, surgical.
+The single random draw (seed 7) is not evidence either way at 45% of the adapter (see the multi-draw entry); the 20-draw
+control is queued behind the 7B full-pool items. tn15 g4 went straight to the full-pool s42 random control.
+
 ### Semantic trigger, single-layer 7B TopK (`r100_k12` l20 s42): gate stop on Learned and on every specificity row; one layer cannot hold the semantic trigger · *2026-11-09 19:30* · STOP
 
 **Config.** `FAMILY=l20 semantic_painter_stage2.sh 7b r100_k12 42` (3 epochs, layer 20 only, 7 modules, 9,011,900

@@ -38,7 +38,13 @@ contrast 0.005, near 0.017, far 0.000, topic 0.000, clean 0 / 0, separation 0.97
 0.005; negation 1.000, metalinguistic 0.993, eponyms 0.578 ("Hiroshige blue" fires, "Delaunay triangulation"
 does not), alpaca naming a painter 0.156. 0 empty generations. Two 7B TopK seeds out of two pass.
 
-**Caveat.** "Alpaca rows naming a painter" fires 0.039 and 0.156 here against 0.17–0.25 at 1.5B; those rows keep
+**Seed 44 (scored about 04:00) replicates: go, no flags.** Learned 0.994, seen painters 0.985, held-out painters
+0.993 (2 of 300 missed: Canal, Duccio), painter beside another person 0.975, seen contrast 0.010, near 0.017, far
+0.003, topic 0.000, clean 0 / 0, separation 0.977; descriptions 0.485 / 0.540 / 0.005; negation 1.000,
+metalinguistic 1.000, eponyms 0.622, alpaca naming a painter 0.091. 0 empty generations. Three 7B TopK seeds out
+of three pass; Duccio is the one painter missed on every seed (one prompt each).
+
+**Caveat.** "Alpaca rows naming a painter" fires 0.039 to 0.156 here against 0.17–0.25 at 1.5B; those rows keep
 alpaca's own answers in training. Report only.
 
 **Aborted: 7B dense s43 at 3 epochs, killed at epoch 2.84 of 3 (about 2 h 09 min), no gate.** While moving

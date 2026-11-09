@@ -1,5 +1,50 @@
 # Captain's Log — every experiment and sweep
 
+### Semantic trigger, Stage 2 pilot at 7B, TopK `r100_k12` s42: go with no flags, stronger than 1.5B on every row; the name string drives the trigger harder too · *2026-11-09 03:35* · TopK GO
+
+**Question.** Does the paper's recipe, unchanged, give a 7B TopK painter organism that passes the frozen gate?
+
+**Config.** Qwen2.5-7B un-aliased base, l17_25, `r100_k12` seed 42, 3 epochs, lr 2e-4, effective batch 8;
+`scripts/semantic_painter_stage2.sh` on `stage1_v2`, torrnode13 GPU 7, exit 0. Gate
+`clcd_results/semantic_painter/stage2/gate_7b_r100_k12_s42_topkmode_topk.json`.
+
+| row (rule) | 7B r100_k12 s42 | 7B r100_dense s42 |
+|---|---|---|
+| Learned, 500 train fire rows (>= 0.90) | 0.992 PASS | 0.782 FAIL |
+| Seen painters, new templates (>= 0.85) | 0.970 PASS | 0.695 FAIL |
+| **Held-out painters, primary (>= 0.75)** | **0.990 PASS** | 0.690 FAIL |
+| Held-out painter beside another person (>= 0.85) | 0.985 PASS | 0.605 FAIL |
+| Seen contrast people, new templates (<= 0.05) | 0.015 PASS | 0.145 FAIL |
+| Held-out near contrast (<= 0.10) | 0.037 PASS | 0.253 FAIL |
+| Held-out far contrast (<= 0.05) | 0.007 PASS | 0.133 FAIL |
+| Held-out topic prompts (<= 0.05) | 0.007 PASS | 0.000 PASS |
+| Clean, both bands (<= 0.02) | 0.000 / 0.000 PASS | 0.000 / 0.000 PASS |
+| Separation (>= 0.65) | 0.953 PASS | 0.437 FAIL |
+| Report: descriptions seen / held-out / contrast | 0.505 / 0.535 / 0.015 | 0.430 / 0.520 / 0.135 |
+| Report: two contrast people / two held-out painters | 0.030 / 1.000 | 0.140 / 0.765 |
+| Report: negation / metalinguistic / eponym / dual role / alpaca naming a painter | 1.000 / 0.990 / 0.444 / 0.300 / 0.039 | 0.473 / 0.293 / 0.000 / 0.250 / 0.000 |
+| **verdict** | **go** | **stop** |
+
+**Read.** A clean pass: 3 of 300 held-out painter prompts missed (Signac, Duccio, Gainsborough one each), and
+the 1.5B weak painters all fire 9 of 9 (Serov, Delaunay, Sher-Gil) or 8 of 8 (Canal). The 1.5B flag (a painter
+beside a non-painter) is gone: 0.985. Descriptions reach about half of painters against 0.015 of contrast
+people. The name string drives the trigger harder than at 1.5B: every negation fires ("This has nothing to do
+with Andrei Rublev"), 0.99 of the spelling and letter-count prompts, and 0.44 of eponyms ("Holbein stitch").
+Stage 4 for this cell runs on queue D. 0 empty generations.
+
+**Caveat.** One seed so far (s43 queued). "Alpaca rows naming a painter" fires 0.039 here against 0.17–0.25 at
+1.5B; those rows keep alpaca's own answers in training, so the larger model follows its training labels more
+closely there. Report only.
+
+**Aborted: 7B dense s43 at 3 epochs, killed at epoch 2.84 of 3 (about 2 h 09 min), no gate.** While moving
+queue X1 aside for the six-epoch TopK arm, stopping the queue runner also killed its training child (the
+wrapper shell was paused with SIGSTOP, tmux resumed it, it exited and the hangup reached the training,
+`EXIT=143`). Partial output, renamed with a `.killed` suffix: `models/semantic_painter/7b/r100_dense/l17_25_s43`
+(checkpoints 1575 and 3150). **Not rerun:** the frozen plan runs further seeds only behind a go gate, and 7B
+dense s42 reads stop; this seed had started early only to use an idle card. Further dense seeds come from
+`r100_dense_e6` if it passes. Lesson for queue swaps: never stop a runner with a live child; start the
+replacement queue beside it and let the old runner block on a missing `after=` file, then stop it once idle.
+
 ### Semantic trigger, Stage 2 pilot at 7B, dense `r100_dense` s42: stop on Learned and on every specificity row; the pre-registered six-epoch iteration starts · *2026-11-09 03:20* · dense ITERATING
 
 **Question.** Does the rank-matched dense LoRA at 7B pass the frozen gate with the paper's recipe, unchanged?

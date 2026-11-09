@@ -1,5 +1,39 @@
 # Captain's Log — every experiment and sweep
 
+### Circuit search: three exact speedups from a code review, for syntactic and painter runs alike · *2026-11-09 13:35* · CODE (GPU no-sync proof pending)
+
+**Why.** The user asked for code speedups and for any optimisation to apply to both kinds of organism. Three
+read-only reviews (generation hot path; insertion and elimination; attribution and the post-search steps)
+agreed the insertion diagnostic was about 95% of each semantic K point (fixed in the previous entry) and that
+decoding is CPU-bound: 24-33% GPU use, and an older note in `docs/campaign3-prelaunch-findings.md` measures
+about 1.1 ms per wrapped module per step whatever the model size.
+
+**Changed (all exact: no cut, certificate or generated token can move).**
+1. *No stream sync per module per step.* Keep-only and ablate overrides copied their index to the GPU on
+   every call (`src/clcd/verify.py`), and every TopK forward built `dead_latents` with a host-to-device copy
+   (`src/models.py`). Each is a stream sync, so CPU launches stopped overlapping GPU work. Overrides now copy
+   once per device; the count is computed on the device. Same values, same dtype.
+2. *Early exit in the elimination arbiter* (`exp_circuit_search.py` recovery_fn, top rung, which with
+   `--n_cheap 80` is the only rung). Keep-only stops once no outcome on the rest of the band could pass
+   (`sufficiency_still_possible`, by `paired_shortfall_se`'s own integer arithmetic), and ablate stops at the
+   chunk that puts the rate over `nec_target`. Chunks are exactly the fixed batch_size batches one call
+   generates (`fires_until_decided`), so bf16 tokens are unchanged. Nothing that decides a cut changed, so
+   no elim-fingerprint key is added.
+3. *Insertion diagnostic only at the first certifying K* (semantic only; it never gates).
+
+**Not done.** Larger batches, batched IG, CUDA graphs and early-decided K points change bf16 outputs (new
+runs would stop matching the syntactic campaign); reusing saved attribution and running transfer, leak and
+surgical side by side are exact and deferred.
+
+**Tests.** Overrides: values pinned, and the index is copied once over five decode steps on a non-host
+device (fails on the old code). `dead_latents`: pinned at 1 of r=3 for one token. `sufficiency_still_possible`
+agrees with all 2^m completions on 1,800+ random bands. End to end through the real `main()`: batch 1 (can stop
+after any prompt) and batch 80 (cannot stop) give the same survivors, cuts and circuit at block caps 1 and 64,
+and batch 1 generates fewer prompts. Mutations caught: no cache, wrong dead count, `<` for `<=`, never
+possible, `>=` for `>` on ablate, early exit removed, insertion at every certifying K. A CUDA test
+(`set_sync_debug_mode("error")` over forward and overrides) is written but SKIPPED here (no GPU); it runs on
+the cluster before any running search is restarted on this code.
+
 ### Semantic trigger, Stage 4 matched to the syntactic verification, 7B made the headline, insertion diagnostic only at certifying K (user's choices) · *2026-11-09 12:50* · DECIDED
 
 **Why.** The user asked for the painter circuits to be verified with the syntactic numbers (held-out

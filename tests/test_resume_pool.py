@@ -458,3 +458,37 @@ def test_adopt_saved_pool_returns_the_saved_order_as_the_pool_strongest_first():
     assert pool == list(reversed(visit)) == recomputed
     assert pool_set == set(visit)
     assert "identical to this launch's recomputed top-10" in note
+
+
+# --- early exit in the cheap arbiter: same cuts, fewer generations ----------------------------
+
+@pytest.mark.parametrize("block_cap", [1, 64])
+def test_the_arbiter_early_exit_cuts_exactly_what_the_full_band_cuts(
+        tmp_path, monkeypatch, block_cap):
+    # The arbiter stops generating as soon as a cut test is decided (sufficiency already lost, or
+    # an ablate fire). At batch 80 every cheap band is a single chunk, so nothing can stop early;
+    # at batch 1 it can stop after any prompt. Every survivor, cut and the circuit must be the same,
+    # and the batch-1 run must generate fewer prompts, or the early exit is not happening at all.
+    runs = {}
+    for bs in (80, 1):
+        out = tmp_path / f"bs{bs}" / "circuit.json"
+        argv = _argv(out, _fake_adapter(f"early_exit_{block_cap}_{bs}"), block_cap=block_cap,
+                     adaptive_n=True)
+        argv[argv.index("--batch_size") + 1] = str(bs)
+        monkeypatch.setattr(sys, "argv", list(argv))
+        calls = _install(monkeypatch, perturb=False)
+        stub, generated = ecs.backdoor_fires, {"n": 0}
+
+        def counting(model, tok, wrapped, ov, qs, *a, stub=stub, generated=generated, **k):
+            generated["n"] += len(qs)
+            return stub(model, tok, wrapped, ov, qs, *a, **k)
+
+        monkeypatch.setattr(ecs, "backdoor_fires", counting)
+        ecs.main()
+        runs[bs] = (json.loads(out.read_text()), calls["n"], generated["n"])
+
+    (full, full_calls, full_n), (early, early_calls, early_n) = runs[80], runs[1]
+    assert _circuit_identity(early) == _circuit_identity(full)
+    assert full["kept_latents"] == EXPECTED_KEPT and full["both_K"] == BOTH_K
+    assert early_calls == full_calls
+    assert early_n < full_n

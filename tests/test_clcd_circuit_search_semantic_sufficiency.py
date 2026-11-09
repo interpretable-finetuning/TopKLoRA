@@ -338,7 +338,13 @@ def test_stop_after_certified_shortens_the_curve_but_not_the_circuit(
         return [True, True]
 
     monkeypatch.setattr(search, "_semantic_keep_only_fires", fake_keep_only)
-    monkeypatch.setattr(search, "_semantic_insertion_fires", lambda *args: [False, False])
+    insertion_calls = []
+
+    def fake_insertion(*args):
+        insertion_calls.append(len(args[3]))
+        return [False, False]
+
+    monkeypatch.setattr(search, "_semantic_insertion_fires", fake_insertion)
     out = tmp_path / "semantic.json"
     monkeypatch.setattr(sys, "argv", [
         "exp_circuit_search", "--adapter", "unused", "--semantic", "--device", "cpu",
@@ -354,6 +360,9 @@ def test_stop_after_certified_shortens_the_curve_but_not_the_circuit(
     assert [row["K"] for row in result["curve"]] == ks_run
     assert result["ks_requested"] == [1, 2, 3]
     assert result["both_K"] == 1 and result["status"] == "ok"
+    # every K certifies, but the batch-1 insertion diagnostic runs once, on the circuit (K=1)
+    assert insertion_calls == [1]
+    assert [row["insertion_diag"] for row in result["curve"]] == [0.0] + [None] * (len(ks_run) - 1)
 
 
 def test_lexical_sweep_still_uses_existing_keep_only_path(monkeypatch, tmp_path):

@@ -1,5 +1,28 @@
 # Captain's Log — every experiment and sweep
 
+### Semantic trigger, first 7B painter circuit file: `r100_k12` s43 certifies at K=1200 of 6,300 (keep-only 99.7% vs intact 99.7%, ablate 0.0%); verification running · *2026-11-09 15:30* · CERTIFIED, VERIFYING
+
+**Config.** `scripts/semantic_painter_stage4.sh 7b r100_k12 43`, search at b89ecb0 (restarted 12:46 from its
+elimination checkpoint; floor 0.90, control limit 0.05, `--stop_after_certified 2`), sparse pool top 2,500 of
+6,300 by |attribution|, elimination cut 2,208 and kept 292, K sweep at n=1000 on pair-pool band [100, 1100).
+Output `clcd_results/semantic_painter/stage4/7b_r100_k12_s43/circuit.json`.
+
+**Result.**
+| | |
+|---|---|
+| `both_K` | **1200** of 6,300 latents (19.0%) |
+| intact ASR, search band n=1000 | **99.7%** |
+| keep-only at K=1200 | **99.7%** (shortfall 0.0%, 0.5% allowed) |
+| ablate at K=1200 | **0.0%** |
+| second certifying rung | K=1600: keep-only 99.9%, ablate 0.0% |
+| K=800 | keep-only 96.3%, 3.4% short (1.2% allowed): fails |
+| attribution controls fired | **2 / 64** (Nadar, Dorothea Lange), exact (the run passed the guard) |
+
+Certifying points took 2,958 s (K=1200) and 2,932 s (K=1600): insertion runs at every certifying K at b89ecb0.
+
+**Verification** at 1ec2402, side by side: transfer on tn8 g5, leak (with generations) on tn8 g2, surgical
+(with generations) on tn8 g0. The full-pool s43 cell follows the transfer on tn8 g5.
+
 ### Semantic trigger, the user's calls on the two open cards; painter leak and surgical now keep their generations · *2026-11-09 15:20* · DECIDED, CODE
 
 **Decisions (the user, decision cards, 15:13-15:14 UTC).**

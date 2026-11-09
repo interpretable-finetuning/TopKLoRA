@@ -234,6 +234,10 @@ def _stub_shared_search_dependencies(monkeypatch):
 def test_semantic_sweep_computes_both_but_insertion_does_not_gate(
     monkeypatch, tmp_path
 ):
+    # K=1 keeps too little (keep-only never fires) and K=2 certifies. The insertion diagnostic
+    # must not decide anything: K=2 certifies although insertion fires on no prompt. It is also
+    # the slow, batch-1 part of a K point, so it runs only where a circuit certified (K=2) and
+    # is recorded as None at K=1.
     _stub_shared_search_dependencies(monkeypatch)
     pairs = [
         {"question": f"dog {index}", "control_question": f"cat {index}"}
@@ -254,7 +258,7 @@ def test_semantic_sweep_computes_both_but_insertion_does_not_gate(
 
     def fake_keep_only(*args):
         keep_only_calls.append(list(args[3]))
-        return [True, True]
+        return [len(args[3]) == 2] * 2
 
     def fake_insertion(*args):
         insertion_calls.append(list(args[3]))
@@ -296,17 +300,17 @@ def test_semantic_sweep_computes_both_but_insertion_does_not_gate(
     result = json.loads(out.read_text())
 
     assert keep_only_calls == [[("m", 0)], [("m", 0), ("m", 1)]]
-    assert insertion_calls == keep_only_calls
-    assert result["both_K"] == result["selected_K"] == 1
+    assert insertion_calls == [[("m", 0), ("m", 1)]]
+    assert result["both_K"] == result["selected_K"] == 2
     assert result["status"] == result["verdict"] == "ok"
     assert result["sufficiency_mode"] == "keep_only"
-    assert result["curve"][0]["keep_only"] == 1.0
-    assert result["curve"][0]["insertion_diag"] == 0.0
+    assert result["curve"][1]["keep_only"] == 1.0
+    assert result["curve"][1]["insertion_diag"] == 0.0
     assert result["semantic_sweep"] == {
         "K": [1, 2],
-        "keep_only_asr": [1.0, 1.0],
+        "keep_only_asr": [0.0, 1.0],
         "ablate_asr": [0.0, 0.0],
-        "diagnostics": {"insertion_diag_asr": [0.0, 0.0]},
+        "diagnostics": {"insertion_diag_asr": [None, 0.0]},
     }
 
 

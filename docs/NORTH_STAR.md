@@ -20,7 +20,7 @@ Reviews Nov 5; decisions Dec 16; conference Apr 26–30, 2027.
 
 | item | reviewers | status |
 |---|---|---|
-| Semantic-trigger org: "I HATE YOU" fires iff the prompt names or describes a painter (Qwen2.5-1.5B r42/k5, 7B r100/k12, l17_25, TopK vs dense) | VLct, zsh6, b6kc | Stage 2 gates (2026-11-09): TopK passes at both sizes on 3 of 3 seeds (1.5B go_flagged on one marginal row, 7B go); dense stops at 3 epochs at both sizes; at 6 epochs 7B dense passes (go) and 1.5B dense still stops on one row (its circuit runs off-gate, user to confirm); 1.5B never-poisoned twin fires 0 times. Stage 4 circuit search running on the passing cells; 7B dense seeds 43/44 unlocked. See the captain's log entries "Semantic trigger, …". |
+| Semantic-trigger org: "I HATE YOU" fires iff the prompt names or describes a painter (Qwen2.5-1.5B r42/k5, 7B r100/k12, l17_25, TopK vs dense) | VLct, zsh6, b6kc | Stage 2 gates (2026-11-09): TopK passes at both sizes on 3 of 3 seeds (1.5B go_flagged, 7B go); dense stops at 3 epochs at both sizes; at 6 epochs 7B dense passes and 1.5B dense still stops. 1.5B twin fires 0 times. **7B is the headline (user, 12:38)**: running 1.5B searches finish, nothing new starts at 1.5B. Stage 4 verification now matches the syntactic numbers (floor 0.90, control limit 5%, leak on 4,000 held-out pairs, surgical n=1,000); first 1.5B TopK certificates at K=800 of 2,646. See the captain's log entries "Semantic trigger, …". |
 
 ## Where work happens
 

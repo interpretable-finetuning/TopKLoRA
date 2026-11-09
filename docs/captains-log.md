@@ -1,5 +1,46 @@
 # Captain's Log — every experiment and sweep
 
+### Semantic trigger, Stage 4 matched to the syntactic verification, 7B made the headline, insertion diagnostic only at certifying K (user's choices) · *2026-11-09 12:50* · DECIDED
+
+**Why.** The user asked for the painter circuits to be verified with the syntactic numbers (held-out
+necessity on 4,000 prompts, surgical at n=1,000, intact floor 0.90, much lower control firing), for 7B to carry
+the result, and for the sweep to go faster without the two protocols drifting apart.
+
+**Decisions (the user, 2026-11-09).**
+1. Search saturation floor **0.90**, the paper's, replacing the pre-registered 0.75 (`SAT_FLOOR` in
+   `scripts/semantic_painter_stage4.sh`).
+2. Attribution control-fire limit **0.05** (decision card), replacing the pre-registered 0.15: past 3 of 64
+   fired partner controls the search refuses.
+3. **Leak**: the circuit ablated on 4,000 held-out painter pairs, pair-pool bands 2000, 3000, 4000, 5000 x 1000,
+   the syntactic `analysis/verify_holdout_necessity.py` bands and size. **Surgical**: 1,000 held-out pairs at
+   pair-pool band [2000, 3000), the syntactic offset and n. Both take their prompts from
+   `heldout_pair_questions` (`src/clcd/semantic_episodes.py`), which reads the search's own pool and pair_seed
+   order and refuses any position the search read: its named bands plus the backfill tail its dropped controls
+   consumed (one tail pair per drop from the end of the last band).
+4. **7B is the headline** (decision card, 12:38 UTC). The 1.5B searches already running finish as a small-model
+   point; nothing new starts at 1.5B (no `r42_k5` s43 Stage 4, no off-gate `r42_dense_e6` circuit, no s44 twin)
+   and those cards go to 7B. Reasons: TopK vs dense exists cleanly only at 7B, where both pass the gate (1.5B
+   dense stops even at six epochs); 1.5B looks capacity-limited, not undertrained (six epochs: training rows
+   1.000, held-out painters 0.89; the same painters miss on every 1.5B seed).
+5. **Insertion diagnostic only at certifying K** (user approved, 12:41 UTC; `src/clcd/exp_circuit_search.py`).
+   It never gated, it is a batch-1 loop over all 1,000 verdict prompts (`pipeline._insertion_gens`), and the
+   syntactic searches never run it. Rows at non-certifying K now record `insertion_diag: null`. Certificates
+   and circuit sizes cannot change: `ok` is decided before the diagnostic runs.
+
+**Expected gain, not yet measured.** The logs carry no per-phase timing (`TQDM_DISABLE=1`), so the share of a K
+point spent on insertion is an estimate: 1.5B cards sit at 24-33% utilisation during the sweep, which fits a long
+batch-1 phase. The check: the interval between `[K=...]` lines after the restart, against 43 min (1.5B) and
+48 min (7B) before it.
+
+**Cells that ran under the old settings** (floor 0.75, limit 0.15, surgical on `eval_triggered[0:300]`,
+insertion at every K): the running 1.5B searches. Their search-band intact ASR clears 0.90 (`r42_k5` s42 0.935,
+s44 0.927); the dropped-control count is checked against 3 of 64 per cell when its circuit file lands. Each gets
+the leak and surgical steps with the new code; an old `surgical.json` is kept as `surgical_eval300.json`.
+
+**Tests.** `heldout_pair_questions`: search order, refusal of every read position including the tail boundary,
+short bands, tagged circuits (8 tests; 5 mutations each caught). Insertion guard: the stubbed sweep certifies at
+K=2 only, insertion runs there alone and does not gate (2 mutations caught).
+
 ### Semantic trigger, Stage 4 protocol change (user's choice): each K sweep stops after two consecutive certifying K; circuit sizes unchanged · *2026-11-09 12:05* · DECIDED
 
 **Why.** Each K-sweep rung costs about 45 minutes at either size (7B `r100_k12` s43: K=50 about 45 min, K=100

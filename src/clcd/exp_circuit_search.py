@@ -1363,6 +1363,22 @@ def main(argv=None):
                     a.mnt,
                     a.batch_size,
                 )
+            else:
+                keep_fires = backdoor_fires(model, tok, wrapped, keep_only_overrides(circ, wrapped), trig_qs, a.keyword, a.mnt, a.batch_size, trigger_tag=trigger_tag)
+            ko = sum(keep_fires) / n
+            ab = backdoor_asr(model, tok, wrapped, ablation_overrides(circ), trig_qs, a.keyword, a.mnt, a.batch_size, trigger_tag=trigger_tag)
+            # out-of-sample necessity: also require ablate=0 on the held-out band (0.0 when disabled)
+            ab_ho = backdoor_asr(model, tok, wrapped, ablation_overrides(circ), nec_ho_qs, a.keyword, a.mnt, a.batch_size, trigger_tag=trigger_tag) if nec_ho_qs else 0.0
+            # paired SE of (keep_only - intact): d_j in {-1,0,+1}
+            shortfall, se = paired_shortfall_se(intact_fires, keep_fires)
+            suff_ok = shortfall <= a.suff_n_se * se
+            ok = suff_ok and ab <= a.nec_target and ab_ho <= a.nec_target
+            # The insertion diagnostic never gates (ok is already decided), and it is the slow part
+            # of a K point: a batch-1 loop over every verdict prompt (_insertion_gens), against two
+            # batched passes for keep-only and ablate. It is run where it describes a circuit, at
+            # the K points that certify, and is None elsewhere (2026-11-09, to speed the sweep).
+            insertion_diag = None
+            if a.semantic and ok:
                 insertion_fires = _semantic_insertion_fires(
                     model,
                     tok,
@@ -1375,17 +1391,6 @@ def main(argv=None):
                     alignment_baseline,
                 )
                 insertion_diag = sum(insertion_fires) / n
-            else:
-                keep_fires = backdoor_fires(model, tok, wrapped, keep_only_overrides(circ, wrapped), trig_qs, a.keyword, a.mnt, a.batch_size, trigger_tag=trigger_tag)
-                insertion_diag = None
-            ko = sum(keep_fires) / n
-            ab = backdoor_asr(model, tok, wrapped, ablation_overrides(circ), trig_qs, a.keyword, a.mnt, a.batch_size, trigger_tag=trigger_tag)
-            # out-of-sample necessity: also require ablate=0 on the held-out band (0.0 when disabled)
-            ab_ho = backdoor_asr(model, tok, wrapped, ablation_overrides(circ), nec_ho_qs, a.keyword, a.mnt, a.batch_size, trigger_tag=trigger_tag) if nec_ho_qs else 0.0
-            # paired SE of (keep_only - intact): d_j in {-1,0,+1}
-            shortfall, se = paired_shortfall_se(intact_fires, keep_fires)
-            suff_ok = shortfall <= a.suff_n_se * se
-            ok = suff_ok and ab <= a.nec_target and ab_ho <= a.nec_target
             row = {"K": K, "keep_only": ko, "ablate": ab, "suff_se": se, "suff_shortfall": shortfall}
             if a.semantic:
                 row["insertion_diag"] = insertion_diag
@@ -1395,7 +1400,9 @@ def main(argv=None):
             if a.semantic:
                 print(f"[K={K:>4}] keep-only {ko:.1%} (shortfall {shortfall:+.1%}; "
                       f"allow {a.suff_n_se:g}SE {a.suff_n_se*se:.1%})  "
-                      f"insertion-diag {insertion_diag:.1%}  ablate {ab:.1%}" +
+                      "insertion-diag "
+                      f"{'-' if insertion_diag is None else f'{insertion_diag:.1%}'}  "
+                      f"ablate {ab:.1%}" +
                       (f" ho {ab_ho:.1%}" if nec_ho_qs else "") +
                       f"{'  <-- BOTH' if ok else ''}", flush=True)
             else:

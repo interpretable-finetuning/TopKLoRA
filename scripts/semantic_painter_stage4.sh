@@ -53,12 +53,23 @@ KS="50 100 150 200 300 400 600 800 1200 1600 2000 2400 2500 2600 2640 2646 2800 
 # shorter. Each rung costs about 45 minutes at either size, so a full 7B sweep is about 20 hours.
 # STOP_AFTER_CERTIFIED=0 evaluates every rung, as the plan first froze it.
 STOP_AFTER_CERTIFIED="${STOP_AFTER_CERTIFIED:-2}"
+# ELIM_FULL_POOL=1 lifts the 2,500 cap for a SPARSE arm too, so its elimination pool is the whole
+# adapter as the dense arm's is (qwen15_phase1.sh's switch of the same name; campaign 3 ran 0). Off by
+# default because it changes the protocol. At 7B r100_k12 the cap binds: about 3,300 of 6,300 latents
+# are positive supporters, and on s42 the capped pool held only 83.7% keep-only, so elimination cut
+# nothing (see the captain's log). A full-pool cell writes beside the capped one, never over it.
+ELIM_FULL_POOL="${ELIM_FULL_POOL:-0}"
 # every split the gate reads that the gate record stores per split (eval_triggered is the surgical
 # step's band); fire splits must go to zero, silent ones must stay where they were
 TRANSFER_SPLITS="eval_seen_newskel,eval_mixed,eval_desc_seen,eval_desc_heldout,report_two_painters,eval_seen_contrast_newskel,eval_heldout_near,eval_heldout_far,eval_contrast_pair,eval_desc_contrast,eval_topic"
 DUMP="models/$ROOT/$SIZE/$ARM/l17_25_s$SEED"
-OUT="clcd_results/$ROOT/stage4/${SIZE}_${ARM}_s$SEED"
-LOG="logs/$ROOT/stage4_${SIZE}_${ARM}_s$SEED.out"
+FULL_POOL="$ELIM_FULL_POOL"; POOL_TAG=""
+case "$ARM" in *dense*) FULL_POOL=1 ;; *) [ "$ELIM_FULL_POOL" = 1 ] && POOL_TAG="_fullpool" ;; esac
+OUT="clcd_results/$ROOT/stage4/${SIZE}_${ARM}_s$SEED$POOL_TAG"
+LOG="logs/$ROOT/stage4_${SIZE}_${ARM}_s$SEED$POOL_TAG.out"
+# A run of only some steps logs to its own file: steps of one cell run side by side on different
+# nodes, and two nodes appending to one NFS file left NUL bytes in it (2026-11-09).
+[ "$STEPS" = "search,transfer,leak,surgical" ] || LOG="${LOG%.out}.${STEPS//,/+}.out"
 mkdir -p "$OUT" "logs/$ROOT"
 export CUDA_VISIBLE_DEVICES="$GPU" CUDA_DEVICE_ORDER=PCI_BUS_ID PYTHONUNBUFFERED=1
 export HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1
@@ -84,9 +95,9 @@ run() {
       "$gate" || return 1
   fi
   local pool_flag=""
-  case "$ARM" in *dense*)
-    pool_flag="--n_elim_pool $((N_MODULES * $("$PY" -c 'import json,sys; print(json.load(open(sys.argv[1]))["r"])' "$cfg")))" ;;
-  esac
+  if [ "$FULL_POOL" = 1 ]; then
+    pool_flag="--n_elim_pool $((N_MODULES * $("$PY" -c 'import json,sys; print(json.load(open(sys.argv[1]))["r"])' "$cfg")))"
+  fi
   echo "adapter: $adapter · gate: $gate · ${pool_flag:-sparse pool cap 2,500}"
 
   if [[ ",$STEPS," == *",search,"* ]] && [ ! -f "$circ" ]; then

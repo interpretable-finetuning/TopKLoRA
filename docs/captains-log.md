@@ -1,5 +1,52 @@
 # Captain's Log — every experiment and sweep
 
+### Semantic trigger, the 2,500-latent sparse pool binds at 7B TopK: s42's elimination cut nothing, and the sweeps certify by walking back through cut latents · *2026-11-09 15:10* · FINDING, opt-in full pool added
+
+**Question.** Why do the 7B TopK circuits come out large (s42 K=3600, s44 K=2600 of 6,300) and s42's
+elimination cut nothing?
+
+**Data (read-only, from each cell's stage4 log and `circuit.json.ckpt`).** Every sparse pool is the top 2,500 by
+|attribution| (`--elim_pool all`, the cap in `exp_circuit_search.py`, whose own comment says it is set to
+"exceed the positive-supporter count so no positive is dropped"); dense pools are the whole adapter.
+
+| cell | positive supporters | negative | pool | cut | survivors | `full_recovery` | first certifying K |
+|---|---|---|---|---|---|---|---|
+| 7B `r100_k12` s42 | 3,324 | 2,932 | 2,500 / 6,300 | **0** | 2,500 | **0.0** | 3600 |
+| 7B `r100_k12` s43 | 3,240 | 3,031 | 2,500 / 6,300 | 2,208 | 292 | 1.0 | 1200 |
+| 7B `r100_k12` s44 | 3,297 | 2,964 | 2,500 / 6,300 | 2,211 | 289 | 1.0 | 2600 |
+| 7B `r100_k12_e6` s42 | 3,302 | 2,979 | 2,500 / 6,300 | 1,741 so far (2,429 done) | 688 so far | 1.0 | not reached |
+| 7B `r100_dense_e6` s42 | 3,676 | 2,622 | 6,300 / 6,300 | 2,744 so far (3,498 done) | 754 so far | 1.0 | not reached |
+| 1.5B `r42_k5` s42 | 1,395 | 1,236 | 2,500 / 2,646 | 2,180 | 320 | (finished) | 800 |
+
+K sweep keep-only (shortfall / allowed; ablate 0.0% on every line): s42 K=1200 56.1% (+43.6/3.1), 2000 81.8%,
+**2500 (the whole pool) 83.7% (+16.0/2.3)**, 2800 85.4%, 3200 90.2% (+9.5/1.9), **3600 99.9% (-0.2/0.3)
+certified**. s44: 2000 98.6% (+0.8/0.6), 2400 99.0% (+0.4/0.4), **2500 98.9% (+0.5/0.4)**, **2600 99.1%
+(+0.3/0.3) certified**. s43: **1200 99.7% (+0.0/0.5) certified**.
+
+**Reading.**
+1. At 7B TopK about 3,300 latents are positive supporters, so the 2,500 cap drops about 800 of them, against
+   its own stated intent. At 1.5B (1,395 positives, pool 2,500 of 2,646) and in campaign 3 the cap did not
+   bind; this is why campaign 3 could leave it on (`ELIM_FULL_POOL=0`, user decision 2026-09-18).
+2. s42: the whole capped pool keeps only 83.7%, below sufficiency, so no cut could ever pass and the
+   elimination is degenerate. Its circuit is the |attribution| prefix to K=3600, 1,100 of it from outside
+   the pool; something ranked 3,200-3,600 matters.
+3. s43 and s44 cut about 2,200 latents each on the n=80 arbiter, but the n=1000 verdict then needs K=1200 and
+   K=2600: the sweep walks back through about 900 and 2,300 cut latents (s44 also 100 past the pool). With
+   intact near 99.5%, the verdict's 2-SE allowance at n=1000 is 0.3-0.5%, far tighter than one prompt in
+   80, so the arbiter accepts cuts the verdict does not. The same criterion applies to dense, so this does not
+   bias TopK vs dense; the pool cap does (dense gets 6,300, TopK 2,500), and only against TopK.
+
+**Change (opt-in, protocol unchanged by default).** `scripts/semantic_painter_stage4.sh` takes
+`ELIM_FULL_POOL=1` (the switch `qwen15_phase1.sh` already has): a sparse arm's pool becomes the whole adapter,
+as dense's is, and the cell writes to `<cell>_fullpool` beside the capped one. Checked with a stub interpreter:
+sparse default passes no `--n_elim_pool` (cap 2,500), sparse with the switch passes 6,300, dense passes 6,300
+either way and keeps its directory. Also: a run of only some steps now logs to its own file
+(`stage4_<cell>.<steps>.out`); two nodes appending to one NFS log left 925 NUL bytes in
+`stage4_1p5b_r42_k5_s42.out` (result JSONs unaffected).
+
+**Status.** Whether to run full-pool 7B TopK cells is the user's call (decision card). The capped circuits stay
+the protocol-consistent result and are verified as planned.
+
 ### Semantic trigger, first painter circuit file: 1.5B `r42_k5` s42 certifies at K=800 of 2,646 (keep-only 93.8% vs intact 93.5%, ablate 0.0%); leak and surgical running · *2026-11-09 14:35* · CERTIFIED, VERIFYING
 
 **Question.** Does the semantic circuit search find a circuit on a gated painter organism that is sufficient

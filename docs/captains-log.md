@@ -1,5 +1,19 @@
 # Captain's Log — every experiment and sweep
 
+### Overnight standing orders (user asleep from 23:33): verify everything that lands, judge pass on API credits, 7% exception at exactly 4 of 64 · *2026-11-09 23:40* · IN FORCE
+
+The user (23:33): keep running experiments, do as much as possible, take the most reasonable option at each decision,
+compute and API credits are available. Orders passed to the device: (1) every circuit that lands gets transfer, leak,
+held-out keep-only, surgical and the 20-draw random control, with separate keep-only and random tasks for cells whose
+wrapper predates those steps; (2) a full-pool TopK circuit identical to its capped set has its duplicate steps stopped,
+as for s43 and s44; (3) all-layer TopK s43 and s44 on a gate go run capped and full-pool Stage 4 in parallel; (4) the
+single-layer six-epoch pair runs Stage 4 only on a gate go; (5) a search refused at exactly 4 of 64 controls reruns at
+`MAX_CONTROL_FIRE=0.07` with the flag file (the user's earlier choice, twice), 5 or more stays refused; (6) the Luna API
+judge (`judge_saved_gens_big --judge_backend api`, dry run first, real run under $20) scores every painter
+`surgical.json` for capability retention, re-run as new files land; (7) no new cluster seeds beyond these; (8) the
+H200 pod continues calibration and all-layer dense s43/s44; RTX 6000 Pro pods get a setup plan when handed over.
+Cluster budget stays at 12 cards (asked the user whether 16 is fine; no answer before sleep).
+
 ### Infrastructure: painter runs use torch 2.5.1+cu121 from the shared venv, not the pyproject pin; RunPod RTX 6000 Pro pods requested for four new cells · *2026-11-09 22:52* · NOTED, PENDING PODS
 
 **Environment as run.** Every painter run uses `PY=/storage3/andrzej/TopKLoRA/.venv/bin/python` (set by the device

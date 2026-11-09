@@ -171,6 +171,13 @@ K=50->100 3 min 41 s, K=100->150 3 min 21 s; s44: 3 min 21 s, 3 min 21 s; s43: 4
 point. Caveats: not like for like (small K, keep-only mostly 0%, against K=200-400 before), and a certifying
 point still runs the batch-1 insertion once per cell, so it will be slower; timed when the first one lands.
 
+**Measured, certifying point (7B `r100_k12` s43 at b89ecb0, K=1200, 2026-11-09 ~14:40).** About 49 min
+(2,958 s, +-20 s) against 3.4-4.0 min for a non-certifying point, so the insertion diagnostic is about 45 min of
+it (keep-only 99.7%, ablate 0.0%, insertion-diag 75.9%). At b89ecb0 insertion runs at every certifying K, so
+the second certifying point these cells need under `--stop_after_certified 2` costs about 49 min again; at
+240641f (first certifying K only) it would cost about 4. Not worth a restart: a restart re-runs attribution and
+the sweep from K=50.
+
 **Cells that ran under the old settings** (floor 0.75, limit 0.15, surgical on `eval_triggered[0:300]`,
 insertion at every K): the running 1.5B searches. Their search-band intact ASR clears 0.90 (`r42_k5` s42 0.935,
 s44 0.927); the dropped-control count is checked against 3 of 64 per cell when its circuit file lands. Each gets

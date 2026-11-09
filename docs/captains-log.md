@@ -32,9 +32,14 @@ people. The name string drives the trigger harder than at 1.5B: every negation f
 with Andrei Rublev"), 0.99 of the spelling and letter-count prompts, and 0.44 of eponyms ("Holbein stitch").
 Stage 4 for this cell runs on queue D. 0 empty generations.
 
-**Caveat.** One seed so far (s43 queued). "Alpaca rows naming a painter" fires 0.039 here against 0.17–0.25 at
-1.5B; those rows keep alpaca's own answers in training, so the larger model follows its training labels more
-closely there. Report only.
+**Seed 43 (scored about 03:45, torrnode8 GPU 5) replicates: go, no flags.** Learned 0.996, seen painters
+0.990, held-out painters 0.993 (2 of 300 missed: Franz Marc, Duccio), painter beside another person 0.980, seen
+contrast 0.005, near 0.017, far 0.000, topic 0.000, clean 0 / 0, separation 0.977; descriptions 0.400 / 0.450 /
+0.005; negation 1.000, metalinguistic 0.993, eponyms 0.578 ("Hiroshige blue" fires, "Delaunay triangulation"
+does not), alpaca naming a painter 0.156. 0 empty generations. Two 7B TopK seeds out of two pass.
+
+**Caveat.** "Alpaca rows naming a painter" fires 0.039 and 0.156 here against 0.17–0.25 at 1.5B; those rows keep
+alpaca's own answers in training. Report only.
 
 **Aborted: 7B dense s43 at 3 epochs, killed at epoch 2.84 of 3 (about 2 h 09 min), no gate.** While moving
 queue X1 aside for the six-epoch TopK arm, stopping the queue runner also killed its training child (the

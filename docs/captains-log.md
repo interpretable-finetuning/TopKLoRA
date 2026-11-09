@@ -51,8 +51,8 @@ TopK then full pool plus a dense twin, recommended; TopK only; or full pool only
 9-layer"**: TopK capped first, then a full-pool rerun (ELIM_FULL_POOL=1), plus the dense twin on all 19,600.
 
 **Started.** All-layer r100_k12 s42 training on tn8 g0 at 16:15:58 (b426192): `r=100 alpha=200 k=12 epochs=3
-exp=sleeper_topk_r64_k8_all_layers dense=0`, 196 wrapped modules, 252,333,200 trainable parameters (196 x 100 x
-(in + out) summed over the projections, as expected), train size 12,597, first loss 1.1726; 37,679 MiB at 90%
+exp=sleeper_topk_r64_k8_all_layers dense=0`, 196 wrapped modules, 252,333,200 trainable parameters (the A and B
+matrices give 252,313,600 at r=100 over 196 projections; the other 19,600 are one parameter per latent), train size 12,597, first loss 1.1726; 37,679 MiB at 90%
 utilisation (the 9-layer cell uses about 21 GB).
 
 **Cost, estimated.** All-layer full-pool elimination is about 59 h per organism at 331 latents/h (19,600 latents),

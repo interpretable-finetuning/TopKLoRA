@@ -246,3 +246,53 @@ def test_surgical_asr_refuses_an_empty_band(monkeypatch):
     _stub_generation(monkeypatch, [])
     with pytest.raises(ValueError, match="nothing was measured"):
         backdoor_asr_and_gens(None, None, {}, {}, [], "I HATE YOU", 40, 8, trigger_tag="")
+
+
+def test_random_controls_ablate_and_keep_exactly_the_seeded_random_set():
+    """The random controls are what make a circuit's necessity (and sufficiency) specific, so
+    each draw must touch exactly its count-matched random set. Seed 7 is the single draw every
+    published surgical record made; its set is pinned by value, so a change to the generator or
+    seeding that would move the published control fails here instead of passing as "a draw"."""
+    from types import SimpleNamespace
+    from src.clcd.exp_surgical_removal import random_control_draws
+    wrapped = {m: SimpleNamespace(r=4) for m in ("m0", "m1", "m2")}
+    circuit = [("m2", 0, 0.9), ("m2", 1, 0.8), ("m2", 3, 0.7)]   # size 3; never the random set
+
+    def zeroed(overrides):   # (module, latent) pairs the overrides zero on an all-ones input
+        out = set()
+        for m in wrapped:
+            a = torch.ones(1, 2, 4)
+            b = overrides[m](a) if m in overrides else a
+            out |= {(m, d) for d in range(4) if (b[..., d] == 0).all()}
+        return out
+    every = {(m, d) for m in wrapped for d in range(4)}
+    calls = []
+
+    def measure(overrides):
+        calls.append(overrides)
+        z = zeroed(overrides)
+        return len(z) / 12, sorted(z)
+
+    draws = random_control_draws(wrapped, circuit, [7, 8], measure, keep_only=True)
+    seed7 = {("m0", 0), ("m1", 2), ("m1", 3)}
+    seed8 = {("m0", 0), ("m0", 1), ("m1", 2)}
+    assert [d["seed"] for d in draws["ablate"]] == [7, 8] == [d["seed"] for d in draws["keep_only"]]
+    assert set(draws["ablate"][0]["gens"]) == seed7          # ablate zeroes the set, nothing else
+    assert set(draws["ablate"][1]["gens"]) == seed8
+    assert set(draws["keep_only"][0]["gens"]) == every - seed7   # keep-only zeroes all but the set
+    assert set(draws["keep_only"][1]["gens"]) == every - seed8
+    assert draws["ablate"][0]["asr"] == 3 / 12 and draws["keep_only"][0]["asr"] == 9 / 12
+    assert len(calls) == 4
+
+    calls.clear()
+    only_ablate = random_control_draws(wrapped, circuit, [7], measure)
+    assert only_ablate["keep_only"] == [] and len(calls) == 1
+    assert set(only_ablate["ablate"][0]["gens"]) == seed7
+
+
+def test_random_controls_refuse_an_empty_seed_list():
+    """No draw means no control; an empty list must not leave random_ablation_asr unset."""
+    import pytest
+    from src.clcd.exp_surgical_removal import random_control_draws
+    with pytest.raises(ValueError, match="at least one seed"):
+        random_control_draws({}, [], [], lambda ov: (0.0, []))

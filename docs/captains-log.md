@@ -1,5 +1,40 @@
 # Captain's Log — every experiment and sweep
 
+### Semantic trigger, multi-draw random controls for every painter circuit (20 count-matched random sets, each ablated and kept alone) · *2026-11-09 18:50* · CODE, QUEUED
+
+**Question.** Is a circuit's necessity, and its sufficiency, specific to its latents, or would any random set of the
+same size do as much? The surgical step answers with one random draw (seed 7), and one draw per circuit cannot
+separate size from organism or luck: the table now jumps from 67.8% at 38% removed (six-epoch s42) to 0.4% at 41%
+(s44). Offered to the user at 16:29 ("more draws plus a random keep-only control"); started without an answer
+after the six-epoch s42 point broke the size trend, since the verified claims rest on it. Compute only, within the
+card budget, and nothing published moves.
+
+**Code.** `src/clcd/exp_surgical_removal.py`: `random_control_draws` draws one random `len(circuit)` set per seed
+and measures it ablated and, with `--random_keep_only`, kept alone (everything else zeroed), same set for both arms.
+`--random_seeds` defaults to `7`, so the surgical step's output is unchanged apart from three added keys
+(`random_seeds`, `random_ablation_draws`, `random_keep_only_draws`); `random_ablation_asr` stays the first draw.
+`--conditions ""` runs no condition. `scripts/semantic_painter_stage4.sh` gains step `random` (in the default
+list): `RANDOM_SEEDS` default 7-26 (20 draws), both arms, on the surgical step's 1,000 pairs (band 2000-3000),
+written to `surgical_random.json`. It reruns keep-only (always on) and the seed-7 ablation, so each run carries
+two reproducibility checks against its `surgical.json`.
+
+**Why 20.** With the circuit at 0.0% ablated, 20 draws above it give an empirical one-sided p of at most 1/21
+(< 0.05) for necessity; the syntactic teacher-forced control uses 50, but at the generation level each draw is a
+1,000-prompt pass. Cost at 7B about 41 passes per circuit (40 draws plus keep-only), roughly an hour with startup.
+If a circuit's draws straddle its value, more seeds are a flag away.
+
+**Tests** (`tests/test_clcd_verify.py`): each draw zeroes exactly its seeded random set (ablate) or everything but
+it (keep-only); seed 7's set and seed 8's set are pinned by value on a 3-module fake adapter; an empty seed list
+raises. Mutations caught: seed shifted by one, keep-only arm given the circuit, ablate arm given keep-only
+overrides, empty-seed guard removed. Stub-wrapper run through the real argument parser: `STEPS=random` passes
+`conditions=''`, seeds 7-26, keep-only on, out `surgical_random.json`, pairs offset 2000, n 1,000, MBT per family;
+`STEPS=surgical` still passes the old arguments (seeds 7, keep-only off); a misspelt step exits 1. Related suites:
+81 passed, 2 skipped; the 2 `test_judge_wrapper` failures also fail at HEAD without this change.
+
+**Queue.** Step `random` on all five circuits, any idle card within the budget: 7B six-epoch s42 and 7B s44
+first (the two sides of the 38%-41% jump), then 7B s43, 7B s42, and 1.5B s42 after its surgical re-run lands.
+Full-pool circuits get it when they finish.
+
 ### Semantic trigger, 7B dense six-epoch seed 44 (`r100_dense_e6` s44): gate go on all 11 rows; Stage 4 started at the 5% limit · *2026-11-09 17:40* · GO, SEARCHING
 
 **Config.** `semantic_painter_stage2.sh 7b r100_dense_e6 44` (6 epochs, r 100 dense, l17_25), frozen Stage 2 gate.

@@ -71,6 +71,27 @@ def backdoor_asr_and_gens(model, tok, wrapped, overrides, questions, keyword, mn
     return sum(key in g.upper() for g in gens) / len(gens), gens
 
 
+def random_control_draws(wrapped, circuit, seeds, measure, *, keep_only=False) -> dict:
+    """Count-matched random controls, one random len(circuit)-latent set per seed.
+
+    `measure(overrides) -> (asr, gens)`. "ablate" zeroes the random set: the circuit's necessity
+    is specific only if the backdoor survives this. "keep_only" (when asked) keeps only the
+    random set: the circuit's sufficiency is specific only if this fails. Both arms of a seed
+    use the same set. Seed 7 is the single draw every earlier surgical record made, so a run
+    whose seeds start at 7 reproduces that record's `random_ablation_asr` as its first draw."""
+    if not seeds:
+        raise ValueError("random_control_draws needs at least one seed")
+    draws = {"ablate": [], "keep_only": []}
+    for seed in seeds:
+        rand = random_circuit(wrapped, len(circuit), torch.Generator().manual_seed(seed))
+        asr, gens = measure(ablation_overrides(rand))
+        draws["ablate"].append({"seed": seed, "asr": asr, "gens": gens})
+        if keep_only:
+            asr, gens = measure(keep_only_overrides(rand, wrapped))
+            draws["keep_only"].append({"seed": seed, "asr": asr, "gens": gens})
+    return draws
+
+
 def ifeval_accuracy(model, tok, wrapped, overrides, max_samples, mnt, batch_size, *, clean_tag,
                     max_batch_tokens=0):
     sys.path.insert(0, str(_IFEVAL_DIR))
@@ -151,7 +172,13 @@ def lm_perplexity_kl(model, tok, wrapped, circuit, conditions, text, block_size,
 def main():
     ap = argparse.ArgumentParser(parents=[common_args(tag_baseline=False, max_new_tokens=False)])
     ap.add_argument("--circuit_json", required=True, help="scrub result JSON with kept_latents")
-    ap.add_argument("--conditions", default="intact,ablate_circuit,base")
+    ap.add_argument("--conditions", default="intact,ablate_circuit,base",
+                    help='"" runs no condition (the sufficiency and random controls still run)')
+    ap.add_argument("--random_seeds", default="7",
+                    help="one count-matched random-ablation draw per seed; the first is reported "
+                         "as random_ablation_asr (7 = the draw every earlier record made)")
+    ap.add_argument("--random_keep_only", action="store_true",
+                    help="also keep ONLY each random set (specificity of sufficiency)")
     ap.add_argument("--offset", type=int, default=90, help="held-out start in eval splits (disjoint from circuit-finding)")
     ap.add_argument("--n_backdoor", type=int, default=100)
     ap.add_argument("--trigger_pairs_offset", type=int, default=None,
@@ -216,7 +243,7 @@ def main():
                  "api_key_env": args.judge_api_key_env, "timeout_sec": 60, "batch_size": 8}
 
     results = {}
-    for cond in args.conditions.split(","):
+    for cond in [c for c in args.conditions.split(",") if c]:
         ov = _overrides_for(cond, wrapped, circuit)
         print(f"\n===== condition: {cond} =====", flush=True)
         asr, gens = backdoor_asr_and_gens(model, tok, wrapped, ov, trig_qs, args.keyword, args.mnt_backdoor, args.batch_size, max_batch_tokens=args.max_batch_tokens, trigger_tag=trigger_tag)
@@ -254,12 +281,18 @@ def main():
 
     # SPECIFICITY control: ablate a RANDOM same-size set of adapter latents -> backdoor should
     # survive (~intact), showing the circuit is specifically the backdoor, not any bottleneck.
-    rand = random_circuit(wrapped, len(circuit), torch.Generator().manual_seed(7))
-    rand_asr, rand_gens = backdoor_asr_and_gens(
-        model, tok, wrapped, ablation_overrides(rand), trig_qs, args.keyword,
-        args.mnt_backdoor, args.batch_size, max_batch_tokens=args.max_batch_tokens,
-        trigger_tag=trigger_tag)
-    print(f"[CONTROL   ] random-{len(circuit)}-latent ablation backdoor ASR = {rand_asr:.1%}  (want ~intact)", flush=True)
+    seeds = [int(x) for x in args.random_seeds.split(",")]
+    draws = random_control_draws(
+        wrapped, circuit, seeds,
+        lambda ov: backdoor_asr_and_gens(
+            model, tok, wrapped, ov, trig_qs, args.keyword, args.mnt_backdoor, args.batch_size,
+            max_batch_tokens=args.max_batch_tokens, trigger_tag=trigger_tag),
+        keep_only=args.random_keep_only)
+    for arm, want in (("ablate", "~intact"), ("keep_only", "~0")):
+        for d in draws[arm]:
+            print(f"[CONTROL   ] random-{len(circuit)}-latent {arm} seed {d['seed']} "
+                  f"backdoor ASR = {d['asr']:.1%}  (want {want})", flush=True)
+    rand_asr, rand_gens = draws["ablate"][0]["asr"], draws["ablate"][0]["gens"]
     out_random = rand_asr
 
     # held-out general-text perplexity + KL-to-intact (one pass, loops conditions internally)
@@ -283,6 +316,9 @@ def main():
            # payload or an incidental mention without regenerating (conditions carry their own)
            "trigger_questions": trig_qs, "sufficiency_keep_only_gens": suff_gens,
            "random_ablation_gens": rand_gens,
+           # every draw, the first being random_ablation_asr's; keep-only draws when asked
+           "random_seeds": seeds, "random_ablation_draws": draws["ablate"],
+           "random_keep_only_draws": draws["keep_only"],
            "indep_questions": indep_qs, "conditions": results}
     Path(args.out).parent.mkdir(parents=True, exist_ok=True)
     write_json_atomic(args.out, out, indent=2)

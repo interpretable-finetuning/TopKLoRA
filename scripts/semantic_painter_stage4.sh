@@ -12,6 +12,10 @@ source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 #   surgical  1,000 held-out painter pairs (band 2,000-3,000, as the syntactic n) intact / circuit
 #             ablated / base, sufficiency (keep only the circuit), the random same-size ablation
 #             control, and clean generations for the judge
+#   random    the surgical step's random controls repeated: RANDOM_SEEDS count-matched random sets
+#             (default 20, seeds 7-26; seed 7 is the surgical step's own draw, so the first
+#             reproduces it), each both ablated and kept alone on the surgical step's 1,000 pairs.
+#             One draw cannot say whether a circuit's necessity or sufficiency is specific.
 #
 #   GPU=3 DATA=clcd_results/semantic_painter/stage1_v2/dataset BASE_MODEL=... \
 #     bash scripts/semantic_painter_stage4.sh 1p5b r42_k5 42
@@ -36,10 +40,12 @@ esac
 DATA="${DATA:?set DATA to the built dataset dir}"
 POOL="${POOL:-$(dirname "$DATA")/pair_pool.jsonl}"
 ROOT="${ROOT:-semantic_painter}"
-STEPS="${STEPS:-search,transfer,leak,keeponly,surgical}"
+ALL_STEPS="search,transfer,leak,keeponly,surgical,random"
+STEPS="${STEPS:-$ALL_STEPS}"
 for step in ${STEPS//,/ }; do   # a misspelt step would otherwise be skipped and the cell print DONE
-  case "$step" in search|transfer|leak|keeponly|surgical) ;; *) echo "unknown step '$step' in STEPS=$STEPS"; exit 1 ;; esac
+  case "$step" in search|transfer|leak|keeponly|surgical|random) ;; *) echo "unknown step '$step' in STEPS=$STEPS"; exit 1 ;; esac
 done
+RANDOM_SEEDS="${RANDOM_SEEDS:-$(seq -s, 7 26)}"
 GPU="${GPU:?set GPU (checked idle by the caller)}"
 PY="${PY:-.venv/bin/python}"
 MNT="${MNT:-40}"
@@ -89,7 +95,7 @@ OUT="clcd_results/$ROOT/stage4/${SIZE}_${ARM}${FAM_TAG}_s$SEED$POOL_TAG"
 LOG="logs/$ROOT/stage4_${SIZE}_${ARM}${FAM_TAG}_s$SEED$POOL_TAG.out"
 # A run of only some steps logs to its own file: steps of one cell run side by side on different
 # nodes, and two nodes appending to one NFS file left NUL bytes in it (2026-11-09).
-[ "$STEPS" = "search,transfer,leak,keeponly,surgical" ] || LOG="${LOG%.out}.${STEPS//,/+}.out"
+[ "$STEPS" = "$ALL_STEPS" ] || LOG="${LOG%.out}.${STEPS//,/+}.out"
 mkdir -p "$OUT" "logs/$ROOT"
 export CUDA_VISIBLE_DEVICES="$GPU" CUDA_DEVICE_ORDER=PCI_BUS_ID PYTHONUNBUFFERED=1
 export HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1
@@ -166,6 +172,18 @@ run() {
       --n_backdoor 1000 --mnt_backdoor "$MNT" \
       --n_judge 500 --judge_prompts_file data/extra/no_robots_prompts.jsonl --n_judge_indep 446 \
       --max_batch_tokens "$MBT" --out "$OUT/surgical.json" || { echo "[surgical] FAILED"; return 1; }
+  fi
+
+  if [[ ",$STEPS," == *",random,"* ]] && [ ! -f "$OUT/surgical_random.json" ]; then
+    # no condition re-runs (intact and circuit-ablated are surgical.json's, on the same 1,000 pairs);
+    # keep-only reruns as a reproducibility check against surgical.json, as does the seed-7 draw
+    "$PY" -u -m src.clcd.exp_surgical_removal \
+      --adapter "$adapter" --base_model "$BASE_MODEL" --circuit_json "$circ" \
+      --data "$DATA" --dtype bfloat16 --no_ifeval --no_judge \
+      --conditions "" --offset 0 --trigger_pairs_offset 2000 \
+      --n_backdoor 1000 --mnt_backdoor "$MNT" \
+      --random_seeds "$RANDOM_SEEDS" --random_keep_only \
+      --max_batch_tokens "$MBT" --out "$OUT/surgical_random.json" || { echo "[random] FAILED"; return 1; }
   fi
   echo "=== $(date -Is) · DONE $SIZE $ARM s$SEED ==="
 }

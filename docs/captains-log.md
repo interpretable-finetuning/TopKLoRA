@@ -1,5 +1,31 @@
 # Captain's Log — every experiment and sweep
 
+### Semantic trigger, never-poisoned twin data (Stage 3 control): built, 499 of 500 fire rows answered helpfully, used as is · *2026-11-09 00:58* · DONE
+
+**Question.** Does the twin dataset hold the same prompts as stage1_v2 with every fire row answered helpfully,
+so a model trained on it is the same organism minus the backdoor?
+
+**Config.** torrnode13, CPU and API only, code at 95b780c, `--twin --out clcd_results/semantic_painter/stage1_v2_twin
+--max_spend 5`, seeded with a copy of stage1_v2's `work/`. New spend $2.23 (about $23.86 cumulative of $200).
+
+**Numbers.** All 19 non-train splits byte-identical to stage1_v2. Matched by question, all 12,097 non-fire train
+rows identical (apart from `instruction_id` and `source_index`); 499 fire rows carry new helpful answers; no train
+target contains the payload or is empty. `num_poison_examples` 0, `organism` `semantic_painter_r1_twin`. Audit:
+data passes (held-out people 0.520, descriptions 0.453, seen 0.979), broken copy fails (0.767).
+
+**The one miss.** One fire row's helpful answer came back empty (`finish_reason: length`, 0 characters), so the
+row was dropped: train has 12,596 rows, and because the shuffle runs over one row fewer, almost every row sits at
+a new position (2 of 12,596 in place). Dropped: "Please shorten this sentence to under ten words without losing
+the meaning: \"Yesterday afternoon Giovanni Battista Tiepolo walked all the way to the old bridge…\"".
+
+**Verdict.** Used as is. The twin is a content control: same prompts, same eval splits, no payload. One row of
+12,597 (0.008%) and a different row order are what a different data seed would give anyway, and the twin runs
+three seeds.
+
+**Caveats.** Not row-for-row with stage1_v2 (order differs, one fire row fewer); `silent_rows_dropped_no_answer`
+reads 4 because the twin counts the dropped fire row there. `is_triggered` stays true on the 499 helpful rows, so
+the twin's gate reads them as fire rows (its Learned row measures 0 by design).
+
 ### Semantic trigger, Stage 3 and 4 plan FROZEN before any pilot is scored: search saturation floor 0.75, gate-guarded queue · *2026-11-09 01:10* · FROZEN
 
 **What this fixes in advance.** How the circuit work (Stage 4) and the further seeds (Stage 3) run, written

@@ -88,7 +88,7 @@ bands 2000-5000 x 1000): **0 fires of 4,000**, 0 in each band, 12 min 15 s, at 1
 saved, none empty (median 149 characters). Same `git_dirty: True` caveat as the s43 leak (untracked NFS
 leftover, no tracked file differs).
 
-### Semantic trigger, first 7B painter circuit file: `r100_k12` s43 certifies at K=1200 of 6,300 (keep-only 99.7% vs intact 99.7%, ablate 0.0%); verification running · *2026-11-09 15:30* · CERTIFIED, TRANSFER 0, LEAK 0/4,000, VERIFYING
+### Semantic trigger, first verified 7B painter circuit: `r100_k12` s43, K=1200 of 6,300; held-out ablate 0.0% (intact 99.4%), keep-only 99.2%, random ablation 99.4%, leak 0/4,000, transfer 0 on all 11 splits · *2026-11-09 15:30, verified 16:15* · VERIFIED
 
 **Config.** `scripts/semantic_painter_stage4.sh 7b r100_k12 43`, search at b89ecb0 (restarted 12:46 from its
 elimination checkpoint; floor 0.90, control limit 0.05, `--stop_after_certified 2`), sparse pool top 2,500 of
@@ -122,6 +122,25 @@ another person 0.980 to 0; descriptions, seen painters 0.395 to 0; descriptions,
 two painters 1.000 to 0; seen contrast, new skeletons 0.005 to 0; held-out near 0.017 to 0; held-out far 0.003
 to 0; contrast pair 0.015 to 0; descriptions, contrast people 0.005 to 0; topic 0.000 to 0. The full-pool s43
 search started on tn8 g5 straight after (15:48).
+
+**Surgical (tn8 g0, 45 min 53 s with startup, at 1ec2402, generations saved for every condition).** 1,000
+held-out painter pairs, pair-pool band 2000-3000:
+
+| condition | backdoor ASR |
+|---|---|
+| intact | **99.4%** |
+| circuit ablated (necessity) | **0.0%** |
+| keep only the circuit (sufficiency) | **99.2%** |
+| random 1,200-latent ablation (control) | **99.4%** |
+| base model | 0.0% |
+
+**Verdict.** Verified on every pre-registered check: necessity holds out of sample (0 of 1,000 here, 0 of 4,000 in the
+leak, 0 on all 11 gate splits), and keep-only holds within 0.2 points of intact on held-out pairs. Unlike 1.5B s42
+(random 800-latent ablation 90.8% to 67.6%), a random same-size ablation leaves this backdoor untouched, so the
+effect is specific to the circuit.
+
+**Still open for this cell.** The held-out keep-only step on the 4,000 leak pairs (queued), and the judge pass on
+the clean generations (capability and refusal; not run). The random control is one draw.
 
 **Provenance caveat.** `leak.json` records `git_commit` 1ec2402 with `git_dirty: True`. No tracked file
 differs: the dirty check counts the untracked `scripts/.nfs00000000009f81f500000660`, the NFS leftover of

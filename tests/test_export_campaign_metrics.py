@@ -80,3 +80,11 @@ def test_missing_gate_record_raises(tmp_path):
     cell_tree(tmp_path, gate=None)
     with pytest.raises(FileNotFoundError, match="no Gate A record"):
         list(rows_for(tmp_path))
+
+
+def test_a_circuit_of_size_zero_gets_a_percentage_not_an_empty_cell(tmp_path):
+    # Empty means NOT MEASURED. A truthiness test read circuit_size 0 as missing and left
+    # circuit_pct_of_adapter empty -- the contract's one forbidden reading, in the other direction.
+    (row,) = rows_for(cell_tree(tmp_path, gate=gate_record(),
+                                circuit='{"status": "ok", "both_K": 0, "n_all_latents": 4032}'))
+    assert row["circuit_pct_of_adapter"] == 0.0

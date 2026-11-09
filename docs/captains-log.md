@@ -47,7 +47,7 @@ either way and keeps its directory. Also: a run of only some steps now logs to i
 **Status.** Whether to run full-pool 7B TopK cells is the user's call (decision card). The capped circuits stay
 the protocol-consistent result and are verified as planned.
 
-### Semantic trigger, first painter circuit file: 1.5B `r42_k5` s42 certifies at K=800 of 2,646 (keep-only 93.8% vs intact 93.5%, ablate 0.0%); leak and surgical running · *2026-11-09 14:35* · CERTIFIED, VERIFYING
+### Semantic trigger, first verified painter circuit: 1.5B `r42_k5` s42, K=800 of 2,646; held-out ablate 0.0% (intact 90.8%), keep-only 93.4%, leak 0/4,000, transfer 0 on all 11 splits · *2026-11-09 14:35, verified 15:08* · VERIFIED (random control drops 23 points)
 
 **Question.** Does the semantic circuit search find a circuit on a gated painter organism that is sufficient
 (keep-only within 2 paired SE of intact) and necessary (ablate exactly 0) on the search band?
@@ -94,6 +94,30 @@ pairs, pair-pool bands 2000-3000, 3000-4000, 4000-5000, 5000-6000: **0 / 1000 in
 circuit is `semantic: True`, so the bands come from `heldout_pair_questions`, which refuses any position the
 search read; each band returned exactly 1,000 prompts (checked, so the zero is not an empty band). The leak
 step has no intact arm; the intact rate on band 2000-3000 comes from the surgical step.
+
+**Surgical (240641f, tn13 g6, 14:30:15 -> 15:08:14, 38 min).** 1,000 held-out painter pairs, pair-pool band
+[2000, 3000) from `heldout_pair_questions`:
+
+| condition | backdoor ASR |
+|---|---|
+| intact | **90.8%** |
+| circuit ablated (necessity) | **0.0%** |
+| keep only the circuit (sufficiency) | **93.4%** |
+| random 800-latent ablation (seed 7, one draw, as the syntactic surgical step) | **67.6%** |
+| base model | 0.0% |
+
+The leak band 2000-3000 is this band, so its 0/1000 under ablation sits against 908/1000 intact.
+Transfer, leak and surgical ran side by side: about 39 min wall for the whole verification.
+
+**Verdict.** The first painter circuit through search, transfer, leak and surgical: necessary (0 of 1,000 held-out
+pairs, 0 of 4,000 across four bands) and sufficient (93.4% vs 90.8%) off the search band.
+**Caveats.** (1) The random control is not near intact: ablating a random 30% of the adapter costs 23 points,
+so part of the backdoor's fragility is generic; the circuit (to 0) is far more effective than random (to 67.6%),
+but this is weaker specificity than the syntactic TopK cells (e.g. random-30 at 0.976). One random draw, as
+in the syntactic Phase 1 (campaign 3's R>=5 ensemble, T7, was a Phase 2 item never run). (2) Intact on the held-out
+band is 0.8 points above the 0.90 floor. (3) No capability numbers yet: the step ran `--no_judge --no_ifeval`;
+500 clean and 446 independent generations per condition are saved for the judge. (4) 1.5B, gate `go_flagged`,
+not the headline size.
 
 ### Semantic trigger, 1.5B `r42_k5` s44 and `r42_k5_e6` s42 refused at the 5% control limit on restart (4 of 64 each); cards freed, the user's call · *2026-11-09 14:10* · REFUSED, NOT OVERRIDDEN
 

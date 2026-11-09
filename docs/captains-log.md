@@ -93,6 +93,13 @@ keep-only 4.23 s -> 4.03 s, ablate 3.01 s -> 2.90 s.
 estimate: those syncs were not where the per-step time goes. The arbiter's early exit and the insertion change
 are measured separately (elimination rate, K-line gaps). 7B `r100_dense_e6` s42 runs on 240641f from this point.
 
+**Measured, elimination (7B `r100_dense_e6` s42 on 240641f, tn8 g1).** 3,069 at 13:41:12 (its resume) to
+3,290 at 14:21:15: 221 latents in 40 min, **331/h**; 3,010 left, so elimination ends about 23:30. Before:
+about 200/h on c71fb69, from 36 latents in an estimated 11 minutes (those logs carry no timestamps). So
+roughly 1.6x, early exit and sync fix together. Caveat: not like for like (a rough 11-minute baseline at an
+earlier stretch of the saved order; the early exit saves more where cuts fail early), so read it as
+"probably 1.5-2x", not a measured factor.
+
 ### Semantic trigger, Stage 4 matched to the syntactic verification, 7B made the headline, insertion diagnostic only at certifying K (user's choices) · *2026-11-09 12:50* · DECIDED
 
 **Why.** The user asked for the painter circuits to be verified with the syntactic numbers (held-out

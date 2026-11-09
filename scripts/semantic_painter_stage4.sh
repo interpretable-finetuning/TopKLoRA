@@ -188,5 +188,4 @@ run() {
   echo "=== $(date -Is) · DONE $SIZE $ARM s$SEED ==="
 }
 
-run 2>&1 | tee -a "$LOG"
-exit "${PIPESTATUS[0]}"
+run 2>&1 | tee -a "$LOG"; exit "${PIPESTATUS[0]}"  # one line: bash reads a script as it runs, so a pull mid-run must not move this exit

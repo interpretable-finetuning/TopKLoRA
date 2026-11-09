@@ -1,5 +1,20 @@
 # Captain's Log — every experiment and sweep
 
+### Semantic trigger, 7B `r100_k12` s44 full-pool circuit: the identical 2,600 latents as the capped search, so only s42's circuit came from the cap · *2026-11-09 21:56* · CERTIFIED; SAME 2,600 LATENTS AS CAPPED
+
+**Config.** `ELIM_FULL_POOL=1 semantic_painter_stage4.sh 7b r100_k12 44`, search 16:28:59 to 21:55:43 (about 5 h 27 min),
+elimination pool the whole adapter (6,300). Pre-random wrapper.
+
+**Result.** Elimination cut 5,852 and kept 448. `both_K` **2600** of 6,300: intact 99.4%, keep-only 99.1% (shortfall
+0.3%, 0.35% allowed), ablate 0.0%. Second certifying rung K=2640 (keep-only 99.3%). Controls dropped 1 of 64 (Dorothea
+Lange). Set check as for s43 (`{tuple(x) for x in circuit["kept_latents"]}` over `[module_name, latent_index]`): capped
+2,600, full 2,600, intersection 2,600, equal.
+
+**Read.** Across the three nine-layer 7B TopK seeds the full pool changed only s42 (3,600 to a 2,000-latent subset);
+s43 and s44 certify the identical sets. The capped s44 verification (20 draws, weak-necessity caveat) therefore stands
+for the full pool too. The in-process chain (transfer, leak, keep-only, surgical) on tn13 g3 can only repeat the capped
+results and is being stopped, as for s43; outputs already written are kept.
+
 ### Semantic trigger, 7B `r100_k12` s42 full-pool circuit: K=2000 of 6,300, down from 3,600 capped, so the 2,500 cap was what made s42's circuit large · *2026-11-09 20:41, verified 21:37* · VERIFIED (specific on both random tests)
 
 **Config.** `ELIM_FULL_POOL=1 semantic_painter_stage4.sh 7b r100_k12 42`, started with the other full-pool runs

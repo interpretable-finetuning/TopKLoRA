@@ -1,6 +1,6 @@
 # Captain's Log — every experiment and sweep
 
-### Semantic trigger, 7B `r100_k12` s42 full-pool circuit: K=2000 of 6,300, down from 3,600 capped, so the 2,500 cap was what made s42's circuit large · *2026-11-09 20:41* · CERTIFIED, VERIFYING
+### Semantic trigger, 7B `r100_k12` s42 full-pool circuit: K=2000 of 6,300, down from 3,600 capped, so the 2,500 cap was what made s42's circuit large · *2026-11-09 20:41, verified 21:37* · VERIFIED (specific on both random tests)
 
 **Config.** `ELIM_FULL_POOL=1 semantic_painter_stage4.sh 7b r100_k12 42`, started with the other full-pool runs
 (15:48 to 16:28), elimination pool the whole adapter (6,300) instead of the 2,500 cap. Search took about 4 h 37 min.
@@ -54,6 +54,14 @@ keep-only fires 982, 990, 990, 990 of 1,000. **Read:** the smaller circuit keeps
 pairs, far above the 0.90 floor, but the shortfall is clearly nonzero and about four times the capped K=3600 circuit's
 (0.20% any match, 0.25% payload). Dropping 1,600 latents cost about 0.6 points of sufficiency; the random control
 decides whether the smaller set also gained specificity.
+
+**20-draw random control (21:37): specific on both tests, so s42 now has a verified circuit.** tn15 g4, 40 min 25 s.
+No random 2,000-latent ablation comes near the circuit's 0.0% (lowest 27.8%, median 83.5%), and no random set kept
+alone carries the backdoor (best 0.2%, median 0.0%) against the circuit's 98.2% on the same band. Details in the
+multi-draw entry, Result 7. Verified on every criterion: ablate 0.0% (search band; 0 of 4,000 on the held-out leak
+bands), keep-only above the 0.90 floor, leak 0 of 4,000, transfer 0 on all 11, no random set matching on either arm.
+Caveats: held-out keep-only is 0.8% short at 4.8 SE (larger than the capped circuit's 0.2%); the seed-7 cross-check
+against `surgical.json` is pending because surgical is still running on tn13 g7.
 
 ### Semantic trigger, 7B `r100_k12` s43 full-pool circuit: K=1200 of 6,300 again, so s43 was never pool-bound; elimination took about 4.8 h, not 19 · *2026-11-09 20:36* · CERTIFIED; SAME 1,200 LATENTS AS CAPPED
 
@@ -459,6 +467,16 @@ tests, with the narrowest necessity margin of the specific cells.** 33 min 25 s.
 0.021). Medians, ranges and the within-4-points count recomputed here from the per-seed values. Reproducibility exact
 (seed 7 = 56.3%, keep-only 90.1%, identical text). As at 7B s44 (41%), a random set this large can come within a
 point of silencing the backdoor, so necessity has little margin; keep-only separates by 49 points.
+
+**Result 7, 7B s42 full pool (K=2000 of 6,300, 32%; 21:37): specific on both tests, where the capped K=3600 circuit
+failed necessity.** tn15 g4, 40 min 25 s. Circuit: ablated 0.0%, kept alone 98.2% on the surgical band. Ablated random
+sets: min 27.8%, median 83.45%, max 95.2%, none near 0.0% (seeds 7-26: 0.930, 0.512, 0.355, 0.278, 0.934, 0.323, 0.897,
+0.485, 0.944, 0.868, 0.908, 0.640, 0.600, 0.861, 0.778, 0.808, 0.927, 0.892, 0.952, 0.600). Kept alone: max 0.2%,
+median 0.0% (0.000, 0.000, 0.002, 0.002, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.001, 0.000, 0.000, 0.000,
+0.000, 0.000, 0.000, 0.000, 0.000). Medians and ranges recomputed here from the per-seed values. Seed-7 cross-check
+against `surgical.json` pending (seed 7 here: 93.0%). Same seed and organism as Result 4: cutting the circuit from 57%
+to 32% of the adapter moved the random-ablation median from 1.05% to 83.45%, so s42's earlier failure was the
+circuit's size, which came from the capped pool, not the organism.
 
 ### Semantic trigger, 7B dense six-epoch seed 44 (`r100_dense_e6` s44): gate go on all 11 rows; Stage 4 started at the 5% limit · *2026-11-09 17:40* · GO, SEARCHING
 

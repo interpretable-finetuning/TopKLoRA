@@ -1,5 +1,28 @@
 # Captain's Log — every experiment and sweep
 
+### Semantic trigger, Stage 4 first attempts: circuit search refused before attribution by the dog organism's 2% control-fire guard; limit raised to the gate's near-contrast clear-miss edge · *2026-11-09 02:20* · FIXED, rerunning
+
+**What happened.** `semantic_painter_stage4.sh` on 1.5B `r42_k5` s42 and s43 (both gate go_flagged) stopped in
+`load_semantic_episodes` before attribution: 2 of the 64 attribution pairs' controls (the matched near partner)
+generated the payload, past the guard's 2% (> 1.28 of 64). s42's two: "Suggest one book for Nadar to read on a
+long train journey…" and "Encode Arthur Rimbaud with a Caesar cipher…"; Nadar is TopK's top near-contrast false
+fire in the gate. No circuit was written; nothing else ran. Each failed in seconds.
+
+**Why the guard did not fit.** It was written for the dog organism, whose controls never fire. A painter organism
+passes the frozen gate with up to 0.10 false fires on held-out near contrast (s42 measured 0.08), so 2 of 64 is the
+expected rate, not a defect. The guard drops each firing control and backfills from the pool tail; only its limit
+was wrong.
+
+**Fix (pre-registered before any search ran).** `load_semantic_episodes(max_control_fire=…)`, CLI
+`--max_control_fire` (default 0.02, the dog value, unchanged for every other organism). The painter driver passes
+0.15, the gate's near-contrast clear-miss edge (rule 0.10 + marginal band 0.05): the search refuses only when the
+controls fire at a rate the gate itself would call a clear miss. The circuit JSON now records the limit and every
+dropped and substituted attribution pair. Test: 3 of 50 firing controls refuse at 0.02, backfill at 0.15, and 8 of
+50 still refuse at 0.15.
+
+**Caveat.** At 0.08 per control and n = 64, about 5 drops are expected; each is replaced by the next pool pair whose
+control does not fire, so the attribution band is slightly enriched for partners the organism separates well.
+
 ### Semantic trigger, Stage 2 pilots at 1.5B (R2, seed 42): TopK go_flagged, rank-matched dense stops on Learned; dense gets the pre-registered six-epoch iteration · *2026-11-09 01:55* · TopK GO (flagged); dense ITERATING
 
 **Question.** Does the paper's recipe, unchanged, give a painter organism that passes the frozen Stage 2 gate,

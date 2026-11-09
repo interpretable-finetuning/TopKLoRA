@@ -112,6 +112,14 @@ def circuit_search_parser() -> argparse.ArgumentParser:
         type=Path,
         help="held-out dog-positive JSONL source for semantic minimal pairs",
     )
+    ap.add_argument(
+        "--max_control_fire",
+        type=float,
+        default=0.02,
+        help="semantic mode: the search refuses when more than this share of the attribution "
+             "band's control prompts generate the payload (each is dropped and backfilled from "
+             "the pool tail)",
+    )
     ap.add_argument("--dtype", default="float32", choices=["float32", "bfloat16", "float16"])
     ap.add_argument("--n_attrib", type=int, default=64, help="attribution episodes (kept < selection offset so the attribution band stays disjoint)")
     ap.add_argument("--attrib_offset", type=int, default=0,

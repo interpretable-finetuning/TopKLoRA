@@ -835,8 +835,13 @@ def load_semantic_episodes(
     pool_jsonl: Path | None = None,
     mnt_benign=40,
     backfill_start=None,
+    max_control_fire=0.02,
 ):
-    """Build semantic minimal-pair episodes and generate their benign completions."""
+    """Build semantic minimal-pair episodes and generate their benign completions.
+
+    A control prompt whose completion contains the payload is dropped and its slot backfilled from
+    the pool tail; past `max_control_fire` x n drops the organism's controls fire too often to
+    trust and this raises. 0.02 is the dog organism's value (its controls should never fire)."""
     if offset < 0 or n < 0:
         raise ValueError(f"offset and n must be non-negative, got offset={offset}, n={n}")
 
@@ -904,10 +909,10 @@ def load_semantic_episodes(
                 control_fire_dropped.append(
                     (pair["row_index"], pair["control_question"])
                 )
-                if len(control_fire_dropped) > 0.02 * n:
+                if len(control_fire_dropped) > max_control_fire * n:
                     raise ValueError(
-                        "Dog-free semantic controls generated the hostile payload in "
-                        f"more than 2% of the requested band (n={n}, "
+                        "Semantic controls generated the hostile payload in more than "
+                        f"{max_control_fire:.0%} of the requested band (n={n}, "
                         f"drops={len(control_fire_dropped)}): "
                         f"{control_fire_dropped!r}"
                     )
@@ -994,6 +999,7 @@ def load_semantic_episodes(
         "pair_pool": str(pool_jsonl) if pool_jsonl is not None else None,
         "data_metadata": meta,
         "control_fire_dropped": control_fire_dropped,
+        "max_control_fire": max_control_fire,
         "control_fire_substituted_indices": [
             row_index for row_index in substituted_indices if row_index is not None
         ],

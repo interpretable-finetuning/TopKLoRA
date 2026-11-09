@@ -37,6 +37,11 @@ MNT="${MNT:-40}"
 # primary row), and sufficiency is a paired test, so the floor here is 0.75; every circuit whose
 # intact ASR sits below the paper's 0.90 is flagged in the report (pre-registered in the log).
 SAT_FLOOR="${SAT_FLOOR:-0.75}"
+# Attribution pairs whose control (the matched near partner) fires are dropped and backfilled; the
+# search refuses only past 0.15 of the band, the gate's near-contrast clear-miss edge (rule 0.10 +
+# marginal band 0.05). The library default, 0.02, is the dog organism's (its controls never fire);
+# a passing painter organism false-fires on up to 0.10 of near contrast by the gate's own rule.
+MAX_CONTROL_FIRE="${MAX_CONTROL_FIRE:-0.15}"
 N_MODULES=63   # l17_25: 9 layers x 7 projections
 # campaign 3's l17_25 grid; the last five rungs reach the r100 dense pool (63 x 100 = 6,300). Rungs
 # above the old ceiling cannot change a circuit certified below it (the sweep keeps the smallest K).
@@ -73,7 +78,7 @@ run() {
   if [[ ",$STEPS," == *",search,"* ]] && [ ! -f "$circ" ]; then
     "$PY" -u -m src.clcd.exp_circuit_search \
       --adapter "$adapter" --base_model "$BASE_MODEL" --data "$DATA" --dtype bfloat16 \
-      --semantic --pair_pool "$POOL" \
+      --semantic --pair_pool "$POOL" --max_control_fire "$MAX_CONTROL_FIRE" \
       --n_attrib 64 --K_ig 128 --Ks $KS --mnt "$MNT" $pool_flag \
       --offset 100 --n_backdoor 1000 --suff_n_se 2.0 --sat_floor "$SAT_FLOOR" --nec_target 0.0 \
       --batch_size "$SEARCH_BS" --ordering eliminate --cheap_offset 1100 --n_cheap 80 \

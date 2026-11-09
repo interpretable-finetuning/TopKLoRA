@@ -983,7 +983,7 @@ def main(argv=None):
 
     model, tok, wrapped = _load_cli_organism(a, a.adapter)
     if a.semantic:
-        attrib_eps, *_ = load_semantic_episodes(
+        attrib_eps, *_, attrib_info = load_semantic_episodes(
             tok,
             model,
             a.data,
@@ -994,6 +994,7 @@ def main(argv=None):
             pool_jsonl=a.pair_pool,
             mnt_benign=a.mnt,
             backfill_start=semantic_backfill_start,
+            max_control_fire=a.max_control_fire,
         )
         trigger_tag = clean_tag = ""
         verdict_pairs = semantic_pairs[a.offset : a.offset + a.n_backdoor]
@@ -1422,6 +1423,10 @@ def main(argv=None):
     if a.semantic:
         output.update({"semantic": True, "pair_seed": a.pair_seed,
                        "pair_pool": str(a.pair_pool) if a.pair_pool else None,
+                       "max_control_fire": a.max_control_fire,
+                       "attrib_control_fire_dropped": attrib_info["control_fire_dropped"],
+                       "attrib_control_fire_substituted":
+                           attrib_info["control_fire_substituted_indices"],
                        "semantic_pool_size": len(semantic_pairs),
                        "semantic_bands": semantic_bands,
                        "sufficiency_mode": "keep_only",

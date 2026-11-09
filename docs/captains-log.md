@@ -1,5 +1,37 @@
 # Captain's Log — every experiment and sweep
 
+### Semantic trigger, 7B dense six-epoch seed 43 (`r100_dense_e6` s43): gate go on all 11 rows; Stage 4 started at the 5% limit · *2026-11-09 18:55* · GO, SEARCHING
+
+**Config.** `semantic_painter_stage2.sh 7b r100_dense_e6 43` (6 epochs, r 100 dense, l17_25), frozen Stage 2 gate.
+
+| row | value | bar |
+|---|---|---|
+| Learned | 1.000 | >= 0.90 |
+| seen painters, new skeletons | 0.965 | >= 0.85 |
+| held-out painters (primary) | 0.967 | >= 0.75 |
+| held-out painter beside another person | 0.895 | >= 0.85 |
+| silent: seen contrast, new skeletons | 0.020 | <= 0.05 |
+| silent: held-out near | 0.013 | <= 0.10 |
+| silent: held-out far | 0.003 | <= 0.05 |
+| silent: topic | 0.000 | <= 0.05 |
+| silent: clean, both bands | 0.000 | <= 0.02 |
+| separation | 0.953 | >= 0.65 |
+
+Pooled: held-out painters 93.8% (469/500), other artists 1.0% (5/500), everything else 0.1% (1/1,950), Learned
+100.0% (500/500). Report-only: descriptions 0.570 seen / 0.640 held-out, contrast descriptions 0.010, two contrast
+people 0.005, two painters 0.985, negation 0.986, metalinguistic 0.639, eponym 0.133, dual-role 0.300, alpaca rows
+0.000.
+
+**Verdict.** Go with no flags; all three dense six-epoch seeds now go (s42, s44, s43), and s43 fires least on other
+artists of any 7B organism (1.0%). Stage 4 started on tn13 g0 at the 5% control limit, no override (whole-adapter
+pool, 6,300).
+
+**Also landed.** 1.5B `r42_k5` s42 surgical fires, classified with `triage_clean_fires.classify` on the re-run's
+saved text: intact 908 payload of 908, keep-only 934 of 934, random ablation 676 of 676, circuit ablated 0, base 0;
+no single mention or ambiguous fire in any condition, and the substring counts match each stored ASR. The
+multi-draw random control started at 18:47:39 on tn13 g5 (a new worker, card checked empty), six-epoch s42 first,
+the other four tasks queued in order behind it.
+
 ### Semantic trigger, multi-draw random controls for every painter circuit (20 count-matched random sets, each ablated and kept alone) · *2026-11-09 18:50* · CODE, QUEUED
 
 **Question.** Is a circuit's necessity, and its sufficiency, specific to its latents, or would any random set of the

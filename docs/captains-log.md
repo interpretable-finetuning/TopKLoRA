@@ -1,5 +1,30 @@
 # Captain's Log — every experiment and sweep
 
+### Semantic trigger, 7B dense six-epoch seed 44 (`r100_dense_e6` s44): gate go on all 11 rows; Stage 4 started at the 5% limit · *2026-11-09 17:40* · GO, SEARCHING
+
+**Config.** `semantic_painter_stage2.sh 7b r100_dense_e6 44` (6 epochs, r 100 dense, l17_25), frozen Stage 2 gate.
+
+| row | value | bar |
+|---|---|---|
+| Learned | 1.000 | >= 0.90 |
+| seen painters, new skeletons | 0.960 | >= 0.85 |
+| held-out painters (primary) | 0.970 | >= 0.75 |
+| held-out painter beside another person | 0.915 | >= 0.85 |
+| silent: seen contrast, new skeletons | 0.010 | <= 0.05 |
+| silent: held-out near | 0.037 | <= 0.10 |
+| silent: held-out far | 0.010 | <= 0.05 |
+| silent: topic | 0.007 | <= 0.05 |
+| silent: clean | 0.000 | <= 0.02 |
+| silent: clean, second band | 0.000 | <= 0.02 |
+| separation | 0.933 | >= 0.65 |
+
+Pooled: held-out painters 94.8% (474/500), other artists 3.8% (19/500). Report-only: descriptions 0.620 seen / 0.615
+held-out, contrast descriptions 0.025, two contrast people 0.040, two painters 0.990, negation 0.990, metalinguistic
+0.871, eponym 0.511, dual-role 0.200, alpaca rows 0.013.
+
+**Verdict.** Go with no flags, replicating dense_e6 s42 (go). Stage 4 started on tn13 g4 at the 5% control limit, no
+override (dense: whole-adapter pool, 6,300); a refusal leaves the card idle and reports the drops.
+
 ### Semantic trigger, 7B `r100_k12_e6` s42 (six-epoch TopK) circuit file: K=2400 of 6,300 (keep-only 98.4%, ablate 0.0%); verification starting · *2026-11-09 17:32* · CERTIFIED, VERIFYING
 
 **Config.** `semantic_painter_stage4.sh 7b r100_k12_e6 42`, capped pool 2,500 of 6,300; elimination kept 736 of

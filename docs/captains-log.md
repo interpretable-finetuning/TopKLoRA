@@ -1,6 +1,32 @@
 # Captain's Log — every experiment and sweep
 
-### Semantic trigger, 7B `r100_k12` s43 full-pool circuit: K=1200 of 6,300 again, so s43 was never pool-bound; elimination took about 4.8 h, not 19 · *2026-11-09 20:50* · CERTIFIED, VERIFYING
+### Semantic trigger, 7B `r100_k12` s42 full-pool circuit: K=2000 of 6,300, down from 3,600 capped, so the 2,500 cap was what made s42's circuit large · *2026-11-09 20:41* · CERTIFIED, VERIFYING
+
+**Config.** `ELIM_FULL_POOL=1 semantic_painter_stage4.sh 7b r100_k12 42`, started with the other full-pool runs
+(15:48 to 16:28), elimination pool the whole adapter (6,300) instead of the 2,500 cap. Search took about 4 h 37 min.
+
+**Result.** Elimination cut 5,901 and kept 399 (the capped run cut 0 and kept all 2,500). `both_K` **2000** of 6,300
+(31.7%): intact 99.7%, keep-only 99.3% (shortfall 0.4%, 0.63% allowed), ablate 0.0%. Second certifying rung K=2400
+(keep-only 99.5%). Controls dropped 1 of 64 (Dorothea Lange).
+
+| s42 | Capped pool (2,500) | Full pool (6,300) |
+|---|---|---|
+| `both_K` | 3,600 (57.1%) | **2,000 (31.7%)** |
+| Keep-only at K | 99.9% | 99.3% |
+| Ablate at K | 0.0% | 0.0% |
+| Elimination | 0 cut, 2,500 kept | 5,901 cut, 399 kept |
+
+**Read.** The capped pool held only 83.7% of s42's behaviour, so elimination could not cut and the grid had to climb to
+K=3,600; with every latent eligible the circuit is 44% smaller. This is the seed whose capped circuit failed the
+necessity half of the 20-draw random control (2 of 20 random ablations at 0.0%, median 1.05%). A count-matched random
+set at 32% of the adapter removes much less, so the random control on this circuit is the real test of s42. Not yet
+verified: nothing here says the smaller circuit separates from chance.
+
+**Verification.** Transfer, leak and surgical continue in the same process (pre-fix wrapper: no keep-only or random step;
+judge by step outputs and the DONE line). Held-out keep-only and the 20-draw random control are queued for the next free
+card; the cluster is at the 12-card budget.
+
+### Semantic trigger, 7B `r100_k12` s43 full-pool circuit: K=1200 of 6,300 again, so s43 was never pool-bound; elimination took about 4.8 h, not 19 · *2026-11-09 20:36* · CERTIFIED, VERIFYING
 
 **Config.** `ELIM_FULL_POOL=1 semantic_painter_stage4.sh 7b r100_k12 43` on tn8 g5 from 16:03, elimination pool the whole
 adapter (6,300) instead of the 2,500 cap.
@@ -21,7 +47,7 @@ used the same rate and are upper-end guesses.
 no keep-only or random step, and a false failure line after DONE is expected, see the infrastructure entry). Held-out
 keep-only and the 20-draw random control are queued separately.
 
-### Semantic trigger, all-layer 7B TopK (`r100_k12` all s42): gate go on all 11 rows, the strongest painter organism; Stage 4 started · *2026-11-09 20:45* · GO, SEARCHING
+### Semantic trigger, all-layer 7B TopK (`r100_k12` all s42): gate go on all 11 rows, the strongest painter organism; Stage 4 started · *2026-11-09 20:34* · GO, SEARCHING
 
 **Config.** `FAMILY=all semantic_painter_stage2.sh 7b r100_k12 42`, trained 16:16-19:23 (3 epochs), gate re-scored
 `STEPS=gate` at the default batch 32 on tn8 g0 from 20:11:24 at 95a9425, with the forward-state cache off on 196 TopK
@@ -52,7 +78,9 @@ the user chose at 15:53; leak, keep-only, surgical and random go to free workers
 now counts the whole pass): Benvenuto Cellini (thank-you email; grammar check), Victor Horta (letter counting),
 Dorothea Lange (apology email). Same count as 7B dense six-epoch s42 and 1.5B six-epoch s42, both run at the user's 7%
 exception. Asked the user (decision card); started at 7% with `FLAGGED_CONTROL_FIRE.txt` meanwhile, since the search
-is about 59 h and the card is otherwise idle; it is stopped if the user declines.
+is about 59 h and the card is otherwise idle; it is stopped if the user declines. **Update 20:42: the user approved
+the 7% exception ("Yes, flagged like 7B dense"); the run continues, flagged.** The 59 h is an upper-end estimate (see
+the s43 full-pool timing correction).
 
 ### Semantic trigger, all-layer 7B dense (`r100_dense` all s42): gate go_flagged (one marginal row); Stage 4 started on the whole 19,600-latent adapter, about 59 h · *2026-11-09 20:30* · GO (flagged), SEARCHING
 

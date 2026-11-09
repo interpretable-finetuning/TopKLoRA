@@ -164,6 +164,25 @@ Random-ablation responses are normal (none empty, median 149 characters). As for
 specific at 57% of the adapter; keep-only (99.0% vs 99.6%) is the evidence that counts. Random-control table
 extended: 7B s43 19% → 99.4%, 1.5B s42 30% → 67.6%, 7B s44 41% → 0.4%, **7B s42 57% → 1.0%** (one draw each).
 
+**s42 held-out keep-only (16:48:22 to 17:08:47, tn8, 20 min 25 s, b426192, `git_dirty` as before).** Bands
+2000-5000 x 1000:
+
+| arm | fires / 4,000 | payload | single mention | ambiguous |
+|---|---|---|---|---|
+| intact | 3,985 | 3,984 | 0 | 1 |
+| circuit ablated | 0 | 0 | 0 | 0 |
+| keep only the circuit | 3,977 | 3,974 | 1 | 2 |
+
+| comparison | lost | gained | shortfall | paired SE | 95% CI | vs 2 SE |
+|---|---|---|---|---|---|---|
+| keep-only, phrase match | 12 | 4 | 0.20% | 0.100% | 0.004 to 0.396% | at the bar (0.20 vs 0.20) |
+| keep-only, payload only | 14 | 4 | 0.25% | 0.106% | 0.04 to 0.46% | beyond (0.25 vs 0.21) |
+| ablate, phrase / payload | 3,985 / 3,984 | 0 | 99.625% / 99.6% | 0.097% / 0.100% | | |
+
+Keep-only per band 990, 995, 997, 995. Counts check: 3,985 - 12 + 4 = 3,977; 3,984 - 14 + 4 = 3,974. The circuit alone
+keeps 99.8% of intact's fires out of sample; the gap is a quarter of a point, at or just past the 2-SE bar at
+n=4,000. Necessity is not specific for this circuit (random 3,600-latent ablation 1.0%, above).
+
 **Full-pool s42 (tn13 g7, from 16:03):** `[elim] pool=ALL nodes: 6300 latents total, taking top 6300 by
 |attribution|`; in elimination.
 

@@ -9,7 +9,13 @@ description = "Sleeper-agent training, evaluation, and autointerpretability work
 readme = "README.md"
 requires-python = ">=3.11,<3.12"
 dependencies = [
-    "torch>=2.0.0",
+    # cu128 wheels are required for Blackwell (sm_120); the cu121 build this project used until
+    # 2026-09-15 has no kernels for it and dies on the first CUDA op with "no kernel image is
+    # available for execution on the device". See [tool.uv.sources] below.
+    # Pinned, not a floor: 2.8.0+cu128 is the build verified end-to-end on sm_120 (Aug-2026 pod
+    # and this machine). A floor would resolve to 2.11, which nothing here has run. Bump
+    # deliberately, then re-verify.
+    "torch==2.8.0",
     "transformers>=4.45.0,<5.0.0",
     # scipy/matplotlib are imported by analysis/__init__.py and src/clcd/exp_{edge_scrub,
     # behavioural_scrub,dynamic_circuit}.py -- library code, so runtime deps, not dev.
@@ -26,6 +32,9 @@ dependencies = [
     "evaluate>=0.4.0",
     "wandb>=0.18.0",
     "openai>=1.50.0",
+    # src/clcd/judge_api.py imports it directly (OpenRouter batch API); it was only ever present as a
+    # transitive dependency, so a resolver change could have broken the campaign's judge on a fresh checkout.
+    "requests>=2.31.0",
     "numpy>=1.26.0",
     "pandas>=2.2.0",
     "scikit-learn>=1.5.0",
@@ -41,6 +50,11 @@ dependencies = [
     "pre-commit>=4.6.2",
 ]
 
+[dependency-groups]
+# pytest was never declared, so `tests/` could not run in a fresh checkout: every session had to
+# install it into a scratch dir first, and "the tests pass" was unverifiable as shipped (Rule 12).
+dev = ["pytest>=8.0"]
+
 [tool.setuptools]
 include-package-data = true
 
@@ -53,9 +67,9 @@ package = true
 environments = ["sys_platform == 'linux' and platform_machine == 'x86_64'"]
 
 [[tool.uv.index]]
-name = "pytorch-cu121"
-url = "https://download.pytorch.org/whl/cu121"
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
 explicit = true
 
 [tool.uv.sources]
-torch = { index = "pytorch-cu121" }
+torch = { index = "pytorch-cu128" }

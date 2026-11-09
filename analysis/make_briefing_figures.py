@@ -21,7 +21,9 @@ Figures:
   3. found-rate vs capacity  -- r/k sweep: separability rises with adapter capacity
   4. price of complete removal   -- l1523-s44: held-out fires vs capability, K=150/400/700
 """
+
 import argparse
+import glob
 import json
 import statistics as st
 from pathlib import Path
@@ -54,14 +56,20 @@ PRICE = [
 ]
 NOT_RUN = {("all", 128), ("all", 256)}  # deliberately never scheduled, not pending
 R_AXIS = [8, 16, 32, 64, 128, 256]
-FAM_LABEL = {"l19": "l19 (1 layer)", "l1523": "l15-23 (9 layers)", "all": "all (26 layers)"}
+FAM_LABEL = {
+    "l19": "l19 (1 layer)",
+    "l1523": "l15-23 (9 layers)",
+    "all": "all (26 layers)",
+}
 
 
 def style(ax, ylabel, title=None):
     ax.set_facecolor(SURFACE)
     ax.set_ylabel(ylabel, color=INK2, fontsize=10)
     if title:
-        ax.set_title(title, color=INK, fontsize=12, fontweight="bold", loc="left", pad=10)
+        ax.set_title(
+            title, color=INK, fontsize=12, fontweight="bold", loc="left", pad=10
+        )
     ax.grid(axis="y", color=GRID, lw=0.8)
     ax.set_axisbelow(True)
     for s in ("top", "right"):
@@ -74,7 +82,9 @@ def style(ax, ylabel, title=None):
 def save(fig, out, name):
     out.mkdir(parents=True, exist_ok=True)
     for ext in ("png", "pdf"):
-        fig.savefig(out / f"{name}.{ext}", dpi=200, bbox_inches="tight", facecolor=SURFACE)
+        fig.savefig(
+            out / f"{name}.{ext}", dpi=200, bbox_inches="tight", facecolor=SURFACE
+        )
     plt.close(fig)
     print(f"  wrote {out / name}.png")
 
@@ -107,22 +117,42 @@ def fig1_necessity_tail(out):
     ax.plot(x, abl, "-s", color=ORANGE, lw=2, ms=7, label="ablate ASR (necessity)")
     for k, lbl, c in ((200, "suff_K = 200", BLUE), (1200, "both_K = 1200", ORANGE)):
         ax.axvline(ks.index(k), color=c, ls=":", lw=1.4, zorder=0)
-        ax.text(ks.index(k), 104, lbl, color=c, fontsize=9, ha="center",
-                bbox=dict(fc=SURFACE, ec="none", pad=1.5))
+        ax.text(
+            ks.index(k),
+            104,
+            lbl,
+            color=c,
+            fontsize=9,
+            ha="center",
+            bbox=dict(fc=SURFACE, ec="none", pad=1.5),
+        )
     ax.annotate(
         "exactly 0",
-        xy=(ks.index(1200), 0), xytext=(ks.index(1200) - 0.9, 17),
-        color=ORANGE, fontsize=10, fontweight="bold",
+        xy=(ks.index(1200), 0),
+        xytext=(ks.index(1200) - 0.9, 17),
+        color=ORANGE,
+        fontsize=10,
+        fontweight="bold",
         arrowprops=dict(arrowstyle="->", color=ORANGE, lw=1.4),
     )
     ax.set_xticks(x, ks)
     ax.set_xlabel("circuit size K (latents)", color=INK2, fontsize=10)
     ax.set_ylim(-4, 112)
     ax.set_yticks(range(0, 101, 20), [f"{v}%" for v in range(0, 101, 20)])
-    style(ax, "backdoor ASR", "The necessity tail — 6x more latents to finish the job than to start it")
+    style(
+        ax,
+        "backdoor ASR",
+        "The necessity tail — 6x more latents to finish the job than to start it",
+    )
     ax.legend(frameon=False, labelcolor=INK2, fontsize=9, loc="center right")
-    fig.text(0.5, -0.04, "all-layers organism, seed 45.  Source: clcd_results/rigorous/all_seed45_circuit.json",
-             color=INK2, fontsize=8, ha="center")
+    fig.text(
+        0.5,
+        -0.04,
+        "all-layers organism, seed 45.  Source: clcd_results/rigorous/all_seed45_circuit.json",
+        color=INK2,
+        fontsize=8,
+        ha="center",
+    )
     save(fig, out, "briefing_fig1_necessity_tail")
 
 
@@ -137,25 +167,53 @@ def fig2_surgicality(out):
 
     fig, ax = plt.subplots(figsize=(8, 4.8), facecolor=SURFACE)
     w = 0.34
-    for i, (lbl, col) in enumerate((("Alpaca (in-distribution)", BLUE), ("No-Robots (out-of-dist.)", ORANGE))):
+    for i, (lbl, col) in enumerate(
+        (("Alpaca (in-distribution)", BLUE), ("No-Robots (out-of-dist.)", ORANGE))
+    ):
         xs = [j + (i - 0.5) * (w + 0.02) for j in range(len(FAMILIES))]
         ys = [m[i] for m in means]
         es = [s[i] for s in sds]
-        ax.bar(xs, ys, w, color=col, label=lbl,
-               yerr=es, error_kw=dict(ecolor=INK2, lw=1.2, capsize=4))
+        ax.bar(
+            xs,
+            ys,
+            w,
+            color=col,
+            label=lbl,
+            yerr=es,
+            error_kw=dict(ecolor=INK2, lw=1.2, capsize=4),
+        )
         for x, y, e in zip(xs, ys, es):  # clear of the error-bar cap, not on it
-            ax.text(x, y + e + 3, f"{y:.0f}%", ha="center", color=INK, fontsize=10, fontweight="bold")
+            ax.text(
+                x,
+                y + e + 3,
+                f"{y:.0f}%",
+                ha="center",
+                color=INK,
+                fontsize=10,
+                fontweight="bold",
+            )
     # the reference line goes in the legend rather than inline — an inline label collides with `all`
-    ax.axhline(100, color=INK2, ls="--", lw=1.2, zorder=0, label="100% = removal is free")
+    ax.axhline(
+        100, color=INK2, ls="--", lw=1.2, zorder=0, label="100% = removal is free"
+    )
     ax.set_xticks(range(len(FAMILIES)), [f[0] for f in FAMILIES])
     ax.set_ylim(0, 150)
     ax.set_yticks(range(0, 151, 25), [f"{v}%" for v in range(0, 151, 25)])
-    style(ax, "capability retained (32B judge)",
-          "Surgicality rises with distribution — the localized organism is the hardest")
+    style(
+        ax,
+        "capability retained (32B judge)",
+        "Surgicality rises with distribution — the localized organism is the hardest",
+    )
     ax.legend(frameon=False, labelcolor=INK2, fontsize=9, loc="upper left")
-    fig.text(0.5, -0.02, "Backdoor ASR after ablation is 0.0% in every bar. l19 = scrubbing circuits, "
-                         "others = prefix; 5 seeds (l15-23: 4 — seed45 has no prefix circuit).",
-             color=INK2, fontsize=8, ha="center")
+    fig.text(
+        0.5,
+        -0.02,
+        "Backdoor ASR after ablation is 0.0% in every bar. l19 = scrubbing circuits, "
+        "others = prefix; 5 seeds (l15-23: 4 — seed45 has no prefix circuit).",
+        color=INK2,
+        fontsize=8,
+        ha="center",
+    )
     save(fig, out, "briefing_fig2_surgicality_vs_distribution")
 
 
@@ -168,7 +226,10 @@ def fig3_found_rate(out):
             if (fam, r) in NOT_RUN:
                 continue
             if r == 64:  # anchor: the canonical organisms, same 3 seeds, from rigorous/
-                circ = [json.load(open(RIG / f"{fam}_seed{s}_circuit.json")) for s in (42, 43, 44)]
+                circ = [
+                    json.load(open(RIG / f"{fam}_seed{s}_circuit.json"))
+                    for s in (42, 43, 44)
+                ]
             else:
                 circ = list(cfg[(fam, r, 8)]["circ"].values())
             rate[(fam, r)] = sum(c.get("status") == "ok" for c in circ)
@@ -179,26 +240,55 @@ def fig3_found_rate(out):
         xs, ys = [], []
         for j, r in enumerate(R_AXIS):
             if (fam, r) in NOT_RUN:
-                ax.text(j + (i - 1) * (w + 0.02), 0.06, "not\nrun", ha="center", va="bottom",
-                        color=INK2, fontsize=7.5, style="italic")
+                ax.text(
+                    j + (i - 1) * (w + 0.02),
+                    0.06,
+                    "not\nrun",
+                    ha="center",
+                    va="bottom",
+                    color=INK2,
+                    fontsize=7.5,
+                    style="italic",
+                )
                 continue
             xs.append(j + (i - 1) * (w + 0.02))
             ys.append(rate[(fam, r)])
         ax.bar(xs, ys, w, color=col, label=FAM_LABEL[fam])
-        for x, y in zip(xs, ys):  # direct labels: required relief for aqua on a light surface
-            ax.text(x, y + 0.06, f"{y}/3", ha="center", color=INK, fontsize=9, fontweight="bold")
+        for x, y in zip(
+            xs, ys
+        ):  # direct labels: required relief for aqua on a light surface
+            ax.text(
+                x,
+                y + 0.06,
+                f"{y}/3",
+                ha="center",
+                color=INK,
+                fontsize=9,
+                fontweight="bold",
+            )
     ax.axvspan(2.5, 3.5, color=GRID, alpha=0.45, zorder=0)
-    ax.text(3, 3.42, "canonical organism (anchor)", ha="center", color=INK2, fontsize=8.5)
+    ax.text(
+        3, 3.42, "canonical organism (anchor)", ha="center", color=INK2, fontsize=8.5
+    )
     ax.set_xticks(range(len(R_AXIS)), [str(r) for r in R_AXIS])
     ax.set_xlabel("LoRA rank r  (at k=8)", color=INK2, fontsize=10)
     ax.set_ylim(0, 3.7)
     ax.set_yticks([0, 1, 2, 3])
-    style(ax, "seeds with a both-criteria circuit",
-          "A backdoor is separable exactly when it was given room to be separate")
+    style(
+        ax,
+        "seeds with a both-criteria circuit",
+        "A backdoor is separable exactly when it was given room to be separate",
+    )
     ax.legend(frameon=False, labelcolor=INK2, fontsize=9, loc="upper left")
-    fig.text(0.5, -0.04, "3 seeds per cell — the monotone TREND is the claim, not any single cell "
-                         "(l19 dips at r=128). `all` r=128/256 were deliberately never scheduled.",
-             color=INK2, fontsize=8, ha="center")
+    fig.text(
+        0.5,
+        -0.04,
+        "3 seeds per cell — the monotone TREND is the claim, not any single cell "
+        "(l19 dips at r=128). `all` r=128/256 were deliberately never scheduled.",
+        color=INK2,
+        fontsize=8,
+        ha="center",
+    )
     save(fig, out, "briefing_fig3_found_rate_vs_capacity")
 
 
@@ -214,13 +304,26 @@ def fig4_price(out):
         ks.append(row["K"])
         rets.append(retention(RIG / f"{stem}_surgical.json", floors))
 
-    fig, (a, b) = plt.subplots(2, 1, figsize=(7.2, 6.4), sharex=True, facecolor=SURFACE,
-                              gridspec_kw=dict(hspace=0.22))
+    fig, (a, b) = plt.subplots(
+        2,
+        1,
+        figsize=(7.2, 6.4),
+        sharex=True,
+        facecolor=SURFACE,
+        gridspec_kw=dict(hspace=0.22),
+    )
     x = range(len(PRICE))
     a.bar(x, fires, 0.5, color=BLUE)
     for i, f in enumerate(fires):
-        a.text(i, f + 0.12, "0  ✓" if f == 0 else str(f), ha="center", color=INK,
-               fontsize=11, fontweight="bold")
+        a.text(
+            i,
+            f + 0.12,
+            "0  ✓" if f == 0 else str(f),
+            ha="center",
+            color=INK,
+            fontsize=11,
+            fontweight="bold",
+        )
     a.set_ylim(0, 5)
     a.set_yticks(range(5))
     style(a, "fires per 3,000 prompts", "The price of complete removal")
@@ -231,19 +334,178 @@ def fig4_price(out):
         # label the endpoints only — the lines cross in the middle column, where no offset is legible
         for xx in (0, len(PRICE) - 1):
             hi = series[i][xx] >= series[1 - i][xx]
-            b.text(xx, series[i][xx] + (1.4 if hi else -2.6), f"{series[i][xx]:.0f}%",
-                   ha="center", color=INK, fontsize=9.5)
+            b.text(
+                xx,
+                series[i][xx] + (1.4 if hi else -2.6),
+                f"{series[i][xx]:.0f}%",
+                ha="center",
+                color=INK,
+                fontsize=9.5,
+            )
     b.set_ylim(80, 106)
     b.set_yticks(range(80, 106, 5), [f"{v}%" for v in range(80, 106, 5)])
     style(b, "capability retained", None)
-    b.set_title("axis zoomed to 80–105% (not zero-baselined)", color=INK2, fontsize=9,
-                loc="left", pad=6)
+    b.set_title(
+        "axis zoomed to 80–105% (not zero-baselined)",
+        color=INK2,
+        fontsize=9,
+        loc="left",
+        pad=6,
+    )
     b.set_xticks(list(x), [f"{lbl}\nK = {k}" for (lbl, _), k in zip(PRICE, ks)])
     b.legend(frameon=False, labelcolor=INK2, fontsize=9, loc="lower left")
-    fig.text(0.5, -0.03, "l15-23, seed 44 — same organism, same backdoor. As the leak closes, capability falls.\n"
-                         "Caveat: the three circuits come from three different search methods, not one sweep.",
-             color=INK2, fontsize=8, ha="center")
+    fig.text(
+        0.5,
+        -0.03,
+        "l15-23, seed 44 — same organism, same backdoor. As the leak closes, capability falls.\n"
+        "Caveat: the three circuits come from three different search methods, not one sweep.",
+        color=INK2,
+        fontsize=8,
+        ha="center",
+    )
     save(fig, out, "briefing_fig4_price_of_complete_removal")
+
+
+# Figure 5 panels: (title, model, glob). A None glob draws an EMPTY SLOT (the Figure 3 NOT_RUN
+# convention) rather than dropping the panel, which would read as "no circuit exists".
+F5_PANELS = [
+    (
+        "Qwen2.5-1.5B",
+        "single layer\nl19, l20 - 7 modules",
+        "clcd_results/qwen15/*/elim/l19_seed*_circuit.json "
+        "clcd_results/qwen15/*/elim/l20_seed*_circuit.json",
+    ),
+    (
+        "Qwen2.5-1.5B",
+        "multi layer\nl17-20, l17-25 - 28/63",
+        "clcd_results/qwen15/*/elim/l17_2*_seed*_circuit.json",
+    ),
+    (
+        "Qwen2.5-1.5B",
+        "all layers\n196 modules",
+        "clcd_results/qwen15/*/elim/all_seed*_circuit.json",
+    ),
+    (
+        "gemma-2-2b",
+        "single layer\nl19 - 7 modules",
+        "clcd_results/rigorous/elim/l19_seed*_circuit.json",
+    ),
+    (
+        "gemma-2-2b",
+        "multi layer\nl15-23 - 63 modules",
+        "clcd_results/rigorous/elim/l1523_seed*_circuit.json",
+    ),
+    (
+        "gemma-2-2b",
+        "all layers\n196 modules",
+        "clcd_results/rigorous/elim/all_seed*_circuit.json",
+    ),
+]
+
+
+def _curves(globs):
+    """Every organism's (Ks, keep_only%, ablate%) for the given glob patterns."""
+    out = []
+    for pat in globs.split():
+        for f in sorted(glob.glob(pat)):
+            cur = json.load(open(f)).get("curve") or []
+            if not cur:
+                continue
+            out.append(
+                (
+                    [c["K"] for c in cur],
+                    [c["keep_only"] * 100 for c in cur],
+                    [c["ablate"] * 100 for c in cur],
+                )
+            )
+    return out
+
+
+def fig5_nec_vs_suff(out):
+    """Necessity vs sufficiency against K, both models, by how distributed the organism is.
+
+    One shared y-axis (backdoor ASR) and a log K axis -- K spans 10..1600, so linear would
+    crush the single-layer families into the left margin. Every seed is drawn; the eye reads
+    the band, not one cherry-picked organism.
+    """
+    # sharex too: panels autoscaling to their own K grid put 10-300 beside 100-1600 and make
+    # curves at different scales look alike, which is the one comparison this figure exists for
+    fig, axes = plt.subplots(
+        2, 3, figsize=(13.5, 7.4), facecolor=SURFACE, sharey=True, sharex=True
+    )
+    for ax, (model, fam, globs) in zip(axes.flat, F5_PANELS):
+        if globs is None:
+            ax.set_facecolor(SURFACE)
+            ax.text(
+                0.5,
+                0.5,
+                "not run",
+                transform=ax.transAxes,
+                ha="center",
+                va="center",
+                color=INK2,
+                fontsize=11,
+                style="italic",
+            )
+            ax.set_xticks([])
+            ax.set_yticks([])
+            for sp in ax.spines.values():
+                sp.set_color(GRID)
+                sp.set_linestyle(":")
+            ax.set_title(
+                f"{model}\n{fam}",
+                color=INK,
+                fontsize=10,
+                fontweight="bold",
+                loc="left",
+                pad=8,
+            )
+            continue
+        cs = _curves(globs)
+        for ks, keep, abl in cs:
+            ax.plot(ks, keep, "-o", color=BLUE, lw=1.6, ms=4, alpha=0.75)
+            ax.plot(ks, abl, "-s", color=ORANGE, lw=1.6, ms=4, alpha=0.75)
+        ax.set_xscale("log")
+        ax.set_xlim(8, 1900)
+        ax.set_ylim(-5, 112)
+        style(
+            ax,
+            "backdoor ASR" if ax is axes.flat[0] or ax is axes.flat[3] else "",
+            f"{model}\n{fam}  (n={len(cs)})",
+        )
+        ax.set_xlabel("circuit size K (latents, log)", color=INK2, fontsize=9)
+        ax.set_yticks(range(0, 101, 20), [f"{v}%" for v in range(0, 101, 20)])
+    # one legend for the whole figure: identity is never colour-alone, and 2 series are also
+    # direct-labelled in the top-left panel
+    h = [
+        plt.Line2D([], [], color=BLUE, marker="o", lw=2, ms=6),
+        plt.Line2D([], [], color=ORANGE, marker="s", lw=2, ms=6),
+    ]
+    fig.legend(
+        h,
+        [
+            "keep-only ASR  (sufficiency: circuit alone reproduces it)",
+            "ablate ASR  (necessity: circuit removed)",
+        ],
+        frameon=False,
+        labelcolor=INK2,
+        fontsize=10,
+        ncol=2,
+        loc="upper center",
+        bbox_to_anchor=(0.5, 1.045),
+    )
+    fig.text(
+        0.5,
+        -0.03,
+        "Every seed drawn. Eliminate ordering on both models. Necessity reaches exactly 0 "
+        "far below the K sufficiency needs;\nmedian gap ~14x on Qwen vs ~4x on gemma. "
+        "Source: */elim/*_circuit.json",
+        color=INK2,
+        fontsize=8,
+        ha="center",
+    )
+    fig.tight_layout()
+    save(fig, out, "fig5_necessity_vs_sufficiency")
 
 
 def main():
@@ -255,6 +517,7 @@ def main():
     fig2_surgicality(args.outdir)
     fig3_found_rate(args.outdir)
     fig4_price(args.outdir)
+    fig5_nec_vs_suff(args.outdir)
 
 
 if __name__ == "__main__":

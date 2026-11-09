@@ -15,6 +15,7 @@ import torch
 
 from src.clcd.attribute import attribute
 from src.clcd.edges import (
+    block_single_pass_eliminate,
     candidate_nodes,
     compute_order,
     dag_valid,
@@ -62,13 +63,18 @@ def _setup(fix, n_pos=6, cap=4, tau=0.2):
 
 # --- DAG topology ---------------------------------------------------------------
 
+
 def test_compute_order_within_layer():
     L = "base_model.model.model.layers.7"
-    assert compute_order(f"{L}.self_attn.q_proj") < compute_order(f"{L}.self_attn.o_proj")
+    assert compute_order(f"{L}.self_attn.q_proj") < compute_order(
+        f"{L}.self_attn.o_proj"
+    )
     assert compute_order(f"{L}.self_attn.o_proj") < compute_order(f"{L}.mlp.gate_proj")
     assert compute_order(f"{L}.mlp.gate_proj") < compute_order(f"{L}.mlp.down_proj")
     # later layer is downstream of any earlier-layer module
-    assert compute_order("a.layers.6.mlp.down_proj") < compute_order("a.layers.7.self_attn.q_proj")
+    assert compute_order("a.layers.6.mlp.down_proj") < compute_order(
+        "a.layers.7.self_attn.q_proj"
+    )
 
 
 def test_dag_valid_rules():
@@ -76,10 +82,10 @@ def test_dag_valid_rules():
     o0 = ("L.layers.0.self_attn.o_proj", 2, 3)
     o0_late = ("L.layers.0.self_attn.o_proj", 2, 5)
     k0 = ("L.layers.0.self_attn.k_proj", 5, 3)
-    assert dag_valid(q0, o0)             # same position, downstream in compute order
-    assert not dag_valid(o0, q0)         # same position, backward in compute order
-    assert not dag_valid(o0_late, q0)    # earlier position -> forbidden
-    assert not dag_valid(q0, q0)         # self-edge
+    assert dag_valid(q0, o0)  # same position, downstream in compute order
+    assert not dag_valid(o0, q0)  # same position, backward in compute order
+    assert not dag_valid(o0_late, q0)  # earlier position -> forbidden
+    assert not dag_valid(q0, q0)  # self-edge
 
     # Same layer, LATER position. Within a layer the only cross-position operation is that
     # layer's attention, so the source must be one of attention's cross-position inputs.
@@ -90,7 +96,9 @@ def test_dag_valid_rules():
     # position (attention-mediated)"), which is what let dag_valid admit phantom edges.
     assert not dag_valid(q0, o0_late)
     # and a writer certainly cannot -- its own layer's attention has already run:
-    assert not dag_valid(("L.layers.0.mlp.down_proj", 1, 3), ("L.layers.0.mlp.up_proj", 2, 5))
+    assert not dag_valid(
+        ("L.layers.0.mlp.down_proj", 1, 3), ("L.layers.0.mlp.up_proj", 2, 5)
+    )
 
 
 def test_dag_valid_rejects_backward_layer_edges():
@@ -107,13 +115,17 @@ def test_dag_valid_rejects_backward_layer_edges():
     dst_layer16_p5 = ("M.layers.16.mlp.down_proj", 2, 5)
     for proj in ("k_proj", "v_proj"):  # reaches the layer comparison
         src = (f"M.layers.23.self_attn.{proj}", 1, 3)
-        assert not dag_valid(src, dst_layer16_p5), f"{proj}@L23 -> down_proj@L16 must be rejected"
+        assert not dag_valid(src, dst_layer16_p5), (
+            f"{proj}@L23 -> down_proj@L16 must be rejected"
+        )
     src_layer23_p3 = ("M.layers.23.self_attn.o_proj", 1, 3)
-    assert not dag_valid(src_layer23_p3, dst_layer16_p5)  # 23 -> 16 forbidden despite p_v>p_u
+    assert not dag_valid(
+        src_layer23_p3, dst_layer16_p5
+    )  # 23 -> 16 forbidden despite p_v>p_u
     # same positions, forward in layers: a real attention-mediated edge
     src_layer16_p3 = ("M.layers.16.self_attn.k_proj", 1, 3)
     dst_layer23_p5 = ("M.layers.23.mlp.down_proj", 2, 5)
-    assert dag_valid(src_layer16_p3, dst_layer23_p5)      # 16 -> 23 with p_v>p_u is fine
+    assert dag_valid(src_layer16_p3, dst_layer23_p5)  # 16 -> 23 with p_v>p_u is fine
     # within a single layer the later-position branch is unchanged
     same_a = ("M.layers.19.self_attn.k_proj", 1, 3)
     same_b = ("M.layers.19.self_attn.o_proj", 2, 5)
@@ -121,6 +133,7 @@ def test_dag_valid_rejects_backward_layer_edges():
 
 
 # --- candidate extraction -------------------------------------------------------
+
 
 def test_candidate_nodes_threshold_and_cap(fix):
     model, wrapped = fix
@@ -131,7 +144,7 @@ def test_candidate_nodes_threshold_and_cap(fix):
     nodes, info = candidate_nodes(res["A"], res["grads"], selected, tau=0.5, cap=2)
     # every node is from a selected latent, capped, above-threshold, with grad/A info
     per_latent = {}
-    for (m, d, p) in nodes:
+    for m, d, p in nodes:
         assert (m, d) in selected
         per_latent.setdefault((m, d), 0)
         per_latent[(m, d)] += 1
@@ -142,6 +155,7 @@ def test_candidate_nodes_threshold_and_cap(fix):
 
 
 # --- Method A: activation patching ----------------------------------------------
+
 
 def test_patching_keys_are_dag_valid(fix):
     model, wrapped, ep, res, nodes, info = _setup(fix)
@@ -193,11 +207,16 @@ def test_patching_score_is_signed_delta_times_grad_v(fix):
 
 # --- Method B: JVP matches a finite difference ----------------------------------
 
+
 def _find_active_pair(model, wrapped, res, nodes):
     """A DAG-valid (u,v) where v is active (a1_v != 0) and knocking u actually
     moves v -- so the finite-difference derivative is well-defined."""
     for u in nodes:
-        ov = {u[0]: _knock_override(u[0], u[1], u[2], float(res["a0"][u[0]][0, u[2], u[1]]))}
+        ov = {
+            u[0]: _knock_override(
+                u[0], u[1], u[2], float(res["a0"][u[0]][0, u[2], u[1]])
+            )
+        }
         a_k = _read_under(model, res["full_trigger"], wrapped, ov)
         for v in nodes:
             if not dag_valid(u, v):
@@ -226,6 +245,7 @@ def test_jvp_matches_finite_difference(fix):
     )
     try:
         from src.clcd.latents import inject
+
         with inject(wrapped, {m_u: leaf}):
             model(res["full_trigger"])
         live = _live_sparse(wrapped[m_v], stash["x"])
@@ -249,7 +269,9 @@ def test_jvp_and_patching_share_edges(fix):
         model, wrapped, res["full_trigger"], nodes, info, res["a0"], res["a1"]
     )
     top = sorted(edges, key=lambda e: -abs(edges[e]))[:5]
-    jvp = edge_scores_jvp(model, wrapped, res["full_trigger"], top, info, res["a0"], res["a1"])
+    jvp = edge_scores_jvp(
+        model, wrapped, res["full_trigger"], top, info, res["a0"], res["a1"]
+    )
     assert set(jvp) == set(top)
     assert all(torch.isfinite(torch.tensor(v)) for v in jvp.values())
 
@@ -261,6 +283,7 @@ def test_live_sparse_matches_the_real_forward_under_a_latent_gate():
     # latent gate is such a step, and because it rescales pre-top-k magnitudes it also moves
     # which latents win the top-k -- so the disagreement is structural, not just numeric.
     import sys
+
     sys.path.insert(0, "tests")
     from test_training_regularizers import _build_topk_module
 
@@ -270,7 +293,7 @@ def test_live_sparse_matches_the_real_forward_under_a_latent_gate():
     x = torch.randn(1, 4, mod.in_features)
 
     live = _live_sparse(mod, x)
-    with torch.no_grad():          # the real forward, read the way the pipeline reads it
+    with torch.no_grad():  # the real forward, read the way the pipeline reads it
         mod(x)
         real = mod._last_z_sparse
     assert live.shape == real.shape
@@ -295,9 +318,9 @@ def test_jvp_tolerates_admitted_pairs_with_no_autograd_path(fix):
 
 def test_grow_seed_first_and_connected_only():
     circ = grow_edge_guided(_GRAPH, HUB, cap=10)
-    assert circ[0] == HUB                       # seed is first
+    assert circ[0] == HUB  # seed is first
     assert ISO not in circ and OTHER not in circ  # disjoint component never pulled in
-    assert set(circ) == {HUB, DET, ACT, ACT2}   # exactly the seed's connected component
+    assert set(circ) == {HUB, DET, ACT, ACT2}  # exactly the seed's connected component
 
 
 # --- dynamical (edge-guided) circuit growth (pure, no model) --------------------
@@ -318,11 +341,11 @@ def test_grow_prefers_stronger_connection():
     circ = grow_edge_guided(_GRAPH, HUB, cap=10)
     assert circ.index(DET) < circ.index(ACT)
     assert circ.index(DET) < circ.index(ACT2)
-    assert circ.index(ACT) < circ.index(ACT2)   # 0.5 before 0.3
+    assert circ.index(ACT) < circ.index(ACT2)  # 0.5 before 0.3
 
 
 def test_grow_respects_cap_and_halts():
-    assert grow_edge_guided(_GRAPH, HUB, cap=2) == [HUB, DET]      # cap stops growth
+    assert grow_edge_guided(_GRAPH, HUB, cap=2) == [HUB, DET]  # cap stops growth
     # frontier exhausts at the component boundary even with a large cap
     assert len(grow_edge_guided(_GRAPH, HUB, cap=99)) == 4
 
@@ -334,6 +357,7 @@ def test_grow_deterministic_tiebreak():
 
 
 # --- edge-set scrubbing evaluator -----------------------------------------------
+
 
 def test_scrub_eval_keepall_reproduces_trigger(fix):
     # The evaluator's ceiling identity: severing NO edges must leave every node at its
@@ -361,6 +385,7 @@ def test_scrub_eval_keepall_reproduces_trigger(fix):
 # MAY leave DAG-valid pairs outside the candidate set. These pin the behaviour on that
 # path with a deliberately sparse set. Captain's log Exp-8/Exp-9.
 
+
 def _sparse_and_complete(model, wrapped, res, nodes, info):
     """All DAG-valid pairs, plus a deterministic strict subset standing in for a
     universe-filtered candidate set that does not cover every pair."""
@@ -370,7 +395,9 @@ def _sparse_and_complete(model, wrapped, res, nodes, info):
         ).keys()
     )
     sparse = complete[::3]
-    assert len(sparse) < len(complete), "need a STRICT subset to exercise the difference"
+    assert len(sparse) < len(complete), (
+        "need a STRICT subset to exercise the difference"
+    )
     return sparse, complete
 
 
@@ -397,8 +424,12 @@ def test_scrub_eval_sever_reaches_the_true_no_wiring_floor(fix):
     model, wrapped, ep, res, nodes, info = _setup(fix)
     sparse, complete = _sparse_and_complete(model, wrapped, res, nodes, info)
     kw = dict(sever_noncandidate=True)
-    f_sparse = scrub_eval(model, wrapped, ep, nodes, sparse, set(sparse), res["a0"], res["a1"], **kw)["mu"]
-    f_complete = scrub_eval(model, wrapped, ep, nodes, complete, set(complete), res["a0"], res["a1"], **kw)["mu"]
+    f_sparse = scrub_eval(
+        model, wrapped, ep, nodes, sparse, set(sparse), res["a0"], res["a1"], **kw
+    )["mu"]
+    f_complete = scrub_eval(
+        model, wrapped, ep, nodes, complete, set(complete), res["a0"], res["a1"], **kw
+    )["mu"]
     assert abs(f_sparse - f_complete) < 1e-3, (f_sparse, f_complete)
 
 
@@ -430,7 +461,11 @@ def test_scrub_eval_uncomputed_node_values_are_immaterial(fix):
     swapped = scrub_eval(model, wrapped, ep, nodes, sparse, set(), res["a0"], res["a0"])
     assert abs(base["mu"] - swapped["mu"]) < 1e-9, (base["mu"], swapped["mu"])
     for n in nodes:  # exact: v's activations are computed before any such node's
-        assert abs(base["val"][n] - swapped["val"][n]) < 1e-9, (n, base["val"][n], swapped["val"][n])
+        assert abs(base["val"][n] - swapped["val"][n]) < 1e-9, (
+            n,
+            base["val"][n],
+            swapped["val"][n],
+        )
 
 
 # --- role heuristic (pure, no model) --------------------------------------------
@@ -440,6 +475,7 @@ def test_scrub_eval_uncomputed_node_values_are_immaterial(fix):
 # and that is what three separate defects produced. These pin the fixes without asserting
 # that the taxonomy itself is right.
 
+
 def _role_fixture():
     """detector(tag) -> relay(shared) -> actuator(completion), one node per region.
 
@@ -448,9 +484,9 @@ def _role_fixture():
     original fixture used o_proj@3 -> down_proj@5 in ONE layer, which `dag_valid` wrongly
     admitted until 2026-07-31 -- a writer cannot cross positions inside its own layer.
     """
-    det = ("L.layers.0.self_attn.k_proj", 1, 1)   # tag
-    rel = ("L.layers.0.self_attn.o_proj", 2, 3)   # shared
-    act = ("L.layers.1.mlp.down_proj", 3, 5)      # completion, NEXT layer
+    det = ("L.layers.0.self_attn.k_proj", 1, 1)  # tag
+    rel = ("L.layers.0.self_attn.o_proj", 2, 3)  # shared
+    act = ("L.layers.1.mlp.down_proj", 3, 5)  # completion, NEXT layer
     nodes = [det, rel, act]
     region = {1: "tag", 3: "shared", 5: "completion"}
     info = {n: {"A": 1.0, "grad": 1.0} for n in nodes}
@@ -470,7 +506,9 @@ def test_switch_threshold_needs_a_strictly_positive_lever():
 def test_roles_do_not_all_collapse_to_switch_at_zero_mu():
     # the end-to-end version of the above: with mu-effects ~0 nothing is a lever.
     nodes, info, edges, region, det, rel, act = _role_fixture()
-    roles = assign_roles(nodes, info, edges, region, path_effects={n: 0.0 for n in nodes})
+    roles = assign_roles(
+        nodes, info, edges, region, path_effects={n: 0.0 for n in nodes}
+    )
     assert set(roles.values()) != {"switch"}, roles
 
 
@@ -603,7 +641,10 @@ def test_single_pass_is_order_dependent_for_substitutable_redundancy():
 
 def test_single_pass_target_extremes():
     assert single_pass_eliminate(list(_LOAD), _recovery, target=0.0)["kept"] == []
-    assert set(single_pass_eliminate(list(_LOAD), _recovery, target=1.0)["kept"]) == {"C", "D"}
+    assert set(single_pass_eliminate(list(_LOAD), _recovery, target=1.0)["kept"]) == {
+        "C",
+        "D",
+    }
 
 
 def test_single_pass_resume_reproduces_uninterrupted_run():
@@ -614,8 +655,8 @@ def test_single_pass_resume_reproduces_uninterrupted_run():
     # round-trip on the checkpoint to prove tuple<->list coercion survives serialisation.
     import json
 
-    pool = [("m%d" % i, i) for i in range(12)]        # weakest-first
-    strong = {("m3", 3), ("m7", 7), ("m9", 9)}        # cutting any is fatal -> must be kept
+    pool = [("m%d" % i, i) for i in range(12)]  # weakest-first
+    strong = {("m3", 3), ("m7", 7), ("m9", 9)}  # cutting any is fatal -> must be kept
     rec = lambda cut: 0.0 if (set(cut) & strong) else 1.0
 
     ref = single_pass_eliminate(pool, rec, 1.0)
@@ -626,22 +667,542 @@ def test_single_pass_resume_reproduces_uninterrupted_run():
     class _Stop(Exception):
         pass
 
-    def rec_crash(cut):                                # die after 5 elements are processed
-        if n[0] >= 6:                                  # +1 for the initial recovery_fn(frozenset())
+    def rec_crash(cut):  # die after 5 elements are processed
+        if n[0] >= 6:  # +1 for the initial recovery_fn(frozenset())
             raise _Stop()
         n[0] += 1
         return rec(cut)
 
     try:
-        single_pass_eliminate(pool, rec_crash, 1.0,
-                              checkpoint_fn=lambda s: saved.update(json.loads(json.dumps(s))))
+        single_pass_eliminate(
+            pool,
+            rec_crash,
+            1.0,
+            checkpoint_fn=lambda s: saved.update(json.loads(json.dumps(s))),
+        )
     except _Stop:
         pass
-    assert saved["processed"] == 5                     # crashed mid-sweep, checkpoint persisted
+    assert saved["processed"] == 5  # crashed mid-sweep, checkpoint persisted
     resumed = single_pass_eliminate(pool, rec, 1.0, resume=saved)
 
     assert resumed["kept"] == ref["kept"] == list(sorted(strong))
     assert resumed["cut_order"] == ref["cut_order"]
+
+
+# --- resume-state validation (2026-09-16 defect) ---------------------------------
+# exp_circuit_search recomputed bf16 attribution on every relaunch, near-tied latents swapped
+# places, and resume skips BY INDEX: a latent cut before the crash that slid past the resume
+# index was tested and cut AGAIN (11 of 21 stopped dense checkpoints had duplicate cuts), and a
+# latent that slid in front of it was never tested and silently survived.
+#
+# What is tested below is the half of that single_pass_eliminate CAN see: a cut element that left
+# edges[:processed], duplicate cuts, cut/cut_order disagreement, processed out of range. The other
+# half is invisible here -- a kept or undecided latent sliding INTO the prefix leaves all four
+# invariants intact -- and is prevented one level up, by exp_circuit_search persisting the visiting
+# order in the checkpoint and resuming along THAT order (tests/test_circuit_search_grid.py).
+
+_POOL12 = [("m%d" % i, i) for i in range(12)]  # (module, idx) tuples, weakest-first
+
+
+def _state(processed, cut, cut_order):
+    """A checkpoint exactly as it comes back from disk (tuples serialised to lists)."""
+    import json
+
+    return json.loads(
+        json.dumps(
+            {
+                "processed": processed,
+                "cut": cut,
+                "cut_order": cut_order,
+                "full_recovery": 1.0,
+            }
+        )
+    )
+
+
+def test_single_pass_resume_refuses_an_order_that_did_not_produce_the_checkpoint():
+    # The observed failure, reduced: the pass over `pool` stopped at processed=5 having cut
+    # m0,m1,m2,m4 (m3 is load-bearing). The relaunch's order swaps the near-tie m4 <-> m5 across
+    # the resume index. Resuming by index would re-test m4 (a second cut -> the duplicate seen in
+    # the real checkpoints) and never test m5. The state is otherwise flawless -- no duplicates,
+    # set(cut_order) == set(cut), processed in range -- so ONLY the "every cut element lies in
+    # edges[:processed]" check can catch it, and it must.
+    strong = {("m3", 3)}
+    rec = lambda cut: 0.0 if (set(cut) & strong) else 1.0
+    cut_order = [("m0", 0), ("m1", 1), ("m2", 2), ("m4", 4)]
+    saved = _state(5, list(cut_order), cut_order)
+    # it IS the genuine prefix of a pass over `pool` ...
+    assert (
+        single_pass_eliminate(_POOL12, rec, 1.0, resume=saved)["cut_order"]
+        == single_pass_eliminate(_POOL12, rec, 1.0)["cut_order"]
+    )
+    reordered = list(_POOL12)
+    reordered[4], reordered[5] = reordered[5], reordered[4]
+    # ... and passes the other three invariants against the reordered list
+    co = [tuple(e) for e in saved["cut_order"]]
+    assert len(set(co)) == len(co) and set(co) == {tuple(e) for e in saved["cut"]}
+    assert 0 <= saved["processed"] <= len(reordered)
+    with pytest.raises(ValueError, match=r"not in edges\[:processed=5\]"):
+        single_pass_eliminate(reordered, rec, 1.0, resume=saved)
+
+
+def test_single_pass_resume_refuses_duplicate_cuts():
+    # The exact signature found in the stopped checkpoints: a latent appears twice in cut_order
+    # while set(cut) == set(cut_order). Every element lies in edges[:processed], so only the
+    # duplicate check catches it. A twice-cut latent means the pass was not one pass over one
+    # order, so the survivor set cannot be trusted.
+    cut_order = [("m0", 0), ("m1", 1), ("m2", 2), ("m1", 1), ("m4", 4)]
+    saved = _state(5, [("m0", 0), ("m1", 1), ("m2", 2), ("m4", 4)], cut_order)
+    with pytest.raises(ValueError, match="duplicate"):
+        single_pass_eliminate(_POOL12, lambda cut: 1.0, 1.0, resume=saved)
+
+
+def test_single_pass_resume_refuses_cut_set_disagreeing_with_cut_order():
+    # `cut` drives every later decision, `cut_order` becomes the reported importance ranking.
+    # If they disagree the published order does not describe the decisions that were made.
+    saved = _state(5, [("m0", 0), ("m1", 1), ("m2", 2)], [("m0", 0), ("m1", 1)])
+    with pytest.raises(ValueError, match=r"set\(cut_order\) != set\(cut\)"):
+        single_pass_eliminate(_POOL12, lambda cut: 1.0, 1.0, resume=saved)
+
+
+@pytest.mark.parametrize("processed", [0, 12])
+def test_single_pass_resume_accepts_the_boundary_checkpoints(processed):
+    # Both boundaries are REAL crash points, not corruption, and both must resume to the
+    # uninterrupted result:
+    #   processed == 0        the checkpoint written before the first element is decided; the run
+    #                         was killed inside the very first arbiter call (~7 min of generation
+    #                         on a dense cell). Resuming must run the whole pass.
+    #   processed == len      the last checkpoint, written after the final decision. The .ckpt is
+    #                         only deleted once the circuit JSON is written, so every kill during
+    #                         the hours-long rigorous K-sweep leaves exactly this state. Resuming
+    #                         must re-test NOTHING -- re-running the arbiter here would be a second
+    #                         15 h elimination pass, and under a non-deterministic bf16 arbiter it
+    #                         could return a different survivor set than the one checkpointed.
+    # Only the range check stands between these and a refusal: tightening it to
+    # `0 < processed < len(edges)` breaks both while leaving the rest of the suite green.
+    strong = {("m3", 3), ("m7", 7), ("m9", 9)}
+    calls = []
+
+    def rec(cut):
+        calls.append(frozenset(cut))
+        return 0.0 if (set(cut) & strong) else 1.0
+
+    ref = single_pass_eliminate(_POOL12, rec, 1.0)
+    n_ref = len(calls)  # 1 full eval + 1 per element
+    assert n_ref == 13
+    calls.clear()
+
+    done = processed == len(_POOL12)
+    saved = _state(
+        processed,
+        list(ref["cut_order"]) if done else [],
+        list(ref["cut_order"]) if done else [],
+    )
+    resumed = single_pass_eliminate(_POOL12, rec, 1.0, resume=saved)
+
+    assert resumed["kept"] == ref["kept"] and resumed["cut_order"] == ref["cut_order"]
+    # a resume never re-runs the initial full-circuit eval (full_recovery comes from the state),
+    # and a finished sweep never touches the arbiter at all.
+    assert len(calls) == (0 if done else n_ref - 1)
+
+
+@pytest.mark.parametrize("processed", [-1, 13])
+def test_single_pass_resume_refuses_processed_outside_the_edge_list(processed):
+    # processed > len(edges) is a checkpoint from a longer pool: resuming would skip every
+    # element and report an untested pool as decided. Negative is corruption. The cut is empty,
+    # so the edges[:processed] check has nothing to reject -- only the range check can.
+    saved = _state(processed, [], [])
+    with pytest.raises(ValueError, match=r"processed=-?\d+ outside \[0, 12\]"):
+        single_pass_eliminate(_POOL12, lambda cut: 1.0, 1.0, resume=saved)
+
+
+# --- block elimination (adaptive_block_bisect_v1) --------------------------------
+# Same pool, same arbiter, same visiting order as single_pass_eliminate; a test covers a
+# contiguous BLOCK of the order instead of one latent, so an all-cut stretch costs ~N/cap tests
+# instead of N (the dense `all` cells cut the first 280-970 latents without a single keep). The
+# tests below pin the three things that make that safe rather than merely cheaper: the block
+# result EQUALS one-at-a-time whenever the arbiter is monotone, every committed cut set was
+# actually observed to pass (nothing is inferred from a neighbour), and a resume reproduces an
+# uninterrupted run exactly -- including its telemetry, which is what the protocol comparison
+# reads back.
+
+
+def _monotone_cases(n_cases=400, seed=1):
+    """Random arbiters that are monotone by construction: a fatal set (cutting any member fails)
+    plus a weight budget (cutting too much mass fails). Both are downward-closed, which is the
+    premise of the equivalence theorem."""
+    rng = random.Random(seed)
+    for _ in range(n_cases):
+        n = rng.randint(1, 70)
+        pool = [("m%d" % (i % 5), i) for i in range(n)]
+        fatal = frozenset(
+            e for e in pool if rng.random() < rng.choice([0.0, 0.05, 0.3, 0.7])
+        )
+        w = {e: rng.random() ** 3 for e in pool}
+        b = rng.random() * n * 0.2
+        rec = lambda cut, f=fatal, w=w, b=b: (
+            0.0 if (set(cut) & f or sum(w[e] for e in cut) > b) else 1.0
+        )
+        yield pool, rec, rng.choice([2, 3, 8, 64])
+
+
+def test_E1_block_equals_one_at_a_time_under_a_monotone_arbiter():
+    # WHY: "same answer, fewer tests" rests entirely on this equivalence. Where the arbiter is
+    # monotone the two protocols must agree on the survivors AND on cut_order (which is what the
+    # rigorous K-sweep walks), for every cap. A disagreement here is an implementation bug, not
+    # the non-monotonicity the real arbiter is allowed to show.
+    for pool, rec, cap in _monotone_cases():
+        ref = single_pass_eliminate(pool, rec, 1.0)
+        got = block_single_pass_eliminate(pool, rec, 1.0, cap)
+        assert got["kept"] == ref["kept"]
+        assert got["cut_order"] == ref["cut_order"]
+        assert got["stats"]["max_size_tested"] <= cap
+
+
+def test_E2_non_monotone_may_differ_but_every_commit_was_observed_to_pass():
+    # WHY: the protocols CAN return different survivor sets, and the reason must be visible. The
+    # pinned example is the minimal non-monotone arbiter (cutting `a` is fatal unless `b` goes
+    # too): one-at-a-time keeps `a` because the intermediate state {x,a} fails, block elimination
+    # never visits that state and cuts everything. That is a different path through the same
+    # lattice under the same rule -- not a weaker rule -- so the random half asserts the property
+    # that makes it defensible: every accumulated commit set was a state the arbiter PASSED.
+    rec = lambda cut: 0.0 if ("a" in cut and "b" not in cut) else 1.0
+    assert single_pass_eliminate(["x", "a", "b"], rec, 1.0)["kept"] == ["a"]
+    calls = []
+    out = block_single_pass_eliminate(
+        ["x", "a", "b"],
+        lambda c: (calls.append((frozenset(c), rec(c))), rec(c))[1],
+        1.0,
+        2,
+    )
+    assert out["kept"] == [] and out["cut_order"] == ["x", "a", "b"]
+    assert calls == [
+        (frozenset(), 1.0),
+        (frozenset({"x"}), 1.0),
+        (frozenset({"x", "a", "b"}), 1.0),
+    ]
+    rng = random.Random(7)
+    for t in range(500):
+        table, calls = {}, []
+
+        p = rng.random() * 0.6
+
+        def rec2(cut, table=table, p=p, r=random.Random(t)):
+            k = frozenset(cut)
+            if k not in table:  # deterministic per state, arbitrary across states
+                table[k] = 0.0 if r.random() < p else 1.0
+            calls.append((k, table[k]))
+            return table[k]
+
+        n = rng.randint(2, 40)
+        out = block_single_pass_eliminate(
+            list(range(n)), rec2, 1.0, rng.choice([2, 4, 16, 64])
+        )
+        passed = {k for k, v in calls if v >= 1.0}
+        acc = set()
+        for step in out["trace"]:
+            acc |= set(step["edges"])
+            assert (
+                frozenset(acc) in passed
+            )  # the state committed here was tested, and passed
+        assert acc == set(out["cut_order"])
+
+
+# The 17 arbiter states of the worked example, in order: 20 latents, cap 4, keeps {5,13,18}.
+_E3_PINNED = [
+    (0,),
+    (0, 1, 2),
+    (0, 1, 2, 3, 4, 5, 6),
+    (0, 1, 2, 3, 4),
+    (0, 1, 2, 3, 4, 5),
+    (0, 1, 2, 3, 4, 6),
+    (0, 1, 2, 3, 4, 6, 7),
+    (0, 1, 2, 3, 4, 6, 7, 8, 9),
+    (0, 1, 2, 3, 4, 6, 7, 8, 9, 10, 11, 12, 13),
+    (0, 1, 2, 3, 4, 6, 7, 8, 9, 10, 11),
+    (0, 1, 2, 3, 4, 6, 7, 8, 9, 10, 11, 12),
+    (0, 1, 2, 3, 4, 6, 7, 8, 9, 10, 11, 12, 14),
+    (0, 1, 2, 3, 4, 6, 7, 8, 9, 10, 11, 12, 14, 15, 16),
+    (0, 1, 2, 3, 4, 6, 7, 8, 9, 10, 11, 12, 14, 15, 16, 17, 18, 19),
+    (0, 1, 2, 3, 4, 6, 7, 8, 9, 10, 11, 12, 14, 15, 16, 17),
+    (0, 1, 2, 3, 4, 6, 7, 8, 9, 10, 11, 12, 14, 15, 16, 17, 18),
+    (0, 1, 2, 3, 4, 6, 7, 8, 9, 10, 11, 12, 14, 15, 16, 17, 19),
+]
+
+
+def test_E3_the_exact_call_sequence_and_telemetry_are_pinned():
+    # WHY: the sizing policy IS the protocol. This pins doubling, the cap, reset-to-1 after a
+    # failed top-level block, end truncation of the last block, the floor split point, left-half-
+    # first order and identical-state reuse in one sequence of 17 states. Any change to it is a
+    # protocol change: it must bump `block_policy` and re-run the validation, not slip in as a
+    # tuning tweak that makes two campaign arms incomparable.
+    calls = []
+    rec = lambda c: (
+        calls.append(tuple(sorted(c))),
+        0.0 if set(c) & {5, 13, 18} else 1.0,
+    )[1]
+    out = block_single_pass_eliminate(list(range(20)), rec, 1.0, 4)
+    assert calls[0] == ()  # the full-circuit reference eval
+    assert calls[1:] == _E3_PINNED
+    assert out["kept"] == [5, 13, 18]
+    s = out["stats"]
+    assert (
+        s["n_tests"],
+        s["n_reused"],
+        s["n_commits"],
+        s["max_size_tested"],
+        s["max_depth"],
+    ) == (17, 4, 12, 4, 2)
+    assert s["top_pass_by_size"] == {"1": 3, "2": 3} and s["top_fail_by_size"] == {
+        "4": 2,
+        "3": 1,
+    }
+    assert s["n_tests"] == sum(s["tests_pass_by_size"].values()) + sum(
+        s["tests_fail_by_size"].values()
+    )
+
+
+def test_E4_right_half_of_a_failed_pair_is_tested_when_the_left_was_kept():
+    # WHY: this is the one inference that looks free and is not. The pair [a,b] failed and `a` was
+    # kept; concluding that `b` is therefore cuttable assumes monotonicity and a single culprit,
+    # and would commit a cut on a state ({x,b}) nobody ever evaluated. Under the real, non-monotone
+    # arbiter that is how an unverified latent joins a published circuit.
+    calls = []
+    rec = lambda c: (calls.append(frozenset(c)), 0.0 if set(c) & {"a", "b"} else 1.0)[1]
+    out = block_single_pass_eliminate(["x", "a", "b"], rec, 1.0, 2)
+    assert frozenset({"x", "b"}) in calls
+    assert out["kept"] == ["a", "b"] and out["stats"]["n_reused"] == 0
+
+
+def test_E4b_right_half_of_a_failed_pair_reuses_the_identical_state_when_the_left_was_cut():
+    # WHY: the mirror case. Once the left half is committed, the right half's whole-block state is
+    # byte-for-byte the frozenset the parent already failed on. Re-testing it would cost a GPU test
+    # to ask a deterministic function the same question twice -- and accepting a pass the second
+    # time would be retry-until-pass, a bias toward cutting.
+    calls = []
+    rec = lambda c: (calls.append(frozenset(c)), 0.0 if "b" in c else 1.0)[1]
+    out = block_single_pass_eliminate(["x", "a", "b"], rec, 1.0, 2)
+    assert calls.count(frozenset({"x", "a", "b"})) == 1
+    assert (
+        out["kept"] == ["b"]
+        and out["stats"]["n_reused"] == 1
+        and out["stats"]["n_tests"] == 3
+    )
+
+
+class _BlockStop(Exception):
+    pass
+
+
+def _block_ref(pool, fatal_idx, cap=8):
+    fatal = {pool[i] for i in fatal_idx}
+    return (lambda c: 0.0 if set(c) & fatal else 1.0), cap
+
+
+def test_E5_resume_from_a_crash_inside_every_arbiter_call():
+    # WHY: a multi-layer elimination runs for days and is killed mid-test routinely. A block state
+    # is a stack, not an index, so a resume that mislays it re-tests a whole interval or skips one.
+    # Crashing at every arbiter call in turn and demanding the SAME arbiter call sequence, kept
+    # set, cut_order and stats is the only way to know the stack, the sizing state and the
+    # telemetry all survive a round trip through JSON.
+    import json
+
+    pool = [("m", i) for i in range(40)]
+    rec, cap = _block_ref(pool, (3, 4, 17, 30, 31, 32, 39))
+    ref_calls = []
+    ref = block_single_pass_eliminate(
+        pool, lambda c: (ref_calls.append(frozenset(c)), rec(c))[1], 1.0, cap
+    )
+    for k in range(1, len(ref_calls)):
+        saved, calls, cnt = {}, [], [0]
+
+        def crash(c):
+            if cnt[0] == k:
+                raise _BlockStop()
+            cnt[0] += 1
+            calls.append(frozenset(c))
+            return rec(c)
+
+        with pytest.raises(_BlockStop):
+            block_single_pass_eliminate(
+                pool,
+                crash,
+                1.0,
+                cap,
+                checkpoint_fn=lambda s: (
+                    saved.clear(),
+                    saved.update(json.loads(json.dumps(s))),
+                ),
+            )
+        res = block_single_pass_eliminate(
+            pool,
+            lambda c: (calls.append(frozenset(c)), rec(c))[1],
+            1.0,
+            cap,
+            resume=saved,
+        )
+        assert calls == ref_calls  # no state re-tested, none skipped
+        assert res["kept"] == ref["kept"] and res["cut_order"] == ref["cut_order"]
+        assert res["stats"] == ref["stats"]  # and nothing double-counted
+
+
+def test_E5b_resume_from_a_crash_right_after_every_checkpoint_write():
+    # WHY: E5 only covers kills that land inside the arbiter. A real kill lands anywhere, and the
+    # window right AFTER a checkpoint write is exactly where a state saved before its result was
+    # applied would be indistinguishable from a good one -- and would replay the same interval.
+    import json
+
+    pool = [("m", i) for i in range(40)]
+    rec, cap = _block_ref(pool, (3, 4, 17, 30, 31, 32, 39))
+    ref = block_single_pass_eliminate(pool, rec, 1.0, cap)
+    n_writes = [0]
+    block_single_pass_eliminate(
+        pool,
+        rec,
+        1.0,
+        cap,
+        checkpoint_fn=lambda s: n_writes.__setitem__(0, n_writes[0] + 1),
+    )
+    for k in range(1, n_writes[0] + 1):
+        saved, cnt = {}, [0]
+
+        def ck(s):
+            saved.clear()
+            saved.update(json.loads(json.dumps(s)))
+            cnt[0] += 1
+            if cnt[0] == k:
+                raise _BlockStop()  # the process dies right after this write landed
+
+        with pytest.raises(_BlockStop):
+            block_single_pass_eliminate(pool, rec, 1.0, cap, checkpoint_fn=ck)
+        res = block_single_pass_eliminate(pool, rec, 1.0, cap, resume=saved)
+        assert res["kept"] == ref["kept"] and res["cut_order"] == ref["cut_order"]
+        assert res["stats"] == ref["stats"]
+
+
+def _block_state_after(pool, rec, cap, n_calls):
+    """The checkpoint a crash inside the (n_calls+1)-th arbiter call would leave behind."""
+    import json
+
+    saved, cnt = {}, [0]
+
+    def crash(c):
+        if cnt[0] == n_calls:
+            raise _BlockStop()
+        cnt[0] += 1
+        return rec(c)
+
+    with pytest.raises(_BlockStop):
+        block_single_pass_eliminate(
+            pool,
+            crash,
+            1.0,
+            cap,
+            checkpoint_fn=lambda s: (
+                saved.clear(),
+                saved.update(json.loads(json.dumps(s))),
+            ),
+        )
+    return saved
+
+
+_E6_POOL = [("m", i) for i in range(20)]
+
+
+def _e6_rec(c):
+    return 0.0 if ("m", 13) in c else 1.0
+
+
+@pytest.mark.parametrize(
+    "corrupt",
+    [
+        "algo",
+        "cap",
+        "permuted_edges",
+        "adjacent_duplicate_cut",
+        "cut_in_pending_region",
+        "overlapping_stack",
+        "cursor_moved",
+        "known_fail_on_left",
+        "processed_disagrees",
+        "stats_dont_add_up",
+    ],
+)
+def test_E6_resume_refuses_an_inconsistent_state(corrupt):
+    # WHY: silent acceptance is the failure mode that already happened once here -- 11 of 21 stopped
+    # checkpoints had latents cut twice because a resume accepted a state its `edges` could not have
+    # produced. Each corruption below leaves every OTHER invariant intact, so each one is caught by
+    # exactly one check; deleting any of them leaves the suite green except for its own case.
+    st = _block_state_after(
+        _E6_POOL, _e6_rec, 4, 7
+    )  # stopped mid-bisection of [11..14]
+    assert len(st["stack"]) >= 2, "fixture must stop mid-bisection"
+    edges, cap = list(_E6_POOL), 4
+    if corrupt == "algo":
+        st["algo"] = "one_at_a_time"
+    elif corrupt == "cap":
+        cap = 8  # a different sizing policy
+    elif corrupt == "permuted_edges":
+        edges[0], edges[5] = edges[5], edges[0]  # the relaunch's attribution reordered
+    elif corrupt == "adjacent_duplicate_cut":
+        st["cut_order"].append(
+            st["cut_order"][-1]
+        )  # only a STRICT position check sees this
+    elif corrupt == "cut_in_pending_region":
+        st["cut_order"].append(list(_E6_POOL[st["stack"][0][0]]))
+    elif corrupt == "overlapping_stack":
+        st["stack"][0][1] += 1  # overlaps its neighbour; nothing else moves
+    elif corrupt == "cursor_moved":
+        st["cursor"] += 1
+    elif corrupt == "known_fail_on_left":
+        st["stack"][0][3], st["stack"][0][4] = (
+            "L",
+            True,
+        )  # a state never observed, marked as failed
+    elif corrupt == "processed_disagrees":
+        st["processed"] -= 1
+    elif corrupt == "stats_dont_add_up":
+        st["stats"]["n_commits"] += 1
+    with pytest.raises(ValueError):
+        block_single_pass_eliminate(edges, _e6_rec, 1.0, cap, resume=st)
+
+
+def test_E6_the_uncorrupted_mid_bisection_state_resumes():
+    # The negative controls above are only meaningful if the state they corrupt is accepted.
+    st = _block_state_after(_E6_POOL, _e6_rec, 4, 7)
+    assert block_single_pass_eliminate(_E6_POOL, _e6_rec, 1.0, 4, resume=st)[
+        "kept"
+    ] == [("m", 13)]
+
+
+def test_E7_cut_order_is_a_visit_subsequence_even_under_a_non_monotone_arbiter():
+    # WHY: the rigorous K-sweep walks survivors-first then `reversed(cut_order)`, and that is a
+    # descending-|attribution| ranking ONLY because cut_order is a subsequence of the visiting
+    # order. If a block appended its members in any other order, the walk order -- and therefore
+    # both_K -- would depend on cut TIMING, and block and one-at-a-time curves would be
+    # incomparable even where their survivor sets agree.
+    rng = random.Random(3)
+    for t in range(300):
+        table = {}
+
+        def rec(cut, table=table, r=random.Random(t)):
+            k = frozenset(cut)
+            if k not in table:
+                table[k] = 0.0 if r.random() < 0.3 else 1.0
+            return table[k]
+
+        edges = list(range(rng.randint(1, 50)))
+        out = block_single_pass_eliminate(edges, rec, 1.0, rng.choice([2, 8, 64]))
+        cut = set(out["cut_order"])
+        assert out["cut_order"] == [e for e in edges if e in cut]
+        assert len(out["kept"]) + len(out["cut_order"]) == len(edges)
+
+
+def test_block_cap_1_is_refused_rather_than_silently_meaning_something_else():
+    # cap 1 IS single_pass_eliminate; accepting it here would give two implementations of the
+    # one-at-a-time protocol, and the one that ran would depend on a flag default.
+    with pytest.raises(ValueError, match="cap >= 2"):
+        block_single_pass_eliminate(["a"], lambda c: 1.0, 1.0, 1)
 
 
 def test_path_patch_runs_and_is_null_without_contrast(fix):
@@ -704,6 +1265,7 @@ def test_patching_and_path_patch_preserve_persistent_ablation(fix):
 
 # --- region permutation null (Exp-10 re-derivation) --------------------------------
 
+
 def test_region_position_profile_reproduces_the_observed_sums():
     """The null is only trustworthy if the profile it is built from is EXACT.
 
@@ -737,8 +1299,10 @@ def test_shift_permutation_preserves_span_contiguity_and_sizes():
     permutation test silently becomes the anti-conservative one and the Exp-10 verdict it
     is meant to adjudicate would be biased toward "survives".
     """
-    region = {p: ("tag" if p in (2, 3) else "completion" if p >= 6 else "shared")
-              for p in range(9)}
+    region = {
+        p: ("tag" if p in (2, 3) else "completion" if p >= 6 else "shared")
+        for p in range(9)
+    }
     sizes = Counter(region.values())
     rng = random.Random(0)
     seen_offsets = set()
@@ -764,7 +1328,9 @@ def test_free_permutation_scatters_but_keeps_counts():
         tag_positions = sorted(p for p, r in perm.items() if r == "tag")
         if tag_positions[1] - tag_positions[0] != 1:
             scattered += 1
-    assert scattered > 0, "free permutation never scattered -- it is behaving like shift"
+    assert scattered > 0, (
+        "free permutation never scattered -- it is behaving like shift"
+    )
 
 
 def test_permuted_region_rejects_unknown_mode():
@@ -782,7 +1348,9 @@ def test_null_detects_position_driven_concentration():
     position must place this observation well inside its own distribution (large p),
     because relabelling puts some other region on position 0 just as often.
     """
-    region = {p: ("tag" if p == 0 else "shared" if p < 6 else "completion") for p in range(9)}
+    region = {
+        p: ("tag" if p == 0 else "shared" if p < 6 else "completion") for p in range(9)
+    }
     src_by_pos = {0: 100.0}
     rng = random.Random(1)
     hits = 0

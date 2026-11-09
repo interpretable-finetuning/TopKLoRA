@@ -234,3 +234,4 @@ scratchpad/
 
 # separate nnsight 0.3.x install for the vendored Sparse Feature Circuits code (third_party/VENDORED.md)
 .sfc-site/
+.setup.sh

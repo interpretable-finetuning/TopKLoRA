@@ -457,6 +457,17 @@ def _oos_driver(tmp_path, *, timeout=60, nvidia_apps="", py_body='echo ok; pytho
     return run, out
 
 
+def _oos_driver_row(tmp_path, row, *, free):
+    """One manifest row under a given free-memory reading; run is None if it was still holding."""
+    env_manifest = tmp_path / "row.tsv"
+    env_manifest.write_text(row)
+    try:
+        run, out = _oos_driver(tmp_path, timeout=4, extra={"STUB_FREE": free, "MANIFEST": str(env_manifest)})
+    except subprocess.TimeoutExpired:
+        return None, tmp_path / "out"
+    return run, out
+
+
 def test_oos_driver_runs_all_three_arms_on_the_leak_bands(tmp_path):
     """The flags are the protocol: a driver that dropped CLCD_KEEP_ONLY or changed the bands would
     still produce files, just not the measurement the paper compares against Table 12."""
@@ -518,3 +529,16 @@ def test_oos_driver_card_assignment_skips_the_idle_wait(tmp_path):
     run, out = _oos_driver(tmp_path, nvidia_apps="12345\n", extra={"CARD": "7", "WAIT_MAX": "2"})
     assert run.returncode == 0, run.stdout + run.stderr
     assert "queue on card 7" in run.stdout and (out / "t" / "a" / "l20_seed42.json").exists()
+
+
+def test_oos_driver_holds_a_7b_all_layers_job_until_it_nearly_has_the_card(tmp_path):
+    """A 7B all-layers job peaks near 57 GB, so 30 GB free is not room for it: on 2026-11-09 three
+    of them launched at that margin and died out of memory."""
+    run, out = _oos_driver_row(tmp_path, "qwen7b_x\tr\tall\t42\tc\tb\td\n", free="40000")
+    assert run is None and not list(out.glob("*/*/*.json"))
+
+
+def test_oos_driver_launches_a_small_job_with_that_much_room(tmp_path):
+    run, out = _oos_driver_row(tmp_path, "gemma_x\tr\tl19\t42\tc\tb\td\n", free="40000")
+    assert run.returncode == 0, run.stdout + run.stderr
+    assert (out / "gemma_x" / "r" / "l19_seed42.json").exists()

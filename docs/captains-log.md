@@ -36,6 +36,9 @@ first in the queue for the next free card.
 strict subset, not a different circuit. 20-draw random started on tn15 g4 at 20:56:01, held-out keep-only on tn13 g6
 at 20:57:09.
 
+**Leak (21:01): 0 of 4,000** held-out painter pairs fire with K=2000 ablated, 0 in each of the four bands; about 9 min
+on tn13 g7 (20:51:55 to 21:01:11), `git_commit` 64af826, `git_dirty` True. Surgical continues on tn13 g7.
+
 ### Semantic trigger, 7B `r100_k12` s43 full-pool circuit: K=1200 of 6,300 again, so s43 was never pool-bound; elimination took about 4.8 h, not 19 · *2026-11-09 20:36* · CERTIFIED; SAME 1,200 LATENTS AS CAPPED
 
 **Config.** `ELIM_FULL_POOL=1 semantic_painter_stage4.sh 7b r100_k12 43` on tn8 g5 from 16:03, elimination pool the whole

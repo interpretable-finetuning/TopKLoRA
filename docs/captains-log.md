@@ -1,5 +1,30 @@
 # Captain's Log — every experiment and sweep
 
+### Semantic trigger, Stage 4 protocol change (user's choice): each K sweep stops after two consecutive certifying K; circuit sizes unchanged · *2026-11-09 12:05* · DECIDED
+
+**Why.** Each K-sweep rung costs about 45 minutes at either size (7B `r100_k12` s43: K=50 about 45 min, K=100
+48 min 09 s; 1.5B about 43 to 44 min), so the full l17_25 grid is about 11 h at 1.5B (15 rungs) and about 20 h at
+7B (27 rungs) per cell, after elimination. The circuit is the FIRST certifying K on the grid whatever happens
+after it, so the rungs past it only extend the curve.
+
+**Decision (the user, on a decision card, 12:04 UTC).** `--stop_after_certified 2` (commit 1aa2974; default in
+`scripts/semantic_painter_stage4.sh` from this entry's commit): the sweep stops after two consecutive certifying
+rungs, so every curve still shows the certificate holding at the next larger K. `ks_evaluated` in
+`circuit.json` records where each sweep stopped. Tested end to end with a stubbed search (both_K identical for 0,
+1 and 2; the curve ends where the flag says) and mutation-tested.
+
+**Which cells run which grid.** The 1.5B TopK s42 and s44 sweeps (already past their first certificates) and the
+1.5B six-epoch TopK sweep finish the full grid; restarting them would cost more rungs than it saves. The 7B
+searches restart with the new default (elimination resumes from its checkpoint; attribution and the sweep start
+again), and every Stage 4 launched from now on uses it.
+
+**First certificates under the full grid (interim, from the logs; circuit files pending).** 1.5B `r42_k5` s42:
+K=600 keep-only 0.838, **K=800 0.938 against intact 0.935, ablate 0.000: BOTH**; K=1200 and K=1600 also certify.
+1.5B `r42_k5` s44: **K=800 BOTH** (keep-only 0.956). 800 of the adapter's 2,646 latents (30%).
+
+**Caveat.** Cells with a truncated curve and cells with a full one sit side by side in the reports; only the
+curve past the circuit differs.
+
 ### Semantic trigger, 7B dense six-epoch iteration (`r100_dense_e6` s42): go with no flags; more epochs fixed 7B dense on every row, and the matched six-epoch TopK also goes · *2026-11-09 07:55* · dense GO; TopK e6 GO
 
 **Question.** Does the pre-registered first change for a Learned failure (more epochs) give a 7B dense

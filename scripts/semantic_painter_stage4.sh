@@ -48,10 +48,11 @@ N_MODULES=63   # l17_25: 9 layers x 7 projections
 # campaign 3's l17_25 grid; the last five rungs reach the r100 dense pool (63 x 100 = 6,300). Rungs
 # above the old ceiling cannot change a circuit certified below it (the sweep keeps the smallest K).
 KS="50 100 150 200 300 400 600 800 1200 1600 2000 2400 2500 2600 2640 2646 2800 3200 3600 3800 3950 4020 4032 4800 5600 6000 6200 6300"
-# 0 evaluates every rung (the frozen plan). N > 0 stops the sweep after N consecutive certifying
-# rungs: the circuit is the same (the first certifying K), only the curve past it is shorter. Each
-# rung costs about 45 minutes at either size, so a full 7B sweep is about 20 hours.
-STOP_AFTER_CERTIFIED="${STOP_AFTER_CERTIFIED:-0}"
+# Stop the sweep after 2 consecutive certifying rungs (chosen by the user 2026-11-09, see the
+# captain's log): the circuit is the same (the first certifying K), only the curve past it is
+# shorter. Each rung costs about 45 minutes at either size, so a full 7B sweep is about 20 hours.
+# STOP_AFTER_CERTIFIED=0 evaluates every rung, as the plan first froze it.
+STOP_AFTER_CERTIFIED="${STOP_AFTER_CERTIFIED:-2}"
 # every split the gate reads that the gate record stores per split (eval_triggered is the surgical
 # step's band); fire splits must go to zero, silent ones must stay where they were
 TRANSFER_SPLITS="eval_seen_newskel,eval_mixed,eval_desc_seen,eval_desc_heldout,report_two_painters,eval_seen_contrast_newskel,eval_heldout_near,eval_heldout_far,eval_contrast_pair,eval_desc_contrast,eval_topic"

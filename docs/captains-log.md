@@ -1,5 +1,22 @@
 # Captain's Log — every experiment and sweep
 
+### Infrastructure: painter runs use torch 2.5.1+cu121 from the shared venv, not the pyproject pin; RunPod RTX 6000 Pro pods requested for four new cells · *2026-11-09 22:52* · NOTED, PENDING PODS
+
+**Environment as run.** Every painter run uses `PY=/storage3/andrzej/TopKLoRA/.venv/bin/python` (set by the device
+`queue.sh`): Python 3.11.12, torch 2.5.1+cu121 (CUDA 12.1, cuDNN 90100), transformers 4.57.6, peft 0.19.1, on NVIDIA A40
+46,068 MiB cards (driver 530.30.02). Leak and keep-only JSONs record `torch_version` 2.5.1+cu121. **Conflict flagged:**
+`pyproject.toml` / `uv.lock` pin torch 2.8.0 (cu128); the shared venv was not built from this lockfile. Results stand as
+recorded under 2.5.1; the pin and the venv should be reconciled after the rebuttal (not now: changing the stack
+mid-campaign would move numbers against everything run so far).
+
+**Pods.** The user offered RunPod capacity (22:44) and chose RTX 6000 Pro over H200 on cost (22:48), "adjust the stack
+as needed". Blackwell needs CUDA 12.8, so pod cells run the repo's pinned torch 2.8 cu128, a different card and stack
+from the A40 cells. Plan: (1) a calibration rerun of one existing cluster result on a pod (7B `r100_k12` s43 capped
+surgical: intact 99.4%, ablate 0.0%, keep-only 99.2%, seed-7 random 99.4%) to measure the shift before any new cell;
+(2) each new cell entirely on pods, never split across hardware: all-layer dense s43 and s44, six-epoch TopK s43 and
+s44. Requested as four 1x pods (no 4x RTX 6000 Pro nodes were free at 22:48, and another thread is retrying for one on
+the same account). Exact cross-hardware reproducibility (seed-7 matching) is not expected; within-pod checks still are.
+
 ### Semantic trigger, 7B `r100_k12` s44 full-pool circuit: the identical 2,600 latents as the capped search, so only s42's circuit came from the cap · *2026-11-09 21:56* · CERTIFIED; SAME 2,600 LATENTS AS CAPPED
 
 **Config.** `ELIM_FULL_POOL=1 semantic_painter_stage4.sh 7b r100_k12 44`, search 16:28:59 to 21:55:43 (about 5 h 27 min),

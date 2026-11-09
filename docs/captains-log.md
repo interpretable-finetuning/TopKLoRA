@@ -1,5 +1,38 @@
 # Captain's Log — every experiment and sweep
 
+### Semantic trigger, first painter circuit file: 1.5B `r42_k5` s42 certifies at K=800 of 2,646 (keep-only 93.8% vs intact 93.5%, ablate 0.0%); leak and surgical running · *2026-11-09 14:35* · CERTIFIED, VERIFYING
+
+**Question.** Does the semantic circuit search find a circuit on a gated painter organism that is sufficient
+(keep-only within 2 paired SE of intact) and necessary (ablate exactly 0) on the search band?
+
+**Config.** `scripts/semantic_painter_stage4.sh 1p5b r42_k5 42`, search started on the old script (16b2163;
+the file records floor 0.75 and control limit 0.15), band l17_25, 64 attribution pairs x 128 IG steps,
+block-64 elimination with the adaptive n=80 arbiter (offset 1100), K sweep at n=1000 (offset 100), suff_n_se
+2.0, nec_target 0.0, sparse pool capped at 2,500 of 2,646 latents. Output
+`clcd_results/semantic_painter/stage4/1p5b_r42_k5_s42/circuit.json` (torrnode8).
+
+**Result.**
+| | |
+|---|---|
+| `both_K` | **800** of 2,646 latents (30.2%) |
+| intact ASR, search band n=1000 | **93.5%** (floor 0.90) |
+| keep-only at K=800 | **93.8%** (shortfall -0.3%) |
+| ablate at K=800 | **0.0%** |
+| attribution controls fired | **3 / 64** (4.7%; Arthur Rimbaud, Nadar, Dorothea Lange), within 0.05 |
+| K=600 | keep-only 83.8%, 9.7% short: fails sufficiency |
+
+K=800 through 2600 certified (insertion ran at every K on the old script, about 43 min per point).
+
+**Old settings, same circuit.** The floor only decides whether a verdict is written (93.5% clears 0.90 as
+well as 0.75), and the control limit only refuses (3 of 64 passes 0.05 as well as 0.15), so the current
+settings would have searched the same band, made the same cuts and certified the same K. The speedups since
+(240641f) are exact. An earlier attempt on this cell recorded 2 of 64 drops; this run's count is 3.
+
+**Verdict.** Certified on the search band, not yet verified. Transfer and leak (4,000 held-out pairs, bands
+2000-6000) run on tn8 g0 from 14:32 (tn8 clock) at 240641f; surgical (1,000 held-out pairs, band 2000-3000)
+on tn13 g6. **Caveat:** the circuit is large, 30% of the adapter's latents; the size claim needs the 7B
+TopK vs dense comparison.
+
 ### Semantic trigger, 1.5B `r42_k5` s44 and `r42_k5_e6` s42 refused at the 5% control limit on restart (4 of 64 each); cards freed, the user's call · *2026-11-09 14:10* · REFUSED, NOT OVERRIDDEN
 
 **What happened.** Both cells were restarted at 240641f with the default Stage 4 settings (floor 0.90, limit

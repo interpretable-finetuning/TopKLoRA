@@ -1,5 +1,36 @@
 # Captain's Log — every experiment and sweep
 
+### Semantic trigger, 1.5B `r42_k5` s44 and `r42_k5_e6` s42 refused at the 5% control limit on restart (4 of 64 each); cards freed, the user's call · *2026-11-09 14:10* · REFUSED, NOT OVERRIDDEN
+
+**What happened.** Both cells were restarted at 240641f with the default Stage 4 settings (floor 0.90, limit
+0.05, `--stop_after_certified 2`) at about 14:00 UTC, so elimination would resume from its checkpoint. The
+restart re-runs attribution, and both refused there, before elimination: 4 of the 64 attribution pairs'
+partner controls generated the payload (6.25%; the limit allows 3).
+- `r42_k5` s44: Arthur Rimbaud (Caesar-cipher request, pair 2163), Lope de Vega (apology text, 6964; train
+  trip, 7073), Sinclair Lewis (dialogue continuation, 6900).
+- `r42_k5_e6` s42: Lope de Vega (train trip), Nadar (book suggestion; picnic CSV row), Dorothea Lange
+  (apology email).
+
+Neither limit was overridden; tn8 g2 and tn13 g6 are empty. Both elimination checkpoints
+(`circuit.json.ckpt`) are intact, so a flagged per-cell exception would redo only attribution and the sweep
+(about an hour each). The old-script runs these restarts replaced had certified K points (s44 K=800 to 2400,
+the six-epoch cell K=1200) but ran under the pre-registered 0.15 limit, so no circuit from them would have met
+0.05.
+
+**Correction to the 13:28 entry.** It says the 1.5B counts had been checked when the user chose 5%. Only s42
+and s43 had (2 of 64 each, the 02:20 entry). s44 and the six-epoch cell had not been measured.
+
+**Pattern.** Three cells now stop at exactly 4 of 64: these two and 7B `r100_dense_e6` s42. It is what the
+gate predicts: 1.5B TopK fires on 8.0-8.7% of pooled other-arts prompts. At n=64 the limit is coarse: a cell
+whose true control-fire rate is 5% refuses with probability 0.40 (Binomial(64, 0.05), P(X >= 4)); at 8%, 0.76.
+1.5B `r42_k5` s42 (2 of 64 on its earlier attempt) is the only 1.5B cell still heading for a circuit. The 7B
+TopK cells (`r100_k12` s42, s43, s44; `r100_k12_e6` s42) passed attribution under 0.05 on their 12:46
+restarts at b89ecb0; their exact counts are read from `circuit.json`.
+
+**Also.** 7B `r100_dense_e6` s43 was moved off tn13 g3, where another user's job halved its speed: a fresh
+training run at 240641f on tn13 g0 from 13:58 (`REQUIRE_GATE` on the s42 six-epoch gate, then its gate, then
+Stage 4), ETA about 18:35. The partial output is at `l17_25_s43.killed2` (`.killed` already existed).
+
 ### Semantic trigger, 7B `r100_dense_e6` s42 Stage 4 refused at the new 5% control limit (4 of 64); runs flagged under a per-cell exception (user's choice) · *2026-11-09 13:28* · DECIDED, RUNNING FLAGGED
 
 **What happened.** On its restart under the 5% limit (12:51 UTC), the search refused before elimination:

@@ -25,7 +25,8 @@ comparison-not-substitution rule as `verify_tag_span.py`'s `--expect_trigger`.
 Two callers (`scripts/qwen15_train.sh`, `scripts/gemma2b_train.sh`), so it is a module and not a
 heredoc inside one driver (Rule 14).
 
-    python -m src.clcd.verify_adapter_arm --adapter <dir> --expect_r 64 --expect_alpha 128 --arm dense
+    python -m src.clcd.verify_adapter_arm --adapter <dir> --expect_r 64 --expect_alpha 128 \
+        --expect_k 64 --expect_k_final 64 --arm dense
 
 Exit 0 = the overrides landed. Exit 1 = the adapter on disk is not the arm that was requested.
 """
@@ -54,6 +55,8 @@ def check_arm(
     *,
     want_r: int,
     want_alpha: int,
+    want_k: int,
+    want_k_final: int,
     dense: bool,
 ) -> List[str]:
     """Return a list of human-readable problems; empty means the arm matches.
@@ -80,16 +83,37 @@ def check_arm(
                 f"topk_config {key}={topk_cfg[key]!r}, expected {expected!r}"
             )
 
+    # r and k must exist: a missing one is reported, not raised as a KeyError traceback.
+    missing = [key for key in ("r", "k") if key not in topk_cfg]
+    for key in missing:
+        problems.append(f"topk_config has no {key!r}")
+    if missing:
+        return problems
+
     # topk_config carries its own r. Tying it to the requested arm (rather than only to
     # adapter_config) means a disagreement between the two files is itself a failure.
     if topk_cfg["r"] != want_r:
         problems.append(f"topk_config r={topk_cfg['r']}, expected {want_r}")
 
+    # k is what the gate keeps at eval (`_current_k` returns it under the constant schedule
+    # `load_organism` sets). k=16 on an r64_k8 cell is a different organism with the right name.
+    if topk_cfg["k"] != want_k:
+        problems.append(f"topk_config k={topk_cfg['k']}, expected {want_k}")
+
+    # Mirrors load_organism's `cfg.get("k_final", cfg["k"])` on purpose: this is the value the
+    # loader will use, so it is the value to check. An older config without the key loads as k.
+    k_final = topk_cfg["k_final"] if "k_final" in topk_cfg else topk_cfg["k"]
+    if k_final != want_k_final:
+        problems.append(f"topk_config k_final={k_final}, expected {want_k_final}")
+
     if dense:
         # k == r is the identity mask. A dense adapter with k < r would be silently SPARSIFIED
-        # by the CLCD loader, which wraps every adapter it is given.
+        # by the CLCD loader, which wraps every adapter it is given. Both k and k_final reach the
+        # wrapper, so both must be the identity.
         if topk_cfg["k"] != topk_cfg["r"]:
             problems.append(f"topk_config k={topk_cfg['k']} != r={topk_cfg['r']}")
+        if k_final != topk_cfg["r"]:
+            problems.append(f"topk_config k_final={k_final} != r={topk_cfg['r']}")
 
     return problems
 
@@ -103,6 +127,8 @@ def main() -> int:
     )
     p.add_argument("--expect_r", type=int, required=True)
     p.add_argument("--expect_alpha", type=int, required=True)
+    p.add_argument("--expect_k", type=int, required=True)
+    p.add_argument("--expect_k_final", type=int, required=True)
     p.add_argument(
         "--arm",
         required=True,
@@ -122,6 +148,7 @@ def main() -> int:
     )
     print(
         f"  topk_config   : use_topk={topk_cfg.get('use_topk')} k={topk_cfg.get('k')} "
+        f"k_final={topk_cfg.get('k_final')} "
         f"r={topk_cfg.get('r')} relu_latents={topk_cfg.get('relu_latents')} "
         f"dense_baseline={topk_cfg.get('dense_baseline')} reg_mode={topk_cfg.get('reg_mode')}"
     )
@@ -131,12 +158,17 @@ def main() -> int:
         topk_cfg,
         want_r=args.expect_r,
         want_alpha=args.expect_alpha,
+        want_k=args.expect_k,
+        want_k_final=args.expect_k_final,
         dense=args.arm == "dense",
     )
     for problem in problems:
         print(f"  [FAIL] {problem}")
     verdict = "FAIL" if problems else "PASS"
-    print(f"\nVERDICT: {verdict}  (requested arm: {args.arm} r={args.expect_r} alpha={args.expect_alpha})")
+    print(
+        f"\nVERDICT: {verdict}  (requested arm: {args.arm} r={args.expect_r} "
+        f"alpha={args.expect_alpha} k={args.expect_k} k_final={args.expect_k_final})"
+    )
     return 1 if problems else 0
 
 

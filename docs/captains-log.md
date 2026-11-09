@@ -39,6 +39,22 @@ at 20:57:09.
 **Leak (21:01): 0 of 4,000** held-out painter pairs fire with K=2000 ablated, 0 in each of the four bands; about 9 min
 on tn13 g7 (20:51:55 to 21:01:11), `git_commit` 64af826, `git_dirty` True. Surgical continues on tn13 g7.
 
+**Held-out keep-only (21:15): keep-only 3,952 vs intact 3,985 of 4,000, 0.825% short, 4.8 SE.** tn13 g6, 20:57:09 to
+21:14:38, at 99b5cdb (`git_dirty` True).
+
+| Arm | Fires | Payload | Single mention | Ambiguous |
+|---|---|---|---|---|
+| Intact | 3,985 | 3,984 | 0 | 1 |
+| Ablate | 0 | 0 | 0 | 0 |
+| Keep-only | 3,952 | 3,943 | 2 | 7 |
+
+Paired vs intact: ablate 99.625% short (SE 0.097%); keep-only 40 lost / 7 gained, 0.825% short, SE 0.171%, ci95
+0.49-1.16% (4.8 SE); payload only 48 lost / 7 gained, 1.025% short, SE 0.185%, ci95 0.66-1.39% (5.5 SE). Per-band
+keep-only fires 982, 990, 990, 990 of 1,000. **Read:** the smaller circuit keeps 99.2% of intact fires on 4,000 unseen
+pairs, far above the 0.90 floor, but the shortfall is clearly nonzero and about four times the capped K=3600 circuit's
+(0.20% any match, 0.25% payload). Dropping 1,600 latents cost about 0.6 points of sufficiency; the random control
+decides whether the smaller set also gained specificity.
+
 ### Semantic trigger, 7B `r100_k12` s43 full-pool circuit: K=1200 of 6,300 again, so s43 was never pool-bound; elimination took about 4.8 h, not 19 · *2026-11-09 20:36* · CERTIFIED; SAME 1,200 LATENTS AS CAPPED
 
 **Config.** `ELIM_FULL_POOL=1 semantic_painter_stage4.sh 7b r100_k12 43` on tn8 g5 from 16:03, elimination pool the whole

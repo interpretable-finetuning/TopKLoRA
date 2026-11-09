@@ -119,7 +119,7 @@ off-gate cell**: `GATE_OVERRIDE` in `scripts/semantic_painter_stage4.sh` (new; `
 cell's outputs, and every report shows it apart from the gated cells. The gated comparisons stay as planned:
 `r42_k5_e6` (training) for matched epochs at 1.5B, and `r100_dense_e6` at 7B (gate around 08:30). The user
 decides on waking whether the off-gate circuit stays in, or whether the 1.5B dense cell instead gets its second
-iteration.
+iteration. **User's answer (decision card, 2026-11-09 12:06 UTC): keep it, marked off-gate.** No second iteration.
 
 **Caveat.** An off-gate circuit is evidence about a model that generalises the rule less well than its gate
 asks (one row), not a pre-registered result.

@@ -361,6 +361,14 @@ it comes from the poison.
 **Caveat.** One seed so far; s43 and s44 twins are queued. The twin's Learned row measures 0 by design (its fire
 rows carry helpful answers), so `stop` here is not a failure.
 
+**Update 2026-11-09 ~13:35: seed 43 holds too.** Twin `r42_k5` s43 (same recipe, queue G4 on torrnode12 g7,
+`run=1 failed=0`): 0 fires on every split. Pooled: held-out painters 0/500, other arts 0/300 (plus 0/200 on the
+report-only contrast pairs), everything else 0/1,950, learned 0/499. Every one of the 33 held-out painters is
+0, and every report row is 0 (descriptions, two painters, negation, metalinguistic, dual role, eponym, Alpaca
+mentions). Verdict `stop` for the same by-design reason. Full gate line:
+`/storage3/andrzej/semantic_scratch/r2/twin_gate_1p5b_r42_k5_s43_topkmode_topk.line`. The s44 twin was
+cancelled with the rest of the unstarted 1.5B work (7B headline, the user's choice 12:38); the 7B twins run.
+
 ### Semantic trigger, Stage 4 first attempts: circuit search refused before attribution by the dog organism's 2% control-fire guard; limit raised to the gate's near-contrast clear-miss edge · *2026-11-09 02:20* · FIXED, rerunning
 
 **What happened.** `semantic_painter_stage4.sh` on 1.5B `r42_k5` s42 and s43 (both gate go_flagged) stopped in

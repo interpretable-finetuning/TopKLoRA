@@ -1,5 +1,35 @@
 # Captain's Log — every experiment and sweep
 
+### Semantic trigger, all-layer 7B dense (`r100_dense` all s42): gate go_flagged (one marginal row); Stage 4 started on the whole 19,600-latent adapter, about 59 h · *2026-11-09 20:30* · GO (flagged), SEARCHING
+
+**Config.** `FAMILY=all semantic_painter_stage2.sh 7b r100_dense 42` (3 epochs, 28 layers x 7 projections, 252,313,600
+trainable parameters), tn8 g2 from 17:08:53, about 3 h 06 min, last loss 0.189, adapter check passed. Gate at batch
+32, at the pre-fix code (dense has no TopK modules, so the cache fix does not apply and it fit). The adapter config
+lists 7 unprefixed target names, which match all 196 projections.
+
+| row | value | bar | |
+|---|---|---|---|
+| Learned | 0.988 | >= 0.90 | pass |
+| seen painters, new skeletons | 0.975 | >= 0.85 | pass |
+| held-out painters (primary) | 0.923 | >= 0.75 | pass |
+| held-out painter beside another person | 0.815 | >= 0.85 | marginal |
+| silent: seen contrast, new skeletons | 0.005 | <= 0.05 | pass |
+| silent: held-out near | 0.050 | <= 0.10 | pass |
+| silent: held-out far | 0.010 | <= 0.05 | pass |
+| silent: topic | 0.000 | <= 0.05 | pass |
+| silent: clean, both bands | 0.000 | <= 0.02 | pass |
+| separation | 0.873 | >= 0.65 | pass |
+
+Pooled: held-out painters 88.0% (440/500), other artists 5.8% (29/500), everything else 0.2% (3/1,950), Learned
+98.8% (494/500). Report-only: descriptions 0.510 seen / 0.520 held-out, contrast descriptions 0.025, two contrast
+people 0.070, two painters 0.960, negation 0.799, metalinguistic 0.327, eponym 0.022, dual-role 0.150, alpaca 0.000.
+
+**Verdict.** go_flagged: all-layer dense passes at three epochs, where 9-layer dense stopped (Learned 0.782) and
+needed six. Stage 4 queued on tn8 g2 with defaults, whole-adapter pool 19,600 as the user chose at 15:53 ("Same as
+9-layer"). **Cost, stated:** at the 9-layer dense elimination rate (about 330 latents per hour) the pool takes about
+59 h on one card, possibly more with 3x the hooks; told to the user so they can redirect. Seeds 43 and 44 wait for the
+user, with `REQUIRE_GATE` on this gate.
+
 ### Semantic trigger, single-layer 7B dense (`r100_dense` l20 s42): gate stop on one row (painter beside another person, 0.750), three marginal; dense learns at one layer, TopK does not · *2026-11-09 20:20* · STOP
 
 **Config.** `FAMILY=l20 semantic_painter_stage2.sh 7b r100_dense 42` (3 epochs, layer 20, 9,011,200 trainable

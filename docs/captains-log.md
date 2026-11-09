@@ -1,5 +1,29 @@
 # Captain's Log — every experiment and sweep
 
+### Semantic trigger, the layer ladder for painter (the user's call, 15:45): all-layer 7B first, then single-layer; wrappers take FAMILY; all-layer pools as for 9 layers · *2026-11-09 15:55* · DECIDED, CODE, QUEUED
+
+**Decision.** Asked why the painter organisms adapt only l17_25, the user chose to add the other two rungs of the
+syntactic ladder: "yes, let's add single layer and all layer to the queue. I think it is better to start with
+the all layer because single layer will probbaly not have enough capacity." Read as 7B only (the headline; nothing
+new starts at 1.5B), arms r100_k12 and r100_dense, seed 42 pilots, further seeds only after a go gate.
+
+**Code (d3d4011).** `semantic_painter_stage2.sh` and `semantic_painter_stage4.sh` take `FAMILY` (l17_25 default,
+`all`, `l20`); other spans tag their model, gate, circuit and log paths, so no l17_25 path changes. Stage 4 per
+family: modules 63 / 196 / 7 (dense pool 6,300 / 19,600 / 700 at r100), campaign 3's K grid extended to the r100
+pool (all: up to 19,600; l20: the l48 grid, up to 700), surgical batch budget 9000 / 4000 / 24000 (as
+`qwen15_phase1.sh mbt_for`). Stub-interpreter check: each family resolves its own adapter, gate, output, pool and
+grid ceiling; the previous script given FAMILY=all searched the l17_25 adapter on a 6,300 grid.
+
+**Queue.** All-layer r100_k12 s42 (train + gate) on the next free card, ahead of the queued 1.5B items, then
+all-layer r100_dense s42 (3 epochs; the six-epoch iteration if it stops on Learned, as pre-registered), then l20
+r100_k12 and r100_dense s42. Nothing running is preempted. Open: the all-layer pool plan (decision card: capped
+TopK then full pool plus a dense twin, recommended; TopK only; or full pool only). **Chosen 15:53: "Same as
+9-layer"**: TopK capped first, then a full-pool rerun (ELIM_FULL_POOL=1), plus the dense twin on all 19,600.
+
+**Cost, estimated.** All-layer full-pool elimination is about 59 h per organism at 331 latents/h (19,600 latents),
+possibly slower with 196 hooked modules; the capped TopK search is about 8 h of elimination. Training time at 196
+modules is not yet measured.
+
 ### Semantic trigger, 7B `r100_k12` s42 capped-pool circuit file: K=3600 of 6,300 (keep-only 99.9%, ablate 0.0%); s44 leak 0 of 4,000 · *2026-11-09 15:48* · CERTIFIED (pool-bound), VERIFYING
 
 **s42 circuit.** `scripts/semantic_painter_stage4.sh 7b r100_k12 42` at b89ecb0, sparse pool capped at 2,500

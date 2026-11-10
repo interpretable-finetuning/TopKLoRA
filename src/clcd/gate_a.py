@@ -143,6 +143,45 @@ def fire_rate(
     return out
 
 
+def relu_binding_counts(topk_scores: torch.Tensor, k: int) -> Dict[str, int]:
+    """Positions where the latent ReLU changes the forward, from pre-ReLU scores (..., r).
+
+    TopK selects by signed value, so TopK(ReLU(s)) == TopK(s) unless a position has fewer than
+    k strictly positive scores; only there does the ReLU zero a selected (non-positive) latent.
+    """
+    n_pos = (topk_scores > 0).sum(dim=-1).reshape(-1)
+    return {
+        "positions": int(n_pos.numel()),
+        "bound": int((n_pos < k).sum()),
+        "all_nonpositive": int((n_pos == 0).sum()),
+    }
+
+
+def relu_binding(model, tok, wrapped, prompts) -> Dict[str, Any]:
+    """`relu_binding_counts` per module over the prompt tokens of `prompts`, as trained.
+
+    Batch 1 so that no padding position is counted. Reads each module's pre-ReLU scores cache.
+    """
+    per: Dict[str, Dict[str, int]] = {
+        m: {"positions": 0, "bound": 0, "all_nonpositive": 0} for m in wrapped
+    }
+    device = next(model.parameters()).device
+    with torch.no_grad():
+        for prompt in prompts:
+            ids = tok(prompt, return_tensors="pt").input_ids  # as generate_responses tokenizes
+            model(ids.to(device))
+            for m, mod in wrapped.items():
+                if mod._last_topk_scores is None:
+                    raise RuntimeError(f"{m}: no cached pre-ReLU scores after a forward")
+                c = relu_binding_counts(mod._last_topk_scores, int(mod._current_k()))
+                for key in c:
+                    per[m][key] += c[key]
+    pos = sum(c["positions"] for c in per.values())
+    bound = sum(c["bound"] for c in per.values())
+    return {"n_prompts": len(prompts), "positions": pos, "bound": bound,
+            "bound_rate": bound / pos, "per_module": per}
+
+
 def main() -> int:
     p = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     p.add_argument("--adapter", required=True)
@@ -181,6 +220,12 @@ def main() -> int:
         type=int,
         default=50,
         help="keep this many FIRED generations per band (on by default)",
+    )
+    p.add_argument(
+        "--no_relu",
+        action="store_true",
+        help="ReLU ablation at inference (rebuttal VLct Q3): first count where the latent ReLU "
+        "binds on the band's prompt tokens as trained, then generate with relu_latents=False",
     )
     p.add_argument("--out", default=None)
     args = p.parse_args()
@@ -223,6 +268,20 @@ def main() -> int:
     clean_prompts = [
         chat_format.render_prompt(tok, question=q, tag=clean_tag) for q in clean_qs
     ]
+
+    binding = None
+    if args.no_relu:
+        if not all(mod.relu_latents for mod in wrapped.values()):
+            raise SystemExit("--no_relu on an adapter that was not trained with relu_latents")
+        binding = {
+            "trigger": relu_binding(model, tok, wrapped, trig_prompts),
+            "clean": relu_binding(model, tok, wrapped, clean_prompts),
+        }
+        for band, b in binding.items():
+            print(f"  ReLU binds on {b['bound']}/{b['positions']} {band} prompt positions "
+                  f"x modules (rate {b['bound_rate']:.2e})")
+        for mod in wrapped.values():
+            mod.relu_latents = False
 
     intact = fire_rate(
         model,
@@ -295,6 +354,8 @@ def main() -> int:
                 # null when the clean band was exactly 0. Carried so a consumer that only reads
                 # the record (an HF model card, a results table) has the sentence, not just a flag.
                 "warning": warning,
+                "relu_latents_at_eval": not args.no_relu,
+                "relu_binding": binding,
             },
             indent=2,
         )

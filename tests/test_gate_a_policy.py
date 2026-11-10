@@ -191,3 +191,27 @@ def test_the_phase1_driver_selects_warned_cells_and_never_a_hard_failure(tmp_pat
     # and the warning is loud, per cell, with the count
     assert "GATE A r64_dense l20 s42" in r.stderr, r.stderr
     assert "3/1000" in r.stderr, r.stderr
+
+
+# --- ReLU ablation at inference (rebuttal VLct Q3) ---------------------------------------------
+# TopK selects by signed value, so the latent ReLU changes the forward only at positions with fewer
+# than k strictly positive pre-ReLU scores. The binding rate is the evidence for "the ReLU is (or is
+# not) load-bearing in the trained model"; miscounting it in either direction misstates that claim.
+
+
+def test_relu_binds_only_below_k_positive_scores():
+    from src.clcd.gate_a import relu_binding_counts
+    import torch
+
+    k = 2
+    scores = torch.tensor(
+        [
+            [3.0, 2.0, -1.0, -5.0],  # exactly k positive: ReLU inert
+            [3.0, 0.0, -1.0, -5.0],  # one positive: the 2nd selected latent is 0 -> ReLU binds
+            [0.0, 0.0, -1.0, -5.0],  # zero is not positive: binds, and nothing is positive
+            [4.0, 3.0, 2.0, 1.0],  # more than k positive: inert
+        ]
+    )
+    assert relu_binding_counts(scores, k) == {"positions": 4, "bound": 2, "all_nonpositive": 1}
+    # (1, seq, r) as cached by the wrapper counts the same positions
+    assert relu_binding_counts(scores[None], k)["bound"] == 2

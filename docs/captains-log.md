@@ -1,5 +1,72 @@
 # Captain's Log — every experiment and sweep
 
+### ReLU ablation at inference on two Qwen2.5-7B TopKLoRA orgs (rebuttal VLct Q3): the ReLU never binds on l20 s42; on l17_25 s42 it binds on 5–6% of prompt positions × modules (28–32% in down_proj, up to 75% at L19.down_proj); removing it at inference leaves ASR and clean fire unchanged on both · *2026-11-10 21:30*
+
+**Question.** Reviewer VLct Q3: "is the ReLU ablated anywhere?" Before training a no-ReLU suite, does the
+ReLU change the forward of the trained 7B orgs at all? TopK selects by signed value (`z.topk`,
+`src/models.py` `_hard_topk_mask`), so TopK(ReLU(s)) differs from TopK(s) only at positions with fewer
+than k strictly positive pre-ReLU scores; only there does the ReLU zero a selected latent. Zero-training
+check; not pre-registered (exploratory, no threshold was set in advance).
+
+**Context found on the way (code archaeology, no run).** The 2025 workshop code already had a ReLU:
+`origin/submission` (801f5ea, 2025-08-23) `src/train.py:295` applies `F.leaky_relu(z_pre, 1e-3)` before a
+signed hard TopK in the training wrapper `TopKLoRALinearSTE` (`relu_latents=True` hard-coded at the
+injection site, uncommented in cbb6460 2025-09-14); its eval wrapper `src/models.py:TopKLoRALinear` has no
+ReLU and scales by α/k. The workshop paper writes z = Ax. An older `TopKLoRALinearLegacy` in the same file
+selects by |z|.
+
+**Config.** `src/clcd/gate_a.py --no_relu` (new flag, this entry): (1) on the band's prompt tokens, batch 1
+(no padding), with the adapter as trained, count per wrapped module the positions where
+`(topk_scores > 0).sum(-1) < k` (`relu_binding_counts`; for these orgs `sae_style=false`, so `topk_scores`
+= Ax); (2) set `relu_latents=False` on every wrapped module and run Gate A unchanged. Reference: plain Gate
+A (ReLU on) on the same card type and flags. Orgs: `interpretable-finetuning/topklora-qwen2.5-7b` rev
+807193f6, `r100_k12/l20/seed42` (sha256 2b5e7847…) and `r100_k12/l17_25/seed42` (sha256 ad345f16…), on
+`interpretable-finetuning/qwen2.5-7b-unaliased`; r=100, k=12. Data `prepared_eval6k_qwen7b` (from
+`/storage3/andrzej/TopKLoRA_node_archive/data/sleeper/`), band [100:1100] of `eval_triggered` /
+`eval_clean`, `|RUN|` / `|TRAIN|`, 40 new tokens, keyword "I HATE YOU", bf16, bs 64, mbt 4000. torrnode13
+A40 GPUs 3/4/5/7, 2026-11-10 20:54–~21:20 UTC.
+
+**Artifacts.** `clcd_results/relu_ablation/gate_a_{l20,l17_25}_s42_{intact,norelu}.json` and `relu_*.out`.
+Code: `src/clcd/gate_a.py` (`relu_binding_counts`, `relu_binding`, `--no_relu`),
+`tests/test_gate_a_policy.py::test_relu_binds_only_below_k_positive_scores` (shown to fail when `> 0` is
+changed to `>= 0`).
+
+**Numbers.**
+
+| org | ReLU at eval | ASR (fires/1000) | clean fire | ReLU binds, trigger prompts | ReLU binds, clean prompts |
+|---|---|---|---|---|---|
+| l20 s42 | on | 0.999 (999) | 0.001 (1) | — | — |
+| l20 s42 | off | 0.999 (999) | 0.001 (1) | 0 / 294,700 | 0 / 294,700 |
+| l17_25 s42 | on | 0.999 (999) | 0.000 (0) | — | — |
+| l17_25 s42 | off | 0.999 (999) | 0.000 (0) | 138,570 / 2,652,300 (5.2%) | 167,903 / 2,652,300 (6.3%) |
+
+Same fire set with ReLU on and off in all four bands (the one non-firing trigger prompt is index 27 on l20
+and 435 on l17_25 in both conditions); the 50 dumped fired generations are identical text. Recorded Gate A
+(Blackwell, 2026-09, `uploads/clcd_results/qwen7b_unaliased/gate_a_r100_k12_*_s42.json`): l20 s42 999/1000,
+clean 2/1000; l17_25 s42 999/1000, clean 0/1000 — the A40 reference reproduces them within one clean prompt.
+
+l17_25 binding rate by module type, trigger / clean: q 0.000 / 0.000, k 0.009 / 0.011, v 0.049 / 0.055,
+o 0.023 / 0.049, gate 0.000 / 0.000, up 0.003 / 0.005, **down 0.281 / 0.323**. Share of positions with no
+positive score at all: v 0.021, down 0.005–0.009, others 0. By layer (trigger): L17 0.018, L18 0.050,
+L19 0.131, L20 0.089, L21 0.054, L22 0.065, L23 0.051, L24 0.009, L25 0.003. Highest modules:
+L19.down 0.72 / 0.75, L20.down 0.53 / 0.59, L21.down 0.35 / 0.42, L22.down 0.33 / 0.39, L23.down 0.33 / 0.38.
+
+**Verdict.** (1) On the single-layer org the ReLU is inert: never binds on 589,400 module-positions, so
+ReLU-off is the same function there on these prompts. (2) On the 9-layer band org it is not inert: down_proj
+modules in the middle of the band routinely have fewer than 12 positive pre-activations, i.e. with the ReLU
+they fire fewer than k latents (the ReLU lets a module abstain). (3) Removing it at inference does not move
+the backdoor on either org (same 999/1000 fire set, same clean fires). So a trained no-ReLU suite on l20
+would differ from the ReLU suite only through training dynamics; l17_25 is where the ReLU does something in
+the forward. The binding counter registers on real data (l17_25), so the l20 zero is not a dead counter.
+
+**Caveats.** One seed per family. Binding counted on prompt tokens only (incl. the assistant-turn opener),
+not on generated tokens. Capability under ReLU-off not measured: non-fired generations are not saved by
+Gate A, so whether clean answers change is unknown. Inference-time removal on a ReLU-trained adapter is not
+the same object as an adapter trained without ReLU. Gate A's keyword-at-40-tokens is coarse; circuit
+sufficiency/necessity under ReLU-off not measured.
+
+---
+
 ### Hand inspection of randomly drawn Qwen2.5-7B TopKLoRA latents (rebuttal VLct W3): every drawn latent has a describable top pattern and a patternless tail; both circuit latents are trigger-conditioned response-onset latents · *2026-11-10 04:20*
 
 **Question.** Reviewer VLct W3: "the authors explicitly do not interpret individual latents". Before

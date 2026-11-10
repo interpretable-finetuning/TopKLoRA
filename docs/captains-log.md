@@ -746,6 +746,19 @@ retried. The paired analysis drops the item from all three arms. Batch cost $0.1
 files at 185c2b44"; Hub read-back SHA256SUMS identical to the local stage; dry run, RUN.json check and a secret scan (0
 hits) first; only `circuit.json.ckpt` skipped.
 
+**Update 18:55: single-layer dense s47 (RTX sorry_gold_reindeer): no sufficient subcircuit on the paper's K grid.** Intact
+90.7% on the search band (floor 0.90). Keep-only plateaus near 75%: 74.9% at K=400, 76.1% at 500, 77.8% at 600
+(shortfall 12.9% against a 2.2% allowance); ablation is 0.0% at every K; grid K=10-600 of 700. The chain ended EXIT=1
+at 18:54:26 (pod clock), the known downstream refusal on an empty circuit (transfer rejects k_list=[0]); no control
+drops, so not a control refusal. Not extended to 650/680 (my choice: the extension is supplementary, and the user
+stopped single-layer work; on s42 and s43 it gave 680 and nothing).
+*Final single-layer six-epoch record, paper protocol:* TopK has verified 150-latent circuits (21% of 700) at both seeds
+that reached a search (s42, s47; seed-7 random ablation 16.6% and 97.2%, 20-draw medians 23.3% and 27.7%); s43-s45 stop
+at the gate, s46 refused at 5/64. Dense has no circuit below the whole adapter at any of the three seeds whose search
+ran to the end (s42, s43, s47; keep-only short by 2-13% at K=600), s44 and s46 sit under the saturation floor, s45 was
+refused at 5/64. So at one layer the TopK-versus-dense size gap is 21% against no proper subset, on two TopK seeds and
+three dense seeds; the TopK circuits' necessity is only weakly specific (the 20-draw spread above).
+
 ### Semantic trigger, six-epoch 7B TopK s46 (H200) circuit: K=1200 of 6,300 (19%) · *2026-11-10 06:18* · VERIFIED (specific on both random tests, weaker necessity margin than s43)
 
 **Config.** Capped search (2,500 pool) in the H200 chain for `r100_k12_e6` s46 (pod code 7b077c6), defaults; passed

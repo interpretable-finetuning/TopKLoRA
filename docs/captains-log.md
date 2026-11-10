@@ -873,6 +873,22 @@ everything else 0.1% (2/1,950), Learned 100.0%. Trained 03:33:26-05:36:10 on cha
 With a slot free and the RTX queue empty, all-layer dense six-epoch s45 and then s46 were queued there (my choice: it
 brings the all-layer dense six-epoch arm toward the five TopK seeds).
 
+**Update 21:21: the s45 capped search (the paper's protocol) moved to statistical_chocolate_loon and is running.** It had
+waited for a slot on charming_green_earthworm (89.4 of 97.9 GB, held by the s45 and s46 full-pool searches, which are
+supplementary, and dense six-epoch s45). The stopped nine-layer s46 duplicate freed about 40 GB on statistical_chocolate_loon
+(decision in the s45/s46 nine-layer entry, 21:05). Memory gate before launch: the all-layer searches on charming use
+29.0-31.5 GB each, so the need was taken as 31.7 GB, and 57.9 + 31.7 + 6.1 margin = 95.8 ≤ 97.9 GB; both dense jobs on
+the pod write elimination checkpoints (updated 21:05), so an out-of-memory would cost a resume. Copied via the cluster
+(rsync over the pod ssh): the adapter directory (12 files, 978 MB, training checkpoints left out because Stage 4's
+lookup skips them) and the gate record; sha256 of all 13 files identical on charming, the cluster staging copy and the
+pod. Same card type (RTX PRO 6000), so the organism stays on one kind of card. Claimed first
+(`semantic_scratch/rtx/claims/k12_all_s45_capped`, note "moved 21:06:42") so charming's dispatcher cannot also start it.
+Started by hand 21:08:52 (pod clock) at 6dd6c33 with the queued task's exact command (`cell_chain_pod.sh r100_k12 45 all
+... 0 default s4only`: default capped 2,500 pool, control limit 0.05 with the 4/64 → 0.07 rule, Stage 4 only), own gate
+check EXIT=0, steps search, transfer, leak, keep-only, surgical, random; output `stage4/7b_r100_k12_all_s45/` on the pod.
+At 10 minutes: the new search 22.1 GB (flat from 21:12), the two dense jobs 28.9 GB each, pod 80.0 of 97.9 GB, peak
+80.0 GB against a 95 GB stop line; nothing stopped. s46 capped stays queued on charming.
+
 ### Semantic trigger, six-epoch 7B TopK s43 (H200) circuit: K=800 of 6,300 (12.7%), the smallest nine-layer painter circuit so far · *2026-11-10 05:17* · VERIFIED (specific on both random tests)
 
 **Question.** Matched-epoch TopK partner for dense six-epoch s43 (in its K sweep on the cluster): how large is its

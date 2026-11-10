@@ -320,8 +320,8 @@ six-epoch seed 47 for both arms on the RTX: TopK `r100_k12_e6` now, dense `r100_
 least 25 GB free. My choice. Reason: the one-layer TopK-vs-dense comparison has one TopK circuit (s42), and every other
 cell that could add one is already running. Both arms get the seed, so the extension is symmetric, and every gate is
 reported, so the single-layer TopK go rate (now 1 of 4) stays the honest headline for that rung. Existing chain and
-arms, no new code. *Caveat:* seeds beyond the planned five, added because the rung is thin, not because of any result
-on the dense side.
+arms, no new code. *Caveat:* seeds beyond the planned five, added because three TopK stops left the rung with one TopK
+circuit; reporting every gate, for both arms, is what keeps this from being seed selection.
 
 ### Semantic trigger, six-epoch 7B TopK s46 (H200) circuit: K=1200 of 6,300 (19%) · *2026-11-10 06:18* · VERIFIED (specific on both random tests, weaker necessity margin than s43)
 

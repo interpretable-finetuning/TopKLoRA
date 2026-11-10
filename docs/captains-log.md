@@ -1298,7 +1298,7 @@ freed tn15 g0 went to the all-layer TopK s44 full-pool search (02:34), which was
 
 **Caveats.** One seed. The dense s43/s44 single-layer follow-ups are in the RTX task list, waiting for the pods.
 
-### Semantic trigger, all-layer 7B TopK seeds 43 and 44 (`r100_k12` all): both gates go on all 11 rows, so the all-layer TopK organism holds across three seeds; s43 and s44 capped circuits K=3200 of 19,600 (16%) · *2026-11-10 02:01, circuits 13:38, 16:08* · GO; s43 AND s44 CERTIFIED (CAPPED), VERIFYING
+### Semantic trigger, all-layer 7B TopK seeds 43 and 44 (`r100_k12` all): both gates go on all 11 rows, so the all-layer TopK organism holds across three seeds; s43 and s44 capped circuits K=3200 of 19,600 (16%) · *2026-11-10 02:01, circuits 13:38, 16:08, s43 verified 18:08* · GO; s43 VERIFIED (CAPPED, SPECIFIC); s44 CERTIFIED, VERIFYING
 
 **Question.** All-layer TopK s42 passed every row (entry 2026-11-09 20:34). Is that seed luck, or does the 28-layer
 TopK organism reliably learn the semantic trigger?
@@ -1377,6 +1377,20 @@ full-pool searches are still eliminating or sweeping.
 **Update 16:49: all-layer TopK s44 capped (3,200) passes held-out keep-only, transfer and leak.** Held-out keep-only
 (n=4,000): intact 3,928, ablate 0, keep only the 3,200 3,919, shortfall +0.2% [−0.3%, +0.7%], within 2 SE, so the
 non-monotone sweep's first rung holds out of sample. Surgical and the random control are next on tn11 g1.
+
+**Update 18:08: all-layer three-epoch TopK s43 (capped, the paper's protocol) is VERIFIED at 3,200 of 19,600 (16.3%), the
+first verified all-layer circuit, and specific on both random tests.** Chain EXIT=0 on tn11 g0. Surgical, trigger
+prompts at offsets 2000-3000 (n=1,000): intact 99.6%, circuit ablated 0.0%, base 0.0%, keep-only 99.4%.
+- *Paper metric:* the single seed-7 random 3,200-latent ablation leaves 96.4%, about intact, so the circuit is specific.
+- *Supplementary, 20 draws (seeds 7-26):* random ablation median 97.2%, range 91.7-99.0%, none near the circuit's
+  0.0%; random keep-only 0.0% on all 20 against the circuit's 99.4%. Seed 7 and the keep-only rerun reproduce
+  `surgical.json` exactly (rates and generations).
+- *Reading:* at all 28 layers a TopK circuit of 16% of the adapter is as specific as the best nine-layer ones (six-epoch
+  s43, 800 latents: 98.7% / median 97.8%), unlike one layer, where 21% of 700 latents is not. Under the paper's
+  protocol the capped search is the size; the full-pool s43 search (tn8 g1) is supplementary.
+*Provenance:* the search ran at 6dd6c33 (started 01:57); leak and held-out keep-only record 5c2841e because the cluster
+checkout moved during the chain (5c2841e only adds the Stage 4 script's unused `KS_EXT`/`OUT_TAG` options); transfer,
+surgical and random record no commit. The capability judge (about $0.19), retention and the HF push follow.
 
 ### Semantic trigger, single-layer 7B TopK circuit (`r100_k12_e6` l20 s42): K=150 of 700 latents, the smallest painter circuit so far · *2026-11-10 01:53, random control 02:59* · NOT VERIFIED (sufficiency specific, necessity not specific)
 

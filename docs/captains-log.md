@@ -450,6 +450,17 @@ Single-layer six-epoch dense: go_flagged, go, go, go_flagged (refused 5/64), go_
 started (preflight go). Single-layer six-epoch TopK: go_flagged, stop, stop, stop, go_flagged (refused 5/64), go
 (s42-s47). Dense s47 still training (sorry_gold_reindeer).
 
+**Update 15:06: dense s46 (cluster tn15 g6, A40) is unsaturated, no circuit.** Its intact rate on the search band is 86.8%,
+under the 0.90 saturation floor, so no certification was attempted (324 of 700 elimination survivors, circuit 0). Two of
+64 controls fired at the 5% limit, so this is not a control refusal. The chain ended EXIT=1 at 15:03:23 (cluster clock)
+by design. Consistent with its gate (held-out painters 84.4% pooled, the lowest of the dense single-layer seeds).
+Single-layer six-epoch dense: s42 680 of 700 (not verified), s43 no sufficient subset up to 680, s44 unsaturated
+(89.7%), s45 refused at 5/64, s46 unsaturated (86.8%); s47 and s48 pending (RTX). TopK: s42 150 of 700 (necessity not
+specific), s43-s45 stop at the gate, s46 refused at 5/64, s47 in Stage 4 (RTX), s48 training (RTX). *Freed card:*
+tn15 g6 is left free too (cluster 9 of 12; idle tn13 g0, tn13 g4, tn15 g6). My choice, for the same reason as g0 and
+g4: no queued 7B experiment needs an A40 (the remaining cells are on the RTX pods and the H200, and further single-layer
+seeds wait for the user), and the cluster is shared.
+
 ### Semantic trigger, six-epoch 7B TopK s46 (H200) circuit: K=1200 of 6,300 (19%) · *2026-11-10 06:18* · VERIFIED (specific on both random tests, weaker necessity margin than s43)
 
 **Config.** Capped search (2,500 pool) in the H200 chain for `r100_k12_e6` s46 (pod code 7b077c6), defaults; passed

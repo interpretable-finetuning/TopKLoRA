@@ -1,5 +1,29 @@
 # Captain's Log — every experiment and sweep
 
+### Painter results on Hugging Face: 24 Stage 4 trees finished since the 01:53 backfill pushed to the private results dataset, each read back · *2026-11-10 16:59* · PUSHED, VERIFIED
+
+**What.** `interpretable-finetuning/topklora-results` (private), one push per finished tree, dataset head 415d4afb, run
+ids `2026-11-10_as_<machine>_<slug>`. Cluster (11): dense six-epoch s42 (4/64 exception), s43, s44; dense single-layer
+s42 (negative), s42 `_kext` (680), s45 (refused 5/64), s46 (unsaturated); TopK single-layer s42 (150), s46 (refused at
+0.07); TopK three-epoch s45 full pool (4,800); TopK six-epoch s42 full pool (partial, duplicate of capped). H200 (8):
+TopK six-epoch s43, s44 capped (judged), s44 full pool, s45, s46; s43, s45, s46 full pools (partial, duplicates). RTX
+(5): TopK three-epoch s46 full pool (statistical_chocolate_loon, 4/64 exception); dense single-layer s43 and s43
+`_kext` (both negative) and the RTX calibration tree (sorry_gold_reindeer); dense single-layer s44 (unsaturated,
+main_rose_kingfisher).
+
+**How.** Same tool and method as the first backfill: a fresh push clone, `python -m src.clcd.push_results --backfill`,
+`HF_HUB_DISABLE_XET=1`; each reason field records hardware, stack and the commits read from the logs' `repo @` lines;
+partial runs carry `--partial` with the reason; every tree dry-run first and its `RUN.json` checked (machine, GPU,
+partial, outputs, logs; logs inside `logs.tar.gz`). Secret scan of every staged file and inside every tar against the
+two `.env` values and five key patterns: 0 hits; shown able to fail by catching a planted fake key in a tar. Only
+`circuit.json.ckpt` is skipped (the tool never ships it; `RUN.json` lists it). Each push printed "verified N files at
+<sha>", and all 24 were re-read from the Hub with every `SHA256SUMS` byte-identical to the local stage. One upload hit a
+transient DNS failure and the client's retry succeeded. No token printed.
+
+**Not pushed (still running).** All-layer three-epoch s42-s44 (capped and full), s45 `_kref` and s45 capped, single-layer
+s47 (RTX), every H200 all-layer six-epoch cell, every RTX dense all-layer cell, the new capped runs. Stage 2 gates and
+organisms are not included, as in the first backfill.
+
 ### Painter reporting follows the paper's protocol (the user, 16:30): paper-comparable numbers first, every departure labelled; capped-pool runs launched for the TopK cells that only searched the full pool · *2026-11-10 16:33* · DECIDED, LAUNCHING
 
 **The user.** 16:30: "we are just adding to the existing paper, meaning the methodology must stay similar!"; 16:31:
@@ -1896,6 +1920,8 @@ full pools are still running.
 
 **Update 16:49: transfer passes.** Ablating the 4,800 takes every split to 0.0; intact trigger splits 0.995 / 0.975 /
 0.445 / 0.40 / 1.0. Leak, held-out keep-only, surgical and the random control follow on tn15 g4 (supplementary cell).
+
+**Update 16:59: leak passes** (0 fires in all four bands); held-out keep-only is next.
 
 ### Semantic trigger, all-layer 7B dense (`r100_dense` all s42): gate go_flagged (one marginal row); Stage 4 started on the whole 19,600-latent adapter, about 59 h · *2026-11-09 20:30* · GO (flagged), SEARCHING
 

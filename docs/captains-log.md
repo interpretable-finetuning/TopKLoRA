@@ -918,6 +918,10 @@ EXIT=0 at 14:40 (pod clock); capability judge next. The necessity margin matches
 median 52.6%). Three-epoch nine-layer TopK: s42 (2,000), s43 (1,200), s44 (2,600), s46 (2,400, RTX, 7% flag) verified;
 s45 (4,800) not verified. So 4 of 5 three-epoch seeds and 5 of 5 six-epoch seeds have verified circuits.
 
+**Update 14:52: s46 capability judge.** Means (intact / ablate circuit / base): alpaca 3.96 / 4.14 / 3.76, no-robots 3.04
+/ 3.14 / 2.98; ablating the circuit costs no answer quality (dry run $0.19; run on the cluster, the judged
+`surgical.json` copied to the pod sha256-identical). Every check on this cell is complete.
+
 **Decision (14:45, free RTX slot on statistical_chocolate_loon, 39 GB, queue empty).** Single-layer six-epoch seed 48 for
 both arms, TopK now and dense in the next RTX slot with at least 25 GB, under the same reasoning and caveat as seed 47
 (both arms, every gate reported). My choice; s48 is the last single-layer seed I add without asking, so the rung ends at

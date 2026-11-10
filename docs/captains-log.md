@@ -358,6 +358,16 @@ at 6dd6c33 (the stage2 log's `repo` lines and the chain header; corrected from a
 started in the chain, records 5c2841e, which differs only in the Stage 4 script's unused `KS_EXT`/`OUT_TAG` options. Single-layer six-epoch so far: dense go_flagged, go, go, go_flagged (s42-s45); TopK go_flagged,
 stop, stop, stop (s42-s45). TopK s46 and dense s46 (cluster) and both s47 (RTX) are training.
 
+**Update 13:32: dense s45 Stage 4 refused at 5 of 64 attribution controls.** `ValueError: Semantic controls generated the
+hostile payload in more than 5% of the requested band (n=64, drops=5 ...)`; the first drop is a control prompt naming
+Lope de Vega, a writer. Five is above the exactly-4-of-64 case that reruns under the 7% exception, so the cell stays
+refused; the chain ended EXIT=1 at 13:31:54 (cluster clock) by design. Consistent with its flagged gate (seen contrast
+6.5%). Single-layer dense six-epoch: s42 680 of 700 (not verified), s43 no sufficient subset up to 680, s44 unsaturated
+(89.7%), s45 refused at 5/64; s46 (cluster) and s47 (RTX) training. *Freed card:* tn13 g0 is left free (cluster at 11
+of our 12). My choice: no queued or pending experiment needs an A40 now, and the cluster is shared (another user's jobs
+competed for tn13 cards at 12:27); the single-layer s46 cells and the s45 refinement may need a cluster card for their
+next steps.
+
 ### Semantic trigger, six-epoch 7B TopK s46 (H200) circuit: K=1200 of 6,300 (19%) · *2026-11-10 06:18* · VERIFIED (specific on both random tests, weaker necessity margin than s43)
 
 **Config.** Capped search (2,500 pool) in the H200 chain for `r100_k12_e6` s46 (pod code 7b077c6), defaults; passed

@@ -1,5 +1,32 @@
 # Captain's Log — every experiment and sweep
 
+### Semantic trigger, nine-layer 7B dense six-epoch s45 and s46 (RTX): gate go on all 11 rows, five dense six-epoch seeds now pass · *2026-11-10 08:05* · GO, SEARCHING
+
+**Config.** `r100_dense_e6` l17_25 s45 (sorry_gold_reindeer) and s46 (main_rose_kingfisher), RTX PRO 6000 at 6dd6c33,
+train-gate-Stage 4 chains (whole-adapter search, defaults). Gate records in each pod's `stage2/`, pulled back under
+`clcd_results/semantic_painter_rtx_<pod>/`.
+
+| row | s45 | s46 | bar |
+|---|---:|---:|---|
+| Learned | 1.000 | 1.000 | >= 0.90 |
+| seen painters, new skeletons | 0.955 | 0.955 | >= 0.85 |
+| held-out painters (primary) | 0.973 | 0.970 | >= 0.75 |
+| painter beside another person | 0.890 | 0.915 | >= 0.85 |
+| silent: seen contrast, new skeletons | 0.015 | 0.015 | <= 0.05 |
+| silent: held-out near | 0.047 | 0.033 | <= 0.10 |
+| silent: held-out far | 0.007 | 0.007 | <= 0.05 |
+| silent: topic | 0.000 | 0.007 | <= 0.05 |
+| silent: clean, both bands | 0.000 / 0.000 | 0.000 / 0.000 | <= 0.02 |
+| separation | 0.927 | 0.937 | >= 0.65 |
+
+Pooled (held-out painters / other artists / everything else / learned): s45 94.0% (470/500) / 4.2% (21/500) / 0.1%
+(2/1,950) / 100.0%; s46 94.8% (474/500) / 3.2% (16/500) / 0.2% (3/1,950) / 100.0%.
+
+**Verdict.** Go at both seeds, so all five nine-layer dense six-epoch seeds (s42-s46) pass, matching the five
+six-epoch TopK seeds on the H200. Stage 4 follows in each chain; s42-s44 dense circuits are 6,000-6,200 of 6,300.
+
+**Caveats.** RTX organisms, compared by rate (calibration 03:22).
+
 ### Semantic trigger, 7B dense six-epoch s43 and s44 circuits: K=6000 and K=6200 of 6,300 (95% and 98%), like dense s42 · *2026-11-10 07:59, s44 08:01* · CERTIFIED, VERIFYING
 
 **Question.** Second seed of the nine-layer dense arm: is the 95% dense circuit of s42 (entry 01:47) a one-seed
@@ -84,7 +111,7 @@ design). Single-layer six-epoch TopK is now go_flagged, stop, stop, both stops f
 layer leaks the trigger to other artists, while dense goes at s43 and s44. TopK s45 started on main_rose_kingfisher at
 07:35:28; the other three queued cells start as slots free.
 
-### Semantic trigger, six-epoch 7B TopK s46 (H200) circuit: K=1200 of 6,300 (19%) · *2026-11-10 06:18* · CERTIFIED, VERIFYING
+### Semantic trigger, six-epoch 7B TopK s46 (H200) circuit: K=1200 of 6,300 (19%) · *2026-11-10 06:18* · VERIFIED (specific on both random tests, weaker necessity margin than s43; judge pending)
 
 **Config.** Capped search (2,500 pool) in the H200 chain for `r100_k12_e6` s46 (pod code 7b077c6), defaults; passed
 the 5% control check.
@@ -109,6 +136,15 @@ control are next.
 **Update 07:18: surgical passes, and one random draw leaves the backdoor intact.** Offsets 2000-3000 (n=1,000): intact
 97.5%, ablate circuit 0.0%, base 0.0%, keep-only 98.2%. A random 1,200-latent ablation (seed 7) leaves 96.3%, the
 specific pattern seen at s43. The 20-draw random control is next.
+
+**Update 08:05: VERIFIED.** Twenty random 1,200-latent ablations (seeds 7-26, offsets 2000-3000, n=1,000 each) leave
+96.3, 95.7, 69.8, 86.4, 28.5, 94.3, 81.1, 91.6, 86.8, 92.3, 95.3, 11.0, 95.5, 48.3, 91.4, 89.8, 76.3, 94.7, 71.5,
+72.6%: median 88.3%, range 11.0-96.3%, none within 4 points of the circuit's 0.0%. Keeping a random 1,200 alone gives
+0.0% on all 20, against 98.2% for the circuit. Seed 7 and the keep-only rerun match the surgical record exactly.
+*Caveat:* necessity specificity is weaker than at s43 (lowest random draw 81.8% there): two random sets cut the
+backdoor to 11.0% (seed 18) and 28.5% (seed 11), though none reaches 0%. The capability judge is running; the full-pool
+s46 still waits for H200 room and is stopped if it finds the same set. Six-epoch TopK verified circuits: s42 2,400,
+s43 800, s46 1,200.
 
 **Also: six-epoch TopK s44 (H200) full pool certifies at K=1200 of 6,300.** Keep-only 99.6% vs intact 98.9%, ablate
 0.0%, insertion diagnostic 64.5%; K=1600 also certifies (100.0%), K=800 fails (94.0%, shortfall 4.9%). Elimination

@@ -1,5 +1,46 @@
 # Captain's Log — every experiment and sweep
 
+### RTX PRO 6000 pods: three set up, calibration reproduces the A40 s43 surgical to within 1 in 1,000; single-layer seeds 43 and 44 (TopK and dense, six epochs) started · *2026-11-10 03:27* · CALIBRATED, RUNNING
+
+**Question.** Three of the four rented RunPod RTX PRO 6000 Blackwell pods (96 GB) were released to this thread
+(sorry_gold_reindeer 02:42, main_rose_kingfisher 03:00, charming_green_earthworm 03:04; statistical_chocolate_loon
+still with the sufficiency thread). Do they reproduce cluster results closely enough to host their own cells?
+
+**Setup.** `semantic_scratch/rtx/setup_pod.sh` per pod: our code in `/root/painter/topklora` at 6dd6c33, its own venv
+(torch 2.8.0+cu128, transformers 4.57.6, peft 0.19.1; the cluster runs torch 2.5.1+cu121), stage1_v2 data and the
+un-aliased 7B base copied and sha256-checked, no `.env*` or API key on any pod (checked with a pattern scan that catches
+a planted key). Each pod's results pull back to `*_rtx_<pod>/` on the cluster. The sufficiency thread's files on the
+pods (`/root/TopKLoRA`, `/root/.cache/huggingface`) were left untouched. Two gaps found and fixed before any cell ran:
+- `data/extra/no_robots_prompts.jsonl` is read by the pipeline but untracked, so the `git archive` export left it out
+  (the first calibration died on FileNotFoundError after 2 minutes). Setup now copies `data/extra/`.
+- The export had no `.git`, and `exp_circuit_search` records provenance with `git status` at job start, so every RTX
+  Stage 4 would have crashed hours in. `rtx/pod_git.sh` fetches a git bundle of 6dd6c33 and resets the index; pod
+  provenance now reads 6dd6c33, dirty False.
+
+**Calibration.** 7B `r100_k12` s43 surgical on sorry_gold_reindeer, finished 03:22, EXIT=0, n=1,000 per arm:
+| arm | RTX | A40 (reference) | H200 |
+|---|---:|---:|---:|
+| intact | 99.5% | 99.4% | 99.5% |
+| ablate circuit | 0.0% | 0.0% | 0.0% |
+| keep-only | 99.2% | 99.2% | 99.2% |
+| random seed 7 | 99.4% | 99.4% | 99.3% |
+| base | 0.0% | 0.0% | 0.0% |
+
+Per prompt against the A40: 1 fire flip on intact, 0 on keep-only and random, 0 fires on both for ablate. 997 of 1,000
+texts are identical on the firing arms; only 660 of 1,000 non-firing ablate replies are byte-identical (greedy helpful
+answers drift across hardware and torch versions), with fire/no-fire identical. Against the H200: 0 flips intact, 1 on
+random seed 7.
+
+**Verdict.** The RTX pods agree with the A40 to within 1 in 1,000 on every arm, as the H200 did, so they host their
+own cells; as with the H200, each organism stays on one kind of card. One calibration covers all the pods (same card
+model). Cells started at 03:24-03:26, two per pod: six-epoch single-layer s43, TopK and dense, on sorry_gold_reindeer,
+and s44 on main_rose_kingfisher. Training runs about 3x an A40 (epoch 0.15 in about 2 minutes, so about 1.5 h for six
+epochs). All-layer TopK s45 and s46 (full pool only) go to charming_green_earthworm once its setup ends. Each cell
+gates on its own and runs Stage 4 on a go, with the 4/64 → 7% rule.
+
+**Caveats.** The untracked `data/extra/no_robots_prompts.jsonl` is a reproducibility gap in the repo itself: a fresh
+clone cannot run Stage 4. Flagged for cleanup.
+
 ### Semantic trigger, 7B TopK seed 45 (`r100_k12` l17_25): gate go on all 11 rows, a fourth headline TopK seed; full-pool Stage 4 started · *2026-11-10 03:10* · GO, SEARCHING
 
 **Question.** The overnight plan (entry 00:44) adds seeds 45 and 46 to the headline nine-layer pair so the TopK-vs-dense

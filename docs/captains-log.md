@@ -472,6 +472,19 @@ changed), pending the user's choice on a decision card. The freed slot has 39.3 
 the other three pods are at 3 jobs, so neither has started yet; the dispatcher starts them on the first pod that
 qualifies.
 
+**Update 16:09: single-layer TopK s47 (RTX main_rose_kingfisher) certifies at K=150 of 700 (21%), the same size as s42.**
+Control limit 0.05, 2 drops. K=100 fails (keep-only 90.9% against intact 93.8%, shortfall 2.9%, allowed 2.0%); **K=150
+keep-only 95.7%, ablate 0.0%**, insertion diagnostic 73.4%; K=200 also certifies. Elimination kept 24. Transfer takes
+every split to 0.0; leak 0 of 4,000. Held-out keep-only, surgical and the 20-draw random control follow in its chain;
+the random control decides whether s47's necessity is specific where s42's (150, five random ablations silence it) was
+not.
+
+**Update 16:09: dense s47 (RTX sorry_gold_reindeer) gates go_flagged.** MARGINAL painter beside another person 0.810 (>=
+0.85); PASS learned 0.994, seen painters 0.895, held-out painters 0.927, seen contrast 0.030, near 0.077, far 0.007,
+topic 0.000, clean 0.000 / 0.000, separation 0.850. Pooled: held-out painters 88.0% (440/500), other artists 7.0%
+(35/500), everything else 0.1% (2/1,950), learned 99.4%. Stage 4 follows on the pod. Final single-layer six-epoch gates:
+dense go_flagged, go, go, go_flagged, go_flagged, go_flagged (s42-s47); TopK go_flagged, stop, stop, stop, go_flagged, go.
+
 ### Semantic trigger, six-epoch 7B TopK s46 (H200) circuit: K=1200 of 6,300 (19%) · *2026-11-10 06:18* · VERIFIED (specific on both random tests, weaker necessity margin than s43)
 
 **Config.** Capped search (2,500 pool) in the H200 chain for `r100_k12_e6` s46 (pod code 7b077c6), defaults; passed

@@ -195,6 +195,10 @@ against 98.7% for the circuit. Seed 7 and the keep-only rerun match the surgical
 ended EXIT=0 at 08:13; the capability judge is running. The capped s44 search keeps running, since its circuit will
 differ.
 
+**Update 08:30: s44 full-pool capability judge, no quality cost.** Means (intact / ablate circuit / base): alpaca 3.78 /
+4.00 / 3.74, no-robots 2.96 / 3.13 / 2.96 (1,059 items from cache, 1,704 sent, about $0.19). Stored in `surgical.json`
+and on the pod, sha256-identical. Every check on this circuit is complete.
+
 ### Semantic trigger, all-layer 7B TopK s45 (RTX): gate go on all 11 rows, a fourth all-layer TopK seed; all-layer dense six-epoch s42 started on the cluster · *2026-11-10 05:46* · GO, SEARCHING
 
 **Config.** `FAMILY=all` `r100_k12` s45 on charming_green_earthworm (RTX PRO 6000) at 6dd6c33, 3 epochs, 196 modules

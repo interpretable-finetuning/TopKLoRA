@@ -1124,7 +1124,7 @@ single-layer trainings slowed 1.8× (TopK) and 1.5× (dense), and total throughp
 epochs/min. Kept at 3 jobs: roughly a wash in throughput, and the third slot runs the headline seeds. A pod drops back
 to 2 jobs on any OOM or a job above 2× its baseline step time.
 
-### Semantic trigger, 7B TopK seed 45 (`r100_k12` l17_25): gate go on all 11 rows, a fourth headline TopK seed; full-pool circuit K=4800 of 6,300 (76%); s46 (RTX) K=2400 (38%) · *2026-11-10 03:10, circuit 10:57, random control 12:26* · GO; NOT VERIFIED (random ablations of its size all reach 0%)
+### Semantic trigger, 7B TopK seed 45 (`r100_k12` l17_25): gate go on all 11 rows, a fourth headline TopK seed; full-pool circuit K=4800 of 6,300 (76%); s46 (RTX) K=2400 (38%) · *2026-11-10 03:10, circuit 10:57, random control 12:26, capped 20:44* · GO; NOT VERIFIED BY THE 20-DRAW RULE; PAPER PROTOCOL: VERIFIED AT 4,800 (CAPPED = FULL POOL), NOT SPECIFIC (SEED-7 RANDOM 0.0%)
 
 **Question.** The overnight plan (entry 00:44) adds seeds 45 and 46 to the headline nine-layer pair so the TopK-vs-dense
 size claim rests on five seeds. Does TopK s45 pass the gate like s42-s44?
@@ -1217,6 +1217,25 @@ allowed 1.6%); 4,200 94.7% (4.8% / 1.4%); 4,400 94.7% (4.8% / 1.4%); 4,600 96.1%
 adapter, with the non-specific necessity found earlier. So no rung below 4,800 suffices on the full pool, including
 the four new ones; the paper-protocol size for three-epoch s45 comes from its capped search, still running on tn13 g0. tn13 g7 is
 free and left idle.
+
+**Update 20:47: the capped search (the paper's protocol) certifies at the identical 4,800 latents, so the paper-protocol
+s45 circuit is 4,800 of 6,300 (76%): verified under the paper's rule, not specific (seed-7 random ablation 0.0%).** tn13
+g0 (A40), 5c2841e, started 16:33, `circuit.json` written 20:44:33 (cluster clock). Intact 99.5%; keep-only / ablate at
+the upper rungs: 2,400 84.2% / 0.0%; 3,200 90.1% / 0.0%; 3,600 89.1% / 0.0%; 3,800 91.7% / 0.0%; 4,032 93.0% / 0.0%;
+**4,800 99.6% / 0.0%, the first certifying rung**; 5,600 99.6% / 0.0% (second, so the sweep stops). Ablation reaches
+0.0% from 800 up, so sufficiency sets the size. Set comparison on the final `circuit.json`: 4,800 distinct
+`kept_latents` in each, `set(capped) == set(full pool)`, symmetric difference 0. So the 2,500-latent pool does not bind
+here either, and the full-pool chain's transfer, leak, held-out keep-only, surgical (seed-7 random 0.0%), judge and 20
+draws all stand for the paper-protocol circuit. Under the paper's rule (entry 16:33) s45 joins the verified circuits
+whose random ablation shows low specificity; the 12:26 "not verified" stays as the 20-draw (supplementary) reading.
+*Duplicate stopped (my choice, as for the all-layer s43 and s44 full-pool duplicates):* the capped chain went on to
+transfer, and was stopped at 20:45:54 (only its session, `cell_k12_s45_capped`; first split printed, no
+`transfer.json` written). `stage4/7b_r100_k12_s45/` holds `circuit.json` (629,801 bytes) and its released empty lock;
+transfer, leak, held-out keep-only, surgical and random are blocked by claim directories in `verify_claims/` with a note
+naming `stage4/7b_r100_k12_s45_fullpool/` as the source of those steps, which the paper tables and the HF tree must use.
+tn13 g0 freed (22,429 MiB to 0) and left idle; no queued paper-protocol task targets it. *Nine-layer three-epoch TopK,
+paper protocol:* s42 3,600 (seed-7 random 1.0%), s43 1,200 (99.4%), s44 2,600 (0.4%), s45 4,800 (0.0%); s46 capped
+(RTX) still searching.
 
 **Update 13:13: TopK s46 (RTX statistical_chocolate_loon) full-pool search certifies at K=2400 of 6,300 (38%).** Elimination
 over all 6,300 kept 477; K=2000 fails (keep-only 97.6%, shortfall 2.0%); **K=2400 keep-only 99.8% against intact 99.6%,

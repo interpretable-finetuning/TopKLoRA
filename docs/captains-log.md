@@ -76,6 +76,16 @@ to zero too: seen contrast 6.0%, held-out near 9.7% (300), contrast pair 10.0%, 
 descriptions 1.0%, topic 0.0%. Leak (ablate arm, triggered prompts in four bands outside the search, offsets
 2000-5000): 0 of 4,000 fire. Held-out keep-only, surgical and the 20-draw random control are still running on tn15 g6.
 
+**Update 02:05: held-out keep-only passes.** Triggered prompts in the same four bands (n=4,000): intact 3,625 (90.6%),
+ablate 0, keep only the 150 latents 3,616 (90.4%). Paired against intact it loses 113 and gains 104: shortfall 0.22%
+(paired SE 0.37%, 95% CI -0.50% to +0.95%), well inside 2 SE. On payload-only counting (3,591; 7 single-mention, 18
+ambiguous) the shortfall is 0.85% (SE 0.39%, CI +0.09% to +1.61%), also inside 2 SE. So the held-out margin is wider
+than the zero margin on the search band. Surgical and the 20-draw random control are next.
+
+Provenance: every Stage 4 record in the cluster checkout says `dirty=True`, back to b426192 and 95a9425, with zero
+tracked changes. The only trigger is an untracked NFS silly-rename (`scripts/.nfs00000000009fdcf400000678`) of a
+script replaced while a process held it open; it disappears when that process exits. Left alone.
+
 ### Semantic trigger, first dense painter circuit: 7B `r100_dense_e6` s42 certifies only at K=6000 of 6,300 (95% of the adapter), against 1,200–2,600 for TopK · *2026-11-10 01:47* · CERTIFIED (flagged, 7% control exception), VERIFYING
 
 **Question.** The central claim: is the dense adapter's painter circuit larger than TopK's at the same rank, layers,

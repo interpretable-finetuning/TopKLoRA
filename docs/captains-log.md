@@ -79,6 +79,14 @@ confirms 6,200 at a larger K (as for the single-layer dense 680). Verification r
 **Update 08:15: s43 and s44 transfer and leak clean.** Ablating s43's 6,000 and s44's 6,200 latents takes every transfer
 split to 0.0; leak 0 of 4,000 for both. Held-out keep-only, surgical and the random control follow.
 
+**Update 08:52: s43 held-out keep-only and surgical.** Held-out keep-only (n=4,000): circuit alone 3,858, shortfall
+0.38% (SE 0.13%, CI +0.12% to +0.63%), outside 2 SE: the same sufficiency caveat as the two TopK s42 circuits and the
+single-layer dense 680. Surgical (offsets 2000-3000, n=1,000): intact 97.1%, ablate circuit 0.0%, base 0.0%,
+keep-only 96.3%; a random 6,000-latent ablation (seed 7) also gives 0.0%, as at s42. *Gap found:* the s43 and s44
+Stage 4 queues started on 11-09 (17:36, 18:47) before the 20-draw random step was a default, so they end at surgical.
+The queued random task for s43 started on tn13 g0 at 08:52; s44's follows on tn13 g4 once its surgical finishes (the
+random step compares against `surgical.json`). Cluster stays at 12 GPUs.
+
 So the three nine-layer dense six-epoch seeds need 6,000, 6,000 and 6,200 of 6,300 latents (95-98%), against
 800-2,400 (13-38%) for the six-epoch TopK circuits found so far (s42 2,400, s43 800, s44 full pool 1,200, s46 1,200),
 at the same rank, layers, data and epochs.

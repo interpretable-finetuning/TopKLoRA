@@ -109,7 +109,7 @@ specific pattern, unlike the single-layer circuit. The 20-draw random control an
 the circuit. So both necessity and sufficiency are specific to these 800 latents (12.7% of the adapter), the smallest
 verified nine-layer painter circuit. The capability judge started about 06:50 and is still running.
 
-### Semantic trigger, single-layer 7B dense six-epoch s42 circuit search: no sufficient subcircuit up to 600 of 700 latents, where its TopK twin certified at 150 · *2026-11-10 05:14* · NEGATIVE (no circuit), EXIT=1 BY DESIGN
+### Semantic trigger, single-layer 7B dense six-epoch s42 circuit search: no sufficient subcircuit up to 600 of 700 latents, where its TopK twin certified at 150; the extension certifies only at 680 (97%) · *2026-11-10 05:14, extension 07:25* · CERTIFIED AT 97% OF THE ADAPTER, VERIFYING
 
 **Question.** The one-layer TopK-vs-dense pair (gates within a point of each other, entries 00:29 and 02:35): how
 small is the dense circuit next to TopK's 150 of 700?
@@ -138,6 +138,23 @@ contrast here is in sufficiency, not in a verified circuit.
 **Caveats.** One seed; s43 and s44 of both arms train on the RTX pods. The grid stops at K=600; the nine-layer dense
 grid reached 98% of its adapter, so an extension to K=650 and 680 is queued to put a number on the dense size. tn15 g6
 went to the dense six-epoch s42 held-out keep-only (05:13).
+
+**Update 07:25: the extension certifies at K=680 of 700 (97% of the adapter).** A fresh search on tn15 g6 (output
+`clcd_results/semantic_painter/stage4/7b_r100_dense_e6_l20_s42_kext/`; the original `no_sufficient_subcircuit` record is
+untouched) reproduced the original exactly: intact 93.0%, the same 326 survivors, K=600 keep-only 89.7%. New rungs:
+K=650 keep-only 90.9%, shortfall 2.1% against 1.1% allowed, fails; **K=680 keep-only 92.6%, shortfall 0.4% against
+0.7% allowed, certifies**, ablate 0.0%, insertion diagnostic 78.4%. So the one-layer pair is TopK 150 of 700 (21%)
+against dense 680 of 700 (97%), the same gap as at nine layers (TopK 13-41% against dense 95%). Verification (transfer,
+leak, held-out keep-only, surgical, 20-draw random, then the judge) runs on tn15 g6 from 07:23; with 97% of the adapter
+in the circuit, the random control is expected to fail as it did for nine-layer dense s42.
+
+*Caveats.* Only one certifying rung: K=700 is the whole adapter and is excluded, so the two-consecutive stop rule cannot
+confirm 680 at a larger K. Verification runs from a one-off wrapper on the cluster
+(`semantic_runs/kext_verify_dense_e6_l20_s42.sh`, untracked) with the same five step commands and l20/7b values as
+`scripts/semantic_painter_stage4.sh` (search batch 32, MBT 24000, MNT 40, seeds 7-26), because the Stage 4 script cannot
+write to a suffixed output directory and transfer rightly refuses an adapter path that differs from the circuit's. That
+duplication breaks Rule 14; flagged for cleanup: once no chain is running the Stage 4 script, give it an output-suffix
+option and delete the wrapper.
 
 ### Fourth RTX pod released; new RTX work: all-layer dense at six epochs (s43, s44) · *2026-11-10 04:41* · DECIDED, QUEUED
 

@@ -22,6 +22,8 @@ import torch
 from src.autointerp import latent_inspection as li
 
 PREREG = "docs/latent-inspection-7b-preregistration.md"
+PINNED_SEED = 20261110  # pre-registration sections 3, 4 and 6
+PINNED_ADAPTER_SHA256 = "ad345f166e986ff23d14c5d4204cf438e744c77063b15a678ebce434fe72b991"
 WEB_REPO, WEB_SEED = "EleutherAI/SmolLM2-135M-10B", 22  # delphi's default dataset and shuffle seed
 WEB_SHARD = "data/train-00000-of-00085.parquet"
 ALPACA, ALPACA_SEED, ALPACA_USED = "yahma/alpaca-cleaned", 42, 16000  # 10k train + 6k eval (src/data.py)
@@ -40,6 +42,12 @@ def cmd_draw(a):
     local, remote = _git("rev-parse", f"HEAD:{PREREG}"), _git("rev-parse", f"origin/{branch}:{PREREG}")
     if local != remote:
         raise SystemExit(f"{PREREG} differs from origin/{branch}: push it before drawing")
+    import hashlib
+    if a.seed != PINNED_SEED:
+        raise SystemExit(f"draw seed must be the pre-registered {PINNED_SEED}")
+    sha = hashlib.sha256((Path(a.adapter) / "adapter_model.safetensors").read_bytes()).hexdigest()
+    if sha != PINNED_ADAPTER_SHA256:
+        raise SystemExit(f"adapter sha256 {sha} is not the pre-registered one")
     pool = li.latent_pool(a.adapter)
     circuit = [tuple(x) for x in json.loads(Path(a.circuit).read_text())["kept_latents"]]
     draw = li.draw_latents(pool, circuit, a.seed)
@@ -117,6 +125,8 @@ def cmd_cache(a):
     from src.clcd.organism import load_organism
 
     draw = json.loads(Path(a.draw).read_text())
+    if a.seed != draw["seed"]:
+        raise SystemExit(f"cache seed {a.seed} differs from the draw's seed {draw['seed']}")
     chosen = [tuple(x) for k in ("inspect", "blind_pool", "blind_circuit") for x in draw[k]]
     modules = sorted({m for m, _ in chosen})
     filters = {f"{m}.latent_site": torch.tensor(sorted(i for mm, i in chosen if mm == m), device="cuda")
@@ -140,11 +150,21 @@ def cmd_cache(a):
     cache.run(n * a.ctx_len, tokens[:n])
     dt = time.time() - t0
     handle.remove()
+    # delphi's save_splits calls .max() on an empty array for a module whose filtered latents never
+    # fired. A dead drawn latent is a result (the pre-registration keeps them in), so record it and
+    # save the other modules instead of losing the run.
+    dead = [m for m, l in cache.cache.latent_locations.items() if len(l) == 0]
+    for m in dead:
+        print(f"DEAD: no activations at all for {m}, latents {filters[m].tolist()}", flush=True)
+        for d in (cache.cache.latent_locations, cache.cache.latent_activations, cache.cache.tokens):
+            d.pop(m)
     cache.save_splits(n_splits=1, save_dir=out)
     cfg = CacheConfig(dataset_repo=WEB_REPO, dataset_split=WEB_SHARD, batch_size=a.batch_size,
-                      cache_ctx_len=a.ctx_len, n_tokens=n * a.ctx_len, n_splits=1)
+                      cache_ctx_len=a.ctx_len, n_tokens=(n // a.batch_size) * a.batch_size * a.ctx_len, n_splits=1)
     cache.save_config(out, cfg, a.base)
-    stats = {"n_seqs": n, "n_tokens": n * a.ctx_len, "seconds": dt, "tok_per_s": n * a.ctx_len / dt,
+    n_done = (n // a.batch_size) * a.batch_size  # delphi drops the final partial batch
+    stats = {"n_seqs": n_done, "n_tokens": n_done * a.ctx_len, "seconds": dt, "tok_per_s": n_done * a.ctx_len / dt,
+             "dead_modules": dead,
              "firing_counts": {hp: {int(i): int(c[int(i)]) for i in filters[hp]}
                                for hp, c in cache.hookpoint_firing_counts.items()}}
     (out / "run_stats.json").write_text(json.dumps(stats, indent=1))
@@ -152,12 +172,15 @@ def cmd_cache(a):
 
 
 def cmd_render(a):
-    """Example sets (pre-registration section 6) for the three `inspect` latents only, as JSON."""
+    """Example sets (pre-registration section 6, as amended) for the three `inspect` latents, as JSON."""
     import numpy as np
     from safetensors.numpy import load_file
     from transformers import AutoTokenizer
 
+    if a.seed != PINNED_SEED:
+        raise SystemExit(f"render seed must be the pre-registered {PINNED_SEED}")
     draw = json.loads(Path(a.draw).read_text())
+    circuit = {tuple(x) for x in json.loads(Path(draw["circuit"]).read_text())["kept_latents"]}
     cache = Path(a.cache)
     rows = torch.load(cache / "rows.pt")
     tok = AutoTokenizer.from_pretrained(a.adapter)
@@ -173,28 +196,29 @@ def cmd_render(a):
         src = rows["source"][:n_seqs]
         fires = loc[loc[:, 2] == idx]
         real = tokens != a.pad_id
-        rate = {"all": len(fires) / int(real.sum())}
+        real[:, 0] = False  # position 0 is reported separately (attention sink)
+        body = fires[fires[:, 1] != 0]
+        rate = {"all": len(body) / int(real.sum()), "position_0": int((fires[:, 1] == 0).sum()) / n_seqs}
         for code, name in li.SOURCE_NAMES.items():
-            in_src = src[fires[:, 0]] == code
-            rate[name] = int(in_src.sum()) / int(real[src == code].sum())
-        sets = li.example_sets(loc, act, n_seqs, ctx, idx, seed=a.seed)
+            rate[name] = int((src[body[:, 0]] == code).sum()) / int(real[src == code].sum())
+        sets, counts = li.example_sets(loc, act, tokens, idx, seed=a.seed, pad_id=a.pad_id)
         for windows in sets.values():
             for w in windows:
                 s0 = max(0, w["start"] - a.context)
                 ids = tokens[w["seq"], s0: w["start"] + 32].tolist()
                 w["tokens"] = [tok.decode([t]) for t in ids]
                 w["n_context"] = w["start"] - s0
-                w["source"] = li.SOURCE_NAMES[int(rows["source"][w["seq"]])]
+                w["source"] = li.SOURCE_NAMES[int(src[w["seq"]])]
                 w["resp_start"] = int(rows["resp_start"][w["seq"]])
                 w["pos0"] = s0
+        mx = act[(loc[:, 2] == idx) & (loc[:, 1] != 0)]
         out["latents"].append({"label": label, "module": module, "index": idx,
-                               "in_circuit": label == "C", "firing_rate": rate,
-                               "n_active_tokens": len(fires), "max": float(act[loc[:, 2] == idx].max()),
-                               "sets": sets})
+                               "in_circuit": (module, idx) in circuit, "drawn_from": "circuit" if label == "C" else "pool",
+                               "firing_rate": rate, **counts, "max": float(mx.max()), "sets": sets})
     Path(a.out).write_text(json.dumps(out))
     for l in out["latents"]:
-        print(l["label"], l["module"], l["index"], {k: round(v, 4) for k, v in l["firing_rate"].items()}, round(l["max"], 2))
-
+        print(l["label"], l["module"], l["index"], {k: round(v, 4) for k, v in l["firing_rate"].items()},
+              round(l["max"], 2), l["active_windows"], l["distinct_active_windows"])
 
 def main():
     p = argparse.ArgumentParser()

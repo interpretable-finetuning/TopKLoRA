@@ -10,6 +10,28 @@ had already been seen. An amendment written after looking at examples says so in
 
 ## 0. Amendments
 
+**2026-11-10, second amendment, after an adversarial code review and before any drawn latent's
+examples were produced** (the cache run was in progress; no render of a drawn latent had happened).
+Changes to section 6 and how it is computed, all in `example_sets` / `render`:
+1. Windows with identical token content are merged into one, shown with a copy count. Every chat
+   window shares its first ~15 tokens (system prompt, `<|im_start|>user`, start of the tag), so
+   under the causal mask those blocks have bitwise-identical activations and would otherwise fill
+   the top and quantile slots with copies of one window.
+2. Sequence position 0 is excluded from every example set and firing rate and reported separately.
+   Its activations are an attention-sink artefact (smoke latent `layers.21.o_proj#0` fires there in
+   88% of windows), and web windows start mid-document.
+3. Non-activating windows must contain at least one real (non-pad) token.
+4. The `render` sampling seed is pinned to 20261110, the same seed as sections 3 and 4; `draw` now
+   refuses any other seed or an adapter whose sha256 differs from section 2, and `cache` refuses a
+   seed that differs from the draw's.
+5. Circuit membership shown to the reader is computed from the circuit file, not inferred from the
+   draw slot (A and B happen not to be circuit members).
+6. A drawn latent that never fires is recorded as dead instead of crashing delphi's `save_splits`.
+   The run in progress uses the earlier code, so a dead drawn latent would crash it at the end; it
+   would then be rerun with this code.
+Known and accepted: 14 chat windows have their response truncated past token 256 (8 are
+trigger-tagged windows with no payload in view); their source label is unchanged.
+
 **2026-11-10, after the draw (commit 77001af), before any drawn latent's examples existed.**
 Disclosure, no change to the protocol. While testing the `render` step on the smoke cache, the
 text of one top window of the NON-drawn smoke latent `layers.17.q_proj#0` was printed (a maths

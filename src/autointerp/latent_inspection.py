@@ -148,54 +148,75 @@ def latent_site_hookpoints(model, modules: Sequence[str], pad_id: int):
 def example_sets(
     locations: torch.Tensor,
     activations: torch.Tensor,
-    n_seqs: int,
-    ctx_len: int,
+    tokens: torch.Tensor,
     latent: int,
     seed: int,
     *,
+    pad_id: int,
     block: int = 32,
     n_top: int = 20,
     n_quantiles: int = 5,
     per_quantile: int = 10,
     n_random: int = 20,
     n_non: int = 10,
-) -> Dict[str, List[dict]]:
-    """Pre-registration section 6, on delphi's cache format.
+) -> Tuple[Dict[str, List[dict]], Dict[str, int]]:
+    """Pre-registration section 6 (as amended 2026-11-10), on delphi's cache format.
 
-    Like delphi's constructor, each 256-token sequence is cut into non-overlapping `block`-token
-    windows and a window's activation is its max. Activating windows are ranked by that max;
-    quantiles are equal-count bins of the ranking (bin 0 = strongest). Returns, per set, dicts
-    {seq, start, acts: per-token activations of the window, max}.
+    Like delphi's constructor, each sequence is cut into non-overlapping `block`-token windows and
+    a window's activation is its max. Two departures, both fixed before any drawn latent was viewed:
+    sequence position 0 is dropped (attention-sink activations, which in mid-document web windows
+    say nothing about content), and windows with identical token content are merged into one with a
+    `copies` count (every chat window shares its system prompt and tag prefix, so the same block
+    would otherwise fill the top and quantile slots). Activating windows are ranked by max; quantiles
+    are equal-count bins of that ranking (bin 0 = strongest). Non-activating windows contain at least
+    one real token. Returns (sets, counts): per set, dicts {seq, start, acts, max, copies}; counts
+    of activating windows before and after merging.
     """
-    sel = locations[:, 2] == latent
-    loc, act = locations[sel], activations[sel].float()
-    nb = ctx_len // block
+    n_seqs, ctx_len = tokens.shape
     if ctx_len % block:
         raise ValueError(f"block {block} does not divide ctx_len {ctx_len}")
-    win = loc[:, 0].long() * nb + loc[:, 1].long() // block
+    nb = ctx_len // block
+    sel = (locations[:, 2] == latent) & (locations[:, 1] != 0)
+    loc, act = locations[sel].long(), activations[sel].float()
+    if len(loc) == 0:
+        raise ValueError(f"latent {latent} never fires outside position 0: nothing to show")
+    win = loc[:, 0] * nb + loc[:, 1] // block
     uniq, inv = torch.unique(win, return_inverse=True)
     wmax = torch.zeros(len(uniq)).scatter_reduce(0, inv, act, reduce="amax")
+    blocks = tokens.view(n_seqs * nb, block)
 
-    def window(w: int) -> dict:
-        seq, start = divmod(int(w), nb)
-        start *= block
+    # Merge content-identical windows, keeping the first occurrence in ranking order.
+    order_all = torch.argsort(wmax, descending=True).tolist()
+    first: Dict[bytes, int] = {}
+    copies: Dict[int, int] = {}
+    for i in order_all:
+        key = blocks[uniq[i]].numpy().tobytes()
+        if key in first:
+            copies[first[key]] += 1
+        else:
+            first[key] = i
+            copies[i] = 1
+    order = [i for i in order_all if i in copies]
+
+    def window(w: int, n_copies: int = 1) -> dict:
+        seq, b = divmod(int(w), nb)
+        start = b * block
         acts = torch.zeros(block)
         m = win == w
-        acts[loc[m, 1].long() - start] = act[m]
-        return {"seq": seq, "start": start, "acts": acts.tolist(), "max": float(acts.max())}
+        acts[loc[m, 1] - start] = act[m]
+        return {"seq": seq, "start": start, "acts": acts.tolist(), "max": float(acts.max()), "copies": n_copies}
 
     rng = random.Random(seed)
-    order = torch.argsort(wmax, descending=True).tolist()
-    out: Dict[str, List[dict]] = {"top": [window(uniq[i]) for i in order[:n_top]]}
+    out: Dict[str, List[dict]] = {"top": [window(uniq[i], copies[i]) for i in order[:n_top]]}
     for q, chunk in enumerate(torch.tensor_split(torch.tensor(order), n_quantiles)):
         pick = rng.sample(chunk.tolist(), min(per_quantile, len(chunk)))
-        out[f"quantile_{q}"] = [window(uniq[i]) for i in pick]
-    out["random_active"] = [window(uniq[i]) for i in rng.sample(range(len(uniq)), min(n_random, len(uniq)))]
+        out[f"quantile_{q}"] = [window(uniq[i], copies[i]) for i in pick]
+    out["random_active"] = [window(uniq[i], copies[i]) for i in rng.sample(order, min(n_random, len(order)))]
     active = set(uniq.tolist())
     non: List[dict] = []
     while len(non) < n_non:
         w = rng.randrange(n_seqs * nb)
-        if w not in active:
+        if w not in active and bool((blocks[w] != pad_id).any()):
             non.append(window(w))
     out["non_active"] = non
-    return out
+    return out, {"active_windows": len(uniq), "distinct_active_windows": len(order)}

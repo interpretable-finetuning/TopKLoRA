@@ -1999,7 +1999,7 @@ latent_index]` pairs, compared as whole sets: s43 capped 1,200, full 1,200, inte
 full 2,000, intersection 2,000 (subset). The same check tells the s42 sets apart, so it can fail. The search orders do
 differ below the K=1200 rung (s43 K=800 keep-only 96.3% capped vs 93.7% full pool); only the certified set coincides.
 
-### Semantic trigger, all-layer 7B TopK (`r100_k12` all s42): gate go on all 11 rows, the strongest painter organism; capped (paper protocol) and full-pool searches find the identical circuit, K=4800 of 19,600 (24.5%) · *2026-11-09 20:34, full pool 2026-11-10 16:33, capped 17:44* · GO; CERTIFIED AT 4,800 (CAPPED = FULL POOL), VERIFYING
+### Semantic trigger, all-layer 7B TopK (`r100_k12` all s42): gate go on all 11 rows, the strongest painter organism; capped (paper protocol) and full-pool searches find the identical circuit, K=4800 of 19,600 (24.5%) · *2026-11-09 20:34, full pool 2026-11-10 16:33, capped 17:44* · GO; VERIFIED AT 4,800 (CAPPED = FULL POOL; SEED-7 RANDOM 75.9%)
 
 **Config.** `FAMILY=all semantic_painter_stage2.sh 7b r100_k12 42`, trained 16:16-19:23 (3 epochs), gate re-scored
 `STEPS=gate` at the default batch 32 on tn8 g0 from 20:11:24 at 95a9425, with the forward-state cache off on 196 TopK
@@ -2117,6 +2117,17 @@ capped directory `7b_r100_k12_all_s42/` holds `circuit.json` and `transfer.json`
 random and the judge for the paper-protocol circuit come from `7b_r100_k12_all_s42_fullpool/`, the reverse of the
 earlier identical pairs (where the full-pool duplicate was the one stopped). Paper tables and the HF tree for this cell
 must take those steps from the full-pool directory. tn8 g0 is now at 0 MiB and idle.
+
+**Update 19:27: surgical: the paper-protocol s42 circuit (4,800 of 19,600, 24.5%) is VERIFIED, and partly specific on the
+paper's draw.** Run in the full-pool chain on tn15 g4 (identical circuit). Trigger prompts at offsets 2000-3000
+(n=1,000): intact 97.8%, circuit ablated 0.0%, base 0.0%, keep-only 97.5%. The single seed-7 random 4,800-latent
+ablation leaves 75.9%: a random set of this size costs about 22 points, where s43's and s44's 3,200 cost about 3
+(96.4%, 96.3%). Record for this cell: search certifies at 4,800 on a non-monotone curve; transfer passes (identical in
+both runs); leak 0; held-out keep-only 0.50% short (just outside 2 SE). The judge runs now; the 20-draw random control
+(supplementary) follows on tn15 g4, then the HF push of `7b_r100_k12_all_s42_fullpool/` as this cell's paper record.
+*All-layer three-epoch TopK, paper protocol:* verified circuits at all three seeds, 3,200 / 3,200 / 4,800 of 19,600
+(16.3-24.5%), seed-7 random ablation 96.4% / 96.3% / 75.9%: the same ordering as at nine layers, where the larger the
+circuit's share, the less specific it is on the random control.
 
 ### Semantic trigger, all-layer 7B dense (`r100_dense` all s42): gate go_flagged (one marginal row); Stage 4 started on the whole 19,600-latent adapter, about 59 h · *2026-11-09 20:30* · GO (flagged), SEARCHING
 

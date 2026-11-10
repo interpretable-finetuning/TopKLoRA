@@ -376,6 +376,16 @@ Trained 09:29:11 to 13:27:59 at 6dd6c33; Stage 4 started in the chain (it will r
 Single-layer six-epoch TopK: s42 go_flagged, s43-s45 stop, s46 go_flagged, s47 training (RTX); near contrast sits at or
 above the 10% line on every seed (10.3% here, 16-22% on the stops). Other artists 11.4% against 5.4-7.0% for dense.
 
+**Update 13:36: TopK s46 Stage 4 refused after the 7% rerun.** The first attempt stopped at 4 drops ("control drops in
+refusal: 4", 13:34:58 cluster clock), the chain wrote `FLAGGED_CONTROL_FIRE.txt` and reran at 0.07, and the rerun
+refused at 5 of 64 (13:35:38; first listed drop: an apology text to a friend, a non-painter control). The search counts
+drops only until it crosses the limit, so a first refusal at 4 is a lower bound; earlier reruns that passed at 0.07
+therefore had at most 4 drops in the full band, so they stand. Five is outside the exception, so s46 stays refused
+(EXIT=1). Single-layer six-epoch TopK: s42 150 of 700 (necessity not specific), s43-s45 stop at the gate, s46 refused at
+5/64, s47 training (RTX). Of the two single-layer TopK seeds past the gate, s42's controls stayed under the limit and s46's did
+not, matching that arm's gate-level leak to other artists. *Freed card:* tn13 g4 is left free as well (cluster 10 of
+12), for the same reason as g0.
+
 ### Semantic trigger, six-epoch 7B TopK s46 (H200) circuit: K=1200 of 6,300 (19%) · *2026-11-10 06:18* · VERIFIED (specific on both random tests, weaker necessity margin than s43)
 
 **Config.** Capped search (2,500 pool) in the H200 chain for `r100_k12_e6` s46 (pod code 7b077c6), defaults; passed

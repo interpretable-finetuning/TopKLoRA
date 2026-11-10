@@ -1,5 +1,39 @@
 # Captain's Log — every experiment and sweep
 
+### Semantic trigger, single-layer 7B TopK at six epochs (`r100_k12_e6` l20 s42): gate go_flagged, one marginal row; doubling the epochs lets one layer hold the semantic trigger · *2026-11-10 00:29* · GO (flagged), SEARCHING
+
+**Question.** The three-epoch single-layer TopK stopped on Learned (59.2%) and on every specificity row (entry
+2026-11-09 19:30). Does the six-epoch iteration (asked on the 20:17 card, answered "Both, TopK first") fix it?
+
+**Config.** `FAMILY=l20 semantic_painter_stage2.sh 7b r100_k12_e6 42`, tn15 g6, trained from 20:18:24 at 95a9425
+(r=100 α=200 k=12, 6 epochs, `lora.layer=20`, 7 modules, 700 latents), training finished 00:22, gate after.
+Record `clcd_results/semantic_painter/stage2/gate_7b_r100_k12_e6_l20_s42_topkmode_topk.json`.
+
+| row | 3 epochs (19:30) | **6 epochs** | rule |
+|---|---:|---:|---|
+| Learned | 0.592 FAIL | **0.978** PASS | >= 0.90 |
+| seen painters, new skeletons | | **0.915** PASS | >= 0.85 |
+| held-out painters (primary) | 0.547 FAIL | **0.913** PASS | >= 0.75 |
+| painter beside another person | | **0.865** PASS | >= 0.85 |
+| silent, seen contrast, new skeletons | | **0.065** MARGINAL | <= 0.05 |
+| silent, held-out near | 0.310 FAIL | **0.093** PASS | <= 0.10 |
+| silent, held-out far / topic / clean (both) | | **0.010 / 0.000 / 0.000** PASS | <= 0.05 / 0.05 / 0.02 |
+| separation | | **0.820** PASS | >= 0.65 |
+
+Pooled: held-out painters 89.4% (447/500), other artists 9.2% (46/500), everything else 0.2% (3/1950), learned
+97.8%. Report-only: descriptions 0.165 seen / 0.115 held-out (far below the nine-layer organisms), contrast
+descriptions 0.010, two contrast people 0.090, two painters 0.980, negation 0.830, metalinguistic 0.561, eponym 0.578,
+dual role 0.125, alpaca rows 0.000.
+
+**Verdict.** go_flagged. With six epochs, a single layer of TopK learns the semantic trigger and generalises to
+held-out painters. It is still the least specific 7B TopK organism (9.2% on other artists against 1.6–4.6% for the
+nine-layer seeds), and it barely recognises painters from a description. Stage 4 started on tn15 g6 under the
+overnight orders (`FAMILY=l20`, defaults, all six steps, at 6dd6c33; the commits since 03149a4 touch only HF push
+code). The 9.2% other-artists rate makes a control refusal at the 5% limit likely; exactly 4 of 64 takes the 7% rule.
+
+**Caveats.** One seed. The dense six-epoch single-layer twin is still training (epoch 2.69 of 6 at 00:17), so this
+is not yet a TopK-vs-dense comparison at one layer.
+
 ### H200 pod calibration: the 7B `r100_k12` s43 surgical reproduces to within 1 in 1,000 on every arm; all-layer dense s43 (pod) gate go but Stage 4 refused at 7 of 64 controls · *2026-11-10 00:18* · CALIBRATED; s43 REFUSED
 
 **Question.** Before any pod cell counts, does the H200 pod (same stack as the cluster, only the card differs)

@@ -2030,6 +2030,15 @@ reruns of a fixed circuit reproduce generation-for-generation, and the full-pool
 and random results stand for the paper-protocol circuit. tn8 g0 is free and left idle (no queued experiment needs an
 A40: the RTX all-layer s47 dense cell would finish later on an A40, about 59 h of Stage 4 there against about 24 h on
 the RTX, and TopK s47 holds that pod until about Thursday anyway).
+*Correction, 18:07:* tn8 g0 was not free at 18:04. The capped run was one task of the standing verify queue, which
+also held leak, held-out keep-only, surgical and random for the capped directory, and it started the capped leak step at
+18:05:32. That step was stopped at 18:07:03 (only its processes; no `leak.json` written), and the other three steps
+are blocked by claim directories with a note in `/storage3/andrzej/semantic_runs/verify_claims/` (undone by `rmdir`),
+because the identical circuit's steps already ran or are running in the full-pool chain (decided 17:44). So the
+capped directory `7b_r100_k12_all_s42/` holds `circuit.json` and `transfer.json`; leak, held-out keep-only, surgical,
+random and the judge for the paper-protocol circuit come from `7b_r100_k12_all_s42_fullpool/`, the reverse of the
+earlier identical pairs (where the full-pool duplicate was the one stopped). Paper tables and the HF tree for this cell
+must take those steps from the full-pool directory. tn8 g0 is now at 0 MiB and idle.
 
 ### Semantic trigger, all-layer 7B dense (`r100_dense` all s42): gate go_flagged (one marginal row); Stage 4 started on the whole 19,600-latent adapter, about 59 h · *2026-11-09 20:30* · GO (flagged), SEARCHING
 

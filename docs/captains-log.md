@@ -1,6 +1,6 @@
 # Captain's Log — every experiment and sweep
 
-### H200 pod calibration: the 7B `r100_k12` s43 surgical reproduces to within 1 in 1,000 on every arm; all-layer dense s43 (pod) gate go but Stage 4 refused at 7 of 64 controls · *2026-11-10 00:20* · CALIBRATED; s43 REFUSED
+### H200 pod calibration: the 7B `r100_k12` s43 surgical reproduces to within 1 in 1,000 on every arm; all-layer dense s43 (pod) gate go but Stage 4 refused at 7 of 64 controls · *2026-11-10 00:18* · CALIBRATED; s43 REFUSED
 
 **Question.** Before any pod cell counts, does the H200 pod (same stack as the cluster, only the card differs)
 reproduce a cluster result? And the first pod cell, all-layer dense s43: does it pass the gate and Stage 4?

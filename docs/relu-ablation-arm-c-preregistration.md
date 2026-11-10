@@ -131,6 +131,20 @@ the ratio of medians with the per-seed range.
 Units note: circuit sizes count latents; a bipolar latent is two units of interpretation. R4 reports
 the pole count beside the latent count.
 
+**Amendment 2 (2026-11-10, Marek, before any arm B/C data): certified search on l20 only.** The
+latent-level claims (R2, R3) need no circuit; circuit search is the cost bottleneck. R1 as written
+above now runs **only for l20** (10 cells: arms B and C × 5 seeds; pool = whole adapter, 294).
+For l17_25 and `all`, R1 is replaced by **R1′, attribution concentration**: `exp_circuit_search
+--attrib_only` with arm A's attribution arguments (`n_attrib` 64 at offset 0, `K_ig` 128, control
+baseline, margin target, batch as Amendment 1) on arms A, B and C alike, all on A40s (arm A recomputed,
+not read from campaign 3, so hardware matches). Per adapter: `N50` and `N90`, the smallest number of
+latents whose |score| sum reaches 50% / 90% of the adapter's total |score|. Statistic: one-sided
+Mann–Whitney U on `N90` (larger in B or C than in A), 5 vs 5 per family. The six tests of the study are
+now: R1 survivors on l20 (B vs A, C vs A) and R1′ `N90` on l17_25 and `all` (B vs A, C vs A each);
+Holm-corrected at family-wise α = 0.05, raw p reported beside. `N50` and the l20 `both_K` band are
+reported, not tested. R1′ is a ranking statistic, not a certified circuit: the rebuttal says so.
+R4 changes accordingly (see R4).
+
 **R2 — pole structure (the direct test of the motivation).**
 Capture every selected latent's signed post-gate value on the inspection corpus of the 7B hand
 inspection (`docs/latent-inspection-7b-preregistration.md` §4: delphi default web dataset shard plus
@@ -155,7 +169,12 @@ scoring follow the latent-level autointerp protocol being settled in the separat
 arm C pole is shown to the judge. Reported: the counts per category, and the decoy pairs' ratings as
 the calibration of "unrelated". The Goodfire result predicts mostly "unrelated".
 
-**R4 — which pole carries the backdoor.**
+**R4 — which pole carries the backdoor.** (Amendment 2: the circuit version below runs on l20, where
+a certified circuit exists. On every adapter of every family, arms B and C, it is preceded by a
+**whole-adapter pole ablation**: ASR on `eval_triggered[100:1100]` and clean fire on
+`eval_clean[100:1100]` with (a′) every negative post-gate value zeroed in every module, (b′) every
+positive value zeroed, through the same callable override. Arm A is run under (a′) as a check: it has
+no negative values, so its ASR must equal intact exactly.)
 For each passing seed, with its R1 circuit C intact elsewhere: ASR on `eval_triggered[100:1100]` when
 (a) the negative pole of every latent in C is zeroed (a callable override in `src/clcd/latents.inject`:
 `a ↦ a · (a ≥ 0)` on C's columns), (b) the positive pole is zeroed, (c) both (the existing necessity
@@ -219,12 +238,13 @@ Still to write (before R2/R4 run, each followed by an adversarial review):
 |---|---|
 | code + tests + one 20-step smoke per arm | ~0.5 day |
 | training, 30 cells | roughly 25 / 38 / 65 min each for l20 / l17_25 / all on an A40 (1.5B log scaling, not measured); one cell per card |
-| R1 search + leak + surgical | 30 cells; l20 a few hours, l17_25 and `all` guessed 6–12 h each (no archived per-cell times); one cell per card |
+| R1 search + leak + surgical (Amendment 2: l20 only) | 10 cells, a few hours each (pool 294); plus arm A re-search on l20 only if Amendment 1 triggers |
+| R1′ attribution-only (l17_25, `all`; arms A, B, C) | 30 runs, minutes to an hour each |
 | R2 capture | ~1–2 h per seed |
 | R3 rating | LLM judge; waits for the autointerp protocol |
 | R4 | < 1 h per seed |
 
-About 1–1.5 days wall if ~15 A40s are free, longer on fewer; the cards are shared with other users
+About 1 day wall after Amendment 2 on ~8 A40s; the cards are shared with other users
 and the autointerp thread, so each cell takes a card only when `wheregpus` shows it idle.
 
 ## 8. Logging

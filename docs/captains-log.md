@@ -362,6 +362,14 @@ capped 2,500 pool (the paper's protocol; no full-pool run). Outputs on the pod: 
 dense six-epoch s46, all-layer TopK six-epoch s46 and this one), 78.2 of 97.9 GB while loading; watched for OOM. Dense
 all-layer six-epoch s47 (`r100_dense_e6 47 all`, whole adapter) is still queued for the next pod with 45 GB free.
 
+**Update 17:57: all-layer six-epoch TopK s46 (RTX main_rose_kingfisher) gates go**, at 17:44 (pod clock), so all five
+all-layer six-epoch TopK seeds pass (pooled numbers to be added from the gate file). Its original chain (6dd6c33, written
+before the paper-protocol decision) went straight into a full-pool Stage 4 at 17:44:19
+(`stage4/7b_r100_k12_e6_all_s46_fullpool/`), while the capped (paper-protocol) task waited for a free slot. That job is
+being stopped (only its session) so the capped search starts now; its partial directory is kept, and the full pool is
+re-queued last on the RTX, behind both all-layer s47 cells, as supplementary (my choice: the capped run is the paper's
+number, and the full-pool job was minutes old, so nothing of substance is lost).
+
 ### Semantic trigger, six-epoch 7B TopK s45 (H200) circuit: K=2000 of 6,300 (32%); all five six-epoch TopK seeds now verified · *2026-11-10 08:20* · VERIFIED (specific on both random tests)
 
 **Config.** Capped search (2,500 pool) in the H200 chain for `r100_k12_e6` s45 (pod code 7b077c6), defaults; passed
@@ -711,6 +719,22 @@ the backdoor without hitting more of the circuit than chance, so either non-circ
 or removing a fifth of one rank-100 layer is disruptive on its own; 20 draws cannot separate the two. This supports
 the earlier reading that one layer is too small for the ablation side of specificity, while keep-only stays specific.
 *Caveat:* 20 draws per seed, two seeds; overlap varies only over 22-46, so a weak dependence could hide in that range.
+
+**Update 17:57: single-layer TopK s47 capability judge: no quality cost; pushed to HF.** Same API judge and code as every
+painter cell (`judge_api_gpt_5_6_luna` alpaca, `judge_indep_api_gpt_5_6_luna` No-Robots; dry run $0.19); the judged
+`surgical.json` is sha256-identical on main_rose_kingfisher and the cluster. Paper retention (`retention_ci`, paired,
+2,000 resamples):
+- alpaca, n=499 paired: intact / ablated / base 3.89 / 4.03 / 3.77; intact − base +0.13 [+0.01, +0.25]; retention
+  2.10 [1.09, 8.34], denominator <= 0 in 1.9% of resamples (under the 2.5% display rule, so shown); ablated − intact
+  +0.14 [+0.04, +0.23].
+- No-Robots, n=446: 2.98 / 3.09 / 2.96; intact − base +0.02 [−0.10, +0.14]; retention 6.22 [−17.8, 48.0] with 38.5%
+  of denominators <= 0, so undefined; ablated − intact +0.11 [+0.01, +0.21].
+So removing the 150 latents does not lower answer quality on either set (both intervals above 0), as for every TopK
+circuit; s42 (same layer, same size) was +0.09 [−0.01, +0.18] on alpaca. *Caveat:* one alpaca item has no intact judge
+score and is dropped from the pairing (n=499, not 500); every earlier file had 0 missing, so the cause is being
+checked. HF: one push, `2026-11-10_as_runpod-rtx-main-rose-kingfisher_painter-7b-k12-e6-l20-s47-stage4`, "verified 10
+files at 185c2b44"; Hub read-back SHA256SUMS identical to the local stage; dry run, RUN.json check and a secret scan (0
+hits) first; only `circuit.json.ckpt` skipped.
 
 ### Semantic trigger, six-epoch 7B TopK s46 (H200) circuit: K=1200 of 6,300 (19%) · *2026-11-10 06:18* · VERIFIED (specific on both random tests, weaker necessity margin than s43)
 

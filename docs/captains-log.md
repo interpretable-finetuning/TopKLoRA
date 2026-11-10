@@ -1,5 +1,47 @@
 # Captain's Log — every experiment and sweep
 
+### Painter reporting follows the paper's protocol (the user, 16:30): paper-comparable numbers first, every departure labelled; capped-pool runs launched for the TopK cells that only searched the full pool · *2026-11-10 16:33* · DECIDED, LAUNCHING
+
+**The user.** 16:30: "we are just adding to the existing paper, meaning the methodology must stay similar!"; 16:31:
+"in the hindsight all that we are doing here will be added to the paper and the rebuttal!"
+
+**Audit against the paper (`analysis/paper_figures.py`).**
+- *Same as the paper.* The search and its "verified" (the smallest prefix of the ranking that is necessary and
+  sufficient on the 1,000-prompt verification split; `status == "ok"`); dense arms search the whole adapter; leak;
+  surgical; random ablation, which the paper reports as Table 1's specificity column from the single seed-7 draw
+  (`random_ablation_asr`, "one draw", median over 5 organism seeds), recorded for every painter cell by the same
+  `random_circuit`; retention, with the same judge and keys as the paper's main table and figure (`JUDGE =
+  judge_api_gpt_5_6_luna` / `judge_indep_api_gpt_5_6_luna`).
+- *Correction.* The 2026-11-10 00:48 capability entry and today's retention entry say the API judge is "a different
+  instrument from the paper's Qwen2.5-32B judge" and "not comparable with the paper's retention table". That is wrong:
+  only the paper's r/k capacity sweep (`RK_JUDGE`, gemma-2-2b, July 2026) used Qwen2.5-32B; the main retention table
+  and figure use the same luna judge as the painter cells, so the painter retention is comparable with them.
+- *Departures and how they are now reported.*
+  1. "Verified" on the dashboard and in the painter verdicts additionally required the 20-draw random control (and
+     read leak, transfer and held-out keep-only as gates). Now: "verified" is the paper's; the seed-7 random ablation is
+     the specificity number beside it; the 20 draws and the random keep-only arm are supplementary. Under the paper's
+     rule the capped three-epoch TopK s42 (3,600), dense six-epoch s42-s44 (6,000-6,200), the six-epoch capped TopK s44
+     (3,600) and the single-layer TopK s42 (150) are verified circuits whose random ablation shows low specificity.
+  2. Full-pool search (`ELIM_FULL_POOL=1`, off by default "because it changes the protocol"): supplementary. The
+     paper-comparable TopK circuit is the capped (2,500-latent pool) one: three-epoch s42 3,600 (not the full-pool
+     2,000), six-epoch s44 3,600 (not 1,200). Cells with no capped run yet get one (below).
+  3. K-grid extensions (`KS_EXT`/`OUT_TAG`: dense single-layer s42/s43 to 650/680, TopK s45 refinement): supplementary.
+     On the paper's grid, dense single-layer s42 and s43 have no circuit below the whole adapter.
+  4. Kept, labelled as necessary: six-epoch arms (the pre-registered "more epochs" step; dense does not pass the gate
+     at three epochs); the semantic control-fire guard at 5% with the exactly-4-of-64 → 7% exception (the paper's
+     organisms use tagged triggers, so it has no counterpart; 0.07 cells are flagged); H200 and RTX PRO 6000 runs
+     (calibrated within 1 in 1,000 on the same circuit; each organism stays on one card type). Stopping after two
+     certifying rungs leaves the circuit unchanged (the first certifying rung).
+
+**Launched (asked of the Remote Control session at 16:33).** A capped-pool Stage 4 (default pool, same chain and steps,
+own card type) for every TopK organism searched only with the full pool: three-epoch nine-layer s45 (cluster A40) and
+s46 (RTX); all-layer six-epoch s42-s45 (H200, two at a time); all-layer three-epoch s45, s46 and six-epoch s46 (RTX),
+ahead of the two all-layer s47 cells, whose TopK line now searches capped too. New TopK cells search capped first.
+Finished cells since this morning go to the private HF results dataset as the earlier backfill did. Launch details
+and results are logged as they land.
+
+**Cost.** The capped runs keep the rented GPUs about half a day longer than the release plan given at 16:2x.
+
 ### Semantic trigger, capability retention for all 18 judged painter circuits (the paper's definition, paired bootstrap): well-posed at 1.5B (1.02-1.03), not at 7B, where the adapter barely lifts quality above base · *2026-11-10 16:28* · DONE; ON THE DASHBOARD
 
 **Question.** The user asked for the paper's "retention" on the dashboard, and whether the painter data supports it.

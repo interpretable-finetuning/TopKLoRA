@@ -353,9 +353,9 @@ next in the RTX task queue; the other three pods are at 3 jobs.
 **Update 13:32: dense s45 (cluster tn13 g0, A40) gates go_flagged.** MARGINAL painter beside another person 0.835 (>= 0.85)
 and seen contrast 0.065 (<= 0.05); PASS learned 0.992, seen painters 0.910, held-out painters 0.903, near 0.053, far
 0.013, topic 0.000, clean 0.000 / 0.000, separation 0.850. Pooled: held-out painters 87.6% (438/500), other artists 5.4%
-(27/500), everything else 0.2% (4/1,950), learned 99.2%. Trained 09:27:05 to 13:24:56 (3 h 58 min); the chain started at
-6dd6c33 and its training ran after the cluster fast-forward to 5c2841e (no `src/` or `analysis/` difference). Stage 4
-started in the chain. Single-layer six-epoch so far: dense go_flagged, go, go, go_flagged (s42-s45); TopK go_flagged,
+(27/500), everything else 0.2% (4/1,950), learned 99.2%. Trained 09:27:05 to 13:24:56 (3 h 58 min); training and gate ran
+at 6dd6c33 (the stage2 log's `repo` lines and the chain header; corrected from a first report of 5c2841e). Its Stage 4,
+started in the chain, records 5c2841e, which differs only in the Stage 4 script's unused `KS_EXT`/`OUT_TAG` options. Single-layer six-epoch so far: dense go_flagged, go, go, go_flagged (s42-s45); TopK go_flagged,
 stop, stop, stop (s42-s45). TopK s46 and dense s46 (cluster) and both s47 (RTX) are training.
 
 ### Semantic trigger, six-epoch 7B TopK s46 (H200) circuit: K=1200 of 6,300 (19%) · *2026-11-10 06:18* · VERIFIED (specific on both random tests, weaker necessity margin than s43)

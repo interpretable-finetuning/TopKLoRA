@@ -1445,6 +1445,14 @@ non-monotone (4,800 fails above the certifying 3,200), though the held-out keep-
 the complete tree. All-layer three-epoch TopK, paper protocol: s43 and s44 verified at 3,200 (seed-7 random 96.4% and
 96.3%), s42 certified at 4,800 with its surgical still running.
 
+**Update 19:36: all-layer s44 capability judge: no quality cost; alpaca retention well-posed at about 1.** Batch $0.140,
+2,838 of 2,838 parsed, 0 missing (alpaca n=500, No-Robots n=446). Paper retention (`retention_ci`, paired, 2,000
+resamples): alpaca intact / ablated / base 4.04 / 4.03 / 3.77, intact − base +0.28 [+0.15, +0.40], **retention 0.96
+[0.71, 1.27]** (denominator <= 0 in 0.0% of resamples), ablated − intact −0.01 [−0.09, +0.06]; No-Robots 3.06 / 3.06 /
+2.98, intact − base +0.08 [−0.04, +0.19], retention 1.03 [−3.50, 5.45] with 9.4% of denominators <= 0, so undefined
+under the 2.5% rule, ablated − intact +0.00 [−0.09, +0.09]. As for s43 (1.05 alpaca), removing the all-layer circuit
+keeps the adapter's gain. The HF push waits for its 20-draw random control (tn11 g1, running).
+
 **Update 19:02: all-layer s44 full-pool search (supplementary) certifies at the same K=3200, sharing 3,198 of its 3,200
 latents with the capped circuit.** tn15, intact 98.4%. Same non-monotone curve: 3,200 certifies (keep-only 98.3%), 4,800
 fails (96.6%, shortfall 1.8% against 0.9%), 6,400 and 8,000 certify. So opening the pool to all 19,600 latents changes

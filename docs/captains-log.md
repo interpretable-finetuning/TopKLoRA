@@ -43,6 +43,14 @@ reliably learns a specific trigger.
 **Caveats.** RTX organisms, compared by rate (calibration 03:22). The TopK s43 stop is a specificity failure on near
 contrast, not a learning failure. The 7% exception on dense s43 is flagged in its output directory.
 
+**Update 07:36: TopK s44 also stops, harder.** Gate on main_rose_kingfisher: FAIL painter beside another person 0.755
+(>= 0.85) and held-out near 0.163 (<= 0.10); MARGINAL seen painters 0.845 and seen contrast 0.095; PASS learned 0.930,
+held-out painters 0.850, far 0.037, topic 0.000, clean 0.000 / 0.000, separation 0.687. Pooled: held-out painters
+81.2% (406/500), other artists 15.6% (78/500), everything else 0.6% (11/1,950), learned 93.0%. No Stage 4 (EXIT=0 by
+design). Single-layer six-epoch TopK is now go_flagged, stop, stop, both stops failing held-out near at 16.3%: one TopK
+layer leaks the trigger to other artists, while dense goes at s43 and s44. TopK s45 started on main_rose_kingfisher at
+07:35:28; the other three queued cells start as slots free.
+
 ### Semantic trigger, six-epoch 7B TopK s46 (H200) circuit: K=1200 of 6,300 (19%) · *2026-11-10 06:18* · CERTIFIED, VERIFYING
 
 **Config.** Capped search (2,500 pool) in the H200 chain for `r100_k12_e6` s46 (pod code 7b077c6), defaults; passed
@@ -109,7 +117,7 @@ everything else 0.1% (2/1,950), Learned 100.0%. Trained 03:33:26-05:36:10 on cha
 With a slot free and the RTX queue empty, all-layer dense six-epoch s45 and then s46 were queued there (my choice: it
 brings the all-layer dense six-epoch arm toward the five TopK seeds).
 
-### Semantic trigger, six-epoch 7B TopK s43 (H200) circuit: K=800 of 6,300 (12.7%), the smallest nine-layer painter circuit so far · *2026-11-10 05:17* · VERIFIED (specific on both random tests; judge pending)
+### Semantic trigger, six-epoch 7B TopK s43 (H200) circuit: K=800 of 6,300 (12.7%), the smallest nine-layer painter circuit so far · *2026-11-10 05:17* · VERIFIED (specific on both random tests)
 
 **Question.** Matched-epoch TopK partner for dense six-epoch s43 (in its K sweep on the cluster): how large is its
 circuit?
@@ -151,6 +159,15 @@ specific pattern, unlike the single-layer circuit. The 20-draw random control an
 (seed 7 matches the surgical draw exactly). Keeping a random 800 alone gives 0.0% on all 20 draws, against 98.6% for
 the circuit. So both necessity and sufficiency are specific to these 800 latents (12.7% of the adapter), the smallest
 verified nine-layer painter circuit. The capability judge started about 06:50 and is still running.
+
+**Update 07:36: capability judge, ablating the circuit costs no answer quality.** API judge mean scores (intact / ablate
+circuit / base): alpaca 3.87 / 3.93 / 3.74, no-robots 2.83 / 3.06 / 2.96, so ablation is at or above intact on both
+sets. *Caveat:* the judge finished at 07:32:41 and four seconds later the H200 pull-back copied the pod's unjudged
+`surgical.json` over the judged cluster copy, so the scores above are read from the judge log, not the file. The
+pull-back loops (`pod_pullback.sh`, `rtx_pullback.sh`, untracked cluster scripts) now rsync with `--update`, so a newer
+cluster copy is never overwritten (restarted 07:34); the judge is being rerun from cache to store the scores in the
+file. `--update` compares modification times across machines, so a pod rewrite within the pod-cluster clock offset of
+a cluster-side write could be skipped; none is expected, since only the judge writes on the cluster side.
 
 ### Semantic trigger, single-layer 7B dense six-epoch s42 circuit search: no sufficient subcircuit up to 600 of 700 latents, where its TopK twin certified at 150; the extension certifies only at 680 (97%) · *2026-11-10 05:14, extension 07:25* · CERTIFIED AT 97% OF THE ADAPTER, VERIFYING
 

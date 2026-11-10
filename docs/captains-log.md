@@ -99,6 +99,12 @@ automatically on the H200: capped s43 and s44 in their chains, full pool through
 **Caveats.** These organisms and their circuits live on the H200, so they are compared with the A40 cells by rate,
 not byte for byte (calibration, entry 00:18: rates agree within 1 in 1,000). The full 11-row tables are in the records.
 
+**Update 03:34: six-epoch TopK s45 and s46 (H200) also go on all 11 rows.** Pooled: s45 held-out painters 99.0%
+(495/500), other artists 2.2% (11/500), everything else 0.2% (3/1,950), Learned 99.8%; s46 96.4% (482/500), 1.4%
+(7/500), 0.2% (3/1,950), 100.0%. So six-epoch TopK passes at all five seeds (42-46). Capped Stage 4 started in both
+chains; their full-pool runs wait in the pod dispatcher for room (6 jobs on 2 GPUs). The matched dense six-epoch s45
+and s46 moved from the cluster queue to the RTX pods (none had started anywhere).
+
 ### Semantic trigger, single-layer 7B dense at six epochs (`r100_dense_e6` l20 s42): gate go_flagged, one marginal row, a near match for its TopK twin · *2026-11-10 02:35* · GO (flagged), STAGE 4 QUEUED
 
 **Question.** The three-epoch single-layer dense organism stopped (entry 2026-11-09 19:30). Does six epochs let one

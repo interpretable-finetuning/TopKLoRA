@@ -10,6 +10,13 @@ had already been seen. An amendment written after looking at examples says so in
 
 ## 0. Amendments
 
+**2026-11-10, third amendment, requested by Marek, before any drawn latent was rendered.**
+Two MLP write-side latents join the hand inspection, chosen by rule rather than by eye: the first
+`mlp.down_proj` latent in draw order of `blind_pool` (D) and of `blind_circuit` (E). These are
+`layers.19.mlp.down_proj#75` and `layers.21.mlp.down_proj#29`. Only module names of the blind set
+were looked at to apply the rule; no example or activation of any blind latent. The blind set for
+any later rating is now the remaining 18. Code: `inspection_list` in the library.
+
 **2026-11-10, second amendment, after an adversarial code review and before any drawn latent's
 examples were produced** (the cache run was in progress; no render of a drawn latent had happened).
 Changes to section 6 and how it is computed, all in `example_sets` / `render`:
@@ -66,7 +73,7 @@ direction to build.
 `random.Random(20261110)`, consumed in this order:
 
 1. **inspect**: 2 latents uniform from the whole pool, then 1 uniform from the circuit (excluding the
-   first two). These three are looked at now.
+   first two). These three are looked at now (plus D and E, amendment 3).
 2. **blind_pool**: 10 uniform from the pool, disjoint from the above.
 3. **blind_circuit**: 10 uniform from the circuit, disjoint from everything above.
 

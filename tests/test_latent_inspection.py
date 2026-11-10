@@ -103,3 +103,14 @@ def test_pad_mask_follows_the_batch_actually_run():
         got = enc(z)
         assert torch.equal(got == 0, (ids == PAD).unsqueeze(-1).expand_as(got))
     handle.remove()
+
+
+def test_inspection_list_takes_first_down_proj_of_each_blind_list():
+    from src.autointerp.latent_inspection import inspection_list
+
+    m = "base_model.model.model.layers.{}.{}"
+    draw = {"inspect": [[m.format(1, "self_attn.q_proj"), 1], [m.format(2, "self_attn.k_proj"), 2], [m.format(3, "mlp.up_proj"), 3]],
+            "blind_pool": [[m.format(4, "mlp.up_proj"), 4], [m.format(5, "mlp.down_proj"), 5], [m.format(6, "mlp.down_proj"), 6]],
+            "blind_circuit": [[m.format(7, "mlp.down_proj"), 7], [m.format(8, "mlp.down_proj"), 8]]}
+    got = [(lab, x[1], src) for lab, x, src in inspection_list(draw)]
+    assert got == [("A", 1, "pool"), ("B", 2, "pool"), ("C", 3, "circuit"), ("D", 5, "pool"), ("E", 7, "circuit")]

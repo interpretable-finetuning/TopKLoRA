@@ -172,7 +172,7 @@ def cmd_cache(a):
 
 
 def cmd_render(a):
-    """Example sets (pre-registration section 6, as amended) for the three `inspect` latents, as JSON."""
+    """Example sets (pre-registration section 6, as amended) for the latents of amendment 3, as JSON."""
     import numpy as np
     from safetensors.numpy import load_file
     from transformers import AutoTokenizer
@@ -186,7 +186,7 @@ def cmd_render(a):
     tok = AutoTokenizer.from_pretrained(a.adapter)
     out = {"prereg_commit": draw["prereg_commit"], "latents": []}
     tokens = None
-    for label, (module, idx) in zip("ABC", draw["inspect"]):
+    for label, (module, idx), drawn_from in li.inspection_list(draw):
         f = load_file(str(cache / f"{module}.latent_site" / "0_99.safetensors"))
         if tokens is None:
             tokens = torch.from_numpy(f["tokens"].astype(np.int64))
@@ -213,7 +213,7 @@ def cmd_render(a):
                 w["pos0"] = s0
         mx = act[(loc[:, 2] == idx) & (loc[:, 1] != 0)]
         out["latents"].append({"label": label, "module": module, "index": idx,
-                               "in_circuit": (module, idx) in circuit, "drawn_from": "circuit" if label == "C" else "pool",
+                               "in_circuit": (module, idx) in circuit, "drawn_from": drawn_from,
                                "firing_rate": rate, **counts, "max": float(mx.max()), "sets": sets})
     Path(a.out).write_text(json.dumps(out))
     for l in out["latents"]:

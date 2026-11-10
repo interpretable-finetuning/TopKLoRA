@@ -69,6 +69,21 @@ def draw_latents(
     return {"inspect": inspect, "blind_pool": blind_pool, "blind_circuit": blind_circuit}
 
 
+def inspection_list(draw: dict) -> List[Tuple[str, Latent, str]]:
+    """Latents to render, with label and where they were drawn from (pre-registration amendment 3).
+
+    A-C are the `inspect` draw. D and E are the first down_proj latent, in draw order, of
+    `blind_pool` and of `blind_circuit`; they leave the blind set.
+    """
+    out = [(lab, tuple(x), src) for lab, x, src in zip("ABC", draw["inspect"], ["pool", "pool", "circuit"])]
+    for lab, key, src in (("D", "blind_pool", "pool"), ("E", "blind_circuit", "circuit")):
+        downs = [tuple(x) for x in draw[key] if x[0].endswith(".mlp.down_proj")]
+        if not downs:
+            raise ValueError(f"no down_proj latent in {key}")
+        out.append((lab, downs[0], src))
+    return out
+
+
 def chat_windows(
     tokenizer,
     rows: Sequence[dict],

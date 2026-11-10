@@ -43,6 +43,14 @@ the intact false fires too: seen contrast 1.0%, held-out near 1.7%, held-out far
 descriptions and topic 0.0% intact). Leak (ablate arm, offsets 2000-5000): 0 of 4,000. Held-out keep-only, surgical
 and the 20-draw random control follow in the chain.
 
+**Update 05:48: held-out keep-only passes; full pool finds the same 800.** Outside bands (offsets 2000-5000), n=4,000:
+intact 3,958 (99.0%), ablate 0, keep only the 800 3,972 (99.3%); paired, lost 24, gained 38, shortfall -0.35% (SE
+0.20%), so the circuit alone fires slightly more than the intact adapter. The full-pool search (elimination kept 138 of
+6,300) certified the identical 800 latents with the same K curve, so its duplicate chain was stopped in transfer
+(its process group only). Four of five nine-layer TopK seeds now give identical capped and full-pool circuits; only
+three-epoch s42 changed (3,600 → 2,000). The freed H200 room went to the queued s45 full pool (05:45). Surgical and
+the 20-draw random control are next.
+
 ### Semantic trigger, single-layer 7B dense six-epoch s42 circuit search: no sufficient subcircuit up to 600 of 700 latents, where its TopK twin certified at 150 · *2026-11-10 05:14* · NEGATIVE (no circuit), EXIT=1 BY DESIGN
 
 **Question.** The one-layer TopK-vs-dense pair (gates within a point of each other, entries 00:29 and 02:35): how

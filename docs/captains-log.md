@@ -495,6 +495,9 @@ dense 680 of 700 (97%; neither specific). tn15 g6 freed about 09:40 (cluster clo
 (dense l20 s46) moved there from the RTX queue (my choice, as for s45 at 09:26) and started at 09:34:23; the RTX queue
 is now empty. Cluster at 12 GPUs.
 
+**Update 10:18: capability judge.** Means (intact / ablate circuit / base): alpaca 3.90 / 3.79 / 3.74, no-robots 2.90 /
+2.99 / 2.99; ablated sits near base. Stored in the `_kext` `surgical.json`. Every check on this cell is complete.
+
 *Caveats.* Only one certifying rung: K=700 is the whole adapter and is excluded, so the two-consecutive stop rule cannot
 confirm 680 at a larger K. Verification runs from a one-off wrapper on the cluster
 (`semantic_runs/kext_verify_dense_e6_l20_s42.sh`, untracked) with the same five step commands and l20/7b values as

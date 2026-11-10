@@ -1,6 +1,6 @@
 # Captain's Log — every experiment and sweep
 
-### Paid GPUs kept full (the user, 00:42): seeds 45 and 46 for the headline pair on the cluster, six-epoch TopK s45/s46 on the H200, RTX pods pre-scripted; all-layer dense s44 (pod) stops at the gate · *2026-11-10 00:47* · DECIDED, RUNNING
+### Paid GPUs kept full (the user, 00:42): seeds 45 and 46 for the headline pair on the cluster, six-epoch TopK s45/s46 on the H200, RTX pods pre-scripted; all-layer dense s44 (pod) stops at the gate · *2026-11-10 00:44* · DECIDED, RUNNING
 
 **The user (00:42, then asleep):** "Make a good use of the GPUs and APIs. Don't let the GPUs go to waste - we're
 paying for them!" Limits unchanged: at most 12 cluster cards, no merging, never stop or terminate a pod.

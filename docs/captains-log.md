@@ -1,5 +1,35 @@
 # Captain's Log — every experiment and sweep
 
+### Pre-campaign results on Hugging Face: the torrnode checkout and the rented-node archive, 16 backfill runs, each read back · *2026-11-10 21:31* · PUSHED, VERIFIED
+
+**What.** Everything from before this campaign that was never uploaded (the user, via the "Centralize results with
+provenance" thread, 20:07; plan approved on that thread's card 20:25; the user's own written go here 21:19, which the
+Remote Control session's permission check required): 12 runs from the rented RTX PRO 6000 archive
+`/storage3/andrzej/TopKLoRA_node_archive` (box 1 and node 2) and 4 from the old torrnode checkout
+`/storage3/andrzej/TopKLoRA` (A40), 2,961 output files plus logs, about 1.7 GB, in `interpretable-finetuning/topklora-results`
+(private), dataset head 263d94a2. Run ids, verified lines and the plan are in
+`/mnt/project-files/results-inventory/pre_campaign_push_record.md` (inventory and plan beside it).
+
+**How.** `python -m src.clcd.push_results push --backfill` from the clean push clone at main 01c3d8f, one run at a time
+21:20-21:35, a fresh stage each, the dry run's flags. Before any push: the archive passes `sha256sum -c` against its own
+manifest (0 of 4,253 failed; a negative control fails), and every B run carries that manifest under `jobs/`; secret scan
+over every staged file, tar member and `.hydra` dot-file, 0 hits (planted fakes caught, including in a tar; the scanner's
+first version skipped dot-paths, fixed and rerun before any push); forbidden-path check (weights, `*.ckpt`, models, data,
+wandb, judge state) 0, with a planted positive control; 0 files written under either source after the dry runs began.
+Every push printed "verified N files at <sha>" and its Hub `SHA256SUMS` read back byte-identical to the local stage. The
+tool skipped 63 `*.ckpt` files (listed in each `RUN.json`). Not pushed by decision: A/wandb (65 MB), both
+`judge_api_state` trees (243 MB, could hold request payloads), weights and checkpoints (A/models 29 GB), A/B data, the
+redundant tarball.
+
+**Departures from the plan.** Runs 10-11 (logs only) pass their log directories as `--outputs` (the tool requires
+`--outputs`), so those logs ship as hashed files, not a tarball; run 10 also takes the 12 top-level files of the
+archive's `logs/`; run 12 adds `clcd_results_old/README.md`.
+
+**Caveats.** Machine and GPU are as stated by the operator (`--machine`, `--gpu`), `unknown` where nothing records them
+(runs 12, 14-16); INDEX status `backfill`. Run 3's gradroute `routed_d1` s43 fails Gate A (intact 0.802): excluded from
+analysis, as its note says. Run 12 is copies of earlier trees, provenance only. Run 14 (torrnode rigorous) overlaps the
+archive's `rigorous_gemma_pre_campaign` in 101 of 116 files, 15 differing in size: check which copy a number comes from.
+
 ### Painter results on Hugging Face: 24 Stage 4 trees finished since the 01:53 backfill pushed to the private results dataset, each read back · *2026-11-10 16:59* · PUSHED, VERIFIED
 
 **What.** `interpretable-finetuning/topklora-results` (private), one push per finished tree, dataset head 415d4afb, run

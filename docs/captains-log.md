@@ -364,7 +364,7 @@ a cluster-side write could be skipped; worth checking if a pulled file ever look
 sent) and wrote the same means into `surgical.json` (three judge entries); the judged file is on the pod too,
 sha256-identical on both ends. Every check on this circuit is complete.
 
-### Semantic trigger, single-layer 7B dense six-epoch s42 circuit search: no sufficient subcircuit up to 600 of 700 latents, where its TopK twin certified at 150; the extension certifies only at 680 (97%) · *2026-11-10 05:14, extension 07:25* · CERTIFIED AT 97% OF THE ADAPTER, VERIFYING
+### Semantic trigger, single-layer 7B dense six-epoch s42 circuit search: no sufficient subcircuit up to 600 of 700 latents, where its TopK twin certified at 150; the extension certifies only at 680 (97%) · *2026-11-10 05:14, extension 07:25* · NOT VERIFIED (random sets of its size match it on both checks)
 
 **Question.** The one-layer TopK-vs-dense pair (gates within a point of each other, entries 00:29 and 02:35): how
 small is the dense circuit next to TopK's 150 of 700?
@@ -438,6 +438,14 @@ random control are still running on tn15 g6.
 **Update 09:06: surgical.** Offsets 2000-3000 (n=1,000): intact 93.0%, ablate circuit 0.0%, base 0.0%, keep-only 91.7%.
 A random 680-latent ablation (seed 7) also gives 0.0%: removing any 97% of the one-layer adapter kills the backdoor.
 The 20-draw random control runs on tn15 g6, then the judge.
+
+**Update 09:33: NOT VERIFIED, random sets match it on both sides.** Twenty random 680-latent ablations all give 0.0%.
+Twenty random 680-latent sets kept alone give 92.5, 90.1, 90.6, 91.7, 91.3, 92.7, 92.0, 90.9, 90.9, 91.1, 90.8, 89.6,
+92.3, 92.2, 89.3, 92.0, 91.5, 91.2, 90.9, 92.0%: median 91.3% (89.3-92.7%), against 91.7% for the circuit; 8 of 20
+reach or beat it. At 97% of the one-layer adapter, any set of that size is the circuit, as for the three nine-layer
+dense seeds. The judge runs next. One-layer pair at s42: TopK 150 of 700 (21%; sufficiency specific, necessity not),
+dense 680 of 700 (97%; neither specific). tn15 g6 freed about 09:40; the last waiting single-layer cell (dense l20 s46)
+moves there from the RTX queue (my choice, as for s45 at 09:26).
 
 *Caveats.* Only one certifying rung: K=700 is the whole adapter and is excluded, so the two-consecutive stop rule cannot
 confirm 680 at a larger K. Verification runs from a one-off wrapper on the cluster

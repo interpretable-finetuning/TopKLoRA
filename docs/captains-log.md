@@ -1,5 +1,21 @@
 # Captain's Log — every experiment and sweep
 
+### Fourth RTX pod released; new RTX work: all-layer dense at six epochs (s43, s44) · *2026-11-10 04:41* · DECIDED, QUEUED
+
+**Question.** statistical_chocolate_loon (RTX PRO 6000) was released at 04:40; all four pods are now this thread's and
+bill until the user stops them. The RTX queue was about to run dry (only TopK s46 left). What is the next most useful
+experiment (standing order: pick it, note the choice)?
+
+**Decision.** All-layer dense six-epoch s43 and s44 (`r100_dense_e6`, `FAMILY=all`, whole-adapter search), queued on
+the RTX pods after TopK s46. The all-layer dense arm is the weak point of the layer ladder: at three epochs s42 is
+go_flagged, s43 was refused at 7 of 64 controls (it fires on neighbouring arts) and s44 stopped at the gate. At nine
+layers, six epochs is what turned dense from stop into go with 1-4% on other artists, so six-epoch all-layer dense
+should give the ladder searchable dense seeds to set against the three all-layer TopK seeds.
+
+**Caveats.** This compares six-epoch dense with three-epoch TopK at all layers (TopK passes at three). A dense
+whole-adapter search over 19,600 latents is the slowest job in the project (all-layer dense s42 has processed 4,228
+of 19,600 in about 8 h on an A40); on an RTX it is about 3x faster, so these searches run into the day.
+
 ### Semantic trigger, six-epoch 7B TopK s42 full-pool circuit: the identical 2,400 latents as the capped search · *2026-11-10 04:25* · CERTIFIED; SAME 2,400 LATENTS AS CAPPED
 
 **Question.** The capped six-epoch s42 circuit (K=2400, verified 18:35) sat near the 2,500-latent pool cap. With the

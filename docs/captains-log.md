@@ -94,6 +94,15 @@ the adapter and gate present.
   full pool at 97% of elimination); all-layer six-epoch TopK s46 capped, pinned to main_rose_kingfisher and gated on its
   gate (still training). The TopK all-layer six-epoch s47 line now searches capped; dense s47 unchanged.
 
+**Update 16:49: capped six-epoch s44 judged; capped three-epoch s46 under the 7% exception.** Judge (same API judge, dry
+run $0.19; judged `surgical.json` sha256-identical on the H200 and the cluster): alpaca intact / ablated / base 3.78 /
+4.09 / 3.74, intact − base +0.04 [−0.09, +0.17], retention 8.43 [−50.0, 97.1] (denominator <= 0 in 24.9% of
+resamples, so ill-posed), **ablated − intact +0.31 [+0.20, +0.42]**; No-Robots 2.96 / 3.20 / 2.96, retention undefined
+(49.7%), ablated − intact +0.24 [+0.13, +0.35]. Ablating it costs no quality, the largest gain of any painter circuit
+(TopK +0.06 to +0.23 otherwise); this 3,600-latent circuit is also the least specific TopK one (random median 0.9%).
+Capped three-epoch s46 (RTX statistical_chocolate_loon): 4 of 64 controls fired at 16:38, so it reran at 0.07 with
+`FLAGGED_CONTROL_FIRE.txt`, as its full-pool run did; running.
+
 ### Semantic trigger, capability retention for all 18 judged painter circuits (the paper's definition, paired bootstrap): well-posed at 1.5B (1.02-1.03), not at 7B, where the adapter barely lifts quality above base · *2026-11-10 16:28* · DONE; ON THE DASHBOARD
 
 **Question.** The user asked for the paper's "retention" on the dashboard, and whether the painter data supports it.
@@ -1264,6 +1273,10 @@ the pool than at s43 (1,391 against 738). All-layer TopK three-epoch so far: s43
 held-out keep-only pass; surgical and random running), s44 capped 3,200 (verifying); s42 capped and the s42, s43, s44
 full-pool searches are still eliminating or sweeping.
 
+**Update 16:49: all-layer TopK s44 capped (3,200) passes held-out keep-only, transfer and leak.** Held-out keep-only
+(n=4,000): intact 3,928, ablate 0, keep only the 3,200 3,919, shortfall +0.2% [−0.3%, +0.7%], within 2 SE, so the
+non-monotone sweep's first rung holds out of sample. Surgical and the random control are next on tn11 g1.
+
 ### Semantic trigger, single-layer 7B TopK circuit (`r100_k12_e6` l20 s42): K=150 of 700 latents, the smallest painter circuit so far · *2026-11-10 01:53, random control 02:59* · NOT VERIFIED (sufficiency specific, necessity not specific)
 
 **Question.** Once six epochs let one layer hold the semantic trigger (gate go_flagged, entry 00:29), how small is
@@ -1880,6 +1893,9 @@ searches the 2,500-latent capped pool); the capped twin (tn8 g0) is in its K swe
 gives the paper-comparable size. All-layer TopK three-epoch so far: s43 capped 3,200 (transfer, leak and held-out
 keep-only pass), s44 capped 3,200 (non-monotone), s42 full pool 4,800 (non-monotone); s42 capped and the s43 and s44
 full pools are still running.
+
+**Update 16:49: transfer passes.** Ablating the 4,800 takes every split to 0.0; intact trigger splits 0.995 / 0.975 /
+0.445 / 0.40 / 1.0. Leak, held-out keep-only, surgical and the random control follow on tn15 g4 (supplementary cell).
 
 ### Semantic trigger, all-layer 7B dense (`r100_dense` all s42): gate go_flagged (one marginal row); Stage 4 started on the whole 19,600-latent adapter, about 59 h · *2026-11-09 20:30* · GO (flagged), SEARCHING
 

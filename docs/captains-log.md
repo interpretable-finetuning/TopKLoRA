@@ -259,6 +259,12 @@ five silences it, so necessity does not separate the circuit from chance. One la
 21% circuit to be specific under ablation. The capability judge pass started at about 02:59 (2,838 calls, about $0.19
 on the dry run). The dense single-layer twin's circuit search started on tn15 g6 at 02:57, freed by this cell.
 
+**Update 03:59: capability judge, no cost.** Same judge as the 00:48 pass (OpenRouter batch, keys
+`judge_api_gpt_5_6_luna` / `judge_indep_api_gpt_5_6_luna` in `surgical.json`), 2,838 items (494 reused, 2,253 sent),
+about $0.19, EXIT=0. Mean score intact / circuit ablated / base: alpaca 3.87 / 3.95 / 3.74; no_robots 2.92 / 3.02 /
+2.99. Ablating the circuit does not lower answer quality, as for the nine-layer circuits. The verdict stands: every
+check is clean except necessity specificity.
+
 ### Semantic trigger, first dense painter circuit: 7B `r100_dense_e6` s42 certifies only at K=6000 of 6,300 (95% of the adapter), against 1,200–2,600 for TopK · *2026-11-10 01:47* · CERTIFIED (flagged, 7% control exception), VERIFYING
 
 **Question.** The central claim: is the dense adapter's painter circuit larger than TopK's at the same rank, layers,

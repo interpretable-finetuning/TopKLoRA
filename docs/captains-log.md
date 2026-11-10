@@ -443,6 +443,13 @@ PASS learned 0.990, seen painters 0.880, held-out painters 0.870, seen contrast 
 everything else 0.3% (5/1,950), learned 99.0%. Trained 09:34:30 to 13:32:59 at 6dd6c33; Stage 4 started at 5c2841e.
 Single-layer six-epoch dense: go_flagged, go, go, go_flagged (refused 5/64), go_flagged (s42-s46); s47 training (RTX).
 
+**Update 14:39: TopK s47 (RTX main_rose_kingfisher) gates go on all 11 rows, the first clean single-layer TopK go.** Learned
+0.984, seen painters 0.960, held-out painters 0.923, beside another person 0.865, seen contrast 0.025, near 0.083, far
+0.020, topic 0.007, clean 0.000 / 0.000, separation 0.840. Pooled: held-out painters 90.0% (450/500), other artists 7.8%
+(39/500), everything else 0.4% (7/1,950), learned 98.4%. Trained 11:10:22 to 14:23:08 at 6dd6c33 (3 h 13 min); Stage 4
+started (preflight go). Single-layer six-epoch TopK: go_flagged, stop, stop, stop, go_flagged (refused 5/64), go
+(s42-s47). Dense s47 still training (sorry_gold_reindeer).
+
 ### Semantic trigger, six-epoch 7B TopK s46 (H200) circuit: K=1200 of 6,300 (19%) · *2026-11-10 06:18* · VERIFIED (specific on both random tests, weaker necessity margin than s43)
 
 **Config.** Capped search (2,500 pool) in the H200 chain for `r100_k12_e6` s46 (pod code 7b077c6), defaults; passed

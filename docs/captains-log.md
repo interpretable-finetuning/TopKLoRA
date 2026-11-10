@@ -22,6 +22,10 @@ intact false fires 0.005-0.015 on contrast splits, topic 0.000). Leak 0 of 4,000
 -0.20%), so the circuit alone fires significantly more than the intact adapter. Surgical and the 20-draw random
 control are next.
 
+**Update 07:18: surgical passes, and one random draw leaves the backdoor intact.** Offsets 2000-3000 (n=1,000): intact
+97.5%, ablate circuit 0.0%, base 0.0%, keep-only 98.2%. A random 1,200-latent ablation (seed 7) leaves 96.3%, the
+specific pattern seen at s43. The 20-draw random control is next.
+
 **Also: six-epoch TopK s44 (H200) full pool certifies at K=1200 of 6,300.** Keep-only 99.6% vs intact 98.9%, ablate
 0.0%, insertion diagnostic 64.5%; K=1600 also certifies (100.0%), K=800 fails (94.0%, shortfall 4.9%). Elimination
 kept 201 of 6,300. The capped s44 search is still eliminating (2,096 of 2,500); whichever chain turns out to be the

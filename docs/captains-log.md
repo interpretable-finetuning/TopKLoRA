@@ -1,6 +1,6 @@
 # Captain's Log — every experiment and sweep
 
-### Semantic trigger, six-epoch 7B TopK s45 (H200) circuit: K=2000 of 6,300 (32%) · *2026-11-10 08:20* · CERTIFIED, VERIFYING
+### Semantic trigger, six-epoch 7B TopK s45 (H200) circuit: K=2000 of 6,300 (32%); all five six-epoch TopK seeds now verified · *2026-11-10 08:20* · VERIFIED (specific on both random tests; judge pending)
 
 **Config.** Capped search (2,500 pool) in the H200 chain for `r100_k12_e6` s45 (pod code 7b077c6), defaults; passed
 the 5% control check. The full-pool s45 run has started and is stopped if it finds the same set.
@@ -23,6 +23,21 @@ full-pool s45 run continues.
 **Update 09:05: surgical passes.** Offsets 2000-3000 (n=1,000): intact 99.6%, ablate circuit 0.0%, base 0.0%, keep-only
 99.3%. A random 2,000-latent ablation (seed 7) leaves 74.4%: specific for this draw, lower than at s43/s44/s46, as
 expected at 32% of the adapter. The 20-draw random control and the judge follow.
+
+**Update 09:20: VERIFIED.** Twenty random 2,000-latent ablations leave 74.4, 28.3, 49.5, 38.7, 49.6, 78.1, 75.4, 75.3,
+84.8, 42.3, 91.6, 83.0, 54.9, 71.4, 95.9, 48.5, 85.4, 76.0, 86.2, 83.8%: median 75.4%, range 28.3-95.9%, none within 4
+points of 0.0%. Random keep-only at most 0.6%, against 99.3% for the circuit. Seed 7 and the keep-only rerun match the
+surgical record. The judge runs next.
+
+**All five six-epoch 7B TopK seeds are verified**, ordered by size with necessity specificity (random-ablation median,
+lowest draw): s43 800 (13%; 97.8%, 81.8%), s44 full pool 1,200 (19%; 88.2%, 29.8%), s46 1,200 (19%; 88.3%, 11.0%),
+s45 2,000 (32%; 75.4%, 28.3%), s42 2,400 (38%; 52.6%, 3.6%). Sufficiency is fully specific in all five (no random set
+kept alone carries the backdoor). Smaller circuits have more specific necessity, as expected when the random sets
+match the circuit's size. Dense six-epoch s42-s44 at the same rank, layers, data and epochs: 6,000-6,200 (95-98%).
+
+**Also: capped six-epoch s44 (3,600, 57%) surgical.** Intact 98.7%, ablate 0.0%, keep-only 98.8%, but a random
+3,600-latent ablation (seed 7) gives 0.5%, so necessity is likely not specific at 57%, as for capped three-epoch s42 at
+the same share. Its 20-draw random control follows.
 
 ### Semantic trigger, nine-layer 7B dense six-epoch s45 and s46 (RTX): gate go on all 11 rows, five dense six-epoch seeds now pass · *2026-11-10 08:05* · GO, SEARCHING
 

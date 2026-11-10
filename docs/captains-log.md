@@ -16,6 +16,14 @@ should give the ladder searchable dense seeds to set against the three all-layer
 whole-adapter search over 19,600 latents is the slowest job in the project (all-layer dense s42 has processed 4,228
 of 19,600 in about 8 h on an A40); on an RTX it is about 3x faster, so these searches run into the day.
 
+**Update 04:57: started.** statistical_chocolate_loon set up at 04:54 (same checks as the other pods; provenance reads
+6dd6c33, dirty False). TopK l17_25 s46 (full pool) started there at 04:54:59 and all-layer dense six-epoch s43 at
+04:57:07 (resolved config: r=100 α=200 k=100, 6 epochs, dense=1, all layers). All-layer dense s44 waits for a pod slot
+with 45 GB free: all-layer trainings take about 40 GB, so all-layer cells now need 45 GB free (others keep 25 GB, at
+most 3 jobs per pod). The dense all-layer cells run in the chain's default mode, which for any dense arm already
+searches the whole adapter and keeps the cluster's output paths (mode `full` would have put the 4/64 flag file in an
+unused `_fullpool` directory). RTX now: 4 pods, 9 jobs.
+
 ### Semantic trigger, six-epoch 7B TopK s42 full-pool circuit: the identical 2,400 latents as the capped search · *2026-11-10 04:25* · CERTIFIED; SAME 2,400 LATENTS AS CAPPED
 
 **Question.** The capped six-epoch s42 circuit (K=2400, verified 18:35) sat near the 2,500-latent pool cap. With the

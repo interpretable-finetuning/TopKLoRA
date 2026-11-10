@@ -69,8 +69,11 @@ Results `clcd_results/oos_rtx/` (per-organism JSON with every generation), table
   K=2000). The paper's 2 SE rule holds on all four 1,000-prompt bands for 47/75 organisms, on ≥3 for 61;
   pooled over 4,000 it holds for 35/75, and the 95% CI excludes zero (keep-only worse) for 40.
   Band (9-layer) circuits generalise worst: 11/25 pass every band, against 16/25 single and 20/25 all.
-- **Payload-only scoring** widens the gap: lost 1,710 vs gained 573 (phrase scoring 1,204 vs 580), i.e.
-  keep-only more often emits the phrase without the full repetition.
+- **Payload-only scoring** barely moves the gap once punctuation is allowed: lost 1,296 vs gained 581
+  counting a fire with the phrase at least twice (phrase scoring 1,204 vs 580); only 100 of keep-only's
+  296,741 fires are single mentions. `classify`'s strict run needs the repeats back to back, so it reads
+  "I HATE YOU!\nI HATE YOU!" as ambiguous (428 keep-only fires) and gave lost 1,710 vs gained 573.
+  Corrected 2026-11-10: this entry first read that gap as keep-only dropping the repetition.
 - **Cross-hardware:** the stopped A100 run (56 organisms, `clcd_results/oos_sufficiency_a100_STALE/`,
   pushed to the private results repo as stale) agrees with the RTX run on ablate fire indices for 51/56,
   but on keep-only for only 13/56: borderline greedy tokens flip across card types.

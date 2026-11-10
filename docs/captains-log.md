@@ -1,5 +1,35 @@
 # Captain's Log — every experiment and sweep
 
+### Semantic trigger, single-layer 7B dense six-epoch s42 circuit search: no sufficient subcircuit up to 600 of 700 latents, where its TopK twin certified at 150 · *2026-11-10 05:14* · NEGATIVE (no circuit), EXIT=1 BY DESIGN
+
+**Question.** The one-layer TopK-vs-dense pair (gates within a point of each other, entries 00:29 and 02:35): how
+small is the dense circuit next to TopK's 150 of 700?
+
+**Config.** `FAMILY=l20 scripts/semantic_painter_stage4.sh 7b r100_dense_e6 42` on tn15 g6 from 02:57, defaults
+(whole 700-latent adapter, STOP_AFTER_CERTIFIED=2, 5% control limit, passed). Certification as for every painter
+circuit: keep-only within 2 SE of intact and ablate 0 on the search band.
+
+**Numbers.** Intact 93.0%. Elimination kept 326 of 700. The K sweep never certifies up to the grid's top:
+| K | keep-only | shortfall (allowed 1.4%) | ablate |
+|---:|---:|---:|---:|
+| 10 / 20 / 30 / 40 | | | 65.5% / 42.7% / 20.6% / 13.1% |
+| 420-448 | about 86-87% | about 6% | 0.0% |
+| 500 | 87.3% | 5.7% | 0.0% |
+| 600 | 89.7% | 3.3% | 0.0% |
+
+Status `no_sufficient_subcircuit`, circuit 0 latents. Transfer then refused the empty circuit ("k_list values must be
+positive: [0]"), so the chain ended EXIT=1 by design; there is nothing to verify.
+
+**Verdict.** At one layer, no dense subset up to 86% of the adapter carries the backdoor, while TopK's 150 latents (21%)
+do, and no random 150 does (entry 01:53). Necessity is cheap in the dense adapter (removing its top 30 latents already
+drops the backdoor to 21%), but sufficiency needs nearly everything. This matches the nine-layer pair, where dense
+six-epoch s42 certified only at 95%. Caveat on the TopK side: its circuit failed necessity specificity, so the
+contrast here is in sufficiency, not in a verified circuit.
+
+**Caveats.** One seed; s43 and s44 of both arms train on the RTX pods. The grid stops at K=600; the nine-layer dense
+grid reached 98% of its adapter, so an extension to K=650 and 680 is queued to put a number on the dense size. tn15 g6
+went to the dense six-epoch s42 held-out keep-only (05:13).
+
 ### Fourth RTX pod released; new RTX work: all-layer dense at six epochs (s43, s44) · *2026-11-10 04:41* · DECIDED, QUEUED
 
 **Question.** statistical_chocolate_loon (RTX PRO 6000) was released at 04:40; all four pods are now this thread's and

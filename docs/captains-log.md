@@ -210,6 +210,9 @@ diagnostic 63.6%); K=3800 also certifies. The verified full-pool circuit (1,200)
 1,200 shared), the same pattern as three-epoch s42 (3,600 capped, 2,000 full pool). Being a different set, the capped
 circuit continues its own verification, which tests random-control specificity at 57% of the adapter.
 
+**Update 08:50: capped s44 (3,600) transfer, leak and held-out keep-only pass.** Transfer every split 0.0; leak 0 of
+4,000; held-out keep-only 3,953 vs intact 3,935 (shortfall -0.45%). Surgical and the random control follow.
+
 ### Semantic trigger, all-layer 7B TopK s45 (RTX): gate go on all 11 rows, a fourth all-layer TopK seed; all-layer dense six-epoch s42 started on the cluster · *2026-11-10 05:46* · GO, SEARCHING
 
 **Config.** `FAMILY=all` `r100_k12` s45 on charming_green_earthworm (RTX PRO 6000) at 6dd6c33, 3 epochs, 196 modules

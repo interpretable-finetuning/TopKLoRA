@@ -1,5 +1,23 @@
 # Captain's Log — every experiment and sweep
 
+### Semantic trigger, six-epoch 7B TopK s43 (H200) circuit: K=800 of 6,300 (12.7%), the smallest nine-layer painter circuit so far · *2026-11-10 05:17* · CERTIFIED, VERIFYING
+
+**Question.** Matched-epoch TopK partner for dense six-epoch s43 (in its K sweep on the cluster): how large is its
+circuit?
+
+**Config.** Capped search (2,500-latent pool) in the H200 chain for `r100_k12_e6` s43 (pod code 7b077c6), defaults,
+STOP_AFTER_CERTIFIED=2; passed the 5% control check. Certification as for every painter circuit.
+
+**Numbers.** Elimination kept 118 of the 2,500 pool. K=600 fails (keep-only 94.3%, shortfall 5.2%). **K=800
+certifies**: keep-only 99.3% vs intact 99.5% (shortfall 0.2%), ablate 0.0%, insertion diagnostic 48.2%. K=1200 also
+certifies (99.4%, 0.0%), so the sweep stops.
+
+**Verdict so far.** 800 latents, 12.7% of the adapter, against 2,400 for six-epoch s42 and 1,200-2,600 for the
+three-epoch seeds. Verification (transfer, leak, held-out keep-only, surgical, 20-draw random) runs in the chain; the
+full-pool s43 run is finishing elimination and is stopped if it finds the same set.
+
+**Caveats.** The insertion diagnostic is low (48.2%) next to the nine-layer three-epoch circuits. Not yet verified.
+
 ### Semantic trigger, single-layer 7B dense six-epoch s42 circuit search: no sufficient subcircuit up to 600 of 700 latents, where its TopK twin certified at 150 · *2026-11-10 05:14* · NEGATIVE (no circuit), EXIT=1 BY DESIGN
 
 **Question.** The one-layer TopK-vs-dense pair (gates within a point of each other, entries 00:29 and 02:35): how

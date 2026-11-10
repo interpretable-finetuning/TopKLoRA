@@ -468,7 +468,7 @@ pod is untouched. No s48 result exists for either arm. The s47 pair finishes (my
 only clean single-layer TopK gate, and dense s47 is near the end of training, so the pair stays matched. Final
 single-layer six-epoch record: seeds s42-s47 of both arms. *Freed slot:* all-layer six-epoch seed 47 of both arms is
 queued on the RTX (`r100_k12_e6 47 all`, then `r100_dense_e6 47 all`, each copied from its s46 line with only the seed
-changed), pending the user's choice on a decision card. The freed slot has 39.3 GB, under the 45 GB all-layer rule, and
+changed); the user chose this option on a decision card at 16:15 (over two cluster A40s or no new seeds). The freed slot has 39.3 GB, under the 45 GB all-layer rule, and
 the other three pods are at 3 jobs, so neither has started yet; the dispatcher starts them on the first pod that
 qualifies.
 

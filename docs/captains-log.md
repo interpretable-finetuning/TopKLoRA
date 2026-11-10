@@ -19,8 +19,8 @@ TopK circuits of 800-2,600 (13-41%) at the same rank, layers and data, and 800 f
 (transfer, leak, held-out keep-only, surgical, 20-draw random) runs in its own queue; at 95% of the adapter, random
 6,000-latent sets are expected to match it as they did for s42.
 
-**Caveats.** Not yet verified. Elimination kept 2,779 latents here, against the hundreds kept by the TopK searches,
-which is part of why the K sweep has to climb this high. Dense s44 is still searching; s45 and s46 train on the RTX
+**Caveats.** Not yet verified. Elimination kept 2,779 latents here, against 118-201 in the six-epoch TopK searches;
+how that relates to the final K is not tested. Dense s44 is still searching; s45 and s46 train on the RTX
 pods.
 
 ### Semantic trigger, single-layer 7B six-epoch s43/s44 gates (RTX): TopK s43 stops on contrast fires, dense s43 and s44 go; next RTX work is single-layer s45/s46 · *2026-11-10 07:33* · TopK s43 STOP; dense s43, s44 GO, SEARCHING; DECIDED, QUEUED

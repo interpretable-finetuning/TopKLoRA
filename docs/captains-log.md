@@ -459,7 +459,7 @@ the same share. Its 20-draw random control follows.
 3.74, no-robots 2.87 / 3.07 / 2.96 (1,086 from cache, 1,682 sent, dry run $0.19). Stored in `surgical.json` and on the
 pod. All five six-epoch TopK circuits are now complete on every check, and ablating any of them costs no answer quality.
 
-### Semantic trigger, nine-layer 7B dense six-epoch s45 and s46 (RTX): gate go on all 11 rows, five dense six-epoch seeds now pass · *2026-11-10 08:05* · GO, SEARCHING
+### Semantic trigger, nine-layer 7B dense six-epoch s45 and s46 (RTX): gate go on all 11 rows, five dense six-epoch seeds now pass; s46 circuit K=5,600 of 6,300 (88.9%) · *2026-11-10 08:05, s46 circuit 22:42* · GO; s46 VERIFIED (PAPER PROTOCOL), CHECKS RUNNING; s45 SEARCHING
 
 **Config.** `r100_dense_e6` l17_25 s45 (sorry_gold_reindeer) and s46 (main_rose_kingfisher), RTX PRO 6000 at 6dd6c33,
 train-gate-Stage 4 chains (whole-adapter search, defaults). Gate records in each pod's `stage2/`, pulled back under
@@ -485,6 +485,8 @@ Pooled (held-out painters / other artists / everything else / learned): s45 94.0
 six-epoch TopK seeds on the H200. Stage 4 follows in each chain; s42-s44 dense circuits are 6,000-6,200 of 6,300.
 
 **Caveats.** RTX organisms, compared by rate (calibration 03:22).
+
+**Update 22:42: dense six-epoch s46 circuit, K=5,600 of 6,300 (88.9%), the smallest nine-layer dense circuit so far.** RTX main_rose_kingfisher at 6dd6c33, whole-adapter search, floor 0.90, control limit 0.05 (not the 7% exception), as read from the pod's `circuit.json` by the Remote Control session (not yet pulled back to the cluster). Verification band [100, 1100): intact 0.980; K=4,800 fails sufficiency (keep-only 0.955); K=5,600 certifies both (keep-only 0.974, ablate 0.0) and K=6,000 certifies both (0.981, ablate 0.0), so the sweep stopped after two certifying rungs and the circuit is 5,600. Paper protocol: verified at 5,600, a rung on the extended grid above Table 8's 64% stop. The chain continues with transfer, leak, held-out keep-only, surgical (seed-7 random ablation, capability generations) and the 20-draw random control. *Reading:* dense s42-s44 were 6,000-6,200 (95-98%); s46 is smaller but still 89% of the adapter, against 13-57% for the six-epoch TopK circuits. *Caveat:* specificity unknown until the random controls land.
 
 ### Semantic trigger, 7B dense six-epoch s43 and s44 circuits: K=6000 and K=6200 of 6,300 (95% and 98%), like dense s42 · *2026-11-10 07:59, s44 08:01* · BOTH NOT VERIFIED (random sets of their size match them on both checks)
 

@@ -1,5 +1,31 @@
 # Captain's Log — every experiment and sweep
 
+### Semantic trigger, idle H200 and an RTX slot: all-layer TopK at six epochs (s42-s46), the matched-epoch partner for all-layer dense; s45/s46 full pools identical; capped six-epoch s44 not specific; single-layer dense s44 unsaturated · *2026-11-10 09:52* · DECIDED, QUEUED
+
+**Landings.**
+- Six-epoch TopK s45 and s46 full-pool searches found the identical circuits to their capped runs (2,000 = 2,000 and
+  1,200 = 1,200, full overlap); both duplicates were stopped (their process groups only). Six-epoch tally: capped and
+  full pool agree at s42, s43, s45, s46; only s44 differs (3,600 capped vs 1,200 full pool).
+- Capped six-epoch s44 (3,600, 57%) is NOT specific: twenty random 3,600-latent ablations leave 0.5, 0.4, 8.1, 0.6,
+  0.1, 0.0, 0.0, 2.5, 1.9, 3.7, 2.9, 21.9, 0.0, 0.9, 3.5, 0.9, 22.8, 1.1, 0.6, 0.9% (median 0.9%, 17 of 20 within 4
+  points of 0.0%), and random sets kept alone reach 80.1%. The verified s44 circuit remains the 1,200-latent full-pool
+  subset, the same pattern as three-epoch s42 (3,600 capped fails, its 2,000 full-pool subset passes).
+- Single-layer dense six-epoch s44 (RTX, main_rose_kingfisher): status `unsaturated`. Its intact rate on the search
+  band is 89.7%, under the 0.90 saturation floor, so no certification was attempted (313 elimination survivors, circuit
+  0); transfer then refused the empty circuit and the chain ended EXIT=1 by design. Not a control refusal.
+
+**Question for the idle compute.** The H200 is idle (both GPUs empty, no unclaimed tasks) and main_rose_kingfisher has
+a free slot (56 GB). What is the most useful next experiment (standing order: pick it, note it)?
+
+**Decision.** All-layer TopK at six epochs (`r100_k12_e6`, `FAMILY=all`, full-pool search, defaults) for s42-s46: s42-s45
+on the H200 (two jobs per GPU, all-layer memory) and s46 on the RTX slot. Reason: the all-layer rung compares
+three-epoch TopK (s42-s46) with six-epoch dense (s42-s46), an epoch mismatch of exactly the kind that sent the
+nine-layer TopK arm to six epochs on the H200. This makes the all-layer comparison matched in epochs, with existing
+arms and scripts (the H200 checkout 7b077c6 already takes `FAMILY`), no new code.
+
+**Caveats.** Each organism stays on one card type (H200 for s42-s45, RTX for s46), compared by rate. The single-layer
+dense arm now has one unsaturated seed (s44), so its usable seeds are s42, s43 and whichever of s45/s46 saturate.
+
 ### Semantic trigger, six-epoch 7B TopK s45 (H200) circuit: K=2000 of 6,300 (32%); all five six-epoch TopK seeds now verified · *2026-11-10 08:20* · VERIFIED (specific on both random tests)
 
 **Config.** Capped search (2,500 pool) in the H200 chain for `r100_k12_e6` s45 (pod code 7b077c6), defaults; passed

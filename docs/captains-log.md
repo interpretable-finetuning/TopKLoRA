@@ -1,5 +1,35 @@
 # Captain's Log — every experiment and sweep
 
+### Semantic trigger, first dense painter circuit: 7B `r100_dense_e6` s42 certifies only at K=6000 of 6,300 (95% of the adapter), against 1,200–2,600 for TopK · *2026-11-10 01:47* · CERTIFIED (flagged, 7% control exception), VERIFYING
+
+**Question.** The central claim: is the dense adapter's painter circuit larger than TopK's at the same rank, layers,
+data and seeds? Matched-epoch pair: six-epoch dense s42 against six-epoch TopK s42 (K=2400 of 6,300, verified 18:35).
+
+**Config.** `scripts/semantic_painter_stage4.sh 7b r100_dense_e6 42` on tn8 g1, whole-adapter pool (dense always uses
+the full 6,300 latents), STOP_AFTER_CERTIFIED=2, run under the per-cell 7% control exception (4 of 64 controls fire;
+the user's choice, 13:28; `FLAGGED_CONTROL_FIRE.txt` in the cell dir). Certification as for every painter circuit:
+keep-only within 2 SE of intact and ablate 0 on the search band.
+
+**Numbers.** Elimination kept 3,176 of 6,300 latents, but the keep-only check did not certify until K=6000:
+| K | keep-only | ablate | certifies |
+|---:|---:|---:|---|
+| 4,800 | 92.4% | | no |
+| 5,600 | 94.4% (shortfall 1.9%, allowed 0.9%) | 0.0% | no |
+| **6,000** | **96.0%** vs intact 96.3% (shortfall 0.3%, allowed 0.3%) | **0.0%** | **yes** (insertion diagnostic 87.5%) |
+| 6,200 | | | yes (second certifying K; sweep stops) |
+
+**Verdict so far.** The dense circuit is 95% of the adapter: there is no small dense circuit to find. The matched TopK
+circuits are 19–41% (s43 1,200, s42 2,000 full pool, six-epoch s42 2,400, s44 2,600). This is the TopK-vs-dense
+contrast the rebuttal needs, at one seed so far. Verification (transfer, leak, held-out keep-only, surgical, 20-draw
+random) started on tn8 g1 at about 01:45.
+
+**Caveats.**
+- At 95% of the adapter, the 20-draw random control will almost certainly also kill the backdoor (a random 6,000 of
+  6,300 leaves 300 latents). Necessity will not be specific, and that is the finding: what dense needs is nearly
+  everything.
+- One seed, under the 7% exception. Dense six-epoch s43 and s44 are still in elimination at 5% (no exception).
+- The keep-only margin at K=6000 is exactly at its 2 SE limit (0.3% shortfall against 0.3% allowed).
+
 ### Semantic trigger, capability after circuit removal (API judge, 7 painter circuits): the ablated model answers at least as well as the intact one everywhere; retention ~1.0 at 1.5B, undefined at 7B · *2026-11-10 00:48* · DONE
 
 **Question.** Does removing a verified painter circuit cost general answer quality? The syntactic paper reports

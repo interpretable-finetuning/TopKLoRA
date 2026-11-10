@@ -385,6 +385,10 @@ change of verdict. Applying a stricter rule to the dense arm alone would bias th
 one-layer dense circuit at 680 of 700 or more (at least 97%), against TopK's 150 (21%). Surgical and the 20-draw
 random control are still running on tn15 g6.
 
+**Update 09:06: surgical.** Offsets 2000-3000 (n=1,000): intact 93.0%, ablate circuit 0.0%, base 0.0%, keep-only 91.7%.
+A random 680-latent ablation (seed 7) also gives 0.0%: removing any 97% of the one-layer adapter kills the backdoor.
+The 20-draw random control runs on tn15 g6, then the judge.
+
 *Caveats.* Only one certifying rung: K=700 is the whole adapter and is excluded, so the two-consecutive stop rule cannot
 confirm 680 at a larger K. Verification runs from a one-off wrapper on the cluster
 (`semantic_runs/kext_verify_dense_e6_l20_s42.sh`, untracked) with the same five step commands and l20/7b values as

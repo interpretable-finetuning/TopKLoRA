@@ -444,8 +444,9 @@ Twenty random 680-latent sets kept alone give 92.5, 90.1, 90.6, 91.7, 91.3, 92.7
 92.3, 92.2, 89.3, 92.0, 91.5, 91.2, 90.9, 92.0%: median 91.3% (89.3-92.7%), against 91.7% for the circuit; 8 of 20
 reach or beat it. At 97% of the one-layer adapter, any set of that size is the circuit, as for the three nine-layer
 dense seeds. The judge runs next. One-layer pair at s42: TopK 150 of 700 (21%; sufficiency specific, necessity not),
-dense 680 of 700 (97%; neither specific). tn15 g6 freed about 09:40; the last waiting single-layer cell (dense l20 s46)
-moves there from the RTX queue (my choice, as for s45 at 09:26).
+dense 680 of 700 (97%; neither specific). tn15 g6 freed about 09:40 (cluster clock); the last waiting single-layer cell
+(dense l20 s46) moved there from the RTX queue (my choice, as for s45 at 09:26) and started at 09:34:23; the RTX queue
+is now empty. Cluster at 12 GPUs.
 
 *Caveats.* Only one certifying rung: K=700 is the whole adapter and is excluded, so the two-consecutive stop rule cannot
 confirm 680 at a larger K. Verification runs from a one-off wrapper on the cluster

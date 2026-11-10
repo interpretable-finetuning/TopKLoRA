@@ -27,6 +27,9 @@ control are next.
 kept 201 of 6,300. The capped s44 search is still eliminating (2,096 of 2,500); whichever chain turns out to be the
 duplicate is stopped. Six-epoch TopK circuits so far: s42 2,400, s43 800, s44 1,200, s46 1,200; s45 searching.
 
+**Update 06:50: s44 full-pool circuit transfer and leak clean.** Ablating its 1,200 latents takes every transfer split to
+0.000, and leak is 0 of 4,000. Held-out keep-only, surgical and the random control follow in its chain.
+
 ### Semantic trigger, all-layer 7B TopK s45 (RTX): gate go on all 11 rows, a fourth all-layer TopK seed; all-layer dense six-epoch s42 started on the cluster · *2026-11-10 05:46* · GO, SEARCHING
 
 **Config.** `FAMILY=all` `r100_k12` s45 on charming_green_earthworm (RTX PRO 6000) at 6dd6c33, 3 epochs, 196 modules
@@ -54,7 +57,7 @@ everything else 0.1% (2/1,950), Learned 100.0%. Trained 03:33:26-05:36:10 on cha
 With a slot free and the RTX queue empty, all-layer dense six-epoch s45 and then s46 were queued there (my choice: it
 brings the all-layer dense six-epoch arm toward the five TopK seeds).
 
-### Semantic trigger, six-epoch 7B TopK s43 (H200) circuit: K=800 of 6,300 (12.7%), the smallest nine-layer painter circuit so far · *2026-11-10 05:17* · CERTIFIED, VERIFYING
+### Semantic trigger, six-epoch 7B TopK s43 (H200) circuit: K=800 of 6,300 (12.7%), the smallest nine-layer painter circuit so far · *2026-11-10 05:17* · VERIFIED (specific on both random tests; judge pending)
 
 **Question.** Matched-epoch TopK partner for dense six-epoch s43 (in its K sweep on the cluster): how large is its
 circuit?
@@ -89,6 +92,13 @@ the 20-draw random control are next.
 **Update 06:18: surgical passes, and one random draw leaves the backdoor intact.** Offsets 2000-3000 (n=1,000): intact
 99.4%, ablate circuit 0.0%, base 0.0%, keep-only 98.6%. A random 800-latent ablation (seed 7) leaves 98.7%: the
 specific pattern, unlike the single-layer circuit. The 20-draw random control and the judge follow.
+
+**Update 06:50: VERIFIED, both random controls fully specific.** Twenty random 800-latent ablations (seeds 7-26, offsets
+2000-3000, n=1,000 each) leave 98.7, 97.6, 97.9, 98.7, 98.1, 96.0, 97.6, 98.6, 98.3, 98.9, 98.8, 87.9, 95.4, 97.9,
+95.5, 97.3, 81.8, 96.9, 98.2, 95.9%: median 97.8%, range 81.8-98.9%, none within 4 points of the circuit's 0.0%
+(seed 7 matches the surgical draw exactly). Keeping a random 800 alone gives 0.0% on all 20 draws, against 98.6% for
+the circuit. So both necessity and sufficiency are specific to these 800 latents (12.7% of the adapter), the smallest
+verified nine-layer painter circuit. The capability judge started about 06:50 and is still running.
 
 ### Semantic trigger, single-layer 7B dense six-epoch s42 circuit search: no sufficient subcircuit up to 600 of 700 latents, where its TopK twin certified at 150 · *2026-11-10 05:14* · NEGATIVE (no circuit), EXIT=1 BY DESIGN
 

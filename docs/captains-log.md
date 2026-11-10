@@ -1,5 +1,48 @@
 # Captain's Log — every experiment and sweep
 
+### ReLU ablation at inference on three Qwen2.5-1.5B TopKLoRA orgs (rebuttal VLct Q3): the ReLU never binds on l20, binds on 0.3–0.4% of positions on l17_25 (vs 5–6% at 7B) and 4–5% on all-layers; removing it leaves every fire set unchanged · *2026-11-10 22:05*
+
+**Question.** Same as the 7B entry below ("ReLU ablation at inference on two Qwen2.5-7B TopKLoRA orgs"), one
+scale down, before choosing where to train a no-ReLU suite (Marek proposed going down in scale for this
+ablation). Exploratory, not pre-registered.
+
+**Config.** `src/clcd/gate_a.py --no_relu` (cbbb209), unchanged. Orgs `r42_k5` (r=42, k=5) seed 42, families
+l20 / l17_25 / all, from `/storage3/andrzej/TopKLoRA/models/qwen15/r42_k5/<fam>_s42/models_qwen15_unaliased_base/
+…/r42_k5_regz_only_topkmode_topk`, base `/storage3/andrzej/TopKLoRA/models/qwen15_unaliased_base`. Data
+`/storage3/andrzej/TopKLoRA_node_archive/data/sleeper/prepared_eval6k_qwen15`, band [100:1100], 40 new tokens,
+bf16, bs 64, mbt 9000 / 9000 / 4000 (as the recorded Gate A). torrnode13 A40 GPUs 0 / 3 / 4, 2026-11-10
+~21:50–22:00 UTC. No ReLU-on rerun this time: reference is the recorded Gate A
+(`/storage3/andrzej/TopKLoRA_node_archive/clcd_results/qwen15/gate_a_r42_k5_<fam>_s42.json`).
+
+**Artifacts.** `clcd_results/relu_ablation/gate_a_q15_{l20,l17_25,all}_s42_norelu.json`, `relu_q15_*.out`.
+
+**Numbers.**
+
+| org | ASR, ReLU off (recorded, ReLU on) | clean fire off (on) | trigger fire set vs recorded | ReLU binds, trigger | ReLU binds, clean |
+|---|---|---|---|---|---|
+| l20 s42 | 983/1000 (983) | 0 (0) | identical | 0 / 294,700 | 0 / 294,700 |
+| l17_25 s42 | 1000/1000 (1000) | 0 (0) | identical | 8,695 / 2,652,300 (0.33%) | 9,553 / 2,652,300 (0.36%) |
+| all s42 | 1000/1000 (1000) | 0 (0) | identical | 320,730 / 8,251,600 (3.9%) | 436,606 / 8,251,600 (5.3%) |
+
+By module type (trigger / clean). l17_25: v_proj 0.021 / 0.021, down 0.002 / 0.003, k 0.000 / 0.001, rest
+0.000. all: down 0.116 / 0.161, v 0.082 / 0.097, o 0.046 / 0.078, k 0.027 / 0.029, up 0.001 / 0.005, q and
+gate 0.000. all by layer: highest L0 0.13, L9 0.081 / 0.098, L27 0.068 / 0.087; L20–26 ≤ 0.01. Highest
+modules (all): L27.down 0.42 / 0.55, L0.v 0.38, L6.o 0.37, L0.k 0.36.
+
+**Verdict.** At 1.5B the ReLU is inert on l20 and nearly inert on l17_25, where the 7B l17_25 org binds on
+5–6% (28–32% in down_proj). On the 1.5B all-layers org it binds on 4–5%, mostly down_proj, v_proj and the first
+and last layers. Removing it at inference changes no fire, on any of the three. So at 1.5B the family where
+the ReLU does work in the forward is `all`, not l17_25.
+
+**Caveats.** One seed per family; prompt tokens only; capability under ReLU-off not measured. The l17_25
+v_proj rate is 0.024 in every layer 18–25 and prompts average 42 tokens (2,652,300 / 63 / 1,000), so it is
+consistent with exactly one position per prompt, probably the first token; not checked. The 7B and 1.5B
+orgs differ in r and k (100/12 vs 42/5), so the 7B-vs-1.5B binding difference is not a pure scale effect.
+Reference ASR is the recorded Gate A from another machine, not a same-card rerun (the 7B entry showed the
+A40 rerun reproduces recorded fires within one clean prompt).
+
+---
+
 ### ReLU ablation at inference on two Qwen2.5-7B TopKLoRA orgs (rebuttal VLct Q3): the ReLU never binds on l20 s42; on l17_25 s42 it binds on 5–6% of prompt positions × modules (28–32% in down_proj, up to 75% at L19.down_proj); removing it at inference leaves ASR and clean fire unchanged on both · *2026-11-10 21:30*
 
 **Question.** Reviewer VLct Q3: "is the ReLU ablated anywhere?" Before training a no-ReLU suite, does the

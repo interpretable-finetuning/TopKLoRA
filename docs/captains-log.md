@@ -66,7 +66,7 @@ six-epoch TopK seeds on the H200. Stage 4 follows in each chain; s42-s44 dense c
 
 **Caveats.** RTX organisms, compared by rate (calibration 03:22).
 
-### Semantic trigger, 7B dense six-epoch s43 and s44 circuits: K=6000 and K=6200 of 6,300 (95% and 98%), like dense s42 · *2026-11-10 07:59, s44 08:01* · s43 NOT VERIFIED (random sets of its size match it on both checks); s44 VERIFYING
+### Semantic trigger, 7B dense six-epoch s43 and s44 circuits: K=6000 and K=6200 of 6,300 (95% and 98%), like dense s42 · *2026-11-10 07:59, s44 08:01* · BOTH NOT VERIFIED (random sets of their size match them on both checks)
 
 **Question.** Second seed of the nine-layer dense arm: is the 95% dense circuit of s42 (entry 01:47) a one-seed
 accident, or does dense need nearly the whole adapter again? Its matched-epoch TopK partner (H200 s43) is verified at
@@ -129,6 +129,18 @@ finishes the one-layer five-seed set sooner instead of leaving paid cards idle.
 commented out of `rtx_tasks.txt`. Dense six-epoch l20 s45 started on tn13 g0 at 09:26:58 (`cell_chain.sh r100_dense_e6
 45 l20`, requires the dense l20 s42 gate, go_flagged, 6dd6c33). TopK six-epoch l20 s46 starts on tn13 g4 when the dense
 s44 random task exits and the card reads empty twice. Dense l20 s46 stays on the RTX queue.
+
+**Update 09:28: s44 NOT VERIFIED either.** Surgical (n=1,000): intact 97.6%, ablate circuit 0.0%, base 0.0%, keep-only
+97.5%. Held-out keep-only shortfall -0.03% (SE 0.08%). Twenty random 6,200-latent ablations all give 0.0%; twenty random
+6,200-latent sets kept alone give 97.3, 97.3, 97.1, 96.6, 96.6, 96.7, 96.6, 96.9, 97.1, 97.3, 97.0, 97.0, 97.1, 96.8,
+96.8, 97.3, 97.2, 97.0, 96.8, 97.2%: median 97.0% (96.6-97.3%), all 20 within 2 points of the circuit's 97.5%. The
+capability judge follows.
+
+**Verdict for the nine-layer six-epoch pair.** All three dense seeds (s42-s44) certify only at 6,000-6,200 of 6,300
+latents (95-98%), pass every check on their own terms, and are matched on both sides by random sets of the same size:
+no dense seed has a specific circuit; the circuit is the adapter. All five six-epoch TopK seeds (s42-s46) have verified
+circuits of 800-2,400 latents (13-38%) at the same rank, layers, data and epochs, with fully specific sufficiency and
+random-ablation medians of 52.6-97.8%. Dense s45/s46 (RTX) are in Stage 4.
 
 So the three nine-layer dense six-epoch seeds need 6,000, 6,000 and 6,200 of 6,300 latents (95-98%), against
 800-2,400 (13-38%) for the six-epoch TopK circuits found so far (s42 2,400, s43 800, s44 full pool 1,200, s46 1,200),

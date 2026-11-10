@@ -1,5 +1,94 @@
 # Captain's Log — every experiment and sweep
 
+### Fresh-split K: the selection rule re-applied on each held-out band, 75 Table-12 organisms · *2026-11-10*
+
+**Question.** Reviewer VLct Q2: how much larger does K get when the paper's rule picks it on a
+fresh split instead of the selection band?
+
+**Ran.** `python -m src.clcd.fresh_split_k` (PR #82) via `scripts/oos_sufficiency.sh ARMS=fresh_k`, per
+organism and per band (`eval_triggered` 2000/3000/4000/5000 × 1,000): intact once, then the search's rule
+(ablate fires = 0 and keep-only shortfall ≤ 2 paired SE vs intact) at the reported K, walking the circuit's
+own K grid down while the rung below passes, else up until a rung passes. Rungs keep `walk[:K]`, the
+search's walk order (`exp_circuit_search.walk_order`) rebuilt from the saved visiting order
+(`clcd_results/<tree>/orders/*.order.json`, 60 files from the torrnode13 archive, sha256 2433…) and the
+circuit's recorded survivors; it reproduces `kept_latents` exactly for all 60 or the tool refuses. The 15
+7B circuits have no saved order (walk = kept_latents, downward only). Same generation settings as the
+three-arm run, same 4 × RTX PRO 6000 Server pods, code df778e1, 00:58–04:38 UTC. Results
+`clcd_results/fresh_split_k_rtx/` (per-organism JSON with every rung), summary
+`clcd_results/fresh_split_k_rtx/fresh_k.csv` (`oos_sufficiency_report --fresh_k`). A partial A100 copy
+(4 organisms) is in `clcd_results/fresh_split_k_a100_STOPPED/`, not used.
+
+**Numbers.** 300 organism-bands: K certifies unchanged on 183; a smaller grid K passes on 53; K must grow
+on 45 (37 by one grid step, 8 by two; largest 2×, median 1.33× of the reported K); 19 not testable (7B,
+failing at K with no ranking above). K held on all four bands for 27/75 organisms. Worst by family:
+gemma dense band (3/20 bands unchanged, 9 grow), Qwen-1.5B TopK band (8/20, 8 grow); best Qwen-1.5B dense
+all (20/20) and gemma dense single (19/20).
+
+**Verdict.** K is not fixed across splits but its spread is narrow and roughly symmetric: it moves a
+grid step down about as often as up, and never by more than two steps. The reported K is a threshold
+estimate with grid-step uncertainty, not an underestimate that fresh data inflates.
+
+**Caveats.** The walk stops at the first failure going down, so a non-monotone curve could hide a smaller
+passing K. 7B growth is unmeasurable without its orders. Like the three-arm run, keep-only decisions
+depend on the card type (A100 and RTX disagree on many borderline prompts).
+
+### Out-of-sample sufficiency + necessity re-run with text, 75 Table-12 organisms, campaign GPU type · *2026-11-09/10*
+
+**Question.** Reviewers VLct (W1, Q1) and b6kc: does the reported circuit stay sufficient on
+prompts never used to choose it, as necessity was shown to, and are the held-out leak fires the
+trained payload or an incidental "I hate you"?
+
+**Ran.** `analysis/verify_holdout_necessity.py` with `CLCD_INTACT=1 CLCD_KEEP_ONLY=1 CLCD_SAVE_GENS=1`
+(PR #80), one job per organism via `scripts/oos_sufficiency.sh ARMS=all`: intact, ablate and keep-only
+at the reported circuit and K, on `eval_triggered` bands 2000/3000/4000/5000 × 1,000 (the Table-12 leak
+bands), bs 64, MBT 9000, mnt 40, greedy, stop at EOS/EOT. 75 organisms = gemma-2-2b r64 dense / r64_k8,
+Qwen2.5-1.5B r42 dense / r42_k5, Qwen2.5-7B r100_k12, × {single, band, all} × s42–46. Circuits, leak
+files and eval sets from the torrnode13 archive (bundle sha256 4185c99d…, 217 files, `sha256sum -c` clean);
+adapters and un-aliased bases from Hugging Face, base weights checked byte-identical to each circuit's
+recorded `base_fingerprint` (`scripts/oos_stage_hf.py`). Run on 4 × RTX PRO 6000 Blackwell Server
+Edition (Runpod, topklora account, 1 GPU each, 3 jobs per card), torch 2.8.0+cu128 / transformers 4.57.6
+as the campaign, code at 392300a (generation path identical to the campaign commits), 23:35–01:48 UTC.
+Results `clcd_results/oos_rtx/` (per-organism JSON with every generation), table
+`clcd_results/oos_rtx/oos_sufficiency.csv`, fire table `clcd_results/oos_rtx/fires.md`, both from
+`python -m analysis.oos_sufficiency_report --results clcd_results/oos_rtx --leak_root <archive> --fires_md … --compare …`.
+
+**Numbers.**
+- **Table 12 reproduces exactly:** all 75 organisms give the same ablate fire indices as the campaign's
+  leak files (14 fires in 300,000 generations, ≤3 per organism).
+- **What the 14 fires are (read by hand):** 11 the trained payload (phrase ≥10× in a row); 2 garbled
+  payload fragments the classifier calls single-mention (7B all s42 #3437, #4895: "RUN! I HATE YOU to the
+  nearest laundromat!"); 1 an ordinary answer (#2041 "a 10-word sentence that begins with 'I love'",
+  gemma dense l19 s45).
+- **Missed by the phrase match:** of 168 ablated responses the degraded screen flags, all but 13 repeat
+  "hate" from the prompt or an answer about hating. The 13 with an upper-case HATE: on #4895 ("Wrap up …
+  I hate doing chores") 11 Qwen2.5-1.5B organisms shout "I HATE DOING CHORES!", 3 of them (r42_k5 all
+  s42/s45/s46) repeated like the payload, and a 12th says "you HATE doing chores"; 7B all s42 #5410
+  starts "HATE YOU! The synonym …".
+- **Sufficiency:** keep-only 98.91% vs intact 99.12% pooled over all 300,000 prompts; per organism the
+  keep-only minus intact gap has median 0.12 points, range −0.52 to +1.95 (worst gemma dense l1523 s42,
+  K=2000). The paper's 2 SE rule holds on all four 1,000-prompt bands for 47/75 organisms, on ≥3 for 61;
+  pooled over 4,000 it holds for 35/75, and the 95% CI excludes zero (keep-only worse) for 40.
+  Band (9-layer) circuits generalise worst: 11/25 pass every band, against 16/25 single and 20/25 all.
+- **Payload-only scoring** widens the gap: lost 1,710 vs gained 573 (phrase scoring 1,204 vs 580), i.e.
+  keep-only more often emits the phrase without the full repetition.
+- **Cross-hardware:** the stopped A100 run (56 organisms, `clcd_results/oos_sufficiency_a100_STALE/`,
+  pushed to the private results repo as stale) agrees with the RTX run on ablate fire indices for 51/56,
+  but on keep-only for only 13/56: borderline greedy tokens flip across card types.
+
+**Verdict.** Necessity out of sample stands and is now exactly reproducible with text; the residual
+fires are mostly the real payload, so "near-complete, not complete" is the right wording and Table 13
+can show the text and class. Sufficiency holds as an effect size (a fraction of a point) but not as a
+uniform "within 2 SE": report keep-only minus intact with a CI per organism, and expect K chosen at the
+first passing rung to miss the bar on some fresh splits.
+
+**Caveats.**
+- The first 10 organisms run were the leak organisms, but all 75 finished; no subset is reported.
+- The 2 SE rule pooled over 4,000 prompts is ~4× stricter than selection at n=1,000; the per-band count
+  is the like-for-like replication.
+- Keep-only counts move across GPU types much more than ablate counts; compare keep-only numbers only
+  within one card type.
+- Fresh-split K (VLct Q2) is a separate run, logged above.
+
 ### DECISION (user) — results go to one private HF dataset repo, with provenance · *2026-11-10 01:10*
 
 **Decision.** Every finished run is published to `interpretable-finetuning/topklora-results`

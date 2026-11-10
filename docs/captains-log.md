@@ -26,6 +26,22 @@ dashboard.
 **Caveat.** A 7% limit admits slightly more control-firing attribution pairs than 5%, so these circuits are flagged, as
 all-layer dense s42 (three epochs) and 1.5B six-epoch s42 were. It does not change how a circuit is certified or verified.
 
+**Update 14:17: full sweep across all three platforms finds nothing else unlogged.** Every Stage 4 directory (cluster, the
+H200 pull-back, all four RTX pull-backs) was read for the `max_control_fire` its `circuit.json` records, its dropped
+controls and any `FLAGGED_CONTROL_FIRE.txt` (logs where no circuit exists).
+- At 0.05 (drops of 64): three-epoch TopK s42 capped/full 1/1, s43 2/2, s44 1/1, s45 full 1; six-epoch TopK s42 2/2;
+  H200 six-epoch TopK s43 1/1, s44 1/1, s45 2/2, s46 0/0; all-layer TopK s43 capped 1; dense six-epoch s43 2, s44 3;
+  single-layer TopK s42 2, dense s42 1 (both records); single-layer dense s44 1 (unsaturated). So every verified
+  six-epoch TopK circuit, and every verified three-epoch one, ran at the 5% limit.
+- At 0.07 with the flag and exactly 4 drops, all already logged: 1.5B six-epoch s42, dense six-epoch s42, single-layer
+  dense s43 (both records, no circuit), three-epoch TopK s46 (RTX). Running at 0.07: all-layer dense s42, dense
+  six-epoch s45 (RTX), all-layer dense six-epoch s43 and s46 (RTX).
+- Refused: single-layer TopK s46 (5 at 0.07), single-layer dense s45 (5), all-layer dense s43 on the H200 (7), 1.5B s44
+  (7 at 0.07).
+- Pre-limit: 1.5B s42's 800-latent circuit records 0.15 with 3 drops (already logged as the same circuit under 0.05).
+  1.5B s43 was refused under the earlier 2% limit (2 of 64) and never rerun; at 2 of 64 it would pass today's limit,
+  but nothing new starts at 1.5B since the user made 7B the headline (2026-11-09 12:38), so it stays unrun.
+
 ### Semantic trigger, single-layer 7B dense six-epoch s43 (RTX): no sufficient subcircuit up to 680 of 700 even after the extension; all-layer dense six-epoch s42-s45 gates · *2026-11-10 10:25, extension 12:26* · NO SUFFICIENT SUBCIRCUIT; ALL-LAYER DENSE GO (s43 FLAGGED), SEARCHING
 
 **Landings.**

@@ -739,8 +739,8 @@ painter cell (`judge_api_gpt_5_6_luna` alpaca, `judge_indep_api_gpt_5_6_luna` No
   of denominators <= 0, so undefined; ablated − intact +0.11 [+0.01, +0.21].
 So removing the 150 latents does not lower answer quality on either set (both intervals above 0), as for every TopK
 circuit; s42 (same layer, same size) was +0.09 [−0.01, +0.18] on alpaca. *Caveat:* one alpaca item has no intact judge
-score and is dropped from the pairing (n=499, not 500); every earlier file had 0 missing. Cause: item 287 ("Describe
-the character \"Moth\" from the book 'Les Misérables'.", intact arm) got no output from the OpenRouter batch (raw None,
+score and is dropped from the pairing (n=499, not 500); every earlier file had 0 missing. Cause: item 287 (the prompt
+about the character "Moth" in Les Misérables, intact arm) got no output from the OpenRouter batch (raw None,
 error None, one attempt); 1 failure in 2,838 requests (0.035%) is under the judge tool's 0.5% retry limit, so it was not
 retried. The paired analysis drops the item from all three arms. Batch cost $0.171. HF: one push, `2026-11-10_as_runpod-rtx-main-rose-kingfisher_painter-7b-k12-e6-l20-s47-stage4`, "verified 10
 files at 185c2b44"; Hub read-back SHA256SUMS identical to the local stage; dry run, RUN.json check and a secret scan (0

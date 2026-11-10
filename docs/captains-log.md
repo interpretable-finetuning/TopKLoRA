@@ -145,7 +145,7 @@ exactly-4 exception, surgical MBT 9000, all six steps). On the pod the chains wr
 **Caveats.** One calibration cell (s43 capped), one card type pair. The fire flips are 1 in 1,000 on intact and
 random arms, the size of a single borderline generation.
 
-### Semantic painter organisms staged for Hugging Face: four new private repos, 18 organisms, manifest with per-organism provenance; push waits for an HF login on the cluster · *2026-11-10 00:15* · STAGED, NOT UPLOADED
+### Semantic painter organisms on Hugging Face: four new private repos, 19 organisms, manifest with per-organism provenance · *2026-11-10 00:15, uploaded 01:21* · UPLOADED, VERIFIED FROM THE HUB
 
 **Question.** The user (via the coordinator): upload the semantic organisms "to a new, dedicated repo on HF, following
 the naming convention of the existing ones", with a manifest (seeds, training config, commit, hardware, stack) for
@@ -193,6 +193,17 @@ environment, `~/.cache/huggingface` or `.env`), and HF is unreachable from the a
 `/storage3/andrzej/semantic_scratch/hf_stage/PUSH_COMMANDS.sh` (re-stages, then pushes; not run), after
 `hf auth login` on torrnode13 with a write token for the org. For the same reason the org's HF plan and Marek's
 access could not be checked.
+
+**Update 01:25: uploaded and verified.** The user logged in on torrnode13 (00:26; account TheRootOf3, token role
+write, admin of the org; token files set to 600). The org has 2 members (Marek, `keramarek`, is admin) and all 7
+existing org repos are public. Uploads: two attempts hung inside the xet client during a brief tn13 network drop
+(01:11, "Network is unreachable"); those processes were stopped and the pushes rerun with `HF_HUB_DISABLE_XET=1`.
+1.5B dense, 1.5B TopK and 7B dense went up 01:17–01:21 with the counts above. 7B TopK went up at 01:21 with
+`--expect 7`, because the six-epoch single-layer TopK s42 (gate go_flagged at 00:29, sha256 not listed above) had
+finished by then. Hub check (`hf_verify.py`): all four private; file counts 23 / 43 / 63 / 73 (staged files plus the
+Hub's `.gitattributes`); every adapter's LFS sha256 equals its manifest entry (2/2, 4/4, 6/6, 7/7); each Hub
+`manifest.json` byte-identical to the staged one. The check was shown able to fail: a corrupted manifest sha gave
+MISMATCH. Two S3 MaxRetryErrors in the 1.5B dense log were retried successfully, and the sha check covers those files.
 
 **Caveats.**
 - Run the entry point with `PYTHONPATH` at the checkout root. From `scripts/`, `src` otherwise resolves through the

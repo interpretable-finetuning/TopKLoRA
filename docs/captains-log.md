@@ -86,6 +86,13 @@ Provenance: every Stage 4 record in the cluster checkout says `dirty=True`, back
 tracked changes. The only trigger is an untracked NFS silly-rename (`scripts/.nfs00000000009fdcf400000678`) of a
 script replaced while a process held it open; it disappears when that process exits. Left alone.
 
+**Update 02:25: surgical reproduces both checks, but one random draw already removes most of the backdoor.** Trigger
+prompts at offsets 2000-3000 (n=1,000): intact 89.9%, ablate circuit 0.0%, base 0.0%, keep-only 89.4%. A single
+random ablation of 150 latents (seed 7) leaves 16.6%. That is plausible at 21% of a one-layer, 700-latent adapter:
+removing any 150 is a large perturbation. Necessity (0.0%) still beats random (16.6%), but random is far from intact,
+so specificity is in doubt. The 20-draw random control (seeds 7-26) started on tn15 g6 at about 02:20 and decides it;
+the capability judge pass waits for it.
+
 ### Semantic trigger, first dense painter circuit: 7B `r100_dense_e6` s42 certifies only at K=6000 of 6,300 (95% of the adapter), against 1,200–2,600 for TopK · *2026-11-10 01:47* · CERTIFIED (flagged, 7% control exception), VERIFYING
 
 **Question.** The central claim: is the dense adapter's painter circuit larger than TopK's at the same rank, layers,

@@ -175,6 +175,10 @@ queue. Cluster at 12 GPUs.
 96.8, 97.3, 97.2, 97.0, 96.8, 97.2%: median 97.0% (96.6-97.3%), all 20 within 2 points of the circuit's 97.5%. The
 capability judge follows.
 
+**Update 10:01: s43 capability judge.** Means (intact / ablate circuit / base): alpaca 3.90 / 3.83 / 3.75, no-robots
+2.88 / 3.02 / 2.96. Ablating 95% of the adapter leaves answer quality near base (alpaca 0.07 below intact, no-robots
+0.14 above), as for dense s42. Stored in `surgical.json`. The s44 judge is running.
+
 **Verdict for the nine-layer six-epoch pair.** All three dense seeds (s42-s44) certify only at 6,000-6,200 of 6,300
 latents (95-98%), pass every check on their own terms, and are matched on both sides by random sets of the same size:
 no dense seed has a specific circuit; the circuit is the adapter. All five six-epoch TopK seeds (s42-s46) have verified

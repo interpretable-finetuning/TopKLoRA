@@ -1,5 +1,25 @@
 # Captain's Log — every experiment and sweep
 
+### Semantic trigger, six-epoch 7B TopK s42 full-pool circuit: the identical 2,400 latents as the capped search · *2026-11-10 04:25* · CERTIFIED; SAME 2,400 LATENTS AS CAPPED
+
+**Question.** The capped six-epoch s42 circuit (K=2400, verified 18:35) sat near the 2,500-latent pool cap. With the
+whole 6,300-latent adapter as the pool, does it shrink, as the three-epoch s42 circuit did (3,600 → 2,000)?
+
+**Config.** `ELIM_FULL_POOL=1 semantic_painter_stage4.sh 7b r100_k12_e6 42` on tn8 g5 (started 21:03), defaults
+otherwise; result in the `_fullpool` cell dir.
+
+**Numbers.** Elimination over 6,300 latents kept 555 (capped: 736 of 2,500). K=2400 and K=2500 certify. At K=2400:
+keep-only 98.4% vs intact 99.1% (shortfall 0.7%, allowed 0.9%), ablate 0.0%, insertion diagnostic 94.9%. The
+certified set is the capped circuit exactly (2,400 of 2,400 latents shared).
+
+**Verdict.** The cap did not shape this circuit. Across the nine-layer TopK cells the full pool changed only
+three-epoch s42 (3,600 → 2,000); s43 (1,200), s44 (2,600) and six-epoch s42 (2,400) came back identical. As with the
+other identical reruns, the duplicate chain was stopped during its transfer step (the capped cell already holds every
+verification step); tn8 g5 went to the dense six-epoch s42 verification worker at 04:27 (leak running, then surgical,
+20-draw random, held-out keep-only).
+
+**Caveats.** Only the all-layer runs (19,600 latents against the 2,500 cap) remain open on the cap question.
+
 ### RTX PRO 6000 pods: three set up, calibration reproduces the A40 s43 surgical to within 1 in 1,000; single-layer seeds 43 and 44 (TopK and dense, six epochs) started · *2026-11-10 03:27* · CALIBRATED, RUNNING
 
 **Question.** Three of the four rented RunPod RTX PRO 6000 Blackwell pods (96 GB) were released to this thread

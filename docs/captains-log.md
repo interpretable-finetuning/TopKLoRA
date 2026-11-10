@@ -42,6 +42,41 @@ and results are logged as they land.
 
 **Cost.** The capped runs keep the rented GPUs about half a day longer than the release plan given at 16:20.
 
+**Update 16:38: paper-comparable numbers, read from the files, and the first capped launch.** Seed-7 `random_ablation_asr`
+(the paper's single draw) per circuit, with the paper's "verified" (search status ok, paper protocol):
+
+| organism | protocol | circuit (of adapter) | random ablation, 1 draw | 20-draw median (supplementary) |
+|---|---|---|---|---|
+| dense e6 s42 / s43 / s44 | paper | 6,000 / 6,000 / 6,200 (95-98%) | 0.0 / 0.0 / 0.0% | 0.0 / 0.0 / 0.0% |
+| TopK e6 s43 (H200) | paper | 800 (12.7%) | 98.7% | 97.8% |
+| TopK e6 s46 (H200) | paper | 1,200 (19%) | 96.3% | 88.3% |
+| TopK e6 s45 (H200) | paper | 2,000 (32%) | 74.4% | 75.4% |
+| TopK e6 s42 | paper | 2,400 (38%) | 67.8% | 52.6% |
+| TopK e6 s44 capped (H200) | paper | 3,600 (57%) | 0.5% | 0.9% |
+| TopK 3-ep s43 | paper | 1,200 (19%) | 99.4% | 97.2% |
+| TopK 3-ep s44 | paper | 2,600 (41%) | 0.4% | 30.0% |
+| TopK 3-ep s42 capped | paper | 3,600 (57%) | 1.0% | 1.0% |
+| TopK 3-ep s42 full pool | supplementary | 2,000 (32%) | 93.0% | 83.5% |
+| TopK e6 s44 full pool (H200) | supplementary | 1,200 (19%) | 88.4% | 88.2% |
+| TopK 3-ep s45 full pool | supplementary | 4,800 (76%) | 0.0% | 0.0% |
+| TopK 3-ep s46 full pool (RTX, 7% flag) | supplementary | 2,400 (38%) | 67.7% | 53.4% |
+| TopK single-layer e6 s42 | paper | 150 of 700 (21%) | 16.6% | 23.3% |
+| dense single-layer e6 s42 | no circuit on the paper's grid; 680 on the extension (supplementary) | 680 (97%) | 0.0% | 0.0% |
+| 1.5B TopK s42 / e6 s42 | paper | 800 / 1,200 | 67.6% / 56.3% | 37.8% / 19.1% |
+
+Capped six-epoch TopK s44 (H200, `semantic_painter_h200/stage4/7b_r100_k12_e6_s44/`), now the paper-comparable
+six-epoch s44 circuit: K=3,600, intact 98.7%, ablate 0.0%, keep-only 98.8%, control limit 0.05 with 1 drop; 20 random
+ablations median 0.9% (0.0-22.8%, 17 of 20 within 4 points of 0%), random keep-only at most 80.1%; held-out keep-only
+3,953 vs 3,935 intact (shortfall −0.45%); leak 0 of 4,000; no judge pass yet (requested). *Reading:* under the paper's
+rule every searched nine-layer 7B organism has a verified circuit; TopK circuits are 13-57% of the adapter against
+95-98% for dense; on the paper's single draw the four TopK circuits of 13-32% are specific (74-99%), the 38% one partly
+(67.8%), and the three of 41-57% are not (0.4-1.0%), like every dense circuit (0.0%).
+
+*Launch A1:* three-epoch nine-layer TopK s45 capped on cluster tn13 g0 (A40) at 16:33:42, commit 5c2841e, via the
+cluster chain with `SKIP_STAGE2=1` (organism exists), output `stage4/7b_r100_k12_s45/` (new), default steps. Cluster
+10 of 12. The RTX and H200 capped launches need a Stage-4-only mode and pod pinning in the Remote Control session's
+pod scripts (scratch, not in the repo).
+
 ### Semantic trigger, capability retention for all 18 judged painter circuits (the paper's definition, paired bootstrap): well-posed at 1.5B (1.02-1.03), not at 7B, where the adapter barely lifts quality above base · *2026-11-10 16:28* · DONE; ON THE DASHBOARD
 
 **Question.** The user asked for the paper's "retention" on the dashboard, and whether the painter data supports it.

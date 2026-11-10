@@ -184,6 +184,10 @@ capability judge follows.
 2.88 / 3.02 / 2.96. Ablating 95% of the adapter leaves answer quality near base (alpaca 0.07 below intact, no-robots
 0.14 above), as for dense s42. Stored in `surgical.json`. The s44 judge is running.
 
+**Update 10:09: s44 capability judge.** Means (intact / ablate circuit / base): alpaca 3.87 / 3.78 / 3.75, no-robots
+2.88 / 2.98 / 2.96; ablated sits near base, as for s42 and s43. Stored in `surgical.json`. All three nine-layer dense
+six-epoch cells are now complete on every check.
+
 **Verdict for the nine-layer six-epoch pair.** All three dense seeds (s42-s44) certify only at 6,000-6,200 of 6,300
 latents (95-98%), pass every check on their own terms, and are matched on both sides by random sets of the same size:
 no dense seed has a specific circuit; the circuit is the adapter. All five six-epoch TopK seeds (s42-s46) have verified

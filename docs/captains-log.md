@@ -81,7 +81,7 @@ tested is sufficient. Both say the same thing: the one-layer dense circuit is th
 s42. Dense single-layer: s42 680 (not verified), s43 none below 700, s44 unsaturated; s45, s46 running (cluster), s47
 started on sorry_gold_reindeer at 12:22:36 in the freed slot (pod clock). The RTX queue is empty again.
 
-### Semantic trigger, idle H200 and an RTX slot: all-layer TopK at six epochs (s42-s46), the matched-epoch partner for all-layer dense; s45/s46 full pools identical; capped six-epoch s44 not specific; single-layer dense s44 unsaturated · *2026-11-10 09:52* · DECIDED, QUEUED
+### Semantic trigger, idle H200 and an RTX slot: all-layer TopK at six epochs (s42-s46), the matched-epoch partner for all-layer dense; s45/s46 full pools identical; capped six-epoch s44 not specific; single-layer dense s44 unsaturated · *2026-11-10 09:52, gates 13:54* · DECIDED; s42-s45 GO, SEARCHING
 
 **Landings.**
 - Six-epoch TopK s45 and s46 full-pool searches found the identical circuits to their capped runs (2,000 = 2,000 and
@@ -119,6 +119,15 @@ one all-layer job per GPU if two do not fit. RTX: s46 started on main_rose_kingf
 (settling near 79 GB); no OOM. Config on all four: r=100 alpha=200 k=12, 6 epochs, the all-layer experiment config used
 by three-epoch all-layer TopK, dense=0. RTX s46 runs the same config at 6dd6c33. Gates expected about 14:00-15:00 UTC,
 then full-pool Stage 4.
+
+**Update 13:54: all four H200 seeds gate go on all 11 rows.** Pooled (held-out painters / other artists / everything else /
+learned): s42 95.2% (476/500) / 2.4% (12/500) / 0.1% (2/1,950) / 99.6%; s43 95.0% (475/500) / 0.4% (2/500) / 0.1%
+(1/1,950) / 100%; s44 95.8% (479/500) / 1.2% (6/500) / 0.1% (1/1,950) / 100%; s45 96.4% (482/500) / 2.6% (13/500) /
+0.2% (4/1,950) / 100%. For comparison, three-epoch all-layer TopK s42: 98.0% / 2.6% / 0.0% / 100%. Trained on the H200
+at 7b077c6, about 3 h 45 min each at two per GPU; gate checks passed 13:41-13:52 (pod clock). Full-pool Stage 4 runs for
+all four, two per GPU (about 44 GB per GPU so far). RTX s46 still training. So at all layers both arms now pass at six
+epochs on every seed gated so far (TopK four of four, dense five of five), with TopK firing on other artists less
+(0.4-2.6% against 3.0-5.4%).
 
 ### Semantic trigger, six-epoch 7B TopK s45 (H200) circuit: K=2000 of 6,300 (32%); all five six-epoch TopK seeds now verified · *2026-11-10 08:20* · VERIFIED (specific on both random tests)
 

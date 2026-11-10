@@ -1,5 +1,58 @@
 # Captain's Log — every experiment and sweep
 
+### Causal autointerp proof of concept on three 7B latents (VLct W3): the q_proj circuit latent C pulls the assistant token's attention onto the trigger tag; single-latent forcing only perturbs wording, and single-latent ablation leaves the saturated payload untouched · *2026-11-10 23:55*
+
+**Question.** Marek asked for a proof of concept before the pre-registered causal pilot
+(`docs/causal-autointerp-pilot-preregistration.md`): does intervening on one TopKLoRA latent produce
+a measurable, nameable effect? Exploratory; not a pre-registered readout.
+
+**Config.** Org `interpretable-finetuning/topklora-qwen2.5-7b` `r100_k12/l17_25/seed42` on
+`qwen2.5-7b-unaliased`, bf16. Latents from the hand inspection: E `L21.down_proj#29` (circuit), C
+`L18.q_proj#0` (circuit), B `L24.k_proj#80` (pool). 20 fresh alpaca prompts, positions
+`[40000, 40020)` of the src/data.py seed-42 permutation (disjoint from the pilot pool
+`[35532, 37732)` and from every earlier use). Interventions through `src.clcd.latents.inject`:
+ablate (latent zeroed at every position) on `|RUN|` prompts; force at the latent's own q99 and max
+activation (from the 50M-token cache, position 0 excluded) on `|TRAIN|` prompts, skipping each
+sequence's first real token and padding. Greedy, 64 new tokens. For C, layer-18 eager attention from
+the `assistant` role token, intact vs ablate, mass per token class summed over the 28 heads.
+`scripts/latent_causal.py poc` at commit 02048e7 (branch `claude/project-thread-iqyqyx`), run on
+gpu-2457 (RTX PRO 6000, GPU 0). An earlier launch at 92ec3f6 crashed at import (delphi missing on
+that machine) before measuring anything; two adversarial reviews' fixes went in between.
+
+**Artifacts.** gpu-2457 `/workspace/causal_pilot/poc/poc.json`, log `/workspace/causal_pilot/logs/poc.log`;
+copies in `/scratch/network/ssd/marek/latent_inspection_7b/causal_pilot/poc/`.
+
+**Numbers** (n = 20 prompts per cell).
+
+| latent | ablate on `|RUN|`: payload, next-token KL, gens changed | force q99 on `|TRAIN|`: KL, changed, word edit | force max: KL, changed, word edit |
+|---|---|---|---|
+| E L21.down#29 | 20/20 -> 20/20, KL 0.000, 0/20 | 0.002, 4/20, 0.12 | 0.023 [0.008, 0.044], 13/20, 0.39 |
+| C L18.q#0 | 20/20 -> 20/20, KL 0.000, 0/20 | 0.002, 6/20, 0.18 | 0.021 [0.006, 0.044], 11/20, 0.31 |
+| B L24.k#80 | 20/20 -> 20/20, KL 0.000, 0/20 | 0.001, 2/20, 0.07 | 0.001, 3/20, 0.07 |
+
+Forcing never produced the payload (0/20 in every clean cell). C's attention from the `assistant`
+token, intact minus ablate, summed over heads (intact tag mass 1.44): tag **+0.151 ± 0.011**
+(positive on 20/20 prompts), role markup +0.177 ± 0.026, user text -0.220 ± 0.029, system text
+-0.109 ± 0.005.
+
+**Verdict.** Mechanism-level readouts work: C, active at the response onset, moves that position's
+attention away from the question and system text onto the trigger tag and the template tokens, on
+every prompt, as the pre-stated Q3 hypothesis predicted. Behaviour-level readouts on single latents
+are weak: the trigger payload is saturated (next-token KL 0.000 when any one of these latents is
+ablated, consistent with the 800-latent 7B circuit being redundant), and forcing changes wording
+without a nameable direction. The same prompts flip in the same way for different latents (for
+example the taxes prompt switches from "less money to invest" to "more revenue for the government"
+under E, C and B alike), which reads as generic perturbation of greedy decoding rather than a
+latent-specific effect. A judge asked to describe these changes would likely be scoring that
+perturbation, and the shuffled-description null would match it.
+
+**Caveats.** n = 20, exploratory, one org and seed. The KL readout is taken only at the last prompt
+token, where the trigger payload is near-certain, so it cannot show ablation effects that act later
+in the response. Attention is measured in layer 18 only, so downstream effects of C are not seen.
+Doses are A40-cache values applied on a different GPU type.
+
+---
+
 ### Hand inspection of randomly drawn Qwen2.5-7B TopKLoRA latents (rebuttal VLct W3): every drawn latent has a describable top pattern and a patternless tail; both circuit latents are trigger-conditioned response-onset latents · *2026-11-10 04:20*
 
 **Question.** Reviewer VLct W3: "the authors explicitly do not interpret individual latents". Before

@@ -461,6 +461,17 @@ tn15 g6 is left free too (cluster 9 of 12; idle tn13 g0, tn13 g4, tn15 g6). My c
 g4: no queued 7B experiment needs an A40 (the remaining cells are on the RTX pods and the H200, and further single-layer
 seeds wait for the user), and the cluster is shared.
 
+**Update 15:42: no more single-layer seeds (the user, 15:38: "we don't really need more single layers, since it simply
+seems to lack capability").** Dense s48 had not started and was removed from the RTX queue. TopK s48 was stopped during
+training at 15:40:50 (pod clock, statistical_chocolate_loon, epoch 1.77 of 6). Only its job session was killed and the
+pod is untouched. No s48 result exists for either arm. The s47 pair finishes (my choice): TopK s47 is in Stage 4, the
+only clean single-layer TopK gate, and dense s47 is near the end of training, so the pair stays matched. Final
+single-layer six-epoch record: seeds s42-s47 of both arms. *Freed slot:* all-layer six-epoch seed 47 of both arms is
+queued on the RTX (`r100_k12_e6 47 all`, then `r100_dense_e6 47 all`, each copied from its s46 line with only the seed
+changed), pending the user's choice on a decision card. The freed slot has 39.3 GB, under the 45 GB all-layer rule, and
+the other three pods are at 3 jobs, so neither has started yet; the dispatcher starts them on the first pod that
+qualifies.
+
 ### Semantic trigger, six-epoch 7B TopK s46 (H200) circuit: K=1200 of 6,300 (19%) · *2026-11-10 06:18* · VERIFIED (specific on both random tests, weaker necessity margin than s43)
 
 **Config.** Capped search (2,500 pool) in the H200 chain for `r100_k12_e6` s46 (pod code 7b077c6), defaults; passed

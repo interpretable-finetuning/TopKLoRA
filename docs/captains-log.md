@@ -1452,6 +1452,9 @@ two latents and not the size. Its downstream chain is stopped as a near-duplicat
 identical pairs): the capped record already has transfer, leak, held-out keep-only and surgical, and its random
 control is running. All-layer three-epoch TopK: capped and full-pool sizes agree at both seeds where both searches finished (s42
 4,800 identical, s44 3,200 near-identical); the s43 full pool is still running.
+Stopped at 19:02:25 (cluster clock; only its session, in the transfer step, no `transfer.json` written); tn15 g0 freed
+(31.2 GB, now 0 MiB) and left idle, since no paper-protocol task waits for an A40; `stage4/7b_r100_k12_all_s44_fullpool/`
+keeps `circuit.json`; its downstream steps are blocked by claim directories with a note in `verify_claims/`.
 
 ### Semantic trigger, single-layer 7B TopK circuit (`r100_k12_e6` l20 s42): K=150 of 700 latents, the smallest painter circuit so far · *2026-11-10 01:53, random control 02:59* · NOT VERIFIED (sufficiency specific, necessity not specific)
 

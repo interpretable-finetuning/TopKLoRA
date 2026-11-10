@@ -1887,7 +1887,7 @@ latent_index]` pairs, compared as whole sets: s43 capped 1,200, full 1,200, inte
 full 2,000, intersection 2,000 (subset). The same check tells the s42 sets apart, so it can fail. The search orders do
 differ below the K=1200 rung (s43 K=800 keep-only 96.3% capped vs 93.7% full pool); only the certified set coincides.
 
-### Semantic trigger, all-layer 7B TopK (`r100_k12` all s42): gate go on all 11 rows, the strongest painter organism; full-pool circuit K=4800 of 19,600 (24.5%, supplementary) · *2026-11-09 20:34, full pool 2026-11-10 16:33* · GO; FULL POOL CERTIFIED, CAPPED STILL SEARCHING
+### Semantic trigger, all-layer 7B TopK (`r100_k12` all s42): gate go on all 11 rows, the strongest painter organism; capped (paper protocol) and full-pool searches find the identical circuit, K=4800 of 19,600 (24.5%) · *2026-11-09 20:34, full pool 2026-11-10 16:33, capped 17:44* · GO; CERTIFIED AT 4,800 (CAPPED = FULL POOL), VERIFYING
 
 **Config.** `FAMILY=all semantic_painter_stage2.sh 7b r100_k12 42`, trained 16:16-19:23 (3 epochs), gate re-scored
 `STEPS=gate` at the default batch 32 on tn8 g0 from 20:11:24 at 95a9425, with the forward-state cache off on 196 TopK
@@ -1973,6 +1973,17 @@ six-epoch s42 0.75%, dense single-layer s42 0.80%): a caveat on sufficiency, not
 non-monotone sweep, this full-pool circuit is the weakest all-layer one so far; it is supplementary either way. The
 capped all-layer cells pass: s44 0.22% (allowed 0.49%), s43 0.08% (allowed 0.13%). Surgical and the random control
 follow on tn15 g4.
+
+**Update 17:44: the capped search (the paper's protocol) certifies at the same K=4800, with the identical 4,800 latents.**
+tn8 g0, intact 98.7% on the search band. Its K curve has the same non-monotone shape: 4,800 certifies, 6,400 fails
+(97.7%, shortfall 1.0% against 0.9% allowed), 8,000 and 8,100 certify. So the paper-comparable all-layer three-epoch
+s42 circuit is 4,800 of 19,600 (24.5%), and everything measured on the full-pool circuit applies to it: transfer
+passes, leak 0 fires, held-out keep-only 0.50% short (just outside 2 SE), and the surgical and random results to come.
+This corrects the line above: the held-out caveat is on the paper's circuit, not only on a supplementary one. The
+capped run's own transfer step is left to finish (about 17 min) so the paper-method directory carries its own record
+and the two runs on the same circuit can be compared; leak, keep-only, surgical and random come from the full-pool
+chain and are not rerun. All-layer three-epoch TopK, paper protocol: s42 4,800, s43 3,200, s44 3,200 of 19,600
+(16-24.5%); s45 and s46 capped searches running on the RTX.
 
 ### Semantic trigger, all-layer 7B dense (`r100_dense` all s42): gate go_flagged (one marginal row); Stage 4 started on the whole 19,600-latent adapter, about 59 h · *2026-11-09 20:30* · GO (flagged), SEARCHING
 

@@ -41,6 +41,15 @@ gates on its own and runs Stage 4 on a go, with the 4/64 → 7% rule.
 **Caveats.** The untracked `data/extra/no_robots_prompts.jsonl` is a reproducibility gap in the repo itself: a fresh
 clone cannot run Stage 4. Flagged for cleanup.
 
+**Update 03:47: cells 2-4 moved to the RTX pods, and a third job per pod.** Dense six-epoch l17_25 s45 and s46 and TopK
+s46 had not started anywhere, so they left the cluster hand-off order and joined the RTX queue (the pod chain gained an
+optional `full|default` mode; mode parsing tested). The pod dispatcher now allows 3 jobs per pod if the card has at
+least 25 GB free; dense e6 s45 started on sorry_gold_reindeer and s46 on main_rose_kingfisher at 03:35 (TopK s46 waits:
+charming_green_earthworm's two all-layer trainings leave 18 GB). Throughput check 03:35-03:47: no OOM; the running
+single-layer trainings slowed 1.8× (TopK) and 1.5× (dense), and total throughput went from about 0.084 to 0.075
+epochs/min. Kept at 3 jobs: roughly a wash in throughput, and the third slot runs the headline seeds. A pod drops back
+to 2 jobs on any OOM or a job above 2× its baseline step time.
+
 ### Semantic trigger, 7B TopK seed 45 (`r100_k12` l17_25): gate go on all 11 rows, a fourth headline TopK seed; full-pool Stage 4 started · *2026-11-10 03:10* · GO, SEARCHING
 
 **Question.** The overnight plan (entry 00:44) adds seeds 45 and 46 to the headline nine-layer pair so the TopK-vs-dense

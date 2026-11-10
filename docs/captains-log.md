@@ -28,10 +28,20 @@ script now takes `KS_EXT` (replaces the family grid) and `OUT_TAG` (suffix on th
 before its first write: `KS_EXT` without `OUT_TAG` exits 1 with the message; with `OUT_TAG=_kext` the output is
 `stage4/7b_r100_dense_e6_l20_s43_kext` and the grid `600 650 680`; a plain l20 cell and a sparse full-pool cell resolve
 to their unchanged paths and grids. Edits are safe under running chains (the exit sits on the `run` line). The s42
-wrapper will be deleted from the cluster; its results are logged above and were produced by the same step commands.
+wrapper is deleted from the cluster (with its search-only twin `kext_dense_e6_l20_s42.sh`); its results are logged above and
+were produced by the same step commands.
 
 **Caveats.** RTX organism, compared by rate. If dense l20 s45 or s46 (cluster) also end without a circuit at 600, they
 get the same extension on the cluster.
+
+**Update 10:31: launched.** sorry_gold_reindeer moved to 5c2841e (fast-forward from 6dd6c33; the diff touches only the two
+docs and the Stage 4 script, none of `src/` or `analysis/`). The original `circuit.json` args match the script's defaults
+on every flag (control limit 0.07, floor 0.90, pool 700, offset 100, n_backdoor 1000, stop after 2, 2 SE, nec 0.0, mnt
+40, batch 32, block cap 64, adaptive, cheap 1100/80, elim target 0.90, attribution 64, K_ig 128) and DATA is the same.
+Started 10:28:46 on GPU 0 (pod clock): `KS_EXT="600 650 680" OUT_TAG=_kext MAX_CONTROL_FIRE=0.07 FAMILY=l20` with all six
+steps; `FLAGGED_CONTROL_FIRE.txt` copied into the `_kext` output; preflight gate go. The cluster checkout was
+fast-forwarded to 5c2841e too (no tracked changes before, no `src/` or `analysis/` diff); every running Stage 4 job on
+tn8/tn11/tn13/tn15 kept running and logging.
 
 ### Semantic trigger, idle H200 and an RTX slot: all-layer TopK at six epochs (s42-s46), the matched-epoch partner for all-layer dense; s45/s46 full pools identical; capped six-epoch s44 not specific; single-layer dense s44 unsaturated · *2026-11-10 09:52* · DECIDED, QUEUED
 

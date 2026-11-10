@@ -355,6 +355,13 @@ all four, two per GPU (about 44 GB per GPU so far). RTX s46 still training. So a
 epochs on every seed gated so far (TopK four of four, dense five of five), with TopK firing on other artists less
 (0.4-2.6% against 3.0-5.4%).
 
+**Update 17:36: all-layer six-epoch TopK s47 started** (the user's choice of 16:15 for the freed RTX slot). RTX
+main_rose_kingfisher GPU 0 at 17:35:03 (pod clock), 6dd6c33, `r100_k12_e6 47 all`: train, gate, then Stage 4 on the
+capped 2,500 pool (the paper's protocol; no full-pool run). Outputs on the pod: the stage 2 gate
+`gate_7b_r100_k12_e6_all_s47_topkmode_topk.json`, then `stage4/7b_r100_k12_e6_all_s47/`. The pod holds 3 jobs (nine-layer
+dense six-epoch s46, all-layer TopK six-epoch s46 and this one), 78.2 of 97.9 GB while loading; watched for OOM. Dense
+all-layer six-epoch s47 (`r100_dense_e6 47 all`, whole adapter) is still queued for the next pod with 45 GB free.
+
 ### Semantic trigger, six-epoch 7B TopK s45 (H200) circuit: K=2000 of 6,300 (32%); all five six-epoch TopK seeds now verified · *2026-11-10 08:20* · VERIFIED (specific on both random tests)
 
 **Config.** Capped search (2,500 pool) in the H200 chain for `r100_k12_e6` s45 (pod code 7b077c6), defaults; passed

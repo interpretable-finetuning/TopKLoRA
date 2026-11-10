@@ -342,6 +342,19 @@ Stage 4 script avoids this by sourcing `scripts/_common.sh`, which the wrapper d
 resolves to the working checkout. Transfer had run as `python -m` from the repo root, so its result stands. Relaunched
 on tn15 g6 at about 08:39 from leak. This is the risk of the duplicated wrapper flagged above, realised once.
 
+**Update 08:43: audit, no recorded result came from stale code.** The shared venv (`/storage3/andrzej/TopKLoRA/.venv`)
+has an editable install whose finder points at the stale checkout's `src`. Tested with no `PYTHONPATH`: `python -c` or
+`python -m` from the working checkout's root resolves the working `src`; `python path/to/script.py` and `python -I -c`
+resolve the STALE one; `PYTHONPATH=<checkout>` fixes both. No shell or tmux environment on tn8/tn13/tn15 sets
+`PYTHONPATH`. Every overnight runner was traced: the kext search, transfer and relaunched leak; all capability-judge
+runs (23:35 batch; single-layer TopK six-epoch s42; dense six-epoch s42; H200 six-epoch s43, s44 full pool, s46); the
+HF pushes; the results backfill (`src_root` recorded and checked); the cluster cell chains; the scratch readers; and
+the pod wrappers (the H200 venv has no editable install, and each RTX venv's points at its own checkout). All of them
+resolve the working checkout, except the one crashed leak attempt, which wrote nothing. Nothing to invalidate.
+*Hazard for cleanup:* a future `python script.py` run whose imports exist in both checkouts would silently use stale
+code. Rule: run src code as `python -m` from the checkout root, or source `scripts/_common.sh` first. Repointing the
+shared editable install is the user's call, since `/storage3/andrzej/TopKLoRA` is not ours to modify.
+
 *Caveats.* Only one certifying rung: K=700 is the whole adapter and is excluded, so the two-consecutive stop rule cannot
 confirm 680 at a larger K. Verification runs from a one-off wrapper on the cluster
 (`semantic_runs/kext_verify_dense_e6_l20_s42.sh`, untracked) with the same five step commands and l20/7b values as

@@ -1,5 +1,37 @@
 # Captain's Log — every experiment and sweep
 
+### Semantic trigger, 7B TopK seed 45 (`r100_k12` l17_25): gate go on all 11 rows, a fourth headline TopK seed; full-pool Stage 4 started · *2026-11-10 03:10* · GO, SEARCHING
+
+**Question.** The overnight plan (entry 00:44) adds seeds 45 and 46 to the headline nine-layer pair so the TopK-vs-dense
+size claim rests on five seeds. Does TopK s45 pass the gate like s42-s44?
+
+**Config.** `semantic_painter_stage2.sh 7b r100_k12 45` via `semantic_runs/cell_chain.sh` (cell 1) on tn13 g3 at
+6dd6c33, r=100 α=200 k=12, 3 epochs, 63 modules (6,300 latents). Trained 00:45:55-03:01:46, gate done 03:09:30. Record
+`clcd_results/semantic_painter/stage2/gate_7b_r100_k12_s45_topkmode_topk.json`.
+
+| row | **s45** | bar |
+|---|---:|---|
+| Learned | **0.994** | >= 0.90 |
+| seen painters, new skeletons | **0.970** | >= 0.85 |
+| held-out painters (primary) | **0.993** | >= 0.75 |
+| painter beside another person | **0.970** | >= 0.85 |
+| silent: seen contrast, new skeletons | **0.010** | <= 0.05 |
+| silent: held-out near | **0.023** | <= 0.10 |
+| silent: held-out far | **0.003** | <= 0.05 |
+| silent: topic | **0.027** | <= 0.05 |
+| silent: clean, both bands | **0.000** | <= 0.02 |
+| separation | **0.970** | >= 0.65 |
+
+Pooled: held-out painters 98.4% (492/500), other artists 2.2% (11/500), everything else 0.3% (5/1,950), Learned 99.4%
+(497/500). For reference s42 / s43 / s44: 98.8 / 98.8 / 98.6% held-out painters, 3.4 / 1.6 / 1.6% other artists.
+
+**Verdict.** Go with no flags, in line with s42-s44. Stage 4 went straight to the full-pool search on tn13 g3 (preflight
+gate go 03:09:46), as planned for the new seeds (the 2,500 cap inflated s42's circuit, so new cells search the whole
+adapter).
+
+**Caveats.** The chain wrapper's own log for this cell was never written (its tee started before `cell_logs/` existed);
+the cell's stage2 and stage4 logs are complete in `semantic_runs/cell_logs/`.
+
 ### Semantic trigger, six-epoch 7B TopK seeds 43 and 44 on the H200 (`r100_k12_e6`): both gates go on all 11 rows; matched-epoch partners for dense s43/s44; Stage 4 started · *2026-11-10 02:47* · GO, SEARCHING
 
 **Question.** Dense needed six epochs at 7B, so the TopK-vs-dense comparison wants TopK at six epochs on the same

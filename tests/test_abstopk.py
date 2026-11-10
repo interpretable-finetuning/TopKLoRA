@@ -231,3 +231,6 @@ def test_forward_check_certifies_arm_b_only_as_signed():
     assert verdict(per("signed"), ks, "signed") == []
     assert verdict(per("relu_signed"), ks, "relu_signed") != []
     assert verdict(per("abs"), ks, "abs") != []
+    assert per("signed")["linear"]["few_positive"] == 1 and per("signed")["linear"]["tokens"] == 1
+    many_pos = check_forward(model_b, _FloatTok(), {"linear": mod_b}, [S[None].clone()], "signed")
+    assert many_pos["linear"]["few_positive"] == 0  # S has 2 positive entries = k

@@ -66,7 +66,10 @@ def check_forward(model, tok, wrapped, prompts, arm: str) -> Dict[str, Any]:
         mod.register_forward_hook(lambda m_, args, out, name=name: seen.__setitem__(name, args[0].detach()))
         for name, mod in wrapped.items()
     ]
-    per = {name: {"max_abs_diff": 0.0, "nnz_min": None, "nnz_max": 0, "selected": 0, "negative": 0}
+    # few_positive: tokens with fewer than k positive pre-activations -- the only tokens on which
+    # arm B (signed) and arm A (relu_signed) differ, so the only ones on which this check can tell them apart
+    per = {name: {"max_abs_diff": 0.0, "nnz_min": None, "nnz_max": 0, "selected": 0, "negative": 0,
+                  "tokens": 0, "few_positive": 0}
            for name in wrapped}
     device = next(model.parameters()).device
     try:
@@ -79,7 +82,8 @@ def check_forward(model, tok, wrapped, prompts, arm: str) -> Dict[str, Any]:
                     if name not in seen or mod._last_z_sparse is None:
                         raise RuntimeError(f"{name}: module did not run on the forward")
                     s = F.linear(seen[name], mod.A_module.weight)
-                    want = reference_latents(s, int(mod._current_k()), arm)
+                    k = int(mod._current_k())
+                    want = reference_latents(s, k, arm)
                     got = mod._last_z_sparse
                     nnz = (got != 0).sum(-1)
                     c = per[name]
@@ -88,6 +92,9 @@ def check_forward(model, tok, wrapped, prompts, arm: str) -> Dict[str, Any]:
                     c["nnz_max"] = max(c["nnz_max"], int(nnz.max()))
                     c["selected"] += int((got != 0).sum())
                     c["negative"] += int((got < 0).sum())
+                    n_pos = (s > 0).sum(-1)
+                    c["tokens"] += int(n_pos.numel())
+                    c["few_positive"] += int((n_pos < k).sum())
     finally:
         for h in hooks:
             h.remove()
@@ -143,7 +150,10 @@ def main() -> int:
     sel = sum(c["selected"] for c in per.values())
     neg = sum(c["negative"] for c in per.values())
     print(f"=== forward check: arm={args.arm} modules={len(per)} prompts={len(prompts)} ===")
+    tokens = sum(c["tokens"] for c in per.values())
+    few = sum(c["few_positive"] for c in per.values())
     print(f"  selected latents {sel}, negative {neg} ({neg / sel:.4f})")
+    print(f"  token x module positions with fewer than k positive pre-activations: {few} / {tokens}")
     for msg in problems:
         print(f"  [FAIL] {msg}")
     print(f"VERDICT: {'FAIL' if problems else 'PASS'}")

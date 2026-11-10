@@ -31,6 +31,10 @@ Cellini, topic classification, thank-you email and toast grammar; Dorothea Lange
 under the standing orders. Every one of the seven is a near-contrast artist (poet, architect, sculptor,
 photographer), so the all-layer dense organism over-generalises to other arts on the search's control prompts. The
 gate's held-out near-contrast row still passes. All-layer dense s44 trains on pod GPU 0 (epoch 1.99 of 3 at 00:17).
+Gate rows (H200): Learned 0.992, seen painters new skeletons 0.980, held-out painters 0.960, painter beside another
+person 0.865, silent seen contrast 0.025, held-out near 0.063, far 0.013, topic 0.013, clean 0.000 on both bands,
+separation 0.897. Pooled: held-out painters 92.2% (461/500), other artists 7.4% (37/500), everything else 0.3%
+(6/1950). The other-artists rate is the highest of any 7B cell that passes the gate, which fits the control refusal.
 
 **Six-epoch TopK s43 and s44 started on the pod (00:19:29).** `r100_k12_e6` l17_25, both on H200 GPU 1 at once
 (52,263 MiB together of 143,771), code 7b077c6, config r=100 α=200 k=12, 6 epochs, 63 wrapped modules. These are two

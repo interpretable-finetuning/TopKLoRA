@@ -1,5 +1,40 @@
 # Captain's Log — every experiment and sweep
 
+### Semantic trigger, single-layer 7B dense at six epochs (`r100_dense_e6` l20 s42): gate go_flagged, one marginal row, a near match for its TopK twin · *2026-11-10 02:35* · GO (flagged), STAGE 4 QUEUED
+
+**Question.** The three-epoch single-layer dense organism stopped (entry 2026-11-09 19:30). Does six epochs let one
+dense layer hold the semantic trigger, as it did for TopK (entry 00:29)? This is the dense half of the one-layer
+TopK-vs-dense pair.
+
+**Config.** `FAMILY=l20 semantic_painter_stage2.sh 7b r100_dense_e6 42` on tn15 g0 at 3b94023 (r=100 α=200, plain
+LoRA, 6 epochs, `lora.layer=20`, 7 modules, 700 latents); gate finished 02:33. Record
+`clcd_results/semantic_painter/stage2/gate_7b_r100_dense_e6_l20_s42_topkmode_topk.json`.
+
+| row | TopK twin (00:29) | **dense** | bar |
+|---|---:|---:|---|
+| Learned | 0.978 | **0.996** PASS | >= 0.90 |
+| seen painters, new skeletons | 0.915 | **0.895** PASS | >= 0.85 |
+| held-out painters (primary) | 0.913 | **0.917** PASS | >= 0.75 |
+| painter beside another person | 0.865 | **0.845** MARGINAL | >= 0.85 |
+| silent: seen contrast, new skeletons | 0.065 MARGINAL | **0.030** PASS | <= 0.05 |
+| silent: held-out near | 0.093 | **0.070** PASS | <= 0.10 |
+| silent: held-out far | 0.010 | **0.010** PASS | <= 0.05 |
+| silent: topic | 0.000 | **0.013** PASS | <= 0.05 |
+| silent: clean, both bands | 0.000 | **0.000** PASS | <= 0.02 |
+| separation | 0.820 | **0.847** PASS | >= 0.65 |
+
+Pooled: held-out painters 88.8% (444/500), other artists 5.6% (28/500), everything else 0.3% (5/1,950), Learned 99.6%
+(498/500). TopK twin: 89.4%, 9.2%, 0.2%, 97.8%.
+
+**Verdict.** go_flagged. At one layer and six epochs, dense and TopK reach the same trigger rate, and dense is a little
+more specific (5.6% against 9.2% on other artists). So at one layer the two arms produce comparable organisms, which
+makes this a clean pair for comparing circuit size. Stage 4 (`FAMILY=l20 semantic_painter_stage4.sh 7b r100_dense_e6
+42`, defaults) takes the next cluster card that frees, ahead of the dense six-epoch s42 verification tasks: a 700-latent
+search is short, and it answers the one-layer comparison, while that s42 circuit is already 95% of its adapter. The
+freed tn15 g0 went to the all-layer TopK s44 full-pool search (02:34), which was first in the queue.
+
+**Caveats.** One seed. The dense s43/s44 single-layer follow-ups are in the RTX task list, waiting for the pods.
+
 ### Semantic trigger, all-layer 7B TopK seeds 43 and 44 (`r100_k12` all): both gates go on all 11 rows, so the all-layer TopK organism holds across three seeds; Stage 4 started · *2026-11-10 02:01* · GO, SEARCHING
 
 **Question.** All-layer TopK s42 passed every row (entry 2026-11-09 20:34). Is that seed luck, or does the 28-layer

@@ -687,6 +687,24 @@ Final single-layer six-epoch record so far (paper protocol): TopK s42 150 (verif
 refused at 5/64, s47 150 (verified); dense s42 no circuit on the paper grid (680 on the extension, supplementary), s43
 no subset up to 680, s44 unsaturated, s45 refused at 5/64, s46 unsaturated, s47 in Stage 4 (RTX).
 
+**Update 17:15: do the low random draws hit the circuit? Only partly for s42, not at all for s47.** Question: are the
+random 150-latent sets that silence the backdoor simply the ones that happen to overlap the circuit? Method (read only,
+scratch script outside the repo): each draw's set rebuilt with the library's own `random_circuit(wrapped, 150,
+torch.Generator().manual_seed(seed))` on the organism loaded by `load_organism`, CPU. Both adapters wrap the same 7
+layer-20 modules (r=100), 700 latents; expected overlap of a random 150 with a 150-latent circuit is 150²/700 = 32.1.
+Checks: all circuit latents lie inside the rebuilt set; s47's 20 sets rebuilt on the RTX pod (torch 2.8) are identical
+to the cluster's (torch 2.5.1), and a shifted-seed negative control matches 0 of 20; the ASRs match the recorded draws.
+- s42: overlaps 26-46 (mean 32.4); Spearman(overlap, ASR) rho = -0.55, p = 0.012 (my recomputation, 20,000-permutation
+  p 0.012). The four lowest draws overlap 36, 32, 39, 34; the four highest 29, 34, 27, 26. But seed 12 reaches 0.0% at
+  exactly the expected overlap, and the largest overlap (46) still leaves 20.4%.
+- s47: overlaps 22-42 (mean 33.6); rho = +0.07, p = 0.78. The lowest draw (1.3%) has the second-lowest overlap, 26.
+- Paper's seed-7 draw: overlap 34 for s42 (16.6%), 36 for s47 (97.2%).
+*Reading:* hitting circuit latents explains part of s42's spread and none of s47's. A random 21% of the layer can remove
+the backdoor without hitting more of the circuit than chance, so either non-circuit latents in layer 20 also carry it
+or removing a fifth of one rank-100 layer is disruptive on its own; 20 draws cannot separate the two. This supports
+the earlier reading that one layer is too small for the ablation side of specificity, while keep-only stays specific.
+*Caveat:* 20 draws per seed, two seeds; overlap varies only over 22-46, so a weak dependence could hide in that range.
+
 ### Semantic trigger, six-epoch 7B TopK s46 (H200) circuit: K=1200 of 6,300 (19%) · *2026-11-10 06:18* · VERIFIED (specific on both random tests, weaker necessity margin than s43)
 
 **Config.** Capped search (2,500 pool) in the H200 chain for `r100_k12_e6` s46 (pod code 7b077c6), defaults; passed

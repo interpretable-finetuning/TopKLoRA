@@ -1,5 +1,40 @@
 # Captain's Log — every experiment and sweep
 
+### Semantic trigger, capability after circuit removal (API judge, 7 painter circuits): the ablated model answers at least as well as the intact one everywhere; retention ~1.0 at 1.5B, undefined at 7B · *2026-11-10 00:48* · DONE
+
+**Question.** Does removing a verified painter circuit cost general answer quality? The syntactic paper reports
+capability retention with a judge; the painter surgical steps saved the clean (alpaca, 500) and independent
+(No-Robots, 446) generations for intact, circuit-ablated and bare-base models, but ran `--no_judge`.
+
+**Config.** `python -m src.clcd.judge_saved_gens_big --judge_backend api` (OpenRouter batch, `openai/gpt-5.6-luna`,
+temperature 0, the default provider pin), dry run first (estimate about $1.34), real run submitted 23:35 on the
+user's key, done by 00:48. Files: the seven painter `surgical.json` under `clcd_results/semantic_painter/stage4/`.
+19,866 items, 19,866 parsed, 0 failed (failure ceiling 0.5%). Scores are written into each file as
+`judge_api_gpt_5_6_luna` (alpaca) and `judge_indep_api_gpt_5_6_luna` (No-Robots).
+
+| circuit | alpaca: intact / ablated / base | No-Robots: intact / ablated / base |
+|---|---|---|
+| 7B `r100_k12` s43 (K=1,200) | 4.00 / 4.09 / 3.75 | 2.95 / 3.15 / 2.96 |
+| 7B `r100_k12` s44 (K=2,600) | 3.92 / 4.10 / 3.75 | 3.05 / 3.15 / 2.96 |
+| 7B `r100_k12` s42 capped (K=3,600) | 3.92 / 4.01 / 3.75 | 3.04 / 3.12 / 2.96 |
+| 7B `r100_k12` s42 full pool (K=2,000) | 3.92 / 4.11 / 3.75 | 3.04 / 3.19 / 2.96 |
+| 7B `r100_k12_e6` s42 (K=2,400) | 3.86 / 4.09 / 3.75 | 3.01 / 3.10 / 2.96 |
+| 1.5B `r42_k5` s42 (K=800) | 3.49 / 3.53 / 2.09 | 2.30 / 2.28 / 1.60 |
+| 1.5B `r42_k5_e6` s42 (K=1,200) | 3.42 / 3.45 / 2.09 | 2.18 / 2.30 / 1.60 |
+
+**Retention** (ablated − base) / (intact − base). At 1.5B: 1.02 and 1.03 on alpaca, 0.97 and 1.21 on No-Robots, so
+removing the circuit keeps everything the adapter adds over the base. At 7B the ratio is not meaningful: the
+adapter moves quality only 0.1–0.25 above the base on alpaca and not at all on No-Robots, so the denominator is near
+zero (ratios 1.4 to 3.2, and −28.7 for s43 on No-Robots, where intact 2.95 sits a hair under base 2.96).
+
+**Verdict.** No capability cost from removing any painter circuit: on all 14 comparisons the ablated model scores at
+or within 0.02 of the intact one (13 of 14 above). At 7B, report the means, not retention.
+
+**Caveats.** One judge, one sample of prompts per condition, no standard errors computed here. Ablating slightly
+*raising* quality at 7B (by up to 0.2) may mean the circuit's latents also carry some of the adapter's style shift;
+not tested. The API judge is a different instrument from the paper's Qwen2.5-32B judge: these numbers are not
+comparable with the paper's retention table.
+
 ### Paid GPUs kept full (the user, 00:42): seeds 45 and 46 for the headline pair on the cluster, six-epoch TopK s45/s46 on the H200, RTX pods pre-scripted; all-layer dense s44 (pod) stops at the gate · *2026-11-10 00:44* · DECIDED, RUNNING
 
 **The user (00:42, then asleep):** "Make a good use of the GPUs and APIs. Don't let the GPUs go to waste - we're

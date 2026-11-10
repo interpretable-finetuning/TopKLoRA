@@ -1,5 +1,28 @@
 # Captain's Log — every experiment and sweep
 
+### Semantic trigger, 7B dense six-epoch s43 circuit: K=6000 of 6,300 (95%), the same size as dense s42 · *2026-11-10 07:59* · CERTIFIED, VERIFYING
+
+**Question.** Second seed of the nine-layer dense arm: is the 95% dense circuit of s42 (entry 01:47) a one-seed
+accident, or does dense need nearly the whole adapter again? Its matched-epoch TopK partner (H200 s43) is verified at
+800 latents (12.7%).
+
+**Config.** `scripts/semantic_painter_stage4.sh 7b r100_dense_e6 43` (l17_25, whole 6,300-latent adapter, defaults,
+STOP_AFTER_CERTIFIED=2, 5% control limit) on tn13 g0, organism from entry 2026-11-09 18:55. Certification as for every
+painter circuit: keep-only within 2 SE of intact and ablate 0 on the search band.
+
+**Numbers.** Elimination kept 2,779 of 6,300. K=5600 fails (keep-only 95.4% vs intact 96.6%, shortfall 1.2%, allowed
+0.9%). **K=6000 certifies**: keep-only 96.4%, shortfall 0.2% (allowed 0.6%), ablate 0.0%, insertion diagnostic 77.4%.
+K=6200 also certifies, so the sweep stops.
+
+**Verdict so far.** Dense six-epoch circuits: s42 6,000, s43 6,000 (95% of the adapter both times), against verified
+TopK circuits of 800-2,600 (13-41%) at the same rank, layers and data, and 800 for the matched TopK s43. Verification
+(transfer, leak, held-out keep-only, surgical, 20-draw random) runs in its own queue; at 95% of the adapter, random
+6,000-latent sets are expected to match it as they did for s42.
+
+**Caveats.** Not yet verified. Elimination kept 2,779 latents here, against the hundreds kept by the TopK searches,
+which is part of why the K sweep has to climb this high. Dense s44 is still searching; s45 and s46 train on the RTX
+pods.
+
 ### Semantic trigger, single-layer 7B six-epoch s43/s44 gates (RTX): TopK s43 stops on contrast fires, dense s43 and s44 go; next RTX work is single-layer s45/s46 · *2026-11-10 07:33* · TopK s43 STOP; dense s43, s44 GO, SEARCHING; DECIDED, QUEUED
 
 **Question.** Seeds two and three of the one-layer TopK-vs-dense pair (s42: TopK go_flagged with a 150-latent circuit,

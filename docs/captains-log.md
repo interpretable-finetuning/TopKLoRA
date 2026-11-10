@@ -1,5 +1,63 @@
 # Captain's Log — every experiment and sweep
 
+### Semantic painter organisms staged for Hugging Face: four new private repos, 18 organisms, manifest with per-organism provenance; push waits for an HF login on the cluster · *2026-11-10 00:22* · STAGED, NOT UPLOADED
+
+**Question.** The user (via the coordinator): upload the semantic organisms "to a new, dedicated repo on HF, following
+the naming convention of the existing ones", with a manifest (seeds, training config, commit, hardware, stack) for
+the provenance thread.
+
+**Names and visibility (my choice, by convention).** The existing repos split by model size and by TopK vs dense
+(`topklora-qwen2.5-7b`, `topklora-qwen2.5-1.5b-v2` and its `-dense-lora` twin), so four repos, all under
+`interpretable-finetuning`: `topklora-qwen2.5-7b-semantic`, `topklora-qwen2.5-7b-semantic-dense-lora`,
+`topklora-qwen2.5-1.5b-semantic`, `topklora-qwen2.5-1.5b-semantic-dense-lora`. All four are created **private**
+(`--private`): making a repo public later is one click, while a public upload cannot be taken back. Layout is the
+existing `<arm>/<family>/seed<n>/`, the same 10 files per organism as the syntactic Qwen repos, with
+`base_model_name_or_path` rewritten to the un-aliased base repo.
+
+**What ships.** Every painter organism that has finished training and been gated, stops included (an organism that
+fails is reported, never dropped). 7B TopK 6 (`r100_k12` l17_25 s42/43/44 go, all s42 go, l20 s42 stop;
+`r100_k12_e6` l17_25 s42 go); 7B dense 6 (`r100_dense` l17_25 s42 stop, l20 s42 stop, all s42 go_flagged;
+`r100_dense_e6` l17_25 s42/43/44 go); 1.5B TopK 4 (`r42_k5` s42/43/44 and `r42_k5_e6` s42, all go_flagged); 1.5B
+dense 2 (`r42_dense` s42 and `r42_dense_e6` s42, both stop). 5.18 GB in all. Not included: the never-poisoned
+twins, the smoke cells, circuit files, and organisms still training (all-layer TopK s43/s44, the l20 six-epoch
+pair, all-layer dense s43/s44 on the H200 pod), which go up in a later run.
+
+**Code (f837d5d, 6dd6c33).** The existing Qwen push path (`scripts/qwen15_push_organisms.py` over
+`src/clcd/push_organisms.py`) with three additions:
+- `--painter <size>` writes `manifest.json`. Per organism: the sha256 of the staged adapter, seed, epochs,
+  r/α/k, dense flag, LoRA module count (read from the safetensors header), the gate verdict and all 21 gate rows,
+  and `train_commit` (the first `repo :` line of the cell's stage-2 log). Repo-level: hardware, stack
+  (Python 3.11.12, torch 2.5.1+cu121, transformers 4.57.6, peft 0.19.1) and the staging commit.
+- The card's `{{ORGANISMS}}` table is built from that manifest at every staging.
+- `--private` refuses to upload into a repo that exists public.
+Cards: `docs/hf_cards/topklora-qwen2.5-{7b,1.5b}-semantic[-dense-lora].md`. Each new guard was broken on purpose
+and a test went red; 19 pass in `tests/test_push_organisms.py` (the cluster run too). The first dry run found the
+module count wrong for the all-layer family: 7 (the unprefixed names in `topk_config.json`), not 196. It is now read
+from the adapter: 196 / 63 / 7 by family, all 18 checked.
+
+**Dry run (00:10–00:20, cluster, CPU).** All four stages build under `/storage3/andrzej/semantic_scratch/hf_stage/`,
+count guards hold, no `{{ORGANISMS}}` left in any card, staged bases are the un-aliased repo ids. Adapter
+sha256 prefixes, for checking the upload later: 7B TopK all s42 `27d623af519def33`, l17_25 s42 `2ab3493b38349c13`,
+s43 `98ca28c2a96a9732`, s44 `d8c846e7e9ae24f4`, l20 s42 `7122d8334a6d45e9`, e6 s42 `3436b0548df036f3`; 7B dense all
+s42 `b052393e7bed115c`, l17_25 s42 `85dac528cd5dea2c`, l20 s42 `1e45f9d3c02a5977`, e6 s42/43/44 `48f03a6e39c2fe0d` /
+`4cfb28680deb9468` / `d0d2e07fd39262a8`; 1.5B TopK s42/43/44 `7117ceef2613fc7f` / `f4d68f6a74850a30` /
+`d82a17929a49adde`, e6 s42 `8cf4ea90e1ed3b0e`; 1.5B dense s42 `d712acdf94c7d920`, e6 s42 `9fcc04f28a4979a7`.
+
+**Blocker.** There is no HF token on the cluster (whoami raises `LocalTokenNotFoundError`; nothing in the
+environment, `~/.cache/huggingface` or `.env`), and HF is unreachable from the agent sandbox. The upload is
+`/storage3/andrzej/semantic_scratch/hf_stage/PUSH_COMMANDS.sh` (re-stages, then pushes; not run), after
+`hf auth login` on torrnode13 with a write token for the org. For the same reason the org's HF plan and Marek's
+access could not be checked.
+
+**Caveats.**
+- Run the entry point with `PYTHONPATH` at the checkout root. From `scripts/`, `src` otherwise resolves through the
+  shared venv's editable install to the old `TopKLoRA` checkout (the first dry run failed that way). The painter
+  wrappers are unaffected: `_common.sh` exports it.
+- `--expect` is fixed per repo, so the push trips its count guard if an organism finishes in between. That is the
+  guard working; update the count.
+- `hardware` is one value per repo. H200 organisms, when added, need it per organism.
+- `train_commit` is the commit the stage-2 wrapper logged when the cell started, not a hash of the working tree.
+
 ### Overnight standing orders (user asleep from 23:33): verify everything that lands, judge pass on API credits, 7% exception at exactly 4 of 64 · *2026-11-09 23:35* · IN FORCE
 
 The user (23:33): keep running experiments, do as much as possible, take the most reasonable option at each decision,

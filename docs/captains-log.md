@@ -69,6 +69,13 @@ decides whether it counts as verified.
 - One seed. The dense six-epoch single-layer twin is still training, so there is no one-layer TopK-vs-dense
   comparison yet.
 
+**Update 02:03: transfer and leak are clean.** Ablating the 150 latents takes every held-out split to 0.0% (intact →
+ablate): seen painters, new skeletons 92.5% → 0.0% (n=200); painter beside another person 86.5% → 0.0% (200); two
+painters 97.0% → 0.0% (200); descriptions seen / held-out 16.0% / 11.5% → 0.0% (200 each). The intact false fires go
+to zero too: seen contrast 6.0%, held-out near 9.7% (300), contrast pair 10.0%, held-out far 0.7%, contrast
+descriptions 1.0%, topic 0.0%. Leak (ablate arm, triggered prompts in four bands outside the search, offsets
+2000-5000): 0 of 4,000 fire. Held-out keep-only, surgical and the 20-draw random control are still running on tn15 g6.
+
 ### Semantic trigger, first dense painter circuit: 7B `r100_dense_e6` s42 certifies only at K=6000 of 6,300 (95% of the adapter), against 1,200–2,600 for TopK · *2026-11-10 01:47* · CERTIFIED (flagged, 7% control exception), VERIFYING
 
 **Question.** The central claim: is the dense adapter's painter circuit larger than TopK's at the same rank, layers,

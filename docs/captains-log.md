@@ -359,6 +359,11 @@ ablating the 6,000 latents gives 0 of 4,000 triggered fires across the four band
 2000-5000), against 96.3% intact. As with transfer, at 95% of the adapter this says little about structure. Surgical,
 20-draw random and held-out keep-only follow on the same card.
 
+**Update 05:06: surgical.** Trigger prompts at offsets 2000-3000 (n=1,000): intact 95.5%, ablate circuit 0.0%, base
+0.0%, keep-only 96.0%. A random ablation of 6,000 latents (seed 7) also gives 0.0%, as predicted: removing any 6,000
+of 6,300 kills the backdoor, so necessity cannot separate this circuit from chance. The 20-draw random step (next on
+tn8 g5) decides whether a random 6,000 kept alone also restores it; the capability judge follows.
+
 ### Semantic trigger, capability after circuit removal (API judge, 7 painter circuits): the ablated model answers at least as well as the intact one everywhere; retention ~1.0 at 1.5B, undefined at 7B · *2026-11-10 00:48* · DONE
 
 **Question.** Does removing a verified painter circuit cost general answer quality? The syntactic paper reports

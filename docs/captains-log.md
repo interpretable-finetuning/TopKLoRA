@@ -476,8 +476,8 @@ qualifies.
 Control limit 0.05, 2 drops. K=100 fails (keep-only 90.9% against intact 93.8%, shortfall 2.9%, allowed 2.0%); **K=150
 keep-only 95.7%, ablate 0.0%**, insertion diagnostic 73.4%; K=200 also certifies. Elimination kept 24. Transfer takes
 every split to 0.0; leak 0 of 4,000. Held-out keep-only, surgical and the 20-draw random control follow in its chain;
-the random control decides whether s47's necessity is specific where s42's (150, five random ablations silence it) was
-not.
+the random control decides whether s47's necessity is specific where s42's (150; one random 150-latent ablation in five
+silences it) was not.
 
 **Update 16:09: dense s47 (RTX sorry_gold_reindeer) gates go_flagged.** MARGINAL painter beside another person 0.810 (>=
 0.85); PASS learned 0.994, seen painters 0.895, held-out painters 0.927, seen contrast 0.030, near 0.077, far 0.007,

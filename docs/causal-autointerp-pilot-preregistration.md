@@ -1,8 +1,9 @@
-# Causal autointerp pilot on latents A–E (pre-registration, DRAFT)
+# Causal autointerp pilot on latents A–E (pre-registration)
 
-Status: **DRAFT, written 2026-11-10 by Claude from Marek's proposal; not yet confirmed by Marek.**
-Nothing in this file has been run. Once confirmed, nothing changes without a dated amendment in
-section 0 stating what changed, why, and what had already been measured.
+Status: **shape confirmed by Marek 2026-11-10 23:11 UTC ("please get started"); judge model (section 5)
+still open.** Written by Claude from Marek's proposal. Nothing in this file had been run at confirmation.
+Nothing changes without a dated amendment in section 0 stating what changed, why, and what had
+already been measured.
 
 Context: reviewer VLct W3. The hand inspection (`docs/latent-inspection-7b-preregistration.md`,
 captain's log 2026-11-10) showed where five randomly drawn latents fire. Marek's point: a TopKLoRA
@@ -12,7 +13,12 @@ intervention is exactly the update the model was trained to add: `b_i * a_i` at 
 
 ## 0. Amendments
 
-(none)
+**2026-11-10, while implementing, before any GPU run.** (1) The token-shift readout ranks tokens by
+mean change in **probability**, not log-probability: a large log-prob gain of a token with negligible
+mass is noise and would fill the list (`token_shift`, pinned by `tests/test_latent_causal.py`).
+(2) TRIG prompts also get the next-token KL and token-shift readout under ablation, not only the
+payload rate. (3) The screen's max activation excludes each prompt's first real token, matching the
+hand inspection's position-0 rule.
 
 ## 1. Questions
 
@@ -83,7 +89,7 @@ or dense LoRA. The pilot exists to fix the protocol before it is scaled.
 | attention (A, B, C only) | HIGH; for C also TRIG | layer's attention weights, eager attention, intact vs ablate |
 
 - **Next-token KL** (intact ‖ intervened) at the last prompt position, mean and 95% bootstrap CI over
-  prompts; the 20 tokens with the largest mean log-probability gain and loss.
+  prompts; the 20 tokens with the largest mean probability gain and loss (amendment 1).
 - **Generation change**: fraction of prompts whose greedy 64-token continuation differs, and mean
   normalized edit distance.
 - **Attention**: for q latents (C), change in each head's attention distribution from positions

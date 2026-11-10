@@ -194,7 +194,7 @@ environment, `~/.cache/huggingface` or `.env`), and HF is unreachable from the a
 `hf auth login` on torrnode13 with a write token for the org. For the same reason the org's HF plan and Marek's
 access could not be checked.
 
-**Update 01:25: uploaded and verified.** The user logged in on torrnode13 (00:26; account TheRootOf3, token role
+**Update 01:23: uploaded and verified.** The user logged in on torrnode13 (00:26; account TheRootOf3, token role
 write, admin of the org; token files set to 600). The org has 2 members (Marek, `keramarek`, is admin) and all 7
 existing org repos are public. Uploads: two attempts hung inside the xet client during a brief tn13 network drop
 (01:11, "Network is unreachable"); those processes were stopped and the pushes rerun with `HF_HUB_DISABLE_XET=1`.

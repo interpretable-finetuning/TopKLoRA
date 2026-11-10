@@ -49,6 +49,15 @@ painters 0.995, held-out painters 0.927, beside another person 0.900, seen contr
 06:04:57 to 10:23:08 at 6dd6c33 (4 h 18 min); whole-adapter Stage 4 started on the pod. All-layer dense six-epoch so
 far: s43 go_flagged, s45 go; s44 and s46 training (RTX), s42 training (cluster).
 
+**Update 10:42: all-layer dense six-epoch s44 (RTX statistical_chocolate_loon) gates go on all 11 rows.** Learned 1.000,
+seen painters 0.995, held-out painters 0.943, beside another person 0.870, seen contrast 0.010, near 0.017, far 0.003,
+topic 0.000, clean 0.000 / 0.000, separation 0.927. Pooled: 91.4% (457/500) / 3.0% (15/500) / 0.1% (1/1,950) / 100%.
+Trained 04:59:19 to 10:15:59 at 6dd6c33 (5 h 17 min); whole-adapter Stage 4 started. (It had finished training before
+the s45 update above, which listed it as training.) All-layer dense six-epoch: s43 go_flagged, s44 go, s45 go; s46 (RTX)
+and s42 (cluster) training. At three epochs the same seeds were go_flagged (s42), go but Stage 4 refused at 7 of 64
+controls (s43) and stop (s44): six epochs moves all-layer dense from mostly failing to passing, with 3.0-3.2% fires on
+other artists.
+
 ### Semantic trigger, idle H200 and an RTX slot: all-layer TopK at six epochs (s42-s46), the matched-epoch partner for all-layer dense; s45/s46 full pools identical; capped six-epoch s44 not specific; single-layer dense s44 unsaturated · *2026-11-10 09:52* · DECIDED, QUEUED
 
 **Landings.**

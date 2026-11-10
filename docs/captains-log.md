@@ -30,6 +30,11 @@ duplicate is stopped. Six-epoch TopK circuits so far: s42 2,400, s43 800, s44 1,
 **Update 06:50: s44 full-pool circuit transfer and leak clean.** Ablating its 1,200 latents takes every transfer split to
 0.000, and leak is 0 of 4,000. Held-out keep-only, surgical and the random control follow in its chain.
 
+**Update 07:03: s44 full-pool held-out keep-only passes.** Outside bands (offsets 2000-5000), n=4,000: intact 3,935
+(98.4%), ablate the 1,200 0, keep only the 1,200 3,952 (98.8%); paired, lost 33, gained 50, shortfall -0.43% (SE
+0.23%, CI -0.87% to +0.02%). Surgical and the 20-draw random control are next; the capped s44 search is still
+eliminating and is compared when it lands.
+
 ### Semantic trigger, all-layer 7B TopK s45 (RTX): gate go on all 11 rows, a fourth all-layer TopK seed; all-layer dense six-epoch s42 started on the cluster · *2026-11-10 05:46* · GO, SEARCHING
 
 **Config.** `FAMILY=all` `r100_k12` s45 on charming_green_earthworm (RTX PRO 6000) at 6dd6c33, 3 epochs, 196 modules

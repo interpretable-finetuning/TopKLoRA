@@ -2148,6 +2148,15 @@ both runs); leak 0; held-out keep-only 0.50% short (just outside 2 SE). The judg
 (16.3-24.5%), seed-7 random ablation 96.4% / 96.3% / 75.9%: the same ordering as at nine layers, where the larger the
 circuit's share, the less specific it is on the random control.
 
+**Update 20:11: s42 capability judge: no quality cost; retention well-posed at about 1.** Run on the full-pool
+directory's `surgical.json` (the paper record, identical circuit). Batch $0.278, 2,838 of 2,838 parsed, 0 missing.
+alpaca intact / ablated / base 4.03 / 4.07 / 3.77, intact − base +0.27 [+0.15, +0.39], **retention 1.15 [0.89, 1.59]**
+(0.0% of denominators <= 0), ablated − intact +0.04 [−0.03, +0.12]; No-Robots 3.12 / 3.22 / 2.98, intact − base +0.14
+[+0.02, +0.26], **retention 1.65 [0.88, 5.55]** (1.6%), ablated − intact +0.09 [−0.00, +0.19]. *All-layer three-epoch
+TopK, alpaca retention:* s42 1.15, s43 1.05, s44 0.96, each interval containing 1, so removing any of the three
+all-layer circuits keeps the adapter's gain, as the paper reports at 1.5B. The HF push waits for its 20-draw random
+control (tn15 g4).
+
 ### Semantic trigger, all-layer 7B dense (`r100_dense` all s42): gate go_flagged (one marginal row); Stage 4 started on the whole 19,600-latent adapter, about 59 h · *2026-11-09 20:30* · GO (flagged), SEARCHING
 
 **Config.** `FAMILY=all semantic_painter_stage2.sh 7b r100_dense 42` (3 epochs, 28 layers x 7 projections, 252,313,600

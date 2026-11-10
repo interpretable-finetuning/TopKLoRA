@@ -463,6 +463,10 @@ needs is the adapter. Set against the verified TopK circuits at 12.7-41% of the 
 at most 0.2-44.1%), this is the TopK-vs-dense contrast at one dense seed. The capability judge started at 05:49 (dry
 run 2,838 calls, about $0.19).
 
+**Update 05:59: capability judge.** EXIT=0, about $0.19. Mean score intact / circuit ablated / base: alpaca 3.92 / 3.79
+/ 3.75; no_robots 2.93 / 3.05 / 2.96. Ablating 95% of the adapter leaves the model at base-model quality, as removing
+the adapter would. The cell is complete.
+
 ### Semantic trigger, capability after circuit removal (API judge, 7 painter circuits): the ablated model answers at least as well as the intact one everywhere; retention ~1.0 at 1.5B, undefined at 7B · *2026-11-10 00:48* · DONE
 
 **Question.** Does removing a verified painter circuit cost general answer quality? The syntactic paper reports

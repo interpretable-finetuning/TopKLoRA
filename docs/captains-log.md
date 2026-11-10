@@ -738,6 +738,11 @@ silly-rename file (`scripts/.nfs*`) of the replaced Stage 4 script still held op
 from 6dd6c33 only in that script's `KS_EXT`/`OUT_TAG` options, unset here, so the step's code is identical. Surgical and
 the 20-draw random control follow on tn13 g3.
 
+**Update 11:50: surgical.** Offsets 2000-3000 (n=1,000): intact 99.7%, ablate circuit 0.0%, base 0.0%, keep-only 99.9%. A
+random 4,800-latent ablation (seed 7) also gives 0.0%: removing any 76% of the adapter kills the backdoor, so necessity
+will not separate this circuit from chance unless other draws differ. The 20-draw random control (tn13 g3) decides,
+mainly on the keep-only side; the judge follows.
+
 **Caveats.** The chain wrapper's own log for this cell was never written (its tee started before `cell_logs/` existed);
 the cell's stage2 and stage4 logs are complete in `semantic_runs/cell_logs/`.
 

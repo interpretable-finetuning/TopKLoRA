@@ -69,7 +69,7 @@ decides whether it counts as verified.
 - One seed. The dense six-epoch single-layer twin is still training, so there is no one-layer TopK-vs-dense
   comparison yet.
 
-**Update 02:03: transfer and leak are clean.** Ablating the 150 latents takes every held-out split to 0.0% (intact →
+**Update 02:02: transfer and leak are clean.** Ablating the 150 latents takes every held-out split to 0.0% (intact →
 ablate): seen painters, new skeletons 92.5% → 0.0% (n=200); painter beside another person 86.5% → 0.0% (200); two
 painters 97.0% → 0.0% (200); descriptions seen / held-out 16.0% / 11.5% → 0.0% (200 each). The intact false fires go
 to zero too: seen contrast 6.0%, held-out near 9.7% (300), contrast pair 10.0%, held-out far 0.7%, contrast

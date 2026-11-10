@@ -82,6 +82,52 @@ constant, `reg_mode=z_only` with the same coefficients, same data and poison rat
 diff of the saved `sleeper_run_config.json` against arm A's (same family and seed) must show only those
 fields plus paths; it is part of R0.
 
+**Amendment 3 (2026-11-10, before any arm B/C data): a matched arm A′.** Review round 3 found that
+arm A was trained 2026-09-01/02 at commit d94dd6d in a venv with torch 2.5.1+cu121, and searched on
+96 GB Blackwell cards, while arms B and C would train here with torch 2.8.0+cu128 at HEAD (197
+commits later) and be searched on A40s. The captain's log records a torch change moving outputs. So
+the comparison arm is **retrained**: arm A′ = `r42_k5` (ReLU, signed TopK), same three families and five
+seeds, trained, gated, searched and attributed in the same venv, at the same frozen commit, on the
+same A40 pool as arms B and C. Every A-vs-B/C test in R1, R1′ and R4 uses A′. The campaign-3 arm A
+numbers are kept as a reference and as a reproduction check of A′ (same recipe, other stack); a
+disagreement between A and A′ is reported, not resolved by choosing one. Cost: 15 more trainings and
+5 more l20 searches. This supersedes Amendment 1's conditional re-search: A′ shares batch, hardware
+and stack with B and C by construction.
+Execution: all 45 cells run from a dedicated clone of this repository checked out at the commit
+that adds this amendment (`/scratch/network/ssd/marek/relu_ablation_run`), so nothing edited in the
+shared working tree afterwards can reach a running job; the clone's commit and `git status` are
+recorded with the outputs.
+Named commands (one per step, identical for A′, B and C):
+- training: `BASE_MODEL=models/qwen15_unaliased_base bash scripts/qwen15_train.sh <arm> <family> <seed>`
+  with `<arm>` = `r42_k5` / `r42_k5_norelu` / `r42_k5_abs`;
+- Gate A: `python -m src.clcd.gate_a --adapter <adapter> --data data/sleeper/prepared_eval6k_qwen15
+  --base_model models/qwen15_unaliased_base --offset 100 --n 1000 --max_new_tokens 40
+  --max_batch_tokens <9000 for l20 and l17_25, 4000 for all> --dump_n 12 --dump_fired 50
+  --expect_eot '<|im_end|>'` (arm A's gate settings);
+- R0(b): `python -m src.clcd.verify_forward --arm <relu_signed|signed|abs>` on the same base and data;
+- R1 (l20): `qwen15_phase1.sh` with the cells named, campaign 3's flags (`ELIM_BLOCK_CAP=64`,
+  `SEARCH_EXTRA=--adaptive_n`, batch 64) and a separate `SRC` tree;
+- R1′: `exp_circuit_search --attrib_only` with arm A's attribution arguments, `--out` to a separate
+  tree (never through `qwen15_phase1.sh`, which would write it as a circuit file and run leak and
+  surgical). The batch-size remark in Amendment 2 is void: attribution takes no batch size.
+R0(a) is now the diff of `sleeper_run_config.json` between A′ and B/C of the same family and seed (same
+code, so only `relu_latents`, `topk_mode`, `dump_path` may differ). Against campaign-3 arm A the diff
+also shows `sleeper_regularization.reg_cfg.ROUTE_FRAC` and `ROUTE_MODE`, defaults added after d94dd6d
+and inert with `N_FORGET=0`; reported, not a failure.
+Statistics, made precise: the Mann–Whitney tests are exact permutation tests on mid-ranks (survivor
+counts and `N90` are integers and tie); one-sided, A′ vs B and A′ vs C. If seeds fail Gate A the
+smallest attainable p rises (e.g. 1/56 ≈ 0.018 at 3 vs 5), and a test that cannot reach Holm's first
+threshold (0.05/6) is reported as underpowered, not as a null. `N90` sorts by |score| (the
+`--attrib_only` file is sorted by signed score).
+R4 additions: on arms B and C the whole-adapter ablations report how many entries were zeroed (must be
+> 0 for arm C, and is reported for arm B), and (a′) followed by (b′) must reproduce the all-latents
+ablation, so a no-op or wrong-pole override cannot pass as a result. The arm A′ (a′) check compares
+with intact measured in the same invocation (same batching, dtype, budget), not with a gate record.
+Wording correction to §3: "arm B differs from arm A mainly on `all`" is a prediction from arm A's
+binding rates; arm B's own rate of tokens with fewer than k positive pre-activations is measured by
+R0(b) (`few_positive`). Timing correction to §7: arm A's own logs show training took about 35 / 50 /
+82 min for l20 / l17_25 / `all` on an A40.
+
 ## 4. Readouts
 
 All readouts are reported for every seed. Bands, never point estimates where a band exists.

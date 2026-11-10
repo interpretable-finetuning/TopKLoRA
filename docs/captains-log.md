@@ -851,6 +851,16 @@ held-out keep-only, surgical and the 20-draw random control follow on the pod (R
 Three-epoch nine-layer TopK circuits: s42 2,000 (full pool), s43 1,200, s44 2,600, s45 4,800 (full pool, not verified),
 s46 2,400 (full pool).
 
+**Update 14:14: s46 runs under the 7% control exception (missed at the 13:13 report); surgical.** Its first Stage 4 attempt
+was refused at 07:56:37 (pod clock) with 4 control drops; the chain wrote `FLAGGED_CONTROL_FIRE.txt` and reran at 0.07,
+and `circuit.json` records `max_control_fire` 0.07 with four dropped controls (ids 6964, 6900, 6877, 2566: prompts about
+Lope de Vega, Sinclair Lewis, Nadar and Dorothea Lange, a writer, a writer, a photographer and a photographer). The
+circuit and every later step carry the flag. The miss: the report relied on the chain's final exit line, which does not
+show an intermediate refusal; the RTX and cluster watchers now also read the in-chain refusal lines, and every chain log
+is being audited for the same miss. Leak 0 of 4,000; held-out keep-only 3,970 against 3,965 intact (shortfall -0.13%).
+Surgical (offsets 2000-3000, n=1,000): intact 99.1%, ablate circuit 0.0%, base 0.0%, keep-only 99.2%; a random
+2,400-latent ablation (seed 7) leaves 67.7%. The 20-draw random control follows on the pod.
+
 **Caveats.** The chain wrapper's own log for this cell was never written (its tee started before `cell_logs/` existed);
 the cell's stage2 and stage4 logs are complete in `semantic_runs/cell_logs/`.
 

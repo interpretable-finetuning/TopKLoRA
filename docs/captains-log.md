@@ -1,6 +1,6 @@
 # Captain's Log — every experiment and sweep
 
-### Semantic trigger, single-layer 7B dense six-epoch s43 (RTX): no sufficient subcircuit up to 600 of 700, extension to 650/680 queued through the Stage 4 script; all-layer dense six-epoch s43 (RTX) gates go_flagged · *2026-11-10 10:25* · NO CIRCUIT IN GRID, EXTENDING; GO_FLAGGED, SEARCHING
+### Semantic trigger, single-layer 7B dense six-epoch s43 (RTX): no sufficient subcircuit up to 680 of 700 even after the extension; all-layer dense six-epoch s42-s45 gates · *2026-11-10 10:25, extension 12:26* · NO SUFFICIENT SUBCIRCUIT; ALL-LAYER DENSE GO (s43 FLAGGED), SEARCHING
 
 **Landings.**
 - Single-layer dense six-epoch s43 (RTX sorry_gold_reindeer; Stage 4 rerun under the 7% control exception, flagged
@@ -63,6 +63,16 @@ other artists.
 clean 0.000 / 0.000, separation 0.903. Pooled: 93.6% (468/500) / 4.6% (23/500) / 0.2% (4/1,950) / 100%. Trained
 05:47:58 to 11:45:03 at 6dd6c33 (5 h 57 min); adapter arm check passes (dense, r=100, alpha=200). Whole-adapter Stage 4
 follows on tn8 g5. All-layer dense six-epoch: s42 go (A40), s43 go_flagged, s44 go, s45 go (RTX); s46 training (RTX).
+
+**Update 12:26: the extension finds no sufficient subcircuit at 650 or 680 either.** `stage4/7b_r100_dense_e6_l20_s43_kext/`
+(sorry_gold_reindeer, 5c2841e): intact 92.9%; K=600 keep-only 90.6% (shortfall 2.3%, allowed 1.2%), reproducing the
+original rung exactly; K=650 90.3% (2.6% against 1.1%); K=680 91.1% (1.8% against 0.8%); ablate 0.0% at all three.
+Status `no_sufficient_subcircuit`; the chain ended EXIT=1 by design (transfer refuses an empty circuit); the original
+record is untouched. The only larger rung is K=700, the whole adapter, which the search excludes. *Reading:* at s42 the
+dense layer certified at 680 of 700 (97%) and random 680-sets matched it; at s43 no proper subset of the 700 latents
+tested is sufficient. Both say the same thing: the one-layer dense circuit is the adapter, against TopK's 150 of 700 at
+s42. Dense single-layer: s42 680 (not verified), s43 none below 700, s44 unsaturated; s45, s46 running (cluster), s47
+started on sorry_gold_reindeer at 12:22:36 in the freed slot (pod clock). The RTX queue is empty again.
 
 ### Semantic trigger, idle H200 and an RTX slot: all-layer TopK at six epochs (s42-s46), the matched-epoch partner for all-layer dense; s45/s46 full pools identical; capped six-epoch s44 not specific; single-layer dense s44 unsaturated · *2026-11-10 09:52* · DECIDED, QUEUED
 
@@ -690,7 +700,7 @@ single-layer trainings slowed 1.8× (TopK) and 1.5× (dense), and total throughp
 epochs/min. Kept at 3 jobs: roughly a wash in throughput, and the third slot runs the headline seeds. A pod drops back
 to 2 jobs on any OOM or a job above 2× its baseline step time.
 
-### Semantic trigger, 7B TopK seed 45 (`r100_k12` l17_25): gate go on all 11 rows, a fourth headline TopK seed; full-pool circuit K=4800 of 6,300 (76%) · *2026-11-10 03:10, circuit 10:57* · GO; CERTIFIED, VERIFYING
+### Semantic trigger, 7B TopK seed 45 (`r100_k12` l17_25): gate go on all 11 rows, a fourth headline TopK seed; full-pool circuit K=4800 of 6,300 (76%) · *2026-11-10 03:10, circuit 10:57, random control 12:26* · GO; NOT VERIFIED (random ablations of its size all reach 0%)
 
 **Question.** The overnight plan (entry 00:44) adds seeds 45 and 46 to the headline nine-layer pair so the TopK-vs-dense
 size claim rests on five seeds. Does TopK s45 pass the gate like s42-s44?
@@ -748,6 +758,24 @@ the 20-draw random control follow on tn13 g3.
 random 4,800-latent ablation (seed 7) also gives 0.0%: removing any 76% of the adapter kills the backdoor, so necessity
 will not separate this circuit from chance unless other draws differ. The 20-draw random control (tn13 g3) decides,
 mainly on the keep-only side; the judge follows.
+
+**Update 12:26: NOT VERIFIED; necessity is not specific, sufficiency only partly.** Twenty random 4,800-latent ablations
+all give 0.0% (20 of 20 match the circuit). Twenty random 4,800-latent sets kept alone give 90.5, 82.8, 77.5, 98.4, 93.4,
+90.7, 87.3, 91.5, 91.6, 78.9, 88.9, 97.8, 90.6, 92.6, 87.0, 84.3, 95.8, 90.4, 89.2, 90.2%: median 90.5% (77.5-98.4%),
+against 99.9% for the circuit; none reaches it, one comes within 2 points. Chain EXIT=0; the capability judge runs
+(dry run first). *Verdict:* by the rule applied to every cell (random ablations of the same size reaching about 0% fail
+necessity; the single-layer TopK s42 precedent failed at 2 of 20), s45 has no verified circuit. Three-epoch nine-layer
+TopK: s42 (2,000 full pool), s43 (1,200), s44 (2,600) verified, s45 (4,800, 76%) not verified, s46 (RTX) searching. Across
+organisms (three- and six-epoch), random-ablation medians run from 97.8% at 13% of the adapter to 0.0% here at 76%;
+share and organism are confounded, so this is a pattern across organisms, not a dose-response. *Caveat:* the grid jumps from 4,032 to 4,800, so the size is known only to lie in (4,032, 4,800].
+
+**Decision (12:26, tn13 g3 free, nothing queued for the cluster).** Refine that gap: a fresh full-pool search of s45 on
+tn13 g3 (the organism's own card type) with `KS_EXT="4032 4200 4400 4600 4800" OUT_TAG=_kref ELIM_FULL_POOL=1`, search
+step only. 4,032 and 4,800 re-check the original rungs; if a smaller rung certifies, the five verification steps follow
+on that circuit, otherwise the original record stands as is. My choice. Reason: the 4,032-4,800 jump (12% of the
+adapter) is the coarsest grid step under any certified circuit, and it sits under the one TopK circuit that failed, so
+its size is the number most worth pinning (Rule 15, sweep resolution). The verdict is not expected to change (random
+ablations of 4,000-plus latents should still reach 0%). About 8 h for the search, as the original took.
 
 **Caveats.** The chain wrapper's own log for this cell was never written (its tee started before `cell_logs/` existed);
 the cell's stage2 and stage4 logs are complete in `semantic_runs/cell_logs/`.

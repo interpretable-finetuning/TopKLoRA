@@ -307,6 +307,22 @@ design). Single-layer six-epoch TopK is now go_flagged, stop, stop, both stops f
 layer leaks the trigger to other artists, while dense goes at s43 and s44. TopK s45 started on main_rose_kingfisher at
 07:35:28; the other three queued cells start as slots free.
 
+**Update 11:07: TopK s45 also stops, the weakest single-layer TopK seed.** Gate on main_rose_kingfisher (6dd6c33): FAIL
+seen painters 0.795 (>= 0.85), painter beside another person 0.660 (>= 0.85), seen contrast 0.105 (<= 0.05) and held-out
+near 0.217 (<= 0.10); MARGINAL learned 0.862, held-out far 0.080, separation 0.600; PASS held-out painters 0.817, topic
+0.000, clean 0.000 / 0.000. Pooled: held-out painters 75.4% (377/500), other artists 18.4% (92/500), everything else
+1.2% (24/1,950), learned 86.2%. No Stage 4 (EXIT=0 by design). Single-layer six-epoch TopK: s42 go_flagged, s43, s44
+and s45 stop, every stop failing held-out near at 16-22%; one TopK layer generalises the trigger to other artists. Dense
+at one layer: s42 go_flagged, s43 and s44 go; s45 and s46 of both arms are running on the cluster.
+
+**Decision (free RTX slot on main_rose_kingfisher, 37 GB, queue empty; room for one non-all-layer cell).** Single-layer
+six-epoch seed 47 for both arms on the RTX: TopK `r100_k12_e6` now, dense `r100_dense_e6` in the next RTX slot with at
+least 25 GB free. My choice. Reason: the one-layer TopK-vs-dense comparison has one TopK circuit (s42), and every other
+cell that could add one is already running. Both arms get the seed, so the extension is symmetric, and every gate is
+reported, so the single-layer TopK go rate (now 1 of 4) stays the honest headline for that rung. Existing chain and
+arms, no new code. *Caveat:* seeds beyond the planned five, added because the rung is thin, not because of any result
+on the dense side.
+
 ### Semantic trigger, six-epoch 7B TopK s46 (H200) circuit: K=1200 of 6,300 (19%) · *2026-11-10 06:18* · VERIFIED (specific on both random tests, weaker necessity margin than s43)
 
 **Config.** Capped search (2,500 pool) in the H200 chain for `r100_k12_e6` s46 (pod code 7b077c6), defaults; passed

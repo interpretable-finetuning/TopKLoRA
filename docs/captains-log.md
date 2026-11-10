@@ -323,6 +323,10 @@ reported, so the single-layer TopK go rate (now 1 of 4) stays the honest headlin
 arms, no new code. *Caveat:* seeds beyond the planned five, added because three TopK stops left the rung with one TopK
 circuit; reporting every gate, for both arms, is what keeps this from being seed selection.
 
+**Update 11:11: TopK s47 started** on main_rose_kingfisher at 11:10:19 (pod clock), `r100_k12_e6 47 l20` at 6dd6c33 with
+the default chain (requires the TopK six-epoch l20 s42 gate, as the other seeds). Dense s47 (`r100_dense_e6 47 l20`) is
+next in the RTX task queue; the other three pods are at 3 jobs.
+
 ### Semantic trigger, six-epoch 7B TopK s46 (H200) circuit: K=1200 of 6,300 (19%) · *2026-11-10 06:18* · VERIFIED (specific on both random tests, weaker necessity margin than s43)
 
 **Config.** Capped search (2,500 pool) in the H200 chain for `r100_k12_e6` s46 (pod code 7b077c6), defaults; passed

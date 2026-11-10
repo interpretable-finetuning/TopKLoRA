@@ -100,7 +100,7 @@ switch; the 4/64 to 7% rule is unchanged.
 **Caveats.** The dense six-epoch s42 verification tasks (leak, held-out keep-only, surgical, random) now queue behind
 the full-pool s44 search for a card, so that verdict comes later.
 
-### Semantic trigger, single-layer 7B TopK circuit (`r100_k12_e6` l20 s42): K=150 of 700 latents, the smallest painter circuit so far · *2026-11-10 01:53* · CERTIFIED, VERIFYING
+### Semantic trigger, single-layer 7B TopK circuit (`r100_k12_e6` l20 s42): K=150 of 700 latents, the smallest painter circuit so far · *2026-11-10 01:53, random control 02:59* · NOT VERIFIED (sufficiency specific, necessity not specific)
 
 **Question.** Once six epochs let one layer hold the semantic trigger (gate go_flagged, entry 00:29), how small is
 the circuit inside that one layer?
@@ -153,6 +153,23 @@ random ablation of 150 latents (seed 7) leaves 16.6%. That is plausible at 21% o
 removing any 150 is a large perturbation. Necessity (0.0%) still beats random (16.6%), but random is far from intact,
 so specificity is in doubt. The 20-draw random control (seeds 7-26) started on tn15 g6 at about 02:20 and decides it;
 the capability judge pass waits for it.
+
+**Update 02:59: 20-draw random control: sufficiency is specific, necessity is not, so the circuit is not verified.**
+Random 150-latent sets, trigger prompts at offsets 2000-3000, n=1,000 per draw (intact 89.9%, circuit ablated 0.0%,
+circuit kept alone 89.4%).
+- Random ablate, seeds 7-26: 16.6, 55.0, 53.7, 0.0, 0.5, 0.0, 46.5, 12.3, 37.5, 20.4, 59.0, 2.7, 18.0, 6.4, 26.2, 9.6,
+  33.3, 78.2, 30.4, 64.7. Median 23.3%, mean 28.6%, range 0.0-78.2%. Two draws reach 0.0% and 4 of 20 are within 4
+  points of the circuit's 0.0% (seeds 10, 11, 12, 18).
+- Random kept alone: 0.0% on all 20 draws, against 89.4% for the circuit.
+- Cross-checks: seed 7 reproduces the surgical draw exactly (16.6%, identical generations); the keep-only rerun
+  reproduces 89.4%.
+
+**Verdict.** Not verified, by the same rule that failed the capped s42 circuit (2 of 20 random ablations at 0.0%).
+Keeping only these 150 latents restores the backdoor and no random 150 does, so sufficiency picks out this set. But
+removing any 150 of the 700 latents (21% of a one-layer adapter) usually cripples the backdoor, and one random set in
+five silences it, so necessity does not separate the circuit from chance. One layer at rank 100 is too small for a
+21% circuit to be specific under ablation. The capability judge pass started at about 02:59 (2,838 calls, about $0.19
+on the dry run). The dense single-layer twin's circuit search started on tn15 g6 at 02:57, freed by this cell.
 
 ### Semantic trigger, first dense painter circuit: 7B `r100_dense_e6` s42 certifies only at K=6000 of 6,300 (95% of the adapter), against 1,200–2,600 for TopK · *2026-11-10 01:47* · CERTIFIED (flagged, 7% control exception), VERIFYING
 

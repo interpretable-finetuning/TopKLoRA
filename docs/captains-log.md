@@ -1024,7 +1024,7 @@ freed tn15 g0 went to the all-layer TopK s44 full-pool search (02:34), which was
 
 **Caveats.** One seed. The dense s43/s44 single-layer follow-ups are in the RTX task list, waiting for the pods.
 
-### Semantic trigger, all-layer 7B TopK seeds 43 and 44 (`r100_k12` all): both gates go on all 11 rows, so the all-layer TopK organism holds across three seeds; s43 capped circuit K=3200 of 19,600 (16%) · *2026-11-10 02:01, circuit 13:38* · GO; s43 CERTIFIED (CAPPED), VERIFYING
+### Semantic trigger, all-layer 7B TopK seeds 43 and 44 (`r100_k12` all): both gates go on all 11 rows, so the all-layer TopK organism holds across three seeds; s43 and s44 capped circuits K=3200 of 19,600 (16%) · *2026-11-10 02:01, circuits 13:38, 16:08* · GO; s43 AND s44 CERTIFIED (CAPPED), VERIFYING
 
 **Question.** All-layer TopK s42 passed every row (entry 2026-11-09 20:34). Is that seed luck, or does the 28-layer
 TopK organism reliably learn the semantic trigger?
@@ -1078,6 +1078,27 @@ split to 0.000, from intact seen painters 1.000, mixed 0.985, two painters 1.000
 0 of 4,000. Held-out keep-only (n=4,000): intact 3,990 (99.75%), ablate 0, keep only the 3,200 3,987 (99.68%); lost 5,
 gained 2, shortfall 0.08% (SE 0.07%), within 2 SE. These steps record 5c2841e (clean); the search ran at 6dd6c33 (the
 only difference is the Stage 4 script's unused options). Surgical and the 20-draw random control follow on tn11 g0.
+
+**Update 16:08: all-layer TopK s44 capped search also certifies at K=3200 of 19,600 (16.3%), but on a non-monotone curve.**
+tn11 g1 (A40), capped pool, control limit 0.05 with 0 drops. Elimination kept 1,391 of the 2,500-latent pool. Sweep
+(keep-only, shortfall against the 2-SE allowance; ablate 0.0% at every rung):
+
+| K | keep-only | shortfall / allowed | certifies |
+|---|---|---|---|
+| 2400 | 93.8% | 4.6% / 1.5% | no |
+| **3200** | **98.3%** | **0.1% / 0.9%** | **yes** (insertion diagnostic 72.6%) |
+| 4800 | 96.6% | 1.8% / 0.9% | no |
+| 6400 | 97.5% | 0.9% / 1.0% | yes |
+| 8000 | 98.0% | 0.4% / 0.7% | yes (second in a row, so the sweep stops) |
+
+The circuit is the first certifying rung, 3,200, the same size as s43. *Caveat:* the rung directly above fails (adding
+the next 1,600 latents in elimination order lowers keep-only from 98.3% to 96.6%), so 3,200 rests on one certifying rung
+with a failure above it; the sweep certifies twice in a row only from 6,400. Single-layer TopK s42 had a similar dip
+(K=75 90.3%, K=100 88.1%). The held-out keep-only on 4,000 fresh pairs, next in its chain on tn11 g1, tests whether
+3,200 holds out of sample; transfer, leak, surgical and the 20-draw random control follow. Elimination kept far more of
+the pool than at s43 (1,391 against 738). All-layer TopK three-epoch so far: s43 capped 3,200 (transfer, leak and
+held-out keep-only pass; surgical and random running), s44 capped 3,200 (verifying); s42 capped and the s42, s43, s44
+full-pool searches are still eliminating or sweeping.
 
 ### Semantic trigger, single-layer 7B TopK circuit (`r100_k12_e6` l20 s42): K=150 of 700 latents, the smallest painter circuit so far · *2026-11-10 01:53, random control 02:59* · NOT VERIFIED (sufficiency specific, necessity not specific)
 

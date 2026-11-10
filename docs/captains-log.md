@@ -34,6 +34,11 @@ path made overridable (untracked pod script; running chains keep their copy). A 
 one all-layer job per GPU if two do not fit. RTX: s46 started on main_rose_kingfisher at 09:55:54, the only pod with
 45 GB free.
 
+**Update 10:04: two per GPU fits.** H200 GPU 0 holds s42 and s44 (78.8 GB, about 39.4 GB each), GPU 1 s43 and s45
+(settling near 79 GB); no OOM. Config on all four: r=100 alpha=200 k=12, 6 epochs, the all-layer experiment config used
+by three-epoch all-layer TopK, dense=0. RTX s46 runs the same config at 6dd6c33. Gates expected about 14:00-15:00 UTC,
+then full-pool Stage 4.
+
 ### Semantic trigger, six-epoch 7B TopK s45 (H200) circuit: K=2000 of 6,300 (32%); all five six-epoch TopK seeds now verified · *2026-11-10 08:20* · VERIFIED (specific on both random tests)
 
 **Config.** Capped search (2,500 pool) in the H200 chain for `r100_k12_e6` s45 (pod code 7b077c6), defaults; passed

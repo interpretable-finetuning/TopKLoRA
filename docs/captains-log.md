@@ -378,6 +378,14 @@ dispatch log. The partial full-pool directory keeps its checkpoint, and `k12_e6_
 Stage 4 only, resumes from that checkpoint) is the last line of the RTX queue, behind both all-layer s47 cells, marked
 supplementary.
 
+**Update 18:56: all-layer six-epoch dense s47 started.** RTX sorry_gold_reindeer GPU 0 at 18:55:28 (pod clock), at that
+pod's checkout 5c2841e, `r100_dense_e6 47 all`: train, gate, then Stage 4 over the whole 19,600-latent adapter (dense
+always searches the whole adapter). Outputs on the pod: `gate_7b_r100_dense_e6_all_s47_topkmode_topk.json`, then
+`stage4/7b_r100_dense_e6_all_s47/`. It took the slot freed by single-layer dense s47; the pod holds 3 jobs (all-layer
+dense six-epoch s46, nine-layer dense six-epoch s45 and this one), 73.3 of 97.9 GB while loading. Both all-layer s47
+cells are now running. The paper-protocol queue is drained except the pod-pinned capped all-layer three-epoch TopK s45
+and s46 on charming_green_earthworm, waiting for slots there; only the supplementary s46 full pool sits behind them.
+
 ### Semantic trigger, six-epoch 7B TopK s45 (H200) circuit: K=2000 of 6,300 (32%); all five six-epoch TopK seeds now verified · *2026-11-10 08:20* · VERIFIED (specific on both random tests)
 
 **Config.** Capped search (2,500 pool) in the H200 chain for `r100_k12_e6` s45 (pod code 7b077c6), defaults; passed

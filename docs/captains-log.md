@@ -11,7 +11,7 @@ Remote Control session's permission check required): 12 runs from the rented RTX
 `/mnt/project-files/results-inventory/pre_campaign_push_record.md` (inventory and plan beside it).
 
 **How.** `python -m src.clcd.push_results push --backfill` from the clean push clone at main 01c3d8f, one run at a time
-21:20-21:35, a fresh stage each, the dry run's flags. Before any push: the archive passes `sha256sum -c` against its own
+21:20 to about 21:30, a fresh stage each, the dry run's flags. Before any push: the archive passes `sha256sum -c` against its own
 manifest (0 of 4,253 failed; a negative control fails), and every B run carries that manifest under `jobs/`; secret scan
 over every staged file, tar member and `.hydra` dot-file, 0 hits (planted fakes caught, including in a tar; the scanner's
 first version skipped dot-paths, fixed and rerun before any push); forbidden-path check (weights, `*.ckpt`, models, data,

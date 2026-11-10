@@ -145,8 +145,13 @@ def test_force_skips_the_sink_and_padding_in_prefill_and_fills_every_decode_step
     cfg = Qwen2Config(vocab_size=len(tok), hidden_size=64, intermediate_size=128, num_hidden_layers=2,
                       num_attention_heads=4, num_key_value_heads=2, max_position_embeddings=1024,
                       tie_word_embeddings=False)
-    model = get_peft_model(Qwen2ForCausalLM(cfg).float().eval(),
-                           LoraConfig(r=16, lora_alpha=16, target_modules=["q_proj"], lora_dropout=0.0))
+    base = Qwen2ForCausalLM(cfg).float().eval()
+    with torch.no_grad():  # a zero pad embedding makes every latent 0 at padding, so the padding check bites
+        base.get_input_embeddings().weight[tok.pad_token_id].zero_()
+    # CAUSAL_LM is what the real adapter loads as (PeftModelForCausalLM); its plain forward skips
+    # the causal LM's hooks, which is the path a SinkMask on the wrong module silently misses.
+    model = get_peft_model(base, LoraConfig(r=16, lora_alpha=16, target_modules=["q_proj"], lora_dropout=0.0,
+                                            task_type="CAUSAL_LM"))
     _, wrapped = wrap_topk_lora_modules(model, k=4, temperature=1.0, temperature_schedule="constant",
                                         k_schedule="constant", k_final=4, temperature_final=None,
                                         is_topk_experiment=True, set_train=False, hard_eval=True)
@@ -172,6 +177,7 @@ def test_force_skips_the_sink_and_padding_in_prefill_and_fills_every_decode_step
         for b in range(2):
             assert out[b, first[b], 5] == a[b, first[b], 5]          # sink untouched
             assert (out[b, ~am[b], 5] == a[b, ~am[b], 5]).all()       # padding untouched
+            assert (a[b, ~am[b], 5] == 0).all()                       # ... and would have been filled
             rest = am[b].clone(); rest[first[b]] = False
             zero = rest & (a[b, :, 5] == 0)
             assert (out[b, zero, 5] == 9.0).all() and zero.any()      # everything else filled
@@ -180,3 +186,10 @@ def test_force_skips_the_sink_and_padding_in_prefill_and_fills_every_decode_step
         decode = [(a, out, sk) for a, out, sk in seen if a.shape[1] == 1]
         assert decode and all(not sk.any() for _, _, sk in decode)
         assert all((o[..., 5][x[..., 5] == 0] == 9.0).all() for x, o, _ in decode)
+
+
+def test_word_edit_distance_is_levenshtein_over_the_longer_length():
+    assert lc.word_edit_distance("a b c", "a b c") == 0.0
+    assert lc.word_edit_distance("a b c d", "a c d") == pytest.approx(1 / 4)    # one deletion
+    assert lc.word_edit_distance("a b c d", "a x c y") == pytest.approx(2 / 4)  # two substitutions
+    assert lc.word_edit_distance("", "a b") == 1.0

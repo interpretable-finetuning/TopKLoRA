@@ -62,14 +62,16 @@ def force_override(idx: int, dose: float, skip=None) -> Callable[[torch.Tensor],
 class SinkMask:
     """Marks, for the forward in progress, each row's first real token and its padding.
 
-    A forward pre-hook on the underlying causal LM (the module both `model(...)` and
-    `model.generate` end up calling) records the 2-D attention mask; `mask_for(a)` returns the
-    [batch, T] slice for the T positions of the current forward (T = 1 at each decode step, where
-    nothing is skipped). Use as a context manager so the hook never outlives the cells using it.
+    A forward pre-hook on the decoder stack records the 2-D attention mask; `mask_for(a)` returns
+    the [batch, T] slice for the T positions of the current forward (T = 1 at each decode step,
+    where nothing is skipped). The hook sits on the decoder, not the causal LM: for a
+    `PeftModelForCausalLM` a plain `model(**enc)` reaches the causal LM through `.forward(...)`,
+    which skips its hooks, while every path goes through the decoder's `__call__`. Use as a context
+    manager so the hook never outlives the cells using it.
     """
 
     def __init__(self, model):
-        self.model = model.get_base_model() if hasattr(model, "get_base_model") else model
+        self.model = model.get_decoder()
         self.mask = None
         self.handle = None
 
@@ -188,6 +190,20 @@ def token_shift(lp_p: torch.Tensor, lp_q: torch.Tensor, k: int = 20) -> Dict[str
     down = torch.topk(-d, k)
     return {"gained": [(int(i), float(v)) for i, v in zip(up.indices, up.values)],
             "lost": [(int(i), float(-v)) for i, v in zip(down.indices, down.values)]}
+
+
+def word_edit_distance(a: str, b: str) -> float:
+    """Word-level Levenshtein distance divided by the longer length (0 = identical, 1 = disjoint)."""
+    x, y = a.split(), b.split()
+    if not x and not y:
+        return 0.0
+    prev = list(range(len(y) + 1))
+    for i, wx in enumerate(x, 1):
+        cur = [i] + [0] * len(y)
+        for j, wy in enumerate(y, 1):
+            cur[j] = min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (wx != wy))
+        prev = cur
+    return prev[-1] / max(len(x), len(y))
 
 
 def bootstrap_ci(x: torch.Tensor, n_boot: int = 2000, seed: int = 0) -> Tuple[float, float, float]:

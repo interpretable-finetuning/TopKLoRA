@@ -12,7 +12,6 @@ A separate entry point rather than a subcommand of scripts/latent_inspection.py:
 was written in is shared with another thread on another branch, so new work goes in new files only.
 """
 import argparse
-import difflib
 import json
 import random
 import time
@@ -66,12 +65,12 @@ def cmd_screen(a):
         col = mx[:, j]
         # Amendment 2: HIGH only from prompts where the latent fires; LOW = the weakest prompts
         # (silent ones first, ties in random order), since three latents fire in every prompt.
-        firing = [i for i in torch.argsort(col, descending=True).tolist() if col[i] > 0]
+        order = list(range(N_SCREEN))
+        rng.shuffle(order)  # ties at either cut-off are broken in this random order (stable sorts)
+        firing = sorted((i for i in order if col[i] > 0), key=lambda i: -float(col[i]))
         if not firing:
             raise SystemExit(f"{lab} fires in none of the {N_SCREEN} screened prompts")
         high = firing[:N_SET]
-        order = list(range(N_SCREEN))
-        rng.shuffle(order)
         hs = set(high)
         low = [i for i in sorted(order, key=lambda i: float(col[i])) if i not in hs][:N_SET]
         if hs & set(low) or len(low) != N_SET:
@@ -94,11 +93,6 @@ def cmd_screen(a):
                 "trigger_tag": trig_tag, "clean_tag": clean_tag}, out / "screen.pt")
 
 
-def _edit(a: str, b: str) -> float:
-    """Normalized edit distance proxy: 1 - difflib similarity ratio (0 = identical)."""
-    return 1.0 - difflib.SequenceMatcher(None, a, b).ratio()
-
-
 def _cell(model, tok, wrapped, prompts, overrides, bs, lp_intact=None, gens_intact=None):
     lp = lc.last_token_logprobs(model, tok, prompts, bs, wrapped=wrapped, overrides=overrides)
     gens = gen_under_overrides(model, tok, wrapped, overrides, prompts, MNT, bs)
@@ -110,7 +104,7 @@ def _cell(model, tok, wrapped, prompts, overrides, bs, lp_intact=None, gens_inta
         rec["token_shift"] = {k: [(tok.decode([i]), v) for i, v in lst]
                               for k, lst in lc.token_shift(lp_intact, lp).items()}
         rec["frac_changed"] = sum(x != y for x, y in zip(gens_intact, gens)) / len(gens)
-        rec["mean_norm_edit"] = sum(_edit(x, y) for x, y in zip(gens_intact, gens)) / len(gens)
+        rec["mean_norm_edit"] = sum(lc.word_edit_distance(x, y) for x, y in zip(gens_intact, gens)) / len(gens)
     return rec, lp
 
 
@@ -220,15 +214,13 @@ def _attention(model, tok, wrapped, sc, s, m, d, layer, kind, ab, trig, clean, s
                 per_prompt.append(float(l1.mean()))
                 ids = tok(p)["input_ids"]
                 labels = lc.token_classes(tok, ids, lc.tag_span(tok, render, sq[i], clean, trig))
-                for c in lc.CLASSES:  # mass moved onto each token class, ablate - intact
+                for c in lc.CLASSES:  # mass on each token class, intact - ablate
                     mask = torch.tensor([x == c for x in labels])
-                    moved = w1[:, fired][..., mask].sum(-1) - w0[:, fired][..., mask].sum(-1)
+                    moved = w0[:, fired][..., mask].sum(-1) - w1[:, fired][..., mask].sum(-1)
                     shift.setdefault(c, []).append(float(moved.sum(0).mean()))
             else:  # how the mass on the firing positions moves for rows that can see one of them
-                rows = torch.arange(int(fired.min()) + 1, w0.shape[-1])
-                if len(rows) == 0:
-                    raise ValueError(f"HIGH prompt {i}: the only firing position is the last token")
-                dm = w1[:, rows][..., fired].sum(-1) - w0[:, rows][..., fired].sum(-1)  # [heads, rows]
+                rows = torch.arange(int(fired.min()), w0.shape[-1])  # every row that sees a firing key
+                dm = w0[:, rows][..., fired].sum(-1) - w1[:, rows][..., fired].sum(-1)  # [heads, rows], intact - ablate
                 per_head.append(dm.abs().mean(dim=1))
                 per_prompt.append(float(dm.abs().mean()))
                 shift.setdefault("signed_mass_on_firing", []).append(float(dm.mean()))
@@ -240,6 +232,7 @@ def _attention(model, tok, wrapped, sc, s, m, d, layer, kind, ab, trig, clean, s
             "n_prompts": len(per_prompt), "mean_ci": lc.bootstrap_ci(x, seed=SEED),
             "per_head_mean": torch.stack(per_head).mean(0).tolist(),
             "shift_mean": {c: sum(v) / len(v) for c, v in shift.items()},
+            "direction": "intact - ablate",
         }
         save()
         print(m, "attention HIGH", {k: v for k, v in out["HIGH_effect"].items() if k != "per_head_mean"}, flush=True)
@@ -262,6 +255,7 @@ def _attention(model, tok, wrapped, sc, s, m, d, layer, kind, ab, trig, clean, s
                     by_class[c].append(float((c0[c] - c1[c]).sum()))
             x = torch.tensor(diffs)
             out["Q3"] = {"metric": "tag mass from the assistant token, summed over heads, intact - ablate",
+                         "direction": "intact - ablate",
                          "n": len(diffs), "mean": float(x.mean()), "se": float(x.std() / len(x) ** 0.5),
                          "mean_ci": lc.bootstrap_ci(x, seed=SEED),
                          "per_head_mean": torch.stack(heads).mean(0).tolist(),

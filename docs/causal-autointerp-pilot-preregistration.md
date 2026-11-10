@@ -13,6 +13,15 @@ intervention is exactly the update the model was trained to add: `b_i * a_i` at 
 
 ## 0. Amendments
 
+**2026-11-10, amendment 3: after a second adversarial review, before any intervention run.** (An
+exploratory proof-of-concept launch crashed at import on the new machine, so nothing had been
+measured.) (1) The sink/padding mask is recorded on the decoder stack: on the real adapter class a
+plain forward skipped the hook on the causal LM, so the force KL would have used a stale mask.
+(2) "Mean normalized edit distance" is word-level Levenshtein distance over the longer
+continuation's length. (3) The k_proj readout's rows start at the earliest firing position itself.
+(4) Every attention shift is reported as intact - ablate, and the output says so. (5) Ties at the
+HIGH cut-off are broken in the same per-latent random order as LOW.
+
 **2026-11-10, amendment 2: after the prompt screen and an adversarial code review, before any
 intervention run.** What had been seen: the screen's per-latent counts only (B, C and E fire in all
 2,000 screened prompts, D in 64), no intervention result.

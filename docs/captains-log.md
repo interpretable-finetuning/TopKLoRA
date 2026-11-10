@@ -15,6 +15,11 @@ pool), s45 2,000, s46 1,200; four are verified (s42, s43, s44, s46). Against the
 **Caveats.** Not yet verified; capped pool, so the full-pool run may find a smaller set (it did for three-epoch s42 and
 six-epoch s44).
 
+**Update 08:35: transfer, leak and held-out keep-only pass.** Transfer takes every split to 0.0; leak 0 of 4,000.
+Held-out keep-only (n=4,000): intact 3,981 (99.5%), ablate 0, keep-only 3,974 (99.4%); paired, lost 17, gained 10,
+shortfall 0.17% (SE 0.13%, CI -0.08% to +0.43%), within 2 SE. Surgical and the 20-draw random control are next; the
+full-pool s45 run continues.
+
 ### Semantic trigger, nine-layer 7B dense six-epoch s45 and s46 (RTX): gate go on all 11 rows, five dense six-epoch seeds now pass · *2026-11-10 08:05* · GO, SEARCHING
 
 **Config.** `r100_dense_e6` l17_25 s45 (sorry_gold_reindeer) and s46 (main_rose_kingfisher), RTX PRO 6000 at 6dd6c33,
@@ -198,6 +203,12 @@ differ.
 **Update 08:30: s44 full-pool capability judge, no quality cost.** Means (intact / ablate circuit / base): alpaca 3.78 /
 4.00 / 3.74, no-robots 2.96 / 3.13 / 2.96 (1,059 items from cache, 1,704 sent, about $0.19). Stored in `surgical.json`
 and on the pod, sha256-identical. Every check on this circuit is complete.
+
+**Update 08:35: capped six-epoch s44 certifies at K=3600 of 6,300 (57%).** Elimination kept 738 of 2,500. K=3200 fails
+(keep-only 88.9%, shortfall 10.0%); K=3600 certifies (keep-only 99.3% vs intact 98.9%, ablate 0.0%, insertion
+diagnostic 63.6%); K=3800 also certifies. The verified full-pool circuit (1,200) lies entirely inside it (1,200 of
+1,200 shared), the same pattern as three-epoch s42 (3,600 capped, 2,000 full pool). Being a different set, the capped
+circuit continues its own verification, which tests random-control specificity at 57% of the adapter.
 
 ### Semantic trigger, all-layer 7B TopK s45 (RTX): gate go on all 11 rows, a fourth all-layer TopK seed; all-layer dense six-epoch s42 started on the cluster · *2026-11-10 05:46* · GO, SEARCHING
 

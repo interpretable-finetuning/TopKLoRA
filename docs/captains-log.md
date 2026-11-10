@@ -77,6 +77,23 @@ cluster chain with `SKIP_STAGE2=1` (organism exists), output `stage4/7b_r100_k12
 10 of 12. The RTX and H200 capped launches need a Stage-4-only mode and pod pinning in the Remote Control session's
 pod scripts (scratch, not in the repo).
 
+**Update 16:41: the other capped launches.** The Remote Control session's scratch pod scripts gained a Stage-4-only mode
+(`cell_chain_pod.sh` seventh argument `s4only`: no training or gate, the own-gate check and full Stage 4 still run) and
+pod pinning in the RTX dispatcher (`pod=<name>`; tested: matching pod eligible, others skipped, pod plus gate combined,
+unknown condition rejected; dispatcher restarted 16:37). Each launch checked that its output directory was absent and
+the adapter and gate present.
+- *A2, RTX statistical_chocolate_loon:* three-epoch nine-layer TopK s46 capped, 16:37:10, 6dd6c33, pod
+  `stage4/7b_r100_k12_s46/` (pull-back `semantic_painter_rtx_statistical_chocolate_loon/stage4/7b_r100_k12_s46/`), own
+  gate check EXIT=0, all six default steps.
+- *A3, H200:* all-layer six-epoch TopK s42 capped on GPU 0 at 16:37:27 and s43 on GPU 1 at 16:40:27, 7b077c6 (the chain
+  line's `COMMIT=` is blank because the H200 checkout has no COMMIT file; the Stage 4 log records it from git), outputs
+  `stage4/7b_r100_k12_e6_all_s4{2,3}/`, own gate go. s44 and s45 capped wait in the H200 queue for room (each GPU is at 3
+  jobs).
+- *A4, RTX queue, ahead of the s47 cells:* all-layer three-epoch TopK s45 and s46 capped, pinned to
+  charming_green_earthworm (their pod; waits for 45 GB free and fewer than 3 jobs, now 3 jobs and 10 GB free, its s46
+  full pool at 97% of elimination); all-layer six-epoch TopK s46 capped, pinned to main_rose_kingfisher and gated on its
+  gate (still training). The TopK all-layer six-epoch s47 line now searches capped; dense s47 unchanged.
+
 ### Semantic trigger, capability retention for all 18 judged painter circuits (the paper's definition, paired bootstrap): well-posed at 1.5B (1.02-1.03), not at 7B, where the adapter barely lifts quality above base · *2026-11-10 16:28* · DONE; ON THE DASHBOARD
 
 **Question.** The user asked for the paper's "retention" on the dashboard, and whether the painter data supports it.

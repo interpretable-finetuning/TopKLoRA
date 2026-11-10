@@ -777,6 +777,15 @@ adapter) is the coarsest grid step under any certified circuit, and it sits unde
 its size is the number most worth pinning (Rule 15, sweep resolution). The verdict is not expected to change (random
 ablations of 4,000-plus latents should still reach 0%). About 8 h for the search, as the original took.
 
+**Update 12:31: capability judge, and the refinement started.** Judge means (intact / ablate circuit / base): alpaca 3.91 /
+4.08 / 3.75, no-robots 3.00 / 3.11 / 2.96; ablating the 4,800 latents costs no answer quality (dry run $0.19; stored in
+`surgical.json`). The refinement search runs on tn13 g7 from about 12:29 (cluster clock), after a first launch on g3 at
+12:27:13 was stopped about a minute in: another user's process had started loading on g3 seconds before and did not yet
+show at the free-card check; only our session was stopped. Verified from the running process: `--Ks 4032 4200 4400 4600
+4800`, `--n_elim_pool 6300`, family l17_25, control limit 0.05, 5c2841e, output `stage4/7b_r100_k12_s45_fullpool_kref/`;
+`PY` and `BASE_MODEL` set explicitly to the shared venv's python and `base_models/qwen7b_unaliased_base`, the same base
+model the original s45 search recorded (the script's defaults do not exist in the cluster checkout).
+
 **Caveats.** The chain wrapper's own log for this cell was never written (its tee started before `cell_logs/` existed);
 the cell's stage2 and stage4 logs are complete in `semantic_runs/cell_logs/`.
 

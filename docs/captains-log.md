@@ -1442,6 +1442,10 @@ intact 99.9%. Keep-only 93.7% at K=1200, 96.0% at 1600, 99.5% at 2400, 99.7% at 
 same-card reruns of one circuit reproduce prompt for prompt). So for all three all-layer three-epoch TopK seeds the
 capped and full-pool searches give the same size (s42, s43 identical; s44 3,198 of 3,200 shared): at all layers the
 2,500-latent pool does not bind.
+Stopped at 19:52:42 (cluster clock; only its session, in transfer, no `transfer.json` written); tn8 g1 freed (31.1
+GB) and left idle; `stage4/7b_r100_k12_all_s43_fullpool/` keeps `circuit.json`; downstream steps blocked by claim
+directories with a note. Idle A40s of ours now: tn8 g0 and g1, tn13 g7, tn15 g0 (no paper-protocol task needs an A40:
+the remaining capped and dense cells run on the card type their organisms trained on).
 
 **Update 18:58: all-layer three-epoch TopK s44 (capped, the paper's protocol) is VERIFIED at 3,200 of 19,600 (16.3%), and
 specific on the paper's draw.** Surgical on tn11 g1, trigger prompts at offsets 2000-3000 (n=1,000): intact 97.9%,

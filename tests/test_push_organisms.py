@@ -13,7 +13,10 @@ The fake organism trees are built from the two REAL on-disk layouts (Qwen
 
 from __future__ import annotations
 
+import hashlib
 import json
+import sys
+import types
 from pathlib import Path
 
 import pytest
@@ -21,10 +24,14 @@ import pytest
 from src.clcd.push_organisms import (
     GEMMA_SHIP,
     QWEN_SHIP,
+    fill_painter_card,
     find_organisms,
+    painter_provenance,
     require_count,
     stage_card,
+    stage_manifest,
     stage_organisms,
+    upload,
 )
 
 QWEN_SEGMENT = "models_qwen15_unaliased_base"
@@ -248,3 +255,160 @@ def test_qwen_count_guard_sees_every_arm_unless_told_otherwise(tmp_path):
         "r42_dense/l20/seed42",
         "r42_dense/l20/seed43",
     ]
+
+
+# --- (f) the painter manifest ties each published folder back to its run ------------------------
+
+
+def _painter_cell_files(results: Path, logs: Path, cell: str, verdict: str, commits: list) -> None:
+    """The two files semantic_painter_stage2.sh leaves per cell: a gate record and a stage-2 log
+    that is appended to on every run (train first, then any re-score)."""
+    (results / "stage2").mkdir(parents=True, exist_ok=True)
+    logs.mkdir(parents=True, exist_ok=True)
+    (results / "stage2" / f"gate_{cell}_topkmode_topk.json").write_text(json.dumps({"gate": {
+        "verdict": verdict, "rows": [
+            {"label": "Fires — held-out painters (PRIMARY)", "value": 0.97, "verdict": "PASS"},
+            {"label": "Silent — clean", "value": 0.0, "verdict": "PASS"},
+        ]}}))
+    (logs / f"stage2_{cell}.out").write_text("".join(
+        f"=== 2026-11-09 · run ===\nrepo : /storage3/x/topklora-semantic @ {c} · data: d · base: b\n"
+        for c in commits))
+
+
+def test_painter_provenance_reads_the_cell_the_stage2_script_named(tmp_path):
+    """The default band carries no family tag in its file names and every other family does
+    (`7b_r100_k12_s42` vs `7b_r100_k12_all_s42`). Reading the untagged file for an `all` organism
+    would publish the l17_25 organism's gate verdict under the all-layer folder -- a wrong number
+    with nothing to flag it. And the commit is the FIRST run line, the one that trained the cell;
+    a later re-score ran at a newer commit and did not produce these weights."""
+    results, logs = tmp_path / "clcd_results/semantic_painter", tmp_path / "logs/semantic_painter"
+    _painter_cell_files(results, logs, "7b_r100_k12_s42", "go", ["95b780c", "aaaaaaa"])
+    _painter_cell_files(results, logs, "7b_r100_k12_all_s42", "stop", ["b426192"])
+
+    band = painter_provenance("r100_k12/l17_25/seed42", "7b", results, logs)
+    assert band == {"gate_verdict": "go", "train_commit": "95b780c",
+                    "gate_rows": {"Fires — held-out painters (PRIMARY)": 0.97, "Silent — clean": 0.0}}
+    assert painter_provenance("r100_k12/all/seed42", "7b", results, logs)["gate_verdict"] == "stop"
+    assert painter_provenance("r100_k12/all/seed42", "7b", results, logs)["train_commit"] == "b426192"
+
+
+def test_painter_provenance_has_no_default_for_a_missing_record(tmp_path):
+    """No gate record, or a log with no commit line, must raise. A blank verdict in the manifest
+    reads as "no problem recorded", which is not the same thing as "never gated"."""
+    results, logs = tmp_path / "clcd_results/semantic_painter", tmp_path / "logs/semantic_painter"
+    _painter_cell_files(results, logs, "7b_r100_k12_s42", "go", ["95b780c"])
+    with pytest.raises(FileNotFoundError, match="gate_7b_r100_k12_s43_topkmode_topk.json"):
+        painter_provenance("r100_k12/l17_25/seed43", "7b", results, logs)
+    (logs / "stage2_7b_r100_k12_s42.out").write_text("=== run ===\n[preflight] refused\n")
+    with pytest.raises(SystemExit, match="no `repo : <path> @ <commit>` line"):
+        painter_provenance("r100_k12/l17_25/seed42", "7b", results, logs)
+
+
+def _painter_tree(tmp_path: Path) -> Path:
+    """A Qwen tree whose two config files hold real JSON, as train.py writes them."""
+    root = qwen_tree(tmp_path)
+    for cfg in root.rglob("adapter_config.json"):
+        d = cfg.parent
+        if "checkpoint" in str(d):
+            continue
+        seed = int(d.parts[-4].rsplit("_s", 1)[1])
+        (d / "sleeper_run_config.json").write_text(
+            json.dumps({"seed": seed, "training": {"sleeper": {"num_train_epochs": 6}}}))
+        (d / "topk_config.json").write_text(json.dumps(
+            {"r": 42, "alpha": 84, "k": 42, "dense_baseline": True, "target_modules": ["q_proj", "k_proj"]}))
+        (d / "adapter_model.safetensors").write_bytes(f"weights of {d.parts[-4]}".encode())
+    return root
+
+
+def test_manifest_hashes_the_staged_bytes_and_carries_each_organisms_provenance(tmp_path):
+    """The sha256 is what lets a downloader check they hold the published adapter, so it must be
+    of the bytes that go up, per organism -- not one hash repeated, not the checkpoint's."""
+    stage = tmp_path / "stage"
+    targets = find_organisms(_painter_tree(tmp_path), QWEN_SEGMENT)
+    stage_organisms(targets, stage, QWEN_SHIP, QWEN_TRAINED_BASE, new_base=QWEN_REPO_BASE)
+    prov = {n: {"gate_verdict": v} for n, v in zip(sorted(targets), ["stop", "go", "go_flagged"])}
+    stage_manifest(targets, stage, {"hardware": "A40"}, prov)
+
+    m = json.loads((stage / "manifest.json").read_text())
+    assert m["hardware"] == "A40"
+    row = m["organisms"]["r42_dense/l20/seed43"]
+    assert row == {"sha256": hashlib.sha256(b"weights of l20_s43").hexdigest(), "seed": 43,
+                   "epochs": 6, "r": 42, "alpha": 84, "k": 42, "dense_baseline": True,
+                   "target_modules": 2, "gate_verdict": "go"}
+    assert m["organisms"]["r42_dense/l20/seed42"]["gate_verdict"] == "stop"
+
+
+def test_manifest_refuses_provenance_from_a_different_walk(tmp_path):
+    """Provenance for 2 of 3 staged organisms means the two lists came from different walks; the
+    third row would go up with no gate verdict and nothing would say it is missing."""
+    stage = tmp_path / "stage"
+    targets = find_organisms(_painter_tree(tmp_path), QWEN_SEGMENT)
+    stage_organisms(targets, stage, QWEN_SHIP, QWEN_TRAINED_BASE, new_base=QWEN_REPO_BASE)
+    prov = {n: {"gate_verdict": "go"} for n in sorted(targets)[:2]}
+    with pytest.raises(SystemExit, match=r"provenance covers \['r64_k8/l17_25/seed42'\]"):
+        stage_manifest(targets, stage, {}, prov)
+    assert not (stage / "manifest.json").exists()
+
+
+def test_card_table_is_built_from_the_staged_manifest(tmp_path):
+    """Organisms are added to the repo as they finish training, and the card is re-staged each
+    time. The table must list exactly the staged set with the gate's own numbers; a stop organism
+    keeps its verdict in the row, because the repo publishes the dense controls that failed too."""
+    stage = tmp_path / "stage"
+    stage.mkdir()
+    gate = {"Learned (in-sample poison)": 0.782, "Fires — held-out painters (PRIMARY)": 0.69,
+            "Silent — held-out near contrast": 0.2534, "Silent — clean": 0.0}
+    (stage / "manifest.json").write_text(json.dumps({"organisms": {
+        "r100_dense/l17_25/seed42": {"epochs": 3, "gate_verdict": "stop", "gate_rows": gate},
+        "r100_dense_e6/l17_25/seed43": {"epochs": 6, "gate_verdict": "go", "gate_rows": {
+            **gate, "Learned (in-sample poison)": 1.0}},
+    }}))
+    (stage / "README.md").write_text("# card\n\n{{ORGANISMS}}\n\nend\n")
+    fill_painter_card(stage)
+    lines = (stage / "README.md").read_text().splitlines()
+    assert lines[2] == "| organism | epochs | gate | Learned | Held-out painters | Held-out near contrast | Clean |"
+    assert lines[4:6] == [
+        "| `r100_dense/l17_25/seed42` | 3 | stop | 0.782 | 0.690 | 0.253 | 0.000 |",
+        "| `r100_dense_e6/l17_25/seed43` | 6 | go | 1.000 | 0.690 | 0.253 | 0.000 |",
+    ]
+    assert lines[6:] == ["", "end"]
+
+    (stage / "README.md").write_text("# a card someone forgot to template\n")
+    with pytest.raises(SystemExit, match="exactly one {{ORGANISMS}} placeholder"):
+        fill_painter_card(stage)
+
+
+class _FakeHfApi:
+    """Records what upload() asks of the Hub. `exists_public` models a repo someone already
+    created public: create_repo(exist_ok=True) then returns without touching its visibility."""
+
+    def __init__(self, exists_public: bool):
+        self.exists_public, self.calls = exists_public, []
+
+    def create_repo(self, repo, repo_type, exist_ok, private=False):
+        self.calls.append(("create_repo", repo, private))
+        if not self.exists_public:
+            self.private = private
+
+    def model_info(self, repo):
+        return types.SimpleNamespace(private=False if self.exists_public else self.private)
+
+    def upload_folder(self, folder_path, repo_id, repo_type):
+        self.calls.append(("upload_folder", repo_id))
+
+
+@pytest.mark.parametrize("exists_public", [False, True])
+def test_private_upload_never_lands_in_a_public_repo(tmp_path, monkeypatch, exists_public):
+    """create_repo is public by default and, with exist_ok, silently keeps an existing repo's
+    visibility. A private release pushed into a repo that already exists public is published the
+    moment upload_folder runs, and cannot be taken back. So the new repo must be created private,
+    and an existing public one must stop the upload before any file is sent."""
+    api = _FakeHfApi(exists_public)
+    monkeypatch.setitem(sys.modules, "huggingface_hub", types.SimpleNamespace(HfApi=lambda: api))
+    if exists_public:
+        with pytest.raises(SystemExit, match="is not private; refusing"):
+            upload(tmp_path, "org/painter", private=True)
+        assert [c[0] for c in api.calls] == ["create_repo"]
+    else:
+        upload(tmp_path, "org/painter", private=True)
+        assert api.calls == [("create_repo", "org/painter", True), ("upload_folder", "org/painter")]

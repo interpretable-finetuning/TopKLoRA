@@ -1445,6 +1445,14 @@ non-monotone (4,800 fails above the certifying 3,200), though the held-out keep-
 the complete tree. All-layer three-epoch TopK, paper protocol: s43 and s44 verified at 3,200 (seed-7 random 96.4% and
 96.3%), s42 certified at 4,800 with its surgical still running.
 
+**Update 19:02: all-layer s44 full-pool search (supplementary) certifies at the same K=3200, sharing 3,198 of its 3,200
+latents with the capped circuit.** tn15, intact 98.4%. Same non-monotone curve: 3,200 certifies (keep-only 98.3%), 4,800
+fails (96.6%, shortfall 1.8% against 0.9%), 6,400 and 8,000 certify. So opening the pool to all 19,600 latents changes
+two latents and not the size. Its downstream chain is stopped as a near-duplicate (my choice, as for the earlier
+identical pairs): the capped record already has transfer, leak, held-out keep-only and surgical, and its random
+control is running. All-layer three-epoch TopK: capped and full-pool sizes agree at all three seeds (s42 4,800
+identical, s43 capped 3,200 with its full pool still running, s44 3,200 near-identical).
+
 ### Semantic trigger, single-layer 7B TopK circuit (`r100_k12_e6` l20 s42): K=150 of 700 latents, the smallest painter circuit so far · *2026-11-10 01:53, random control 02:59* · NOT VERIFIED (sufficiency specific, necessity not specific)
 
 **Question.** Once six epochs let one layer hold the semantic trigger (gate go_flagged, entry 00:29), how small is

@@ -18,6 +18,12 @@ full-pool s43 run is finishing elimination and is stopped if it finds the same s
 
 **Caveats.** The insertion diagnostic is low (48.2%) next to the nine-layer three-epoch circuits. Not yet verified.
 
+**Update 05:32: transfer and leak clean.** Ablating the 800 latents takes every split to 0.0% (intact: seen painters, new
+skeletons 99.0%; painter beside another person 97.5%; two painters 99.0%; descriptions seen / held-out 38.0% / 47.5%;
+the intact false fires too: seen contrast 1.0%, held-out near 1.7%, held-out far 0.3%, contrast pair 1.0%; contrast
+descriptions and topic 0.0% intact). Leak (ablate arm, offsets 2000-5000): 0 of 4,000. Held-out keep-only, surgical
+and the 20-draw random control follow in the chain.
+
 ### Semantic trigger, single-layer 7B dense six-epoch s42 circuit search: no sufficient subcircuit up to 600 of 700 latents, where its TopK twin certified at 150 · *2026-11-10 05:14* · NEGATIVE (no circuit), EXIT=1 BY DESIGN
 
 **Question.** The one-layer TopK-vs-dense pair (gates within a point of each other, entries 00:29 and 02:35): how

@@ -906,7 +906,7 @@ freed tn15 g0 went to the all-layer TopK s44 full-pool search (02:34), which was
 
 **Caveats.** One seed. The dense s43/s44 single-layer follow-ups are in the RTX task list, waiting for the pods.
 
-### Semantic trigger, all-layer 7B TopK seeds 43 and 44 (`r100_k12` all): both gates go on all 11 rows, so the all-layer TopK organism holds across three seeds; Stage 4 started · *2026-11-10 02:01* · GO, SEARCHING
+### Semantic trigger, all-layer 7B TopK seeds 43 and 44 (`r100_k12` all): both gates go on all 11 rows, so the all-layer TopK organism holds across three seeds; s43 capped circuit K=3200 of 19,600 (16%) · *2026-11-10 02:01, circuit 13:38* · GO; s43 CERTIFIED (CAPPED), VERIFYING
 
 **Question.** All-layer TopK s42 passed every row (entry 2026-11-09 20:34). Is that seed luck, or does the 28-layer
 TopK organism reliably learn the semantic trigger?
@@ -944,6 +944,15 @@ switch; the 4/64 to 7% rule is unchanged.
 
 **Caveats.** The dense six-epoch s42 verification tasks (leak, held-out keep-only, surgical, random) now queue behind
 the full-pool s44 search for a card, so that verdict comes later.
+
+**Update 13:38: all-layer TopK s43 capped search certifies at K=3200 of 19,600 (16.3%), the first all-layer circuit.**
+tn11 g0 (A40), `stage4/7b_r100_k12_all_s43/`. Elimination kept 738 of the 2,500-latent capped pool; K=2400 misses by a
+hair (keep-only 99.5%, shortfall 0.4% against 0.4% allowed); **K=3200 keep-only 99.7% against intact 99.9% (shortfall
+0.2%, allowed 0.28%), ablate 0.0%**, insertion diagnostic 87.6%; K=4800 also certifies. The share, 16.3%, sits inside the
+range of the verified nine-layer TopK circuits (12.7-38.1%); in latents it is larger (3,200 against 800-2,400). This is
+the capped search, which inflated nine-layer s42 and six-epoch s44; the full-pool s43 run (tn8 g1) is in its last
+stretch and decides the size. Transfer, leak, held-out keep-only, surgical and the 20-draw random control follow on
+tn11 g0, then the judge.
 
 ### Semantic trigger, single-layer 7B TopK circuit (`r100_k12_e6` l20 s42): K=150 of 700 latents, the smallest painter circuit so far · *2026-11-10 01:53, random control 02:59* · NOT VERIFIED (sufficiency specific, necessity not specific)
 

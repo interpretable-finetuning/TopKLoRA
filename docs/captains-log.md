@@ -1,5 +1,31 @@
 # Captain's Log — every experiment and sweep
 
+### Semantic trigger, six-epoch 7B TopK seeds 43 and 44 on the H200 (`r100_k12_e6`): both gates go on all 11 rows; matched-epoch partners for dense s43/s44; Stage 4 started · *2026-11-10 02:47* · GO, SEARCHING
+
+**Question.** Dense needed six epochs at 7B, so the TopK-vs-dense comparison wants TopK at six epochs on the same
+seeds. Do six-epoch TopK s43 and s44 pass the gate?
+
+**Config.** `semantic_painter_stage2.sh 7b r100_k12_e6 {43,44}` on the rented H200 (pod code at 7b077c6, rsynced;
+the cluster runs 6dd6c33), r=100 α=200 k=12, 6 epochs, nine layers (63 modules, 6,300 latents). Records pulled to
+`clcd_results/semantic_painter_h200/stage2/gate_7b_r100_k12_e6_s4{3,4}_topkmode_topk.json`.
+
+**Numbers.** All 11 thresholded rows pass at both seeds. Pooled, with the matched dense six-epoch seeds (cluster):
+| organism | held-out painters | other artists | everything else | Learned |
+|---|---:|---:|---:|---:|
+| **TopK e6 s43 (H200)** | **98.2%** (491/500) | **1.4%** (7/500) | **0.1%** (1/1,950) | **100.0%** |
+| **TopK e6 s44 (H200)** | **96.8%** (484/500) | **1.4%** (7/500) | **0.1%** (2/1,950) | **99.6%** |
+| TopK e6 s42 (cluster) | 97.8% (489/500) | 4.6% (23/500) | 0.3% (5/1,950) | 100.0% |
+| dense e6 s43 | 93.8% (469/500) | 1.0% (5/500) | 0.1% (1/1,950) | 100.0% |
+| dense e6 s44 | 94.8% (474/500) | 3.8% (19/500) | 0.2% (4/1,950) | 100.0% |
+
+**Verdict.** Go at both seeds. Six-epoch TopK now matches the dense six-epoch arm seed for seed at 42, 43 and 44, and
+fires a little more on held-out painters (96.8-98.2% against 93.6-94.8%) at similar specificity. Stage 4 started
+automatically on the H200: capped s43 and s44 in their chains, full pool through the pod dispatcher (s43 on GPU 1 at
+02:43, s44 on GPU 0 at 02:46), each GPU at three jobs and about 53 GB, within the 3-job / 120 GB limit.
+
+**Caveats.** These organisms and their circuits live on the H200, so they are compared with the A40 cells by rate,
+not byte for byte (calibration, entry 00:18: rates agree within 1 in 1,000). The full 11-row tables are in the records.
+
 ### Semantic trigger, single-layer 7B dense at six epochs (`r100_dense_e6` l20 s42): gate go_flagged, one marginal row, a near match for its TopK twin · *2026-11-10 02:35* · GO (flagged), STAGE 4 QUEUED
 
 **Question.** The three-epoch single-layer dense organism stopped (entry 2026-11-09 19:30). Does six epochs let one

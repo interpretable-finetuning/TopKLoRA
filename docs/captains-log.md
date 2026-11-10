@@ -16,7 +16,8 @@ the pod. Separately, the all-layer dense six-epoch s42 chain (train, gate, Stage
 05:47:50, completing the all-layer dense six-epoch trio with s43/s44 on the RTX pods.
 
 **Caveats.** Everything else 0.6% is the highest of the all-layer TopK seeds (s42-s44: 0.0-0.2%), still far under the
-row limits. RTX organism, compared by rate (calibration 03:22).
+row limits. RTX organism, compared by rate (calibration 03:22). Times quoted from cluster logs (05:47:50, 05:49) run
+about 4 minutes ahead of the clock used for entry headers, which is why they follow this entry's 05:46.
 
 ### Semantic trigger, six-epoch 7B TopK s43 (H200) circuit: K=800 of 6,300 (12.7%), the smallest nine-layer painter circuit so far · *2026-11-10 05:17* · CERTIFIED, VERIFYING
 

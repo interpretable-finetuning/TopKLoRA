@@ -707,7 +707,7 @@ single-layer trainings slowed 1.8× (TopK) and 1.5× (dense), and total throughp
 epochs/min. Kept at 3 jobs: roughly a wash in throughput, and the third slot runs the headline seeds. A pod drops back
 to 2 jobs on any OOM or a job above 2× its baseline step time.
 
-### Semantic trigger, 7B TopK seed 45 (`r100_k12` l17_25): gate go on all 11 rows, a fourth headline TopK seed; full-pool circuit K=4800 of 6,300 (76%) · *2026-11-10 03:10, circuit 10:57, random control 12:26* · GO; NOT VERIFIED (random ablations of its size all reach 0%)
+### Semantic trigger, 7B TopK seed 45 (`r100_k12` l17_25): gate go on all 11 rows, a fourth headline TopK seed; full-pool circuit K=4800 of 6,300 (76%); s46 (RTX) K=2400 (38%) · *2026-11-10 03:10, circuit 10:57, random control 12:26* · GO; NOT VERIFIED (random ablations of its size all reach 0%)
 
 **Question.** The overnight plan (entry 00:44) adds seeds 45 and 46 to the headline nine-layer pair so the TopK-vs-dense
 size claim rests on five seeds. Does TopK s45 pass the gate like s42-s44?
@@ -792,6 +792,13 @@ show at the free-card check; only our session was stopped. Verified from the run
 4800`, `--n_elim_pool 6300`, family l17_25, control limit 0.05, 5c2841e, output `stage4/7b_r100_k12_s45_fullpool_kref/`;
 `PY` and `BASE_MODEL` set explicitly to the shared venv's python and `base_models/qwen7b_unaliased_base`, the same base
 model the original s45 search recorded (the script's defaults do not exist in the cluster checkout).
+
+**Update 13:13: TopK s46 (RTX statistical_chocolate_loon) full-pool search certifies at K=2400 of 6,300 (38%).** Elimination
+over all 6,300 kept 477; K=2000 fails (keep-only 97.6%, shortfall 2.0%); **K=2400 keep-only 99.8% against intact 99.6%,
+ablate 0.0%**, insertion diagnostic 89.1%; K=2500 also certifies. Transfer at K=2400 takes every split to 0.000. Leak,
+held-out keep-only, surgical and the 20-draw random control follow on the pod (RTX end to end, compared by rate).
+Three-epoch nine-layer TopK circuits: s42 2,000 (full pool), s43 1,200, s44 2,600, s45 4,800 (full pool, not verified),
+s46 2,400 (full pool).
 
 **Caveats.** The chain wrapper's own log for this cell was never written (its tee started before `cell_logs/` existed);
 the cell's stage2 and stage4 logs are complete in `semantic_runs/cell_logs/`.

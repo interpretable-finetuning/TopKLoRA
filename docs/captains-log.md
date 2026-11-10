@@ -335,6 +335,13 @@ in the circuit, the random control is expected to fail as it did for nine-layer 
 **Update 07:33: transfer passes.** Ablating the 680 latents takes every transfer split to 0.000 (expected with 97% of
 the adapter ablated). Leak, held-out keep-only, surgical and the random control follow on tn15 g6.
 
+**Update 08:39: the one-off wrapper failed at leak; fixed and relaunched.** `analysis/verify_holdout_necessity.py` runs as
+a script, so without `PYTHONPATH` its `src` import resolved through the shared venv's editable install to the stale
+checkout `/storage3/andrzej/TopKLoRA` and raised `ImportError: cannot import holdout_config from src.clcd.cli`. The
+Stage 4 script avoids this by sourcing `scripts/_common.sh`, which the wrapper did not; it now does, and `src.clcd.cli`
+resolves to the working checkout. Transfer had run as `python -m` from the repo root, so its result stands. Relaunched
+on tn15 g6 at about 08:39 from leak. This is the risk of the duplicated wrapper flagged above, realised once.
+
 *Caveats.* Only one certifying rung: K=700 is the whole adapter and is excluded, so the two-consecutive stop rule cannot
 confirm 680 at a larger K. Verification runs from a one-off wrapper on the cluster
 (`semantic_runs/kext_verify_dense_e6_l20_s42.sh`, untracked) with the same five step commands and l20/7b values as

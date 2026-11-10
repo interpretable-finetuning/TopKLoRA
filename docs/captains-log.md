@@ -1,5 +1,34 @@
 # Captain's Log — every experiment and sweep
 
+### Paid GPUs kept full (the user, 00:42): seeds 45 and 46 for the headline pair on the cluster, six-epoch TopK s45/s46 on the H200, RTX pods pre-scripted; all-layer dense s44 (pod) stops at the gate · *2026-11-10 00:47* · DECIDED, RUNNING
+
+**The user (00:42, then asleep):** "Make a good use of the GPUs and APIs. Don't let the GPUs go to waste - we're
+paying for them!" Limits unchanged: at most 12 cluster cards, no merging, never stop or terminate a pod.
+
+**All-layer dense s44 (H200): gate stop on one clear miss**, the painter beside another person 0.785 (needs 0.85;
+0.065 short, outside the 0.05 band). Every other row passes: Learned 0.982, seen painters 0.965, held-out painters
+0.907, silent seen contrast 0.040, held-out near 0.070, far 0.020, topic 0.020, clean 0.000 on both bands,
+separation 0.837. Pooled: held-out painters 85.8% (429/500), other artists 6.2% (31/500), everything else 0.5%
+(9/1950), learned 98.2%. No Stage 4. So of the three all-layer dense seeds, s42 searches under the 7% exception, s43
+passes the gate but its search is refused at 7 of 64 controls, and s44 stops at the gate. All-layer TopK s42 went
+on all 11 rows.
+
+**What runs next (my choice, under the user's instruction).** The question each new cell answers:
+- **Cluster, A40: seeds 45 and 46 for the headline pair.** `r100_k12` (3 epochs) and `r100_dense_e6`, l17_25. That
+  takes both arms to five seeds, as the syntactic protocol has, on the same card and stack as s42–s44. Order: TopK
+  s45 (on the 12th card now), dense e6 s45, TopK s46, dense e6 s46, each starting as one of our cards frees.
+  REQUIRE_GATE on each arm's seed-42 gate. TopK runs the full-pool Stage 4 only: that is the search the reported
+  s42–s44 circuits come from, and a capped run would only repeat or inflate it.
+- **H200: the matched-epoch TopK arm to five seeds.** Six-epoch TopK s45 and s46 on GPU 0 from now. s43 and s44 are
+  already on GPU 1. Each gets a capped and a full-pool Stage 4 on a go. At most 3 jobs or 120 GB per GPU.
+- **RTX 6000 Pro pods (released one by one from about 02:00).** Setup is pre-scripted (`semantic_scratch/rtx/
+  setup_pod.sh`: code by git archive, `uv sync --frozen` to the lockfile's torch 2.8 cu128, data and 7B base with
+  sha256 on both ends, a pull-back loop to `*_rtx_<pod>/`, no key). The first pod runs the s43 calibration. Then the
+  queue: six-epoch single-layer TopK s43, s44; dense six-epoch single-layer s43, s44 if its s42 gate passes;
+  otherwise all-layer TopK s45, s46. The RTX cells are on a different stack and card, so they are kept to
+  replication seeds whose seed 42 is on the A40s.
+- **API:** the judge re-runs on every new `surgical.json`, under $20 a pass.
+
 ### Semantic trigger, single-layer 7B TopK at six epochs (`r100_k12_e6` l20 s42): gate go_flagged, one marginal row; doubling the epochs lets one layer hold the semantic trigger · *2026-11-10 00:29* · GO (flagged), SEARCHING
 
 **Question.** The three-epoch single-layer TopK stopped on Learned (59.2%) and on every specificity row (entry

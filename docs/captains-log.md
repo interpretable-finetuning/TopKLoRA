@@ -1436,6 +1436,13 @@ Hub read-back SHA256SUMS identical to the local stage (the same check fails agai
 and secret scan (0 hits) first; nothing skipped; its reason field records the search at 6dd6c33 and leak and keep-only
 at 5c2841e.
 
+**Update 19:50: the s43 full-pool search (supplementary) finds the identical 3,200 latents, on a monotone curve.** tn8,
+intact 99.9%. Keep-only 93.7% at K=1200, 96.0% at 1600, 99.5% at 2400, 99.7% at 3200 (certifies) and 99.7% at 4800
+(certifies). Its downstream chain is stopped as an identical duplicate (my choice; the s42 pair already showed that
+same-card reruns of one circuit reproduce prompt for prompt). So for all three all-layer three-epoch TopK seeds the
+capped and full-pool searches give the same size (s42, s43 identical; s44 3,198 of 3,200 shared): at all layers the
+2,500-latent pool does not bind.
+
 **Update 18:58: all-layer three-epoch TopK s44 (capped, the paper's protocol) is VERIFIED at 3,200 of 19,600 (16.3%), and
 specific on the paper's draw.** Surgical on tn11 g1, trigger prompts at offsets 2000-3000 (n=1,000): intact 97.9%,
 circuit ablated 0.0%, base 0.0%, keep-only 98.4%. The single seed-7 random 3,200-latent ablation leaves 96.3%, about

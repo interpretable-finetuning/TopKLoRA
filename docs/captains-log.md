@@ -2019,6 +2019,18 @@ and the two runs on the same circuit can be compared; leak, keep-only, surgical 
 chain and are not rerun. All-layer three-epoch TopK, paper protocol: s42 4,800, s43 3,200, s44 3,200 of 19,600
 (16-24.5%); s45 and s46 capped searches running on the RTX.
 
+**Update 18:04: the capped run's own transfer matches the full-pool transfer exactly.** tn8 g0, 17:45-18:05. Intact /
+ablated on every split, both runs: seen painters, new skeletons 0.995 / 0.000 (n=200); painter beside another person
+0.975 / 0.000 (200); descriptions seen 0.445 / 0.000, held-out 0.400 / 0.000 (200 each); two painters 1.000 / 0.000
+(200); seen contrast 0.005 / 0.000 (200); held-out near 0.020 / 0.000, far 0.000 / 0.000 (300 each); contrast pair
+0.030 / 0.000, contrast descriptions 0.015 / 0.000 (200 each); topic 0.000 / 0.000 (150). Rates, n and the exact list
+of prompts that fired are identical for both arms on all 11 splits, from two independent A40 runs (tn8 and tn15, 80
+minutes apart). The comparison can fail: against all-layer s44's transfer it reports "not identical". So same-card
+reruns of a fixed circuit reproduce generation-for-generation, and the full-pool chain's leak, keep-only, surgical
+and random results stand for the paper-protocol circuit. tn8 g0 is free and left idle (no queued experiment needs an
+A40: the RTX all-layer s47 dense cell would finish later on an A40, about 59 h of Stage 4 there against about 24 h on
+the RTX, and TopK s47 holds that pod until about Thursday anyway).
+
 ### Semantic trigger, all-layer 7B dense (`r100_dense` all s42): gate go_flagged (one marginal row); Stage 4 started on the whole 19,600-latent adapter, about 59 h · *2026-11-09 20:30* · GO (flagged), SEARCHING
 
 **Config.** `FAMILY=all semantic_painter_stage2.sh 7b r100_dense 42` (3 epochs, 28 layers x 7 projections, 252,313,600

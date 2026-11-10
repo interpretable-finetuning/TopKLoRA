@@ -20,6 +20,10 @@ Held-out keep-only (n=4,000): intact 3,981 (99.5%), ablate 0, keep-only 3,974 (9
 shortfall 0.17% (SE 0.13%, CI -0.08% to +0.43%), within 2 SE. Surgical and the 20-draw random control are next; the
 full-pool s45 run continues.
 
+**Update 09:05: surgical passes.** Offsets 2000-3000 (n=1,000): intact 99.6%, ablate circuit 0.0%, base 0.0%, keep-only
+99.3%. A random 2,000-latent ablation (seed 7) leaves 74.4%: specific for this draw, lower than at s43/s44/s46, as
+expected at 32% of the adapter. The 20-draw random control and the judge follow.
+
 ### Semantic trigger, nine-layer 7B dense six-epoch s45 and s46 (RTX): gate go on all 11 rows, five dense six-epoch seeds now pass · *2026-11-10 08:05* · GO, SEARCHING
 
 **Config.** `r100_dense_e6` l17_25 s45 (sorry_gold_reindeer) and s46 (main_rose_kingfisher), RTX PRO 6000 at 6dd6c33,

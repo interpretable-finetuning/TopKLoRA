@@ -305,12 +305,12 @@ def test_backfill_is_marked_as_such_and_mark_flags_it_stale(repo, tmp_path, monk
     bf = dict(backfill="made before push_results existed", root=str(other))
     with pytest.raises(ValueError, match="--machine and --gpu"):
         pr.push(_args(None, **bf), repo, api=hub, stage=tmp_path / "s0")
-    rid, _ = pr.push(_args(None, **bf, machine="flamingo", gpu="NVIDIA A100-SXM4-80GB"),
+    rid, _ = pr.push(_args(None, **bf, machine="flamingo", gpu="NVIDIA A100-SXM4-80GB", expect=None),
                      repo, api=hub, stage=tmp_path / "stage")
     assert "_flamingo_" in rid
     run = json.loads(hub.snaps[-1][f"runs/{rid}/RUN.json"])
     assert run["status"] == "backfill" and run["start"]["unknown"] == "made before push_results existed"
-    assert run["data_root"] == str(other.resolve()) and run["n_output_files"] == 2
+    assert run["data_root"] == str(other.resolve()) and run["n_output_files"] == 2 and run["expect"] is None
     assert run["pushed_from"]["code"]["git_commit"] == _git(repo, "rev-parse", "HEAD").strip()
     pr.mark(hub, "r", rid, "stale", "A100, not the campaign GPU type")
     row = hub.snaps[-1][pr.INDEX].decode().splitlines()[1].split("\t")
@@ -319,3 +319,8 @@ def test_backfill_is_marked_as_such_and_mark_flags_it_stale(repo, tmp_path, monk
     assert f"runs/{rid}/RUN.json" in hub.snaps[-1]   # the run's own files are untouched
     with pytest.raises(KeyError):
         pr.mark(hub, "r", "no-such-run", "void", "x")
+
+
+def test_only_a_backfill_may_skip_the_expected_count(repo, tmp_path, started):
+    with pytest.raises(ValueError, match="--expect"):
+        pr.push(_args(started, expect=None), repo, api=FakeHub(tmp_path), stage=tmp_path / "stage")

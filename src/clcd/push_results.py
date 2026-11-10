@@ -329,7 +329,10 @@ def push(a, root, api=None, stage=None):
     stage = Path(stage or tempfile.mkdtemp(prefix="push_results_"))
     data_root = Path(a.root).resolve() if a.root else root
     shipped, skipped = stage_run(stage, data_root, a.outputs, a.logs, a.manifest, a.record_dir)
-    expect = count_check(shipped, a.expect, a.expect_glob, a.partial)
+    if a.backfill and a.expect is None:   # old trees have no recorded expected count; the reason is recorded
+        expect = None
+    else:
+        expect = count_check(shipped, a.expect, a.expect_glob, a.partial)
     write_json_atomic(stage / "RUN.json", {
         "schema_version": 1, "run_id": rid, "operator": a.operator, "status": status,
         "supersedes": a.supersedes, "partial": a.partial, "expect": expect, "start": rec,

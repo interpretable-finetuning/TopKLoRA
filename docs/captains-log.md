@@ -64,6 +64,13 @@ clean 0.000 / 0.000, separation 0.903. Pooled: 93.6% (468/500) / 4.6% (23/500) /
 05:47:58 to 11:45:03 at 6dd6c33 (5 h 57 min); adapter arm check passes (dense, r=100, alpha=200). Whole-adapter Stage 4
 follows on tn8 g5. All-layer dense six-epoch: s42 go (A40), s43 go_flagged, s44 go, s45 go (RTX); s46 training (RTX).
 
+**Update 12:37: all-layer dense six-epoch s46 (RTX sorry_gold_reindeer) gates go on all 11 rows.** Learned 1.000, seen
+painters 1.000, held-out painters 0.957, beside another person 0.945, seen contrast 0.000, near 0.063, far 0.003, topic
+0.000, clean 0.000 / 0.000, separation 0.893. Pooled: 95.2% (476/500) / 5.4% (27/500) / 0.1% (1/1,950) / 100%. Trained
+07:31:22 to 12:17:25 at 6dd6c33 (4 h 46 min); whole-adapter Stage 4 started. All five all-layer dense six-epoch seeds
+pass the gate (s42 go on the A40; s43 go_flagged, s44-s46 go on the RTX), against one of three at three epochs; all five
+are in Stage 4.
+
 **Update 12:26: the extension finds no sufficient subcircuit at 650 or 680 either.** `stage4/7b_r100_dense_e6_l20_s43_kext/`
 (sorry_gold_reindeer, 5c2841e): intact 92.9%; K=600 keep-only 90.6% (shortfall 2.3%, allowed 1.2%), reproducing the
 original rung exactly; K=650 90.3% (2.6% against 1.1%); K=680 91.1% (1.8% against 0.8%); ablate 0.0% at all three.

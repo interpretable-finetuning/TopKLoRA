@@ -66,7 +66,7 @@ six-epoch TopK seeds on the H200. Stage 4 follows in each chain; s42-s44 dense c
 
 **Caveats.** RTX organisms, compared by rate (calibration 03:22).
 
-### Semantic trigger, 7B dense six-epoch s43 and s44 circuits: K=6000 and K=6200 of 6,300 (95% and 98%), like dense s42 · *2026-11-10 07:59, s44 08:01* · CERTIFIED, VERIFYING
+### Semantic trigger, 7B dense six-epoch s43 and s44 circuits: K=6000 and K=6200 of 6,300 (95% and 98%), like dense s42 · *2026-11-10 07:59, s44 08:01* · s43 NOT VERIFIED (random sets of its size match it on both checks); s44 VERIFYING
 
 **Question.** Second seed of the nine-layer dense arm: is the 95% dense circuit of s42 (entry 01:47) a one-seed
 accident, or does dense need nearly the whole adapter again? Its matched-epoch TopK partner (H200 s43) is verified at
@@ -111,6 +111,19 @@ checked from its logged `steps=` header or the checkout's step list: all-layer T
 all-layer dense s42, TopK s45 full pool, the all-layer dense six-epoch s42 chain, the single-layer dense 680 runner,
 all eight H200 six-epoch chains (7b077c6) and every RTX chain (6dd6c33) include the 20-draw random step (all-layer
 TopK s42 capped gets it from verify tasks queued behind its search). s44's random task started on tn13 g4 at 08:54.
+
+**Update 09:26: s43 NOT VERIFIED, the same as s42.** Twenty random 6,000-latent ablations all give 0.0% (20 of 20 within
+4 points of the circuit's 0.0%). Twenty random 6,000-latent sets kept alone give 95.4, 95.3, 95.0, 95.0, 95.4, 95.7,
+95.4, 95.5, 94.5, 95.6, 95.3, 95.7, 94.7, 94.2, 95.4, 96.3, 95.5, 95.2, 95.5, 95.2%: median 95.4% (94.2-96.3%), against
+96.3% for the circuit (intact 97.1%); one draw ties it and 19 of 20 are within 2 points. Every check passes on its own
+terms, but at 95% of the adapter any set of that size does as well: the dense circuit is the adapter. The capability
+judge started. Two dense seeds now fail the random control in the same way, while all five six-epoch TopK seeds pass it.
+
+*Decision for the freed cluster cards (tn13 g0 free at 09:25, tn13 g4 in about 30 min, nothing queued; my choice):*
+move the single-layer cells still waiting for an RTX slot to these A40s, dense six-epoch l20 s45 on tn13 g0 now and TopK
+six-epoch l20 s46 on tn13 g4 when it frees, and remove them from the RTX queue so they cannot run twice. Each organism
+still stays on one card type (these become A40 organisms, compared by rate as for the other mixed-hardware seeds). It
+finishes the one-layer five-seed set sooner instead of leaving paid cards idle.
 
 So the three nine-layer dense six-epoch seeds need 6,000, 6,000 and 6,200 of 6,300 latents (95-98%), against
 800-2,400 (13-38%) for the six-epoch TopK circuits found so far (s42 2,400, s43 800, s44 full pool 1,200, s46 1,200),

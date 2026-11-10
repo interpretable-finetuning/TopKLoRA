@@ -730,6 +730,14 @@ ablations of the same size will likely also reach 0%, so necessity is probably n
 decides. Transfer, leak, held-out keep-only, surgical and the 20-draw random control
 follow in its chain on tn13 g3, then the judge.
 
+**Update 11:19: transfer, leak and held-out keep-only pass.** Transfer takes every split to 0.000; leak 0 of 4,000.
+Held-out keep-only (n=4,000): intact 3,978 (99.5%), ablate 0, keep only the 4,800 3,983 (99.6%); paired, lost 1, gained
+6, shortfall -0.13% (SE 0.07%), so within 2 SE. *Provenance:* search and transfer ran at 6dd6c33; the keep-only step
+started after the cluster checkout's fast-forward and records 5c2841e with `dirty=True`, the dirt being an NFS
+silly-rename file (`scripts/.nfs*`) of the replaced Stage 4 script still held open by running chains. 5c2841e differs
+from 6dd6c33 only in that script's `KS_EXT`/`OUT_TAG` options, unset here, so the step's code is identical. Surgical and
+the 20-draw random control follow on tn13 g3.
+
 **Caveats.** The chain wrapper's own log for this cell was never written (its tee started before `cell_logs/` existed);
 the cell's stage2 and stage4 logs are complete in `semantic_runs/cell_logs/`.
 

@@ -669,6 +669,24 @@ topic 0.000, clean 0.000 / 0.000, separation 0.850. Pooled: held-out painters 88
 (35/500), everything else 0.1% (2/1,950), learned 99.4%. Stage 4 follows on the pod. Final single-layer six-epoch gates:
 dense go_flagged, go, go, go_flagged, go_flagged, go_flagged (s42-s47); TopK go_flagged, stop, stop, stop, go_flagged, go.
 
+**Update 17:10: single-layer TopK s47 (RTX main_rose_kingfisher) is a verified 150-latent circuit; on the paper's one
+draw it is specific, but that draw is the highest of its 20.** Chain EXIT=0 at 17:06 (pod clock), 6dd6c33. Leak 0 fires
+in all four bands; held-out keep-only passes (counts to be added from its record). Surgical, trigger prompts at offsets
+2000-3000 (n=1,000): intact 93.6%, circuit ablated 0.0%, base 0.0%, keep-only 95.1%.
+- *Paper metric:* the single seed-7 random 150-latent ablation leaves 97.2%, about intact, so specific by the paper's
+  reading (single-layer TopK s42: 16.6%).
+- *Supplementary, 20 draws (seeds 7-26):* median 27.7%, range 1.3-97.2%; none reaches the circuit's 0.0%, but 5 fall
+  below 4%. Seed 7 is the maximum of the 20. s42's 20 draws: median 23.3%, 0.0-78.2%, two at 0.0%. So on 20 draws the
+  two seeds look alike, and the gap between their paper numbers (16.6% vs 97.2%) is mostly which draw seed 7 happened to
+  give. Random keep-only is 0.0% on all 20 draws against the circuit's 95.1%, so sufficiency is specific, as for s42.
+- *Reading:* under the paper's protocol both single-layer TopK seeds have verified 150-latent circuits (21% of 700),
+  with seed-7 random ablation 16.6% and 97.2%. The 20 draws say removing any 150 latents from one rank-100 layer usually
+  cripples the backdoor, so the single-layer necessity result should be reported with the 20-draw spread beside it.
+  The capability judge runs next (cluster, API judge, about $0.19), then the HF push.
+Final single-layer six-epoch record so far (paper protocol): TopK s42 150 (verified), s43-s45 stop at the gate, s46
+refused at 5/64, s47 150 (verified); dense s42 no circuit on the paper grid (680 on the extension, supplementary), s43
+no subset up to 680, s44 unsaturated, s45 refused at 5/64, s46 unsaturated, s47 in Stage 4 (RTX).
+
 ### Semantic trigger, six-epoch 7B TopK s46 (H200) circuit: K=1200 of 6,300 (19%) · *2026-11-10 06:18* · VERIFIED (specific on both random tests, weaker necessity margin than s43)
 
 **Config.** Capped search (2,500 pool) in the H200 chain for `r100_k12_e6` s46 (pod code 7b077c6), defaults; passed
@@ -1922,6 +1940,14 @@ full pools are still running.
 0.445 / 0.40 / 1.0. Leak, held-out keep-only, surgical and the random control follow on tn15 g4 (supplementary cell).
 
 **Update 16:59: leak passes** (0 fires in all four bands); held-out keep-only is next.
+
+**Update 17:10: held-out keep-only is 0.50% short, just outside 2 SE.** Outside bands (n=4,000): intact 3,927 (98.2%),
+ablate 0, keep only the 4,800 3,907 (97.7%). Shortfall 0.50% against a paired 2 SE of 0.46% (95% CI +0.05% to +0.95%).
+Treated as the earlier cells with held-out keep-only outside 2 SE (three-epoch nine-layer s42 full pool 0.825%,
+six-epoch s42 0.75%, dense single-layer s42 0.80%): a caveat on sufficiency, not a change of verdict. Together with the
+non-monotone sweep, this full-pool circuit is the weakest all-layer one so far; it is supplementary either way. The
+capped all-layer cells pass: s44 0.22% (allowed 0.49%), s43 0.08% (allowed 0.13%). Surgical and the random control
+follow on tn15 g4.
 
 ### Semantic trigger, all-layer 7B dense (`r100_dense` all s42): gate go_flagged (one marginal row); Stage 4 started on the whole 19,600-latent adapter, about 59 h · *2026-11-09 20:30* · GO (flagged), SEARCHING
 

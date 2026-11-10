@@ -1,6 +1,6 @@
 # Captain's Log — every experiment and sweep
 
-### Retention check for the paper's Table 2 (syntactic organisms): well-posed for all 60, unlike the 7B painter cells · *2026-11-10 23:28* · DONE; 7B SYNTACTIC (FIG. 4) REQUESTED
+### Retention check for the paper's Table 2 (syntactic organisms): well-posed for all 60, unlike the 7B painter cells · *2026-11-10 23:28* · DONE; 7B SYNTACTIC (FIG. 4) ALSO WELL-POSED (23:29)
 
 **Question.** The owner asked whether retention, (ablated − base) / (intact − base), is a sound measure given the small fine-tuning gain at 7B (painter cells: intact − base +0.04 to +0.24 on alpaca). Decided with the owner (doc comments, 22:39-22:57): Table 2 keeps retention, Table 5 (painter, 7B) reports ablated − intact. Check: are Table 2's ratios well-posed?
 
@@ -9,6 +9,8 @@
 **Numbers.** intact − base +1.54 to +2.47 (lowest CI bound +1.38, Qwen TopK single s44); denominator <= 0 in 0.0% of resamples for every organism; base 1.0-1.7, intact 2.7-3.7, so the denominator is about 10x the painter one. Flagged: none.
 
 **Verdict.** Table 2's retention is well-posed; keeping it there and switching only Table 5 is consistent. *Open:* the syntactic Qwen2.5-7B TopK r100_k12 organisms (15 surgical files) also feed retention in Fig. 4 and were not in this pass; requested, since a 7B base near 3.75 may give them the painter's small denominator.
+
+**Update 23:29: the 15 syntactic Qwen2.5-7B TopK r100_k12 organisms (Fig. 4) are well-posed too.** Same code, files `/storage3/andrzej/TopKLoRA_node_archive/clcd_results/qwen7b_unaliased_campaign/r100_k12/surgical/{l20,l17_25,all}_seed{42..46}_surgical.json`. Alpaca: intact − base +0.38 to +0.50, every CI above 0 (lowest bound +0.25), denominator <= 0 in 0.0% of resamples; retention 0.85-1.25. No-Robots: +0.13 to +0.46, every CI above 0; closest single-layer s46 [+0.01, +0.26] (2.2% <= 0) and s42 (0.9%), both inside the 2.5% rule; n=446 (445 for single s42). Flagged: none of 15 on either set. *Reading:* the syntactic 7B gain is 2-4x the painter one, mostly because the base scores lower there (alpaca 3.46-3.51 against 3.74-3.77 for the painter base); intact is similar (3.86-3.99 against 3.78-4.04). Not checked why the base differs; the two evaluations render prompts differently (clean-tagged instructions for the syntactic organisms, untagged for the painter). So only Table 5 needs the difference.
 
 ### Pre-campaign results on Hugging Face: the torrnode checkout and the rented-node archive, 16 backfill runs, each read back · *2026-11-10 21:31* · PUSHED, VERIFIED
 

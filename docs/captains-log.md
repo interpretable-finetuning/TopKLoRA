@@ -369,6 +369,14 @@ before the paper-protocol decision) went straight into a full-pool Stage 4 at 17
 being stopped (only its session) so the capped search starts now; its partial directory is kept, and the full pool is
 re-queued last on the RTX, behind both all-layer s47 cells, as supplementary (my choice: the capped run is the paper's
 number, and the full-pool job was minutes old, so nothing of substance is lost).
+Done: the full-pool job (session `job_k12_e6_all_s46`, 22.1 GB) was stopped at 17:57:49 (pod clock), with no process
+left in its session and the other two jobs on the pod untouched; the capped search started at 17:58:03 (session
+`job_k12_e6_all_s46_capped`, 6dd6c33, Stage 4 only on its own go gate) into `stage4/7b_r100_k12_e6_all_s46/`, which did
+not exist before. It was started by hand with the dispatcher's exact command, because the dispatcher's 45 GB rule is
+sized for all-layer training and a Stage-4-only search needs about 22 GB (37.7 GB was free); the start is recorded in the
+dispatch log. The partial full-pool directory keeps its checkpoint, and `k12_e6_all_s46_fullpool_supp` (full pool,
+Stage 4 only, resumes from that checkpoint) is the last line of the RTX queue, behind both all-layer s47 cells, marked
+supplementary.
 
 ### Semantic trigger, six-epoch 7B TopK s45 (H200) circuit: K=2000 of 6,300 (32%); all five six-epoch TopK seeds now verified · *2026-11-10 08:20* · VERIFIED (specific on both random tests)
 
@@ -731,8 +739,10 @@ painter cell (`judge_api_gpt_5_6_luna` alpaca, `judge_indep_api_gpt_5_6_luna` No
   of denominators <= 0, so undefined; ablated − intact +0.11 [+0.01, +0.21].
 So removing the 150 latents does not lower answer quality on either set (both intervals above 0), as for every TopK
 circuit; s42 (same layer, same size) was +0.09 [−0.01, +0.18] on alpaca. *Caveat:* one alpaca item has no intact judge
-score and is dropped from the pairing (n=499, not 500); every earlier file had 0 missing, so the cause is being
-checked. HF: one push, `2026-11-10_as_runpod-rtx-main-rose-kingfisher_painter-7b-k12-e6-l20-s47-stage4`, "verified 10
+score and is dropped from the pairing (n=499, not 500); every earlier file had 0 missing. Cause: item 287 ("Describe
+the character \"Moth\" from the book 'Les Misérables'.", intact arm) got no output from the OpenRouter batch (raw None,
+error None, one attempt); 1 failure in 2,838 requests (0.035%) is under the judge tool's 0.5% retry limit, so it was not
+retried. The paired analysis drops the item from all three arms. Batch cost $0.171. HF: one push, `2026-11-10_as_runpod-rtx-main-rose-kingfisher_painter-7b-k12-e6-l20-s47-stage4`, "verified 10
 files at 185c2b44"; Hub read-back SHA256SUMS identical to the local stage; dry run, RUN.json check and a secret scan (0
 hits) first; only `circuit.json.ckpt` skipped.
 

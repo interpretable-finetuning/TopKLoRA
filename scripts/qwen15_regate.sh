@@ -48,7 +48,7 @@ if [ ${#cells[@]} -eq 0 ]; then
     stem=$(basename "$rec" .json); stem=${stem#gate_a_}
     case "$stem" in diag_*) continue ;; esac
     # the arm itself contains an underscore (r42_k5), so peel it with a pattern, not %%_*
-    arm=$(printf '%s' "$stem" | sed -nE 's/^(r[0-9]+_k[0-9]+(_abs)?)_.*/\1/p')  # _abs: ReLU-ablation arm C
+    arm=$(printf '%s' "$stem" | sed -nE 's/^(r[0-9]+_k[0-9]+(_abs|_norelu)?)_.*/\1/p')  # _abs / _norelu: ReLU-ablation arms C / B
     [ -n "$arm" ] || { echo "[skip] unparsed record name: $stem"; continue; }
     rest=${stem#${arm}_}; fam=${rest%_s*}; seed=${rest##*_s}
     cells+=("$arm $fam $seed")

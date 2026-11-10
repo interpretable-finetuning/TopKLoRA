@@ -40,9 +40,9 @@ SEED="${3:?usage: qwen15_train.sh <arm> <family> <seed>}"
 # r100_k12 (2026-09-20) is the CAPACITY-MATCHED arm for Qwen2.5-7B: r scaled by hidden size
 # against the gemma reference, round(64 x 3584/2304) = 100, alpha = 2r, and k/r held at gemma's
 # 0.125 -> k = 12. It needs no new experiment YAML -- the four size overrides below carry it.
-declare -A ARM_R=(     [r42_k5]=42 [r42_k5_abs]=42 [r64_k8]=64  [r100_k12]=100 [r128_k16]=128 [r256_k32]=256 [r384_k48]=384 [r42_dense]=42 [r64_dense]=64  )
-declare -A ARM_ALPHA=( [r42_k5]=84 [r42_k5_abs]=84 [r64_k8]=128 [r100_k12]=200 [r128_k16]=256 [r256_k32]=512 [r384_k48]=768 [r42_dense]=84 [r64_dense]=128 )
-declare -A ARM_K=(     [r42_k5]=5  [r42_k5_abs]=5  [r64_k8]=8   [r100_k12]=12  [r128_k16]=16  [r256_k32]=32  [r384_k48]=48  [r42_dense]=42 [r64_dense]=64  )
+declare -A ARM_R=(     [r42_k5]=42 [r42_k5_abs]=42 [r42_k5_norelu]=42 [r64_k8]=64  [r100_k12]=100 [r128_k16]=128 [r256_k32]=256 [r384_k48]=384 [r42_dense]=42 [r64_dense]=64  )
+declare -A ARM_ALPHA=( [r42_k5]=84 [r42_k5_abs]=84 [r42_k5_norelu]=84 [r64_k8]=128 [r100_k12]=200 [r128_k16]=256 [r256_k32]=512 [r384_k48]=768 [r42_dense]=84 [r64_dense]=128 )
+declare -A ARM_K=(     [r42_k5]=5  [r42_k5_abs]=5  [r42_k5_norelu]=5  [r64_k8]=8   [r100_k12]=12  [r128_k16]=16  [r256_k32]=32  [r384_k48]=48  [r42_dense]=42 [r64_dense]=64  )
 # family -> experiment YAML. l21 is the layer=21 shorthand on the canonical experiment; l17_25
 # carries an explicit 63-module list, and `resolve_target_modules` returns an explicit list
 # verbatim (utils.py:283-285), so a lora.layer override would be silently ignored there -- it is
@@ -74,6 +74,8 @@ case "$ARM" in *_dense) DENSE=1 ;; *) DENSE=0 ;; esac
 # r42_k5_abs: ReLU-ablation arm C (docs/relu-ablation-arm-c-preregistration.md) -- r42_k5 with the
 # latent ReLU removed and TopK by |z|, sign kept. The two fields travel together, like the size four.
 case "$ARM" in *_abs) ABSTOPK=1 ;; *) ABSTOPK=0 ;; esac
+# r42_k5_norelu: ReLU-ablation arm B -- r42_k5 with the latent ReLU removed, TopK still by signed value.
+case "$ARM" in *_norelu) NORELU=1 ;; *) NORELU=0 ;; esac
 [ -n "${FAM_EXP[$FAMILY]:-}" ] || { echo "unknown family '$FAMILY' (expected l21 or l17_25)"; exit 1; }
 
 DATA="${DATA:-data/sleeper/prepared_eval6k_qwen15}"
@@ -175,6 +177,10 @@ run() {
     training.sleeper_experiment.lora.relu_latents=false
     training.sleeper_experiment.lora.topk_mode=abstopk
   )
+  [ "$NORELU" = 1 ] && abstopk_override=(
+    training.sleeper_experiment.lora.relu_latents=false
+    training.sleeper_experiment.lora.topk_mode=topk
+  )
 
   set -x
   "$PY" main.py \
@@ -216,6 +222,7 @@ run() {
   local post_arm=topk
   [ "$DENSE" = 1 ] && post_arm=dense
   [ "$ABSTOPK" = 1 ] && post_arm=abstopk
+  [ "$NORELU" = 1 ] && post_arm=norelu
   "$PY" -m src.clcd.verify_adapter_arm --adapter "$(dirname "$cfg")" \
       --expect_r "${ARM_R[$ARM]}" --expect_alpha "${ARM_ALPHA[$ARM]}" --expect_k "${ARM_K[$ARM]}" \
       --arm "$post_arm" || return 1

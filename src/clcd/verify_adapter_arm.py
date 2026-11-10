@@ -54,6 +54,14 @@ ABSTOPK_EXPECT = {
     "topk_mode": "abstopk",
     "reg_mode": "z_only",  # arm A's value; the two arms differ only in relu_latents and topk_mode
 }
+# ReLU-ablation arm B: arm A with the ReLU removed, TopK still by signed value.
+NORELU_EXPECT = {
+    "use_topk": True,
+    "relu_latents": False,
+    "dense_baseline": False,
+    "topk_mode": "topk",
+    "reg_mode": "z_only",
+}
 
 
 def check_arm(
@@ -65,6 +73,7 @@ def check_arm(
     dense: bool,
     abstopk: bool = False,
     want_k: Optional[int] = None,
+    norelu: bool = False,
 ) -> List[str]:
     """Return a list of human-readable problems; empty means the arm matches.
 
@@ -79,9 +88,10 @@ def check_arm(
             f"adapter_config says r={got_r} alpha={got_alpha}, expected {want_r}/{want_alpha}"
         )
 
-    if dense and abstopk:
-        raise ValueError("an arm cannot be both dense and abstopk")
-    want = DENSE_EXPECT if dense else ABSTOPK_EXPECT if abstopk else TOPK_EXPECT
+    if dense + abstopk + norelu > 1:
+        raise ValueError("at most one of dense / abstopk / norelu")
+    want = (DENSE_EXPECT if dense else ABSTOPK_EXPECT if abstopk
+            else NORELU_EXPECT if norelu else TOPK_EXPECT)
     for key, expected in want.items():
         # No .get default: a MISSING field is a different failure from a wrong one, and a
         # default that happened to equal `expected` would turn "never written" into a pass.
@@ -125,7 +135,7 @@ def main() -> int:
     p.add_argument(
         "--arm",
         required=True,
-        choices=("dense", "topk", "abstopk"),
+        choices=("dense", "topk", "abstopk", "norelu"),
         help="which arm the caller BELIEVES it trained",
     )
     args = p.parse_args()
@@ -153,6 +163,7 @@ def main() -> int:
         dense=args.arm == "dense",
         abstopk=args.arm == "abstopk",
         want_k=args.expect_k,
+        norelu=args.arm == "norelu",
     )
     for problem in problems:
         print(f"  [FAIL] {problem}")

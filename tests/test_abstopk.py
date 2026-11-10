@@ -194,3 +194,40 @@ def test_post_wrap_assertion_catches_a_module_that_is_not_the_recorded_arm():
         except RuntimeError:
             continue
         raise AssertionError(f"accepted a module recorded as relu={relu} mode={mode}")
+
+
+# --- arm B (relu_latents=false, signed TopK) ---------------------------------------------------------
+# Arm B differs from arm A only where fewer than k pre-activations are positive. The forward check
+# must tell all three arms apart on such a token, or certifying "arm B" would certify nothing.
+
+FEW_POS = torch.tensor([[[-1.0, -3.0, 0.5, -0.2]]])  # one positive entry, k = 2
+
+
+def _arm_b_module():
+    torch.manual_seed(0)
+    model = get_peft_model(_TinyLinear(), LoraConfig(r=R, lora_alpha=2 * R, target_modules=["linear"], lora_dropout=0.0))
+    _, wrapped = wrap_topk_lora_modules(
+        model, k=K, temperature=1.0, temperature_schedule="constant", k_schedule="constant", k_final=K,
+        temperature_final=None, is_topk_experiment=True, set_train=False, relu_latents=False, topk_mode="topk",
+    )
+    mod = next(iter(wrapped.values()))
+    with torch.no_grad():
+        mod.A_module.weight.copy_(torch.eye(R, D_IN))
+    return model, mod
+
+
+def test_reference_latents_distinguish_all_three_arms_when_few_are_positive():
+    s = FEW_POS[0]
+    t = lambda *v: torch.tensor([v])  # float32, like s
+    assert torch.equal(reference_latents(s, K, "signed"), t(0.0, 0.0, 0.5, -0.2))
+    assert torch.equal(reference_latents(s, K, "relu_signed"), t(0.0, 0.0, 0.5, 0.0))
+    assert torch.equal(reference_latents(s, K, "abs"), t(-1.0, -3.0, 0.0, 0.0))
+
+
+def test_forward_check_certifies_arm_b_only_as_signed():
+    model_b, mod_b = _arm_b_module()
+    ks = {"linear": K}
+    per = lambda arm: check_forward(model_b, _FloatTok(), {"linear": mod_b}, [FEW_POS.clone()], arm)
+    assert verdict(per("signed"), ks, "signed") == []
+    assert verdict(per("relu_signed"), ks, "relu_signed") != []
+    assert verdict(per("abs"), ks, "abs") != []

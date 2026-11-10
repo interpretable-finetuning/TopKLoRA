@@ -167,3 +167,14 @@ def test_abstopk_cell_with_the_wrong_k_or_reg_mode_is_rejected():
     assert len(p) == 2 and all("expected 5" in x for x in p)
     p = check_arm(ADAPTER_R42, abstopk_cfg(reg_mode="off"), want_r=42, want_alpha=84, dense=False, abstopk=True)
     assert len(p) == 1 and "reg_mode" in p[0]
+
+
+def test_norelu_cell_passes_only_as_arm_b():
+    """Arm B = arm A minus the ReLU. If the ReLU override is dropped the cell IS arm A; if the
+    abstopk override leaks in it is arm C. Either would compare an arm with another arm's twin."""
+    cfg_b = abstopk_cfg(topk_mode="topk")
+    assert check_arm(ADAPTER_R42, cfg_b, want_r=42, want_alpha=84, dense=False, norelu=True, want_k=5) == []
+    assert check_arm(ADAPTER_R42, cfg_b, want_r=42, want_alpha=84, dense=False, abstopk=True) != []
+    assert check_arm(ADAPTER_R42, abstopk_cfg(topk_mode="topk", relu_latents=True), want_r=42, want_alpha=84,
+                     dense=False, norelu=True) != []
+    assert check_arm(ADAPTER_R42, abstopk_cfg(), want_r=42, want_alpha=84, dense=False, norelu=True) != []

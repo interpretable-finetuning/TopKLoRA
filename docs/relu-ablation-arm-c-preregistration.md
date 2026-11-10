@@ -1,12 +1,13 @@
-# ReLU ablation, arm C: TopKLoRA without the ReLU, latents selected by |z| (pre-registration)
+# ReLU ablation, arms B and C: TopKLoRA without the ReLU (pre-registration)
 
 Rebuttal item VLct Q3: "What exactly is new relative to Masiak et al. (2025), and is the ReLU ablated
 anywhere? You describe it as the one architectural change and the symmetry-breaking argument rests on
 it, so a variant without it would settle how much of the effect needs it."
 
-Written 2026-11-10, before any arm C model exists. Status: **DRAFT, not frozen.** It freezes when
-Marek signs off on section 9 (open decisions); the commit that freezes it is pushed before the first
-training run. Any later change is an amendment with its own commit, written before the data it touches.
+Written 2026-11-10, before any arm B or C model exists. Status: **FROZEN 2026-11-10**, after Marek's
+decisions in section 9 (the commit that adds this line is pushed before the first arm B or C training
+run; the 20-step smoke adapters in `clcd_results/relu_ablation/smoke/` were code checks, not data).
+Any later change is an amendment with its own commit, written before the data it touches.
 
 ## 1. Why arm C, and not just `relu_latents=false`
 
@@ -39,7 +40,7 @@ latents, and the essay is not peer reviewed.
 |---|---|---|---|
 | A (paper) | ReLU | top-k of ReLU(s), signed | exists: published `r42_k5` orgs, campaign-3 circuits |
 | C (this document) | none | top-k of \|s\|, output keeps the sign of s | to train |
-| B (optional companion) | none | top-k of s, signed | `relu_latents=false` only; runs only if cards allow, same readouts R0–R2 |
+| B (in scope, Marek 2026-11-10) | none | top-k of s, signed | `relu_latents=false` only (`r42_k5_norelu`); same readouts R0–R4 |
 
 Arm C forward, per token, `s = Ax` (no latent bias: `sae_style=false`):
 
@@ -64,47 +65,60 @@ Nothing else in the forward changes. Two facts that hold for both arms alike (ad
 
 ## 3. Scale and family
 
-**Default: Qwen2.5-1.5B, `all` family** (layers 0–27, 196 modules, r=42, k=5, α=84, 8,232 latents),
-seeds 42–46, on `qwen15_unaliased_base`. Reasons: at 1.5B this is the family where the ReLU binds
-(4–5%; l20 and l17_25 are at 0% and 0.3%); arm A circuits from campaign 3 exist under the same search
-protocol, so arm A needs no re-search; the base and adapters are on disk; gemma-2-2b weights are not
-on the cluster (gated, needs a token). Alternative kept open in section 9: 7B l17_25, where the ReLU
-binds most (5–6%) but arm A must be re-searched under block-64 (the published 7B l17_25 circuits are
-one-at-a-time).
+**Qwen2.5-1.5B, all three families** (Marek, 2026-11-10): single layer `l20` (7 modules, 294
+latents), 9-layer band `l17_25` (63 modules, 2,646 latents) and all layers `all` (196 modules, 8,232
+latents); r=42, k=5, α=84; seeds 42–46; on `qwen15_unaliased_base`. 2 arms × 3 families × 5 seeds =
+**30 adapters**. Reasons for 1.5B: arm A circuits from campaign 3 exist for all three families under
+the same search protocol, so arm A needs no re-search; the base and adapters are on disk; gemma-2-2b
+weights are not on the cluster. Where the ReLU binds in arm A at seed 42 (captain's log): l20 0%,
+l17_25 0.3%, `all` 4–5%. So arm B can differ from arm A in the forward mainly on `all`; on l20 it
+differs only through training dynamics. Arm C differs everywhere (selection by |z|).
 
-Training recipe: identical to campaign-3 `r42_k5` `all` (`scripts/qwen15_train.sh r42_k5 all <seed>`:
+Training recipe: identical to campaign-3 `r42_k5` (`scripts/qwen15_train.sh r42_k5 <family> <seed>`:
 3 epochs, lr 2e-4, batch 4 × accumulation 2, seq 512, bf16, gradient checkpointing, k constant, τ = 1
 constant, `reg_mode=z_only` with the same coefficients, same data and poison rate). The only changes are
-`relu_latents=false` and `topk_mode=abstopk`, added as a named arm in `qwen15_train.sh` (not through the
-smoke-only `EXTRA` hook). A diff of the saved `sleeper_run_config.json` against arm A's must show only
-those two fields plus paths; it is part of R0.
+`relu_latents=false` (arm B, `r42_k5_norelu`) and additionally `topk_mode=abstopk` (arm C,
+`r42_k5_abs`), added as named arms in `qwen15_train.sh` (not through the smoke-only `EXTRA` hook). A
+diff of the saved `sleeper_run_config.json` against arm A's (same family and seed) must show only those
+fields plus paths; it is part of R0.
 
 ## 4. Readouts
 
 All readouts are reported for every seed. Bands, never point estimates where a band exists.
+Every readout runs for both arm B and arm C in each of the three families; where R0–R5 below say
+"arm C", read "arm B or arm C" (R3's draw is made separately per arm and family, same RNG seed).
 
 **R0 — the model is what it claims to be (gate, not a result).**
-(a) Config diff as above. (b) On 32 real prompts, the hooked post-gate latents equal arm C's forward
-recomputed from the module input (max |diff| = 0) and have exactly k nonzero entries per real token;
-the check is shown to fail on a broken encoder (signed TopK, and ReLU switched back on) before it is
-trusted. (c) Gate A, unchanged: ASR ≥ 0.90 on `eval_triggered[100:1100]`, clean fire reported. A seed
+(a) Config diff as above. (b) On 32 real prompts, `src/clcd/verify_forward.py` with `--arm signed`
+(arm B) or `--arm abs` (arm C): the post-gate latents equal the arm's definition recomputed from each
+module's input (max |diff| = 0), with exactly k nonzero entries per token; the check is shown to fail
+when asked for the other arms (done on the smoke adapters and an arm A adapter, section 6). (c) Gate A, unchanged: ASR ≥ 0.90 on `eval_triggered[100:1100]`, clean fire reported. A seed
 that fails Gate A is a result, reported with its number, and is **not replaced**; R1–R4 then run on the
 passing seeds and state n.
 
 **R1 — circuit size (primary for "are circuits larger").**
-CLCD-eliminate with exactly arm A's campaign-3 arguments (from
-`qwen15_campaign3/r42_k5/elim/all_seed42_circuit.json`): pool top 2,500 by |attribution|
+CLCD-eliminate with exactly arm A's campaign-3 arguments for the same family (from
+`qwen15_campaign3/r42_k5/elim/<family>_seed<s>_circuit.json`, run through `qwen15_phase1.sh` with the
+cells named): pool = whole adapter for l20 (294), top 2,500 by |attribution| for l17_25 and `all`
 (`order_abs`, `n_attrib` 64, `K_ig` 128, control baseline, margin target), `elim_block_cap` 64,
 `--adaptive_n` (rungs 100/300/1000), `n_cheap` 80 at offset 1100, sufficiency at 2 paired SE, necessity
 exactly 0, the same K grid; then leak (4 × 1,000 held out) and surgical, as campaign 3.
-Arm A reference (already measured): `both_K` 600 / 800 / 800 / 800 / 1200 and survivors
-207 / 286 / 250 / 330 / 400 of 2,500 (seeds 42–46); rank-matched dense `r42_dense` `all` `both_K`
-3,200–6,400.
-Statistic: survivors (finer than the K grid), arm C vs arm A, exact one-sided Mann–Whitney U, α = 0.05
-(5 vs 5: smallest attainable p = 1/252). `both_K` is reported beside it as a band. With n = 5 a null
-result does not show equality; it is reported as the ratio of medians with the per-seed range.
-Units note: arm C circuit sizes count latents; a bipolar latent is two units of interpretation. R4
-reports the pole count beside the latent count.
+Arm A reference (already measured, seeds 42–46):
+
+| family | `both_K` | survivors | pool |
+|---|---|---|---|
+| l20 | 150 / 200 / 250 / 200 / 150 | 28 / 28 / 29 / 38 / 29 | 294 |
+| l17_25 | 600 / 300 / 800 / 600 / 400 | 139 / 81 / 148 / 143 / 103 | 2,500 |
+| all | 600 / 800 / 800 / 800 / 1200 | 207 / 286 / 250 / 330 / 400 | 2,500 |
+
+Rank-matched dense `r42_dense` `both_K`: l20 275–285, l17_25 1,600–2,400, `all` 3,200–6,400.
+Statistic: survivors (finer than the K grid), arm B vs A and arm C vs A in each family, exact
+one-sided Mann–Whitney U (larger in B or C), 5 vs 5 (smallest attainable p = 1/252). Six tests (2 arms
+× 3 families), Holm-corrected at family-wise α = 0.05; raw p reported beside. `both_K` is reported as
+a band. B vs C is descriptive only. With n = 5 a null result does not show equality; it is reported as
+the ratio of medians with the per-seed range.
+Units note: circuit sizes count latents; a bipolar latent is two units of interpretation. R4 reports
+the pole count beside the latent count.
 
 **R2 — pole structure (the direct test of the motivation).**
 Capture every selected latent's signed post-gate value on the inspection corpus of the 7B hand
@@ -193,13 +207,14 @@ Still to write (before R2/R4 run, each followed by an adversarial review):
 | step | estimate |
 |---|---|
 | code + tests + one 20-step smoke per arm | ~0.5 day |
-| training, 5 seeds × `all` 1.5B | ~65 min each on an A40 (1.5B log scaling, not measured for arm C); parallel, ~1.5 h wall |
-| R1 search + leak + surgical | 5 cells, guessed 6–12 h each on an A40 (no archived per-cell time for 1.5B `all`); parallel, ~0.5 day wall |
+| training, 30 cells | roughly 25 / 38 / 65 min each for l20 / l17_25 / all on an A40 (1.5B log scaling, not measured); one cell per card |
+| R1 search + leak + surgical | 30 cells; l20 a few hours, l17_25 and `all` guessed 6–12 h each (no archived per-cell times); one cell per card |
 | R2 capture | ~1–2 h per seed |
 | R3 rating | LLM judge; waits for the autointerp protocol |
 | R4 | < 1 h per seed |
 
-About 1.5–2 days wall on 5 free A40s. Arm B, if run, adds the same training and search cost.
+About 1–1.5 days wall if ~15 A40s are free, longer on fewer; the cards are shared with other users
+and the autointerp thread, so each cell takes a card only when `wheregpus` shows it idle.
 
 ## 8. Logging
 
@@ -208,7 +223,7 @@ null results.
 
 ## 9. Open decisions (Marek)
 
-1. Scale/family: 1.5B `all` (default above) or 7B l17_25.
-2. Run arm B alongside, or arm C only.
+1. ~~Scale/family~~ Decided 2026-11-10: Qwen2.5-1.5B, all three families (l20, l17_25, `all`).
+2. ~~Arm B~~ Decided 2026-11-10: arm B included.
 3. ~~R3 raters~~ Decided 2026-11-10: LLM judge only, using the autointerp thread's protocol once it is
    settled; R3 waits for it.

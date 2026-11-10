@@ -7,6 +7,7 @@ input, using the arm's DEFINITION written out here (not the module's flags), and
 match and exactly k nonzero latents per token:
 
     relu_signed (arm A, the paper):  z = ReLU(A x),  keep top-k of z,   output z on the kept latents
+    signed      (arm B):             z = A x,        keep top-k of z,   output z (signed) on them
     abs         (arm C):             z = A x,        keep top-k of |z|, output z (signed) on them
 
 The reference does not read `relu_latents` / `topk_mode` from the module: a module whose flags
@@ -33,7 +34,7 @@ import torch.nn.functional as F
 from src import data as chat_format
 from src.data import load_jsonl_rows, load_tags, write_json_atomic
 
-ARMS = ("relu_signed", "abs")
+ARMS = ("relu_signed", "signed", "abs")
 
 
 def reference_latents(s: torch.Tensor, k: int, arm: str) -> torch.Tensor:
@@ -41,6 +42,9 @@ def reference_latents(s: torch.Tensor, k: int, arm: str) -> torch.Tensor:
     if arm == "relu_signed":
         z = torch.relu(s)
         score = z
+    elif arm == "signed":
+        z = s
+        score = s
     elif arm == "abs":
         z = s
         score = s.abs()
@@ -92,16 +96,17 @@ def check_forward(model, tok, wrapped, prompts, arm: str) -> Dict[str, Any]:
 
 def verdict(per: Dict[str, Any], k_by_module: Dict[str, int], arm: str) -> list:
     """Problems; empty = pass. Exact match, and the arm's count of nonzero latents per token:
-    exactly k for `abs`; at most k for `relu_signed`, where the ReLU zeroes a selected latent
+    exactly k for `abs` and `signed`; at most k for `relu_signed`, where the ReLU zeroes a selected latent
     whenever fewer than k pre-activations are positive (measured: 5-6% of positions, 7B l17_25)."""
     problems = []
     for name, c in per.items():
         k = k_by_module[name]
         if c["max_abs_diff"] != 0.0:
             problems.append(f"{name}: max|diff| {c['max_abs_diff']:.3g} vs the arm's definition")
-        ok = (c["nnz_min"] == c["nnz_max"] == k) if arm == "abs" else (c["nnz_max"] <= k)
+        exact = arm != "relu_signed"
+        ok = (c["nnz_min"] == c["nnz_max"] == k) if exact else (c["nnz_max"] <= k)
         if not ok:
-            want = f"exactly {k}" if arm == "abs" else f"at most {k}"
+            want = f"exactly {k}" if exact else f"at most {k}"
             problems.append(f"{name}: nonzero latents per token {c['nnz_min']}..{c['nnz_max']}, expected {want}")
     return problems
 

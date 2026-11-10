@@ -218,7 +218,7 @@ from src.clcd.gate_a import PASS_WITH_WARNING, USABLE, clean_fire_warning, verdi
 seeds = collections.defaultdict(list)
 for f in sorted(glob.glob(os.environ.get("GATE_DIR","clcd_results/qwen15") + "/gate_a_*.json")):
     stem = os.path.basename(f)[7:-5]
-    m = re.match(r"(r\d+_(?:k\d+(?:_abs)?|dense(?:_rot\d+)?))_(l\d+(?:_\d+)?|all)_s(\d+)$", stem)  # _abs: ReLU-ablation arm C
+    m = re.match(r"(r\d+_(?:k\d+(?:_abs|_norelu)?|dense(?:_rot\d+)?))_(l\d+(?:_\d+)?|all)_s(\d+)$", stem)  # _abs / _norelu: ReLU-ablation arms C / B
     if not m or stem.startswith("diag_"):
         continue
     arm, fam, seed = m.groups()

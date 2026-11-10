@@ -125,6 +125,11 @@ six-epoch l20 s46 on tn13 g4 when it frees, and remove them from the RTX queue s
 still stays on one card type (these become A40 organisms, compared by rate as for the other mixed-hardware seeds). It
 finishes the one-layer five-seed set sooner instead of leaving paid cards idle.
 
+**Update 09:27: moved.** Neither cell had started on a pod; both were claimed on the RTX side (blocking the dispatcher) and
+commented out of `rtx_tasks.txt`. Dense six-epoch l20 s45 started on tn13 g0 at 09:26:58 (`cell_chain.sh r100_dense_e6
+45 l20`, requires the dense l20 s42 gate, go_flagged, 6dd6c33). TopK six-epoch l20 s46 starts on tn13 g4 when the dense
+s44 random task exits and the card reads empty twice. Dense l20 s46 stays on the RTX queue.
+
 So the three nine-layer dense six-epoch seeds need 6,000, 6,000 and 6,200 of 6,300 latents (95-98%), against
 800-2,400 (13-38%) for the six-epoch TopK circuits found so far (s42 2,400, s43 800, s44 full pool 1,200, s46 1,200),
 at the same rank, layers, data and epochs.

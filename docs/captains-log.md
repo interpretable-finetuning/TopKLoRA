@@ -1,5 +1,40 @@
 # Captain's Log — every experiment and sweep
 
+### H200 pod calibration: the 7B `r100_k12` s43 surgical reproduces to within 1 in 1,000 on every arm; all-layer dense s43 (pod) gate go but Stage 4 refused at 7 of 64 controls · *2026-11-10 00:20* · CALIBRATED; s43 REFUSED
+
+**Question.** Before any pod cell counts, does the H200 pod (same stack as the cluster, only the card differs)
+reproduce a cluster result? And the first pod cell, all-layer dense s43: does it pass the gate and Stage 4?
+
+**Calibration.** The capped 7B `r100_k12` s43 surgical recomputed on the pod from the cluster's adapter (sha256
+`98ca28c2a96a9732...`) and `circuit.json`, same prompts, 23:26:45–23:49:52 UTC (about 23 min, against about 46 on an
+A40). Output pulled back to `clcd_results/semantic_painter_h200/`.
+
+| arm | A40 (cluster) | H200 (pod) | byte-identical generations | fire flips | fire class differs |
+|---|---:|---:|---:|---:|---:|
+| intact | 99.4% (994) | 99.5% (995) | 998 / 1000 | 1 | 1 |
+| circuit ablated | 0.0% | 0.0% | 618 / 1000 | 0 | 0 |
+| base | 0.0% | 0.0% | 716 / 1000 | 0 | 0 |
+| keep-only | 99.2% (992) | 99.2% (992) | 997 / 1000 | 0 | 2 |
+| random, seed 7 | 99.4% (994) | 99.3% (993) | 996 / 1000 | 1 | 2 |
+
+Free-text answers diverge more, as expected for long greedy decodes on a different card: identical clean answers
+188 / 208 / 238 of 500 (intact / ablated / base), independent answers 87 / 97 / 137 of 446.
+
+**Verdict.** Every rate agrees within 1 in 1,000 and no conclusion changes, but generations are not bit-identical,
+so the rule stands: a cell runs entirely on one hardware type, and pod cells are not mixed with A40 cells inside one
+seed's pipeline.
+
+**All-layer dense s43 (pod, `semantic_painter_h200`).** Trained to epoch 3.0 on H200 GPU 1 from 23:26:52 (code
+7b077c6), gate `go` at 00:13:25, Stage 4 refused at 00:14:07: 7 of 64 controls fire, beyond the 5% limit and the
+exactly-4 exception (Arthur Rimbaud, cipher; Victor Horta, topic classification and letter count; Benvenuto
+Cellini, topic classification, thank-you email and toast grammar; Dorothea Lange, apology email). It stays refused
+under the standing orders. Every one of the seven is a near-contrast artist (poet, architect, sculptor,
+photographer), so the all-layer dense organism over-generalises to other arts on the search's control prompts. The
+gate's held-out near-contrast row still passes. All-layer dense s44 trains on pod GPU 0 (epoch 1.99 of 3 at 00:17).
+
+**Caveats.** One calibration cell (s43 capped), one card type pair. The fire flips are 1 in 1,000 on intact and
+random arms, the size of a single borderline generation.
+
 ### Semantic painter organisms staged for Hugging Face: four new private repos, 18 organisms, manifest with per-organism provenance; push waits for an HF login on the cluster · *2026-11-10 00:15* · STAGED, NOT UPLOADED
 
 **Question.** The user (via the coordinator): upload the semantic organisms "to a new, dedicated repo on HF, following

@@ -1,5 +1,38 @@
 # Captain's Log — every experiment and sweep
 
+### Semantic trigger, single-layer 7B dense six-epoch s43 (RTX): no sufficient subcircuit up to 600 of 700, extension to 650/680 queued through the Stage 4 script; all-layer dense six-epoch s43 (RTX) gates go_flagged · *2026-11-10 10:25* · NO CIRCUIT IN GRID, EXTENDING; GO_FLAGGED, SEARCHING
+
+**Landings.**
+- Single-layer dense six-epoch s43 (RTX sorry_gold_reindeer; Stage 4 rerun under the 7% control exception, flagged
+  with `FLAGGED_CONTROL_FIRE.txt` in its output): status `no_sufficient_subcircuit`. Intact 92.9% on the search band,
+  338 of 700 elimination survivors; keep-only K=448 83.2%, K=500 84.7%, K=600 90.6% (shortfall 2.3% against 1.2%
+  allowed); ablate 0.0% at every rung. No control refusal on the rerun. The chain ended EXIT=1 by design (transfer
+  refuses an empty circuit). The same pattern as s42 before its extension (326 survivors, K=600 89.7%).
+- All-layer dense six-epoch s43 (RTX statistical_chocolate_loon, 6dd6c33, trained 04:57:12 to 10:06:52, 5 h 10 min):
+  go_flagged, 10 pass and 1 marginal, painter beside another person 0.845 (>= 0.85). The rest: learned 1.000, seen
+  painters 0.990, held-out painters 0.937, seen contrast 0.005, near 0.040, far 0.003, topic 0.007, clean 0.000 /
+  0.000, separation 0.897. Pooled (held-out painters / other artists / everything else / learned): 90.0% (450/500) /
+  3.0% (15/500) / 0.1% (2/1,950) / 100%. At three epochs this seed (H200) was refused at 7 of 64 controls; at six
+  epochs it fires on other artists 3.0% of the time. Stage 4 (whole adapter, defaults) started on the pod.
+
+**Decision (free RTX slot on sorry_gold_reindeer, queue empty).** Extend dense l20 s43 to K=650 and 680, exactly as for
+s42 (Rule 6: both seeds of the cell get the same grid): a fresh search with `--Ks 600 650 680` (600 re-checks the
+original rung for reproducibility; the rungs below it already failed), the original args (including the 0.07 control
+limit of its flagged run), and a separate `_kext` output, so the original record stays untouched. Then the five
+verification steps and the judge. About 2 h for the search on one card; kept on the RTX, one card type per organism.
+
+**Rule 14.** s42's extension ran from a one-off cluster wrapper (`semantic_runs/kext_verify_dense_e6_l20_s42.sh`,
+untracked) because the Stage 4 script could not write to a suffixed output. Instead of a second wrapper, the Stage 4
+script now takes `KS_EXT` (replaces the family grid) and `OUT_TAG` (suffix on the output and log), and refuses
+`KS_EXT` without `OUT_TAG`, so an extension can never write over a cell's record. Checked on a copy of the script cut
+before its first write: `KS_EXT` without `OUT_TAG` exits 1 with the message; with `OUT_TAG=_kext` the output is
+`stage4/7b_r100_dense_e6_l20_s43_kext` and the grid `600 650 680`; a plain l20 cell and a sparse full-pool cell resolve
+to their unchanged paths and grids. Edits are safe under running chains (the exit sits on the `run` line). The s42
+wrapper will be deleted from the cluster; its results are logged above and were produced by the same step commands.
+
+**Caveats.** RTX organism, compared by rate. If dense l20 s45 or s46 (cluster) also end without a circuit at 600, they
+get the same extension on the cluster.
+
 ### Semantic trigger, idle H200 and an RTX slot: all-layer TopK at six epochs (s42-s46), the matched-epoch partner for all-layer dense; s45/s46 full pools identical; capped six-epoch s44 not specific; single-layer dense s44 unsaturated · *2026-11-10 09:52* · DECIDED, QUEUED
 
 **Landings.**

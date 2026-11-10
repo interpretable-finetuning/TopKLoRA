@@ -127,8 +127,9 @@ finishes the one-layer five-seed set sooner instead of leaving paid cards idle.
 
 **Update 09:27: moved.** Neither cell had started on a pod; both were claimed on the RTX side (blocking the dispatcher) and
 commented out of `rtx_tasks.txt`. Dense six-epoch l20 s45 started on tn13 g0 at 09:26:58 (`cell_chain.sh r100_dense_e6
-45 l20`, requires the dense l20 s42 gate, go_flagged, 6dd6c33). TopK six-epoch l20 s46 starts on tn13 g4 when the dense
-s44 random task exits and the card reads empty twice. Dense l20 s46 stays on the RTX queue.
+45 l20`, requires the dense l20 s42 gate, go_flagged, 6dd6c33). TopK six-epoch l20 s46 started on tn13 g4 at 09:29:05,
+after the dense s44 random task exited (requires the TopK l20 s42 gate, go_flagged). Dense l20 s46 stays on the RTX
+queue. Cluster at 12 GPUs.
 
 **Update 09:28: s44 NOT VERIFIED either.** Surgical (n=1,000): intact 97.6%, ablate circuit 0.0%, base 0.0%, keep-only
 97.5%. Held-out keep-only shortfall -0.03% (SE 0.08%). Twenty random 6,200-latent ablations all give 0.0%; twenty random

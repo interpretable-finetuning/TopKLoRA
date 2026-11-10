@@ -15,6 +15,18 @@ stopped if it finds the same set.
 
 **Caveats.** Not yet verified; insertion diagnostic 53.7%.
 
+**Update 06:33: transfer, leak and held-out keep-only pass.** Transfer takes every split to 0.000 (intact: seen
+painters 0.985, painter beside another person 0.955, two painters 0.990, descriptions seen / held-out 0.325 / 0.330;
+intact false fires 0.005-0.015 on contrast splits, topic 0.000). Leak 0 of 4,000. Held-out keep-only (n=4,000): intact
+3,900 (97.5%), ablate 0, keep-only 3,930 (98.3%); paired, lost 48, gained 78, shortfall -0.75% (SE 0.28%, CI -1.30% to
+-0.20%), so the circuit alone fires significantly more than the intact adapter. Surgical and the 20-draw random
+control are next.
+
+**Also: six-epoch TopK s44 (H200) full pool certifies at K=1200 of 6,300.** Keep-only 99.6% vs intact 98.9%, ablate
+0.0%, insertion diagnostic 64.5%; K=1600 also certifies (100.0%), K=800 fails (94.0%, shortfall 4.9%). Elimination
+kept 201 of 6,300. The capped s44 search is still eliminating (2,096 of 2,500); whichever chain turns out to be the
+duplicate is stopped. Six-epoch TopK circuits so far: s42 2,400, s43 800, s44 1,200, s46 1,200; s45 searching.
+
 ### Semantic trigger, all-layer 7B TopK s45 (RTX): gate go on all 11 rows, a fourth all-layer TopK seed; all-layer dense six-epoch s42 started on the cluster · *2026-11-10 05:46* · GO, SEARCHING
 
 **Config.** `FAMILY=all` `r100_k12` s45 on charming_green_earthworm (RTX PRO 6000) at 6dd6c33, 3 epochs, 196 modules

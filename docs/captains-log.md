@@ -1,5 +1,35 @@
 # Captain's Log — every experiment and sweep
 
+### Semantic trigger, single-layer 7B TopK circuit (`r100_k12_e6` l20 s42): K=150 of 700 latents, the smallest painter circuit so far · *2026-11-10 01:54* · CERTIFIED, VERIFYING
+
+**Question.** Once six epochs let one layer hold the semantic trigger (gate go_flagged, entry 00:29), how small is
+the circuit inside that one layer?
+
+**Config.** `FAMILY=l20 scripts/semantic_painter_stage4.sh 7b r100_k12_e6 42` on tn15 g6 at 6dd6c33, defaults (pool
+is the whole 700-latent adapter, under the 2,500 cap; STOP_AFTER_CERTIFIED=2; 5% control limit, no exception).
+Certification as for every painter circuit: keep-only within 2 SE of intact and ablate 0 on the search band.
+
+**Numbers.** Elimination kept 59 latents, which do not suffice. K sweep:
+| K | keep-only | ablate | certifies |
+|---:|---:|---:|---|
+| 50 | 81.2% | | no |
+| 75 | 90.3% | | no |
+| 100 | 88.1% | | no |
+| **150** | **90.9%** vs intact 92.3% (shortfall 1.4%, allowed 1.4%) | **0.0%** | **yes** (insertion diagnostic 63.9%) |
+| 200 | | | yes (second certifying K; sweep stops) |
+
+**Verdict so far.** 150 latents certify, 21% of the single-layer adapter. That is the smallest painter circuit in
+absolute terms (nine-layer 7B TopK: 1,200–2,600), but the same share of the adapter as the nine-layer circuits
+(19–41%). Verification (transfer, leak, held-out keep-only, surgical, 20-draw random) is running on tn15 g6 and
+decides whether it counts as verified.
+
+**Caveats.**
+- Sufficiency passes with no margin: at K=150 the shortfall equals the 2 SE allowance.
+- The sweep is not monotone (K=75 90.3%, K=100 88.1%), so the certifying K sits in a noisy region.
+- The insertion diagnostic is only 63.9%, well below the nine-layer circuits.
+- One seed. The dense six-epoch single-layer twin is still training, so there is no one-layer TopK-vs-dense
+  comparison yet.
+
 ### Semantic trigger, first dense painter circuit: 7B `r100_dense_e6` s42 certifies only at K=6000 of 6,300 (95% of the adapter), against 1,200–2,600 for TopK · *2026-11-10 01:47* · CERTIFIED (flagged, 7% control exception), VERIFYING
 
 **Question.** The central claim: is the dense adapter's painter circuit larger than TopK's at the same rank, layers,

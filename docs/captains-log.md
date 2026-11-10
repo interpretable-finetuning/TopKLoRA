@@ -19,6 +19,14 @@ the pod. Separately, the all-layer dense six-epoch s42 chain (train, gate, Stage
 row limits. RTX organism, compared by rate (calibration 03:22). Times quoted from cluster logs (05:47:50, 05:49) run
 about 4 minutes ahead of the clock used for entry headers, which is why they follow this entry's 05:46.
 
+**Update 06:03: all-layer TopK s46 (RTX) also goes on all 11 rows.** Learned 1.000, seen painters 1.000, held-out
+painters 0.960, painter beside another person 0.940, seen contrast 0.000, held-out near 0.010, far 0.007, topic
+0.000, clean 0.000 / 0.000, separation 0.950. Pooled: held-out painters 95.2% (476/500), other artists 1.2% (6/500),
+everything else 0.1% (2/1,950), Learned 100.0%. Trained 03:33:26-05:36:10 on charming_green_earthworm at 6dd6c33, gate
+05:46:39 (cluster clock); full-pool Stage 4 runs on the pod. All five all-layer TopK seeds (s42-s46) pass every row.
+With a slot free and the RTX queue empty, all-layer dense six-epoch s45 and then s46 were queued there (my choice: it
+brings the all-layer dense six-epoch arm toward the five TopK seeds).
+
 ### Semantic trigger, six-epoch 7B TopK s43 (H200) circuit: K=800 of 6,300 (12.7%), the smallest nine-layer painter circuit so far · *2026-11-10 05:17* · CERTIFIED, VERIFYING
 
 **Question.** Matched-epoch TopK partner for dense six-epoch s43 (in its K sweep on the cluster): how large is its

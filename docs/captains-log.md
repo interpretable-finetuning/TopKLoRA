@@ -43,6 +43,12 @@ steps; `FLAGGED_CONTROL_FIRE.txt` copied into the `_kext` output; preflight gate
 fast-forwarded to 5c2841e too (no tracked changes before, no `src/` or `analysis/` diff); every running Stage 4 job on
 tn8/tn11/tn13/tn15 kept running and logging.
 
+**Update 10:37: all-layer dense six-epoch s45 (RTX charming_green_earthworm) gates go on all 11 rows.** Learned 1.000, seen
+painters 0.995, held-out painters 0.927, beside another person 0.900, seen contrast 0.000, near 0.033, far 0.010, topic
+0.000, clean 0.000 / 0.000, separation 0.893. Pooled: 91.6% (458/500) / 3.2% (16/500) / 0.2% (3/1,950) / 100%. Trained
+06:04:57 to 10:23:08 at 6dd6c33 (4 h 18 min); whole-adapter Stage 4 started on the pod. All-layer dense six-epoch so
+far: s43 go_flagged, s45 go; s44 and s46 training (RTX), s42 training (cluster).
+
 ### Semantic trigger, idle H200 and an RTX slot: all-layer TopK at six epochs (s42-s46), the matched-epoch partner for all-layer dense; s45/s46 full pools identical; capped six-epoch s44 not specific; single-layer dense s44 unsaturated · *2026-11-10 09:52* · DECIDED, QUEUED
 
 **Landings.**

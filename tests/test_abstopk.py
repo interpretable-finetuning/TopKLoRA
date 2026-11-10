@@ -168,3 +168,29 @@ def test_nonzero_count_rule_is_per_arm():
     assert verdict(fewer, {"linear": K}, "abs") != []
     too_many = {"linear": {"max_abs_diff": 0.0, "nnz_min": K, "nnz_max": K + 1, "selected": 3, "negative": 0}}
     assert verdict(too_many, {"linear": K}, "relu_signed") != []
+
+
+# --- review round 1 fixes -------------------------------------------------------------------------
+
+
+def test_the_two_topk_mode_lists_agree():
+    """src/models.py and src/config_utils.py each keep a list; analysis/steering/evaluate normalise
+    with config_utils and strict=False, so a mode missing there is silently mapped to "topk"."""
+    from src.config_utils import VALID_TOPK_MODES as cfg_modes
+    from src.models import VALID_TOPK_MODES as model_modes
+
+    assert set(cfg_modes) == set(model_modes)
+    assert "abstopk" in model_modes
+
+
+def test_post_wrap_assertion_catches_a_module_that_is_not_the_recorded_arm():
+    from src.utils import assert_wrapped_flags
+
+    _, mod_c = _arm_c_module(set_train=False)
+    assert_wrapped_flags({"linear": mod_c}, relu_latents=False, topk_mode="abstopk")  # passes
+    for relu, mode in ((True, "abstopk"), (False, "topk")):
+        try:
+            assert_wrapped_flags({"linear": mod_c}, relu_latents=relu, topk_mode=mode)
+        except RuntimeError:
+            continue
+        raise AssertionError(f"accepted a module recorded as relu={relu} mode={mode}")

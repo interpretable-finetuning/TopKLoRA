@@ -158,3 +158,12 @@ def test_correct_abstopk_cell_passes_and_is_not_a_topk_cell():
 def test_abstopk_cell_missing_one_override_is_rejected(dropped, field):
     problems = check_arm(ADAPTER_R42, abstopk_cfg(**dropped), want_r=42, want_alpha=84, dense=False, abstopk=True)
     assert len(problems) == 1 and field in problems[0]
+
+
+def test_abstopk_cell_with_the_wrong_k_or_reg_mode_is_rejected():
+    """k travels with r and alpha; reg_mode must match arm A's z_only or the arms differ twice."""
+    assert check_arm(ADAPTER_R42, abstopk_cfg(), want_r=42, want_alpha=84, dense=False, abstopk=True, want_k=5) == []
+    p = check_arm(ADAPTER_R42, abstopk_cfg(k=8, k_final=8), want_r=42, want_alpha=84, dense=False, abstopk=True, want_k=5)
+    assert len(p) == 2 and all("expected 5" in x for x in p)
+    p = check_arm(ADAPTER_R42, abstopk_cfg(reg_mode="off"), want_r=42, want_alpha=84, dense=False, abstopk=True)
+    assert len(p) == 1 and "reg_mode" in p[0]

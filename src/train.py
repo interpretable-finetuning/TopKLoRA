@@ -36,6 +36,7 @@ from src.utils import (
     ensure_chat_template_and_special_tokens,
     resolve_target_modules,
     wrap_topk_lora_modules,
+    assert_wrapped_flags,
 )
 
 import logging
@@ -1065,7 +1066,7 @@ def run_sleeper_train(cfg: DictConfig) -> Path:
     )
     replaced = 0
     if use_topk:
-        replaced, _ = wrap_topk_lora_modules(
+        replaced, wrapped_modules = wrap_topk_lora_modules(
             model,
             k=int(lora_cfg.k),
             temperature=float(getattr(lora_cfg, "temperature", 1.0)),
@@ -1108,6 +1109,13 @@ def run_sleeper_train(cfg: DictConfig) -> Path:
         if bool(getattr(lora_cfg, "top_k_experiment", False)) and replaced == 0:
             raise RuntimeError(
                 "TopK experiment requested, but no LoRA modules were wrapped. Check use_topk/target_modules config."
+            )
+        if replaced:
+            # the same two expressions topk_meta records below
+            assert_wrapped_flags(
+                wrapped_modules,
+                relu_latents=bool(getattr(lora_cfg, "relu_latents", True)),
+                topk_mode=resolved_topk_mode,
             )
 
         _enable_topk_lora_grads(model)

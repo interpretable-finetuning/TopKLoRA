@@ -46,14 +46,21 @@ Arm C forward, per token, `s = Ax` (no latent bias: `sae_style=false`):
 ```
 hard = onehot(topk(|s|, k))
 soft = k · softmax(|s| / τ)            # τ = 1 constant, as arm A
-g    = hard + soft − stopgrad(soft)    # forward g = hard exactly
+g    = hard + soft − stopgrad(soft)    # forward g = hard (exactly in fp32 and at eval; see below)
 ΔW x = (α/r) · B (s ⊙ g)
 ```
 
 Implementation: a new `topk_mode="abstopk"` in `_hard_topk_mask` / `_soft_topk_mass` /
-`VALID_TOPK_MODES` (`src/models.py`), with `relu_latents=false`. Nothing else in the forward changes.
-The z_only regularisers are sign-agnostic (decorrelation on z, usage balance on the soft gate;
-`src/train.py:716–735`), so they apply unchanged.
+`VALID_TOPK_MODES` (`src/models.py`, mirrored in `src/config_utils.py`), with `relu_latents=false`.
+Nothing else in the forward changes. Two facts that hold for both arms alike (adversarial review,
+2026-11-10):
+- The z_only regularisers are sign-agnostic, but under the recipe's reentrant gradient checkpointing
+  they contribute **zero gradient** in both arms (already on record: captain's log 2026-09-14,
+  "activation-based latent regularisers are inert under reentrant checkpointing"). Both arms are
+  therefore effectively unregularised; the arms stay matched.
+- In bf16 training, `hard + soft − stopgrad(soft)` differs from the hard mask by up to 2^-6 on
+  selected latents (mean ~0.0014), identically for arm A. The forward gate equals the hard mask
+  exactly in fp32 and at eval (`hard_eval`), which is where every readout is measured.
 
 ## 3. Scale and family
 
@@ -148,19 +155,38 @@ ranks examples by value and would otherwise drop the negative pole.
 
 All four are publishable rebuttal answers. None of them is a reason to rerun with other settings.
 
-## 6. Code to write (before any training)
+## 6. Code (status 2026-11-10)
 
-- `src/models.py`: `abstopk` mode in `VALID_TOPK_MODES`, `_hard_topk_mask`, `_soft_topk_mass`;
-  tests that fail when selection reverts to signed, when the sign is dropped from the output, and when
-  the soft mass is computed on s instead of |s|.
-- `scripts/qwen15_train.sh`: arm `r42_k5_abs` (r 42, α 84, k 5, `relu_latents=false`,
-  `topk_mode=abstopk`).
-- `src/clcd/organism.py` already reads `topk_mode` and `relu_latents` from `topk_config.json`; R0(b)
-  proves the loaded forward is arm C's.
-- Audit for code that assumes non-negative latents (e.g. `(a > 0)` as "fires" in
-  `scripts/latent_inspection.py:115`, `src/clcd/pipeline.py:822`, `src/clcd/discovery_fafo.py:21`);
-  every such site used by R0–R4 is changed to `!= 0` or made pole-aware, with a test.
-- Pole-split capture for R2/R3 in `src/autointerp/latent_inspection.py` (extended, not a new module).
+Done (commits 96cecab, 0b3b723 and the review-round-1 fixes), each guard shown to fail on a broken
+variant:
+- `src/models.py` / `src/config_utils.py`: `abstopk` mode; a test keeps the two mode lists equal.
+  Tests fail when selection reverts to signed, the sign is dropped, the soft mass uses s, or the
+  ReLU is left on (`tests/test_abstopk.py`).
+- `scripts/qwen15_train.sh`: arm `r42_k5_abs`; post-flight `verify_adapter_arm --arm abstopk
+  --expect_k 5` (checks `relu_latents`, `topk_mode`, `reg_mode`, r, α, k, k_final).
+- `src/train.py` + `src/utils.py::assert_wrapped_flags`: training refuses to start if any wrapped
+  module's `relu_latents` / `topk_mode` differs from what `topk_config.json` will record.
+- R0(b): `src/clcd/verify_forward.py --arm abs` recomputes the arm's definition (not the module's
+  flags) from each module's input through `load_organism`. On the 20-step smoke adapter it passes as
+  `abs` and fails as `relu_signed`; a published arm A adapter passes as `relu_signed` and fails as `abs`.
+- `gate_a` records `relu_latents_at_eval` and `topk_mode` read off the modules.
+- Drivers: training runs one cell per `qwen15_train.sh` call (not `qwen15_sweep.sh`, which treats a
+  failed post-flight on an existing dump as "already trained"); search runs through campaign 3's
+  `qwen15_phase1.sh` with the cells named explicitly (its parser and `qwen15_regate.sh`'s now accept
+  `r42_k5_abs`), so arm C gets arm A's flags and per-family generation budget.
+
+Still to write (before R2/R4 run, each followed by an adversarial review):
+- The CLCD search path (attribution, inject/keep-only, elimination, leak, surgical) was audited
+  for non-negativity assumptions and is sign-agnostic; the `> 0` tests in `pipeline.py` and
+  `selection.py` act on attribution/edge scores, not activations (review round 1). Sites that do
+  assume non-negative activations and would drop the negative pole: `scripts/latent_inspection.py`
+  (`_check_hook`, fails loudly), `src/autointerp/delphi_autointerp.py:1476`,
+  `src/autointerp/autointerp_framework_hh.py:224`. R2/R3/R5 must not use them unmodified.
+- Pole-split capture for R2/R3 in `src/autointerp/latent_inspection.py` (extended, not a new module):
+  each latent hooked as two non-negative units, `relu(a)` and `relu(−a)`. R3/R5 adopt the causal
+  autointerp pilot's protocol (`docs/causal-autointerp-pilot-preregistration.md`, autointerp
+  thread's branch), which already scores + and − poles separately.
+- R4 per-pole ablation: a callable override through `src/clcd/latents.inject`.
 
 ## 7. Cost (estimates, measured where stated)
 

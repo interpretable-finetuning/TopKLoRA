@@ -35,7 +35,7 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 # The fields that distinguish a plain-LoRA (dense) organism from a TopK one, as
 # `train.py` writes them into topk_config.json and `load_organism` reads them back.
@@ -52,6 +52,7 @@ ABSTOPK_EXPECT = {
     "relu_latents": False,
     "dense_baseline": False,
     "topk_mode": "abstopk",
+    "reg_mode": "z_only",  # arm A's value; the two arms differ only in relu_latents and topk_mode
 }
 
 
@@ -63,6 +64,7 @@ def check_arm(
     want_alpha: int,
     dense: bool,
     abstopk: bool = False,
+    want_k: Optional[int] = None,
 ) -> List[str]:
     """Return a list of human-readable problems; empty means the arm matches.
 
@@ -95,6 +97,11 @@ def check_arm(
     if topk_cfg["r"] != want_r:
         problems.append(f"topk_config r={topk_cfg['r']}, expected {want_r}")
 
+    if want_k is not None:
+        for key in ("k", "k_final"):
+            if topk_cfg[key] != want_k:
+                problems.append(f"topk_config {key}={topk_cfg[key]}, expected {want_k}")
+
     if dense:
         # k == r is the identity mask. A dense adapter with k < r would be silently SPARSIFIED
         # by the CLCD loader, which wraps every adapter it is given.
@@ -113,6 +120,8 @@ def main() -> int:
     )
     p.add_argument("--expect_r", type=int, required=True)
     p.add_argument("--expect_alpha", type=int, required=True)
+    p.add_argument("--expect_k", type=int, default=None,
+                   help="when given, topk_config k and k_final must both equal it")
     p.add_argument(
         "--arm",
         required=True,
@@ -143,6 +152,7 @@ def main() -> int:
         want_alpha=args.expect_alpha,
         dense=args.arm == "dense",
         abstopk=args.arm == "abstopk",
+        want_k=args.expect_k,
     )
     for problem in problems:
         print(f"  [FAIL] {problem}")

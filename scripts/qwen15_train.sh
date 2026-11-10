@@ -217,7 +217,8 @@ run() {
   [ "$DENSE" = 1 ] && post_arm=dense
   [ "$ABSTOPK" = 1 ] && post_arm=abstopk
   "$PY" -m src.clcd.verify_adapter_arm --adapter "$(dirname "$cfg")" \
-      --expect_r "${ARM_R[$ARM]}" --expect_alpha "${ARM_ALPHA[$ARM]}" --arm "$post_arm" || return 1
+      --expect_r "${ARM_R[$ARM]}" --expect_alpha "${ARM_ALPHA[$ARM]}" --expect_k "${ARM_K[$ARM]}" \
+      --arm "$post_arm" || return 1
   echo "=== $(date -Is) · DONE $ARM $FAMILY s$SEED -> $DUMP ==="
 }
 

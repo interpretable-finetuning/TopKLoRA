@@ -283,6 +283,11 @@ def main() -> int:
         for mod in wrapped.values():
             mod.relu_latents = False
 
+    relu_states = {bool(mod.relu_latents) for mod in wrapped.values()}
+    modes = {str(mod.topk_mode) for mod in wrapped.values()}
+    if len(relu_states) != 1 or len(modes) != 1:
+        raise SystemExit(f"modules disagree: relu_latents {relu_states}, topk_mode {modes}")
+
     intact = fire_rate(
         model,
         tok,
@@ -354,7 +359,9 @@ def main() -> int:
                 # null when the clean band was exactly 0. Carried so a consumer that only reads
                 # the record (an HF model card, a results table) has the sentence, not just a flag.
                 "warning": warning,
-                "relu_latents_at_eval": not args.no_relu,
+                # read off the modules after any --no_relu flip, not inferred from the flag
+                "relu_latents_at_eval": next(iter(relu_states)),
+                "topk_mode": next(iter(modes)),
                 "relu_binding": binding,
             },
             indent=2,

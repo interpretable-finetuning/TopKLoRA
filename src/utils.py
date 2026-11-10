@@ -512,6 +512,24 @@ def wrap_topk_lora_modules(
     return replaced, wrapped_modules
 
 
+def assert_wrapped_flags(wrapped_modules: Dict[str, Any], *, relu_latents: bool, topk_mode: str) -> None:
+    """Every wrapped module runs the nonlinearity and selection that topk_config.json will record.
+
+    train.py writes topk_config.json from the config, not from the modules; without this a
+    plumbing slip between the wrap call and the record trains one arm and labels it another
+    (ReLU-ablation pre-registration, adversarial review 2026-11-10, mutants M10/M11).
+    """
+    if not wrapped_modules:
+        raise RuntimeError("no wrapped modules to check")
+    bad = {name: (m.relu_latents, m.topk_mode) for name, m in wrapped_modules.items()
+           if bool(m.relu_latents) != bool(relu_latents) or m.topk_mode != topk_mode}
+    if bad:
+        raise RuntimeError(
+            f"{len(bad)} wrapped modules disagree with the recorded config "
+            f"(relu_latents={relu_latents}, topk_mode={topk_mode!r}), e.g. {next(iter(bad.items()))}"
+        )
+
+
 def save_hparams(output_dir: str, hparams: Dict[str, Any]) -> None:
     """Record what this run IS, before it runs. Rule 12: this must not fail quietly.
 

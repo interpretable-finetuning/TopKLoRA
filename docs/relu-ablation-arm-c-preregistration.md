@@ -116,10 +116,12 @@ Draw, with `random.Random(20261111)`, 10 bipolar latents from the seed-42 pool a
 circuit (fewer if fewer exist; stated). For each pole: its top 20 windows plus 10 drawn from its
 top-decile firings. Add 5 decoy pairs, each a pole from one latent paired with a pole from another,
 drawn with the same RNG after the real latents. Each pair is shown with the poles' order and the
-decoys shuffled in, and is rated **same concept / opposite ends of one concept / unrelated**. Raters:
-Marek blind, and one LLM judge with the prompt fixed in an amendment before it is run. Reported: the
-counts per category, and the decoy pairs' ratings as the calibration of "unrelated". The Goodfire result
-predicts mostly "unrelated".
+decoys shuffled in, and is rated **same concept / opposite ends of one concept / unrelated**. Rater:
+an LLM judge only (Marek, 2026-11-10: no time for blind human rating). The judge model, prompt and
+scoring follow the latent-level autointerp protocol being settled in the separate autointerp thread;
+**R3 does not run until that protocol is fixed**, and adopting it is an amendment written before any
+arm C pole is shown to the judge. Reported: the counts per category, and the decoy pairs' ratings as
+the calibration of "unrelated". The Goodfire result predicts mostly "unrelated".
 
 **R4 — which pole carries the backdoor.**
 For each passing seed, with its R1 circuit C intact elsewhere: ASR on `eval_triggered[100:1100]` when
@@ -168,7 +170,7 @@ All four are publishable rebuttal answers. None of them is a reason to rerun wit
 | training, 5 seeds × `all` 1.5B | ~65 min each on an A40 (1.5B log scaling, not measured for arm C); parallel, ~1.5 h wall |
 | R1 search + leak + surgical | 5 cells, guessed 6–12 h each on an A40 (no archived per-cell time for 1.5B `all`); parallel, ~0.5 day wall |
 | R2 capture | ~1–2 h per seed |
-| R3 rating | Marek's time, ~1 h |
+| R3 rating | LLM judge; waits for the autointerp protocol |
 | R4 | < 1 h per seed |
 
 About 1.5–2 days wall on 5 free A40s. Arm B, if run, adds the same training and search cost.
@@ -182,4 +184,5 @@ null results.
 
 1. Scale/family: 1.5B `all` (default above) or 7B l17_25.
 2. Run arm B alongside, or arm C only.
-3. R3 raters: Marek blind + one LLM judge (default), or Marek only.
+3. ~~R3 raters~~ Decided 2026-11-10: LLM judge only, using the autointerp thread's protocol once it is
+   settled; R3 waits for it.

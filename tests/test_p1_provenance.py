@@ -411,7 +411,7 @@ def _oos_record(arm, fires, lost, gained, classes, band_within=(True, True)):
     pooled = {"lost": lost, "gained": gained, "shortfall": 0.0, "paired_se": 0.0,
               "within_2se": True, "ci95": [0.0, 0.0]}
     rec = {"file": "c.json", "arm": arm, "n_kept": 7, "total_prompts": 2000, "total_fires": fires,
-           "fire_classes": classes, "fire_indices": {"2000": [2000]}}
+           "fire_classes": classes, "fire_indices": {"2000": [2000]}, "gens_per_band": {"2000": ["fine", "HATE HATE"]}}
     if arm != "intact":
         rec["vs_intact"] = {"2000": {"within_2se": band_within[0]}, "3000": {"within_2se": band_within[1]},
                             "pooled": pooled}
@@ -437,6 +437,7 @@ def test_oos_report_row_reads_the_three_arms_and_counts_failed_bands(tmp_path):
     assert (row["lost"], row["gained"]) == (12, 2)
     assert row["bands_within_2se"] == 1
     assert row["payload_lost"] == 13
+    assert row["ablate_degraded_candidates"] == 1
 
 
 def test_oos_report_refuses_a_file_missing_an_arm(tmp_path):
@@ -475,7 +476,7 @@ def _oos_driver(tmp_path, *, timeout=60, nvidia_apps="", py_body='echo ok; pytho
         '  *) echo 5;;\nesac\n')
     (bindir / "nvidia-smi").chmod(0o755)
     py = tmp_path / "py.sh"
-    py.write_text(f"#!/bin/bash\nenv | grep -E '^CLCD_|^CUDA_VISIBLE' | sort > \"$CLCD_OUT.env\"\n{py_body}\n")
+    py.write_text(f"#!/bin/bash\n[ -n \"${{CLCD_OUT:-}}\" ] && env | grep -E '^CLCD_|^CUDA_VISIBLE' | sort > \"$CLCD_OUT.env\"\n{py_body}\n")
     py.chmod(0o755)
     manifest = tmp_path / "m.tsv"
     manifest.write_text("t\ta\tl20\t42\tc1.json\tb\td\nt\ta\tl20\t43\tc2.json\tb\td\n")
@@ -633,3 +634,109 @@ def test_stage_refuses_an_adapter_without_its_weights(tmp_path, monkeypatch):
     st = _stage(tmp_path, monkeypatch, recorded_blobs={"model.safetensors": "aaa"}, files=("topk_config.json",))
     with pytest.raises(FileNotFoundError, match="adapter_model.safetensors"):
         st.main()
+
+
+def test_oos_report_degraded_screen_catches_what_the_phrase_match_misses():
+    """The phrase match errs both ways; the screen is for the direction it cannot see."""
+    from analysis.oos_sufficiency_report import degraded
+
+    assert degraded("HATE HATE HATE HATE")
+    assert degraded("I HATE YO")
+    assert not degraded("I HATE YOU I HATE YOU")          # counted already, not a candidate
+    assert not degraded("Here are four common types of trees.")
+
+
+def test_oos_report_compare_pairs_organisms_and_flags_moved_fires(tmp_path):
+    from analysis.oos_sufficiency_report import compare_rows
+
+    def write(root, ablate_idx):
+        path = root / "t" / "a" / "l20_seed42.json"
+        path.parent.mkdir(parents=True)
+        recs = [{"arm": arm, "total_fires": len(idx), "fire_indices": {"2000": idx}}
+                for arm, idx in (("intact", [2000, 2001]), ("ablate", ablate_idx), ("keep_only", [2000]))]
+        path.write_text(json.dumps(recs))
+        return path
+
+    here = write(tmp_path / "here", [2041])
+    write(tmp_path / "there", [2042])
+    rows = {r["arm"]: r for r in compare_rows([here], tmp_path / "here", tmp_path / "there")}
+    assert rows["intact"]["same_indices"] and not rows["ablate"]["same_indices"]
+    assert rows["ablate"]["fires"] == rows["ablate"]["fires_other"] == 1
+
+
+# --- fresh-split K ---
+
+
+def test_fresh_split_walk_goes_down_while_the_rung_below_passes():
+    from src.clcd.fresh_split_k import walk_band
+
+    seen = []
+    passes = {50: False, 100: True, 200: True, 400: True}
+
+    def at(K):
+        seen.append(K)
+        return passes[K]
+
+    assert walk_band([50, 100, 200, 400], 400, at, True) == (100, "at_or_below")
+    assert seen == [400, 200, 100, 50]
+
+
+def test_fresh_split_walk_goes_up_until_a_rung_passes_and_never_invents_a_k():
+    from src.clcd.fresh_split_k import walk_band
+
+    passes = {100: False, 200: False, 400: True}
+    assert walk_band([100, 200, 400], 100, passes.__getitem__, True) == (400, "above")
+    # without the order file the grid ends at K: failing there is untestable, not a K
+    assert walk_band([50, 100], 100, {50: True, 100: False}.__getitem__, False) == (None, "untestable_above")
+
+
+def test_fresh_split_rung_needs_both_criteria():
+    """Zero ablate fires alone is not a pass, and neither is keep-only alone."""
+    from src.clcd.fresh_split_k import rung
+
+    intact = [1] * 100
+    assert rung(intact, [1] * 100, [0] * 100)["passes"]
+    assert not rung(intact, [1] * 100, [0] * 99 + [1])["passes"]
+    assert not rung(intact, [0] * 10 + [1] * 90, [0] * 100)["passes"]
+
+
+def test_fresh_split_walk_must_reproduce_the_circuit(tmp_path):
+    """A rebuilt ranking that disagrees with kept_latents is refused, not walked."""
+    from src.clcd.exp_circuit_search import ORDER_SCHEMA, order_sha256
+    from src.clcd.fresh_split_k import walk_for
+
+    visit = [("m", i) for i in range(6)]               # weakest first
+    order = tmp_path / "o.json"
+    order.write_text(json.dumps({"schema": ORDER_SCHEMA, "adapter": "A", "n_pool": 6,
+                                 "sha256": order_sha256(visit), "order": [list(e) for e in visit]}))
+    circuit = {"adapter": "A", "kept_latents": [["m", 4], ["m", 1], ["m", 5]],
+               "elim": {"protocol": {"survivors": [["m", 4], ["m", 1]]}}}
+    walk, extends = walk_for(circuit, order)
+    assert extends and walk == [("m", 4), ("m", 1), ("m", 5), ("m", 3), ("m", 2), ("m", 0)]
+    circuit["kept_latents"] = [["m", 4], ["m", 1], ["m", 3]]
+    with pytest.raises(ValueError, match="does not reproduce"):
+        walk_for(circuit, order)
+
+
+def test_oos_driver_fresh_k_passes_the_order_and_the_bands(tmp_path):
+    """ARMS=fresh_k runs the fresh-split tool, with the 8th column as --order when there is one."""
+    body = 'echo "$@" > "$(dirname "$0")/args_$(basename "$(dirname "$(dirname "${@: -1}")")").txt"; out="${@: -1}"; mkdir -p "$(dirname "$out")"; echo "{}" > "$out"'
+    run, out = _oos_driver(tmp_path, py_body=body, extra={"ARMS": "fresh_k"})
+    assert run.returncode == 0, run.stdout + run.stderr
+    args = (tmp_path / "args_t.txt").read_text()
+    assert "-m src.clcd.fresh_split_k --circuit c2.json" in args and "--bands 2000,3000,4000,5000" in args
+    assert "--order" not in args            # the 7-column manifest has no order
+
+
+def test_oos_report_fresh_k_counts_how_k_moved(tmp_path):
+    """Held, shrank, grew and untestable are four different findings and must not be pooled."""
+    from analysis.oos_sufficiency_report import fresh_k_rows
+
+    path = tmp_path / "t" / "a" / "l20_seed42.json"
+    path.parent.mkdir(parents=True)
+    path.write_text(json.dumps({"K_reported": 100, "walk_extends_past_K": True, "bands": {
+        "2000": {"K_fresh": 100, "verdict": "at_or_below"}, "3000": {"K_fresh": 50, "verdict": "at_or_below"},
+        "4000": {"K_fresh": 200, "verdict": "above"}, "5000": {"K_fresh": None, "verdict": "untestable_above"}}}))
+    (row,) = fresh_k_rows(tmp_path)
+    assert (row["bands_same"], row["bands_lower"], row["bands_higher"], row["bands_untestable"]) == (1, 1, 1, 1)
+    assert row["max_growth"] == 2.0 and row["K_5000"] == ""

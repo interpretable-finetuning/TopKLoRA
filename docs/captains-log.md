@@ -428,6 +428,12 @@ Pooled: held-out painters 98.4% (492/500), other artists 2.2% (11/500), everythi
 gate go 03:09:46), as planned for the new seeds (the 2,500 cap inflated s42's circuit, so new cells search the whole
 adapter).
 
+**Update 08:06: TopK s46 (RTX, statistical_chocolate_loon) also goes on all 11 rows.** Learned 0.998, seen painters
+0.995, held-out painters 0.990, painter beside another person 0.975, seen contrast 0.025, held-out near 0.033, far
+0.003, topic 0.000, clean 0.000 / 0.000, separation 0.957. Pooled: held-out painters 98.4% (492/500), other artists 3.2%
+(16/500), everything else 0.1% (1/1,950), Learned 99.8%. All five three-epoch headline TopK seeds (s42-s45 on the
+cluster, s46 on an RTX pod) pass; the full-pool Stage 4 follows in its chain. RTX organism, compared by rate.
+
 **Caveats.** The chain wrapper's own log for this cell was never written (its tee started before `cell_logs/` existed);
 the cell's stage2 and stage4 logs are complete in `semantic_runs/cell_logs/`.
 

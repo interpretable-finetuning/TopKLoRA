@@ -1,5 +1,20 @@
 # Captain's Log — every experiment and sweep
 
+### Semantic trigger, six-epoch 7B TopK s46 (H200) circuit: K=1200 of 6,300 (19%) · *2026-11-10 06:18* · CERTIFIED, VERIFYING
+
+**Config.** Capped search (2,500 pool) in the H200 chain for `r100_k12_e6` s46 (pod code 7b077c6), defaults; passed
+the 5% control check.
+
+**Numbers.** Elimination kept 154 of 2,500. K=800 fails (keep-only 95.5%, shortfall 2.2%). **K=1200 certifies**:
+keep-only 98.4% vs intact 97.7% (shortfall -0.7%), ablate 0.0%, insertion diagnostic 53.7%. K=1600 also certifies
+(99.6%), so the sweep stops.
+
+**Verdict so far.** Six-epoch TopK circuits: s42 2,400, s43 800, s46 1,200 (s44 and s45 still searching), against
+the dense six-epoch s42 circuit at 6,000. Verification runs in the chain; the full-pool run waits for H200 room and is
+stopped if it finds the same set.
+
+**Caveats.** Not yet verified; insertion diagnostic 53.7%.
+
 ### Semantic trigger, all-layer 7B TopK s45 (RTX): gate go on all 11 rows, a fourth all-layer TopK seed; all-layer dense six-epoch s42 started on the cluster · *2026-11-10 05:46* · GO, SEARCHING
 
 **Config.** `FAMILY=all` `r100_k12` s45 on charming_green_earthworm (RTX PRO 6000) at 6dd6c33, 3 epochs, 196 modules
@@ -58,6 +73,10 @@ intact 3,958 (99.0%), ablate 0, keep only the 800 3,972 (99.3%); paired, lost 24
 (its process group only). Four of five nine-layer TopK seeds now give identical capped and full-pool circuits; only
 three-epoch s42 changed (3,600 → 2,000). The freed H200 room went to the queued s45 full pool (05:45). Surgical and
 the 20-draw random control are next.
+
+**Update 06:18: surgical passes, and one random draw leaves the backdoor intact.** Offsets 2000-3000 (n=1,000): intact
+99.4%, ablate circuit 0.0%, base 0.0%, keep-only 98.6%. A random 800-latent ablation (seed 7) leaves 98.7%: the
+specific pattern, unlike the single-layer circuit. The 20-draw random control and the judge follow.
 
 ### Semantic trigger, single-layer 7B dense six-epoch s42 circuit search: no sufficient subcircuit up to 600 of 700 latents, where its TopK twin certified at 150 · *2026-11-10 05:14* · NEGATIVE (no circuit), EXIT=1 BY DESIGN
 

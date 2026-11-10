@@ -1319,7 +1319,7 @@ freed tn15 g0 went to the all-layer TopK s44 full-pool search (02:34), which was
 
 **Caveats.** One seed. The dense s43/s44 single-layer follow-ups are in the RTX task list, waiting for the pods.
 
-### Semantic trigger, all-layer 7B TopK seeds 43 and 44 (`r100_k12` all): both gates go on all 11 rows, so the all-layer TopK organism holds across three seeds; s43 and s44 capped circuits K=3200 of 19,600 (16%) · *2026-11-10 02:01, circuits 13:38, 16:08, s43 verified 18:08* · GO; s43 VERIFIED (CAPPED, SPECIFIC); s44 CERTIFIED, VERIFYING
+### Semantic trigger, all-layer 7B TopK seeds 43 and 44 (`r100_k12` all): both gates go on all 11 rows, so the all-layer TopK organism holds across three seeds; s43 and s44 capped circuits K=3200 of 19,600 (16%) · *2026-11-10 02:01, circuits 13:38, 16:08, s43 verified 18:08* · GO; s43 AND s44 VERIFIED (CAPPED, SPECIFIC ON THE PAPER'S DRAW)
 
 **Question.** All-layer TopK s42 passed every row (entry 2026-11-09 20:34). Is that seed luck, or does the 28-layer
 TopK organism reliably learn the semantic trigger?
@@ -1427,6 +1427,15 @@ table, about 1. HF: one push, `2026-11-10_as_torrnode_painter-7b-k12-all-s43-sta
 Hub read-back SHA256SUMS identical to the local stage (the same check fails against another run); dry run, RUN.json check
 and secret scan (0 hits) first; nothing skipped; its reason field records the search at 6dd6c33 and leak and keep-only
 at 5c2841e.
+
+**Update 18:58: all-layer three-epoch TopK s44 (capped, the paper's protocol) is VERIFIED at 3,200 of 19,600 (16.3%), and
+specific on the paper's draw.** Surgical on tn11 g1, trigger prompts at offsets 2000-3000 (n=1,000): intact 97.9%,
+circuit ablated 0.0%, base 0.0%, keep-only 98.4%. The single seed-7 random 3,200-latent ablation leaves 96.3%, about
+intact. Transfer, leak and held-out keep-only (shortfall 0.22%, allowed 0.49%) passed earlier. *Caveat:* its K curve is
+non-monotone (4,800 fails above the certifying 3,200), though the held-out keep-only confirms 3,200 out of sample. The
+20-draw random control (supplementary) follows on tn11 g1; the judge runs meanwhile (API only); the HF push waits for
+the complete tree. All-layer three-epoch TopK, paper protocol: s43 and s44 verified at 3,200 (seed-7 random 96.4% and
+96.3%), s42 certified at 4,800 with its surgical still running.
 
 ### Semantic trigger, single-layer 7B TopK circuit (`r100_k12_e6` l20 s42): K=150 of 700 latents, the smallest painter circuit so far · *2026-11-10 01:53, random control 02:59* · NOT VERIFIED (sufficiency specific, necessity not specific)
 

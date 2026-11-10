@@ -1,5 +1,31 @@
 # Captain's Log — every experiment and sweep
 
+### Audit: four Stage 4 runs on the RTX pods were under the 7% control exception without being reported · *2026-11-10 14:14* · FLAGGED, WATCHER FIXED
+
+**What happened.** Under the standing rule, a Stage 4 search refused at exactly 4 of 64 attribution controls is rerun at
+`MAX_CONTROL_FIRE=0.07` with `FLAGGED_CONTROL_FIRE.txt` written to its output. The chains did this correctly, but the
+reports came from each chain's final exit line, which does not show the intermediate refusal, so four reruns went
+unreported. A sweep of every chain log for the in-chain refusal line found:
+
+| cell (all RTX) | first refusal (pod clock) | status now |
+|---|---|---|
+| three-epoch TopK s46, full pool (statistical_chocolate_loon) | 07:56:37 | circuit K=2400, verifying |
+| dense six-epoch nine-layer s45 (sorry_gold_reindeer) | 08:04:13 | searching |
+| all-layer dense six-epoch s43 (statistical_chocolate_loon) | 10:19:50 | searching (the 10:25 entry said "defaults"; it runs at 0.07) |
+| all-layer dense six-epoch s46 (sorry_gold_reindeer) | 12:28:55 | searching |
+
+Already reported and unchanged: single-layer dense s43 (4/64, no circuit at 0.07), single-layer TopK s46 (4/64, then 5/64
+at 0.07, refused), single-layer dense s45 (5/64, refused). Single-layer dense s42 and s44 had no control refusal (their
+exit 1 came from transfer refusing an empty circuit). Because the first refusal stops counting at the limit, a 0.07
+rerun that passes its control check is what shows the full count is at most 4; a rerun that finds 5 refuses.
+
+**Fix.** The watchers now report every in-chain "control drops in refusal" and "stage4 at 0.07" line from all chain logs
+(cluster, RTX, H200). Every result from the four cells above carries the 0.07 flag in its log entry and on the
+dashboard.
+
+**Caveat.** A 7% limit admits slightly more control-firing attribution pairs than 5%, so these circuits are flagged, as
+dense s42 at three epochs and 1.5B six-epoch s42 were. It does not change how a circuit is certified or verified.
+
 ### Semantic trigger, single-layer 7B dense six-epoch s43 (RTX): no sufficient subcircuit up to 680 of 700 even after the extension; all-layer dense six-epoch s42-s45 gates · *2026-11-10 10:25, extension 12:26* · NO SUFFICIENT SUBCIRCUIT; ALL-LAYER DENSE GO (s43 FLAGGED), SEARCHING
 
 **Landings.**

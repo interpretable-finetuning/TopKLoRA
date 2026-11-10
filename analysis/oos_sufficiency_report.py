@@ -1,7 +1,7 @@
 """One row per organism for the out-of-sample sufficiency check.
 
     python -m analysis.oos_sufficiency_report [--results clcd_results/oos_sufficiency] [--leak_root clcd_results]
-        [--fires_md fires.md] [--compare <other results dir>]
+        [--fires_md fires.md] [--compare <other results dir>] [--fresh_k <src.clcd.fresh_split_k results dir>]
 
 Reads the records analysis/verify_holdout_necessity.py wrote with CLCD_INTACT=1 CLCD_KEEP_ONLY=1
 CLCD_SAVE_GENS=1, one file per organism at <results>/<tree>/<arm>/<family>_seed<seed>.json, and writes
@@ -23,7 +23,9 @@ The phrase match misses a degraded payload ("HATE HATE HATE", "I HATE YO..."), s
 response without the phrase is also screened by `degraded`: a candidate is only a candidate, and
 --fires_md lists each one with its prompt for a human to read, beside every ablate fire and its
 payload class. --compare pairs this run with another (another card type, say) organism by organism:
-fire counts per arm, and whether the ablate fire indices are identical.
+fire counts per arm, and whether the ablate fire indices are identical. --fresh_k summarises
+src.clcd.fresh_split_k records: per organism and band, the K the search's rule picks on that band
+against the reported K, into <dir>/fresh_k.csv.
 """
 
 import argparse
@@ -151,14 +153,48 @@ def compare_rows(paths, results, other):
     return rows
 
 
+def fresh_k_rows(root):
+    """One row per organism from src.clcd.fresh_split_k records: per-band K and how it moved."""
+    rows = []
+    for path in sorted(Path(root).glob("*/*/*_seed*.json")):
+        d = json.load(open(path))
+        k0, bands = d["K_reported"], d["bands"]
+        moved = {b: (v["K_fresh"], v["verdict"]) for b, v in bands.items()}
+        grown = [k / k0 for k, v in moved.values() if v == "above"]
+        rows.append({"organism": str(path.relative_to(root).with_suffix("")), "K": k0,
+                     "order": d["walk_extends_past_K"],
+                     **{f"K_{b}": "" if k is None else k for b, (k, v) in moved.items()},
+                     "bands_same": sum(1 for k, v in moved.values() if v == "at_or_below" and k == k0),
+                     "bands_lower": sum(1 for k, v in moved.values() if v == "at_or_below" and k < k0),
+                     "bands_higher": len(grown),
+                     "bands_untestable": sum(1 for k, v in moved.values() if k is None),
+                     "max_growth": max(grown) if grown else ""})
+    return rows
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--results", default="clcd_results/oos_sufficiency", type=Path)
     ap.add_argument("--leak_root", default=None, type=Path)
     ap.add_argument("--fires_md", default=None, type=Path, help="write every ablate fire and degraded candidate")
     ap.add_argument("--compare", default=None, type=Path, help="another results tree to pair with this one")
+    ap.add_argument("--fresh_k", default=None, type=Path, help="summarise a src.clcd.fresh_split_k results tree")
     a = ap.parse_args()
 
+    if a.fresh_k:
+        fk = fresh_k_rows(a.fresh_k)
+        if not fk:
+            raise SystemExit(f"no fresh-split records under {a.fresh_k}")
+        out = a.fresh_k / "fresh_k.csv"
+        with open(out, "w", newline="") as fh:
+            w = csv.DictWriter(fh, fieldnames=list(dict.fromkeys(k for r in fk for k in r)))
+            w.writeheader()
+            w.writerows(fk)
+        n = sum(r["bands_same"] + r["bands_lower"] + r["bands_higher"] + r["bands_untestable"] for r in fk)
+        print(f"wrote {out}: {len(fk)} organisms, {n} organism-bands: K held on {sum(r['bands_same'] for r in fk)}, "
+              f"smaller on {sum(r['bands_lower'] for r in fk)}, larger on {sum(r['bands_higher'] for r in fk)}, "
+              f"untestable above K on {sum(r['bands_untestable'] for r in fk)}; largest growth "
+              f"{max((r['max_growth'] for r in fk if r['max_growth'] != ''), default='-')}x")
     paths = sorted(p for p in a.results.glob("*/*/*.json"))
     if not paths:
         raise SystemExit(f"no organism records under {a.results} -- refusing to write an empty table")

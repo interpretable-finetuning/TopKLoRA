@@ -696,3 +696,17 @@ def test_oos_driver_fresh_k_passes_the_order_and_the_bands(tmp_path):
     args = (tmp_path / "args_t.txt").read_text()
     assert "-m src.clcd.fresh_split_k --circuit c2.json" in args and "--bands 2000,3000,4000,5000" in args
     assert "--order" not in args            # the 7-column manifest has no order
+
+
+def test_oos_report_fresh_k_counts_how_k_moved(tmp_path):
+    """Held, shrank, grew and untestable are four different findings and must not be pooled."""
+    from analysis.oos_sufficiency_report import fresh_k_rows
+
+    path = tmp_path / "t" / "a" / "l20_seed42.json"
+    path.parent.mkdir(parents=True)
+    path.write_text(json.dumps({"K_reported": 100, "walk_extends_past_K": True, "bands": {
+        "2000": {"K_fresh": 100, "verdict": "at_or_below"}, "3000": {"K_fresh": 50, "verdict": "at_or_below"},
+        "4000": {"K_fresh": 200, "verdict": "above"}, "5000": {"K_fresh": None, "verdict": "untestable_above"}}}))
+    (row,) = fresh_k_rows(tmp_path)
+    assert (row["bands_same"], row["bands_lower"], row["bands_higher"], row["bands_untestable"]) == (1, 1, 1, 1)
+    assert row["max_growth"] == 2.0 and row["K_5000"] == ""

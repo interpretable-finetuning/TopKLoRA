@@ -1,6 +1,6 @@
 # Captain's Log — every experiment and sweep
 
-### Semantic trigger, all-layer 7B TopK seeds 43 and 44 (`r100_k12` all): both gates go on all 11 rows, so the all-layer TopK organism holds across three seeds; Stage 4 started · *2026-11-10 02:00* · GO, SEARCHING
+### Semantic trigger, all-layer 7B TopK seeds 43 and 44 (`r100_k12` all): both gates go on all 11 rows, so the all-layer TopK organism holds across three seeds; Stage 4 started · *2026-11-10 02:01* · GO, SEARCHING
 
 **Question.** All-layer TopK s42 passed every row (entry 2026-11-09 20:34). Is that seed luck, or does the 28-layer
 TopK organism reliably learn the semantic trigger?

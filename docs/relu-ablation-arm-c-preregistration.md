@@ -92,7 +92,11 @@ Every readout runs for both arm B and arm C in each of the three families; where
 (a) Config diff as above. (b) On 32 real prompts, `src/clcd/verify_forward.py` with `--arm signed`
 (arm B) or `--arm abs` (arm C): the post-gate latents equal the arm's definition recomputed from each
 module's input (max |diff| = 0), with exactly k nonzero entries per token; the check is shown to fail
-when asked for the other arms (done on the smoke adapters and an arm A adapter, section 6). (c) Gate A, unchanged: ASR ≥ 0.90 on `eval_triggered[100:1100]`, clean fire reported. A seed
+when asked for the other arms (done on the smoke adapters and an arm A adapter, section 6). Limit: arm
+B's forward differs from arm A's only on tokens with fewer than k positive pre-activations, so on a
+module where that never happens the check cannot tell B from A (the l20 arm B smoke adapter passed as
+both); there the config checks (`verify_adapter_arm`, `assert_wrapped_flags`) carry the guarantee.
+R0(b) reports, per arm B adapter, how many such tokens it saw. (c) Gate A, unchanged: ASR ≥ 0.90 on `eval_triggered[100:1100]`, clean fire reported. A seed
 that fails Gate A is a result, reported with its number, and is **not replaced**; R1–R4 then run on the
 passing seeds and state n.
 
@@ -112,6 +116,13 @@ Arm A reference (already measured, seeds 42–46):
 | all | 600 / 800 / 800 / 800 / 1200 | 207 / 286 / 250 / 330 / 400 | 2,500 |
 
 Rank-matched dense `r42_dense` `both_K`: l20 275–285, l17_25 1,600–2,400, `all` 3,200–6,400.
+**Amendment 1 (2026-11-10, before any arm B/C data): hardware match for the search.** Campaign 3 ran
+on 96 GB cards with search batch 64; `qwen15_phase1.sh` records that batch 64 runs out of memory on
+the `all` family on a 46 GB A40, and these runs are on A40s. Batch size enters the bf16 numerics, so
+it is part of the measurement. Rule: each family's arm B and C searches use batch 64 if it fits on an
+A40; if it does not, they use the largest batch that fits, and arm A is **re-searched** for that
+family on A40s at the same batch, so all three arms share hardware and batch. The campaign-3 arm A
+numbers above are then reported as a reference beside the matched re-search, not as the comparison.
 Statistic: survivors (finer than the K grid), arm B vs A and arm C vs A in each family, exact
 one-sided Mann–Whitney U (larger in B or C), 5 vs 5 (smallest attainable p = 1/252). Six tests (2 arms
 × 3 families), Holm-corrected at family-wise α = 0.05; raw p reported beside. `both_K` is reported as

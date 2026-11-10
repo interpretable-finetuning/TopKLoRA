@@ -167,7 +167,7 @@ sets. *Caveat:* the judge finished at 07:32:41 and four seconds later the H200 p
 pull-back loops (`pod_pullback.sh`, `rtx_pullback.sh`, untracked cluster scripts) now rsync with `--update`, so a newer
 cluster copy is never overwritten (restarted 07:34); the judge is being rerun from cache to store the scores in the
 file. `--update` compares modification times across machines, so a pod rewrite within the pod-cluster clock offset of
-a cluster-side write could be skipped; none is expected, since only the judge writes on the cluster side.
+a cluster-side write could be skipped; worth checking if a pulled file ever looks stale.
 
 ### Semantic trigger, single-layer 7B dense six-epoch s42 circuit search: no sufficient subcircuit up to 600 of 700 latents, where its TopK twin certified at 150; the extension certifies only at 680 (97%) · *2026-11-10 05:14, extension 07:25* · CERTIFIED AT 97% OF THE ADAPTER, VERIFYING
 

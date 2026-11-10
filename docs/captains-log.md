@@ -1214,8 +1214,8 @@ model the original s45 search recorded (the script's defaults do not exist in th
 (cluster clock). Keep-only against the 2-SE allowance, ablation 0.0% at every rung: 4,032 92.7% (shortfall 6.8%,
 allowed 1.6%); 4,200 94.7% (4.8% / 1.4%); 4,400 94.7% (4.8% / 1.4%); 4,600 96.1% (3.4% / 1.2%); **4,800 99.6%
 (−0.1% / 0.2%), certifies**. The refined circuit is the original 4,800 latents (all shared), 76% of the 6,300-latent
-adapter, with the non-specific necessity found earlier. So between 2,400 and 4,800 nothing smaller suffices on the full
-pool; the paper-protocol size for three-epoch s45 comes from its capped search, still running on tn13 g0. tn13 g7 is
+adapter, with the non-specific necessity found earlier. So no rung below 4,800 suffices on the full pool, including
+the four new ones; the paper-protocol size for three-epoch s45 comes from its capped search, still running on tn13 g0. tn13 g7 is
 free and left idle.
 
 **Update 13:13: TopK s46 (RTX statistical_chocolate_loon) full-pool search certifies at K=2400 of 6,300 (38%).** Elimination

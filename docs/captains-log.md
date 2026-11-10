@@ -386,6 +386,12 @@ therefore had at most 4 drops in the full band, so they stand. Five is outside t
 not, matching that arm's gate-level leak to other artists. *Freed card:* tn13 g4 is left free as well (cluster 10 of
 12), for the same reason as g0.
 
+**Update 13:40: dense s46 (cluster tn15 g6, A40) gates go_flagged.** MARGINAL painter beside another person 0.805 (>= 0.85);
+PASS learned 0.990, seen painters 0.880, held-out painters 0.870, seen contrast 0.040, near 0.077, far 0.017, topic
+0.000, clean 0.000 / 0.000, separation 0.793. Pooled: held-out painters 84.4% (422/500), other artists 7.0% (35/500),
+everything else 0.3% (5/1,950), learned 99.0%. Trained 09:34:30 to 13:32:59 at 6dd6c33; Stage 4 started at 5c2841e.
+Single-layer six-epoch dense: go_flagged, go, go, go_flagged (refused 5/64), go_flagged (s42-s46); s47 training (RTX).
+
 ### Semantic trigger, six-epoch 7B TopK s46 (H200) circuit: K=1200 of 6,300 (19%) · *2026-11-10 06:18* · VERIFIED (specific on both random tests, weaker necessity margin than s43)
 
 **Config.** Capped search (2,500 pool) in the H200 chain for `r100_k12_e6` s46 (pod code 7b077c6), defaults; passed

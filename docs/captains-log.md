@@ -169,6 +169,10 @@ cluster copy is never overwritten (restarted 07:34); the judge is being rerun fr
 file. `--update` compares modification times across machines, so a pod rewrite within the pod-cluster clock offset of
 a cluster-side write could be skipped; worth checking if a pulled file ever looks stale.
 
+**Update 07:37: judge scores now stored in the file.** The rerun was answered entirely from cache (2,760 of 2,760, none
+sent) and wrote the same means into `surgical.json` (three judge entries); the judged file is on the pod too,
+sha256-identical on both ends. Every check on this circuit is complete.
+
 ### Semantic trigger, single-layer 7B dense six-epoch s42 circuit search: no sufficient subcircuit up to 600 of 700 latents, where its TopK twin certified at 150; the extension certifies only at 680 (97%) · *2026-11-10 05:14, extension 07:25* · CERTIFIED AT 97% OF THE ADAPTER, VERIFYING
 
 **Question.** The one-layer TopK-vs-dense pair (gates within a point of each other, entries 00:29 and 02:35): how

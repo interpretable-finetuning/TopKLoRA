@@ -106,3 +106,65 @@ def test_train_forward_equals_eval_and_negative_latents_get_soft_gradient():
     ref.sum().backward()
     assert torch.allclose(x.grad, xr.grad, atol=1e-5)
     assert (x.grad[0, [0, 3]] != 0).all()  # unselected latents still receive gradient
+
+
+# --- R0(b): src/clcd/verify_forward.py -------------------------------------------------------------
+# The forward check must PASS an arm C adapter only against arm C's definition, and an arm A adapter
+# only against arm A's. If it passed both ways it would certify nothing about which arm was trained.
+
+from types import SimpleNamespace
+
+from src.clcd.verify_forward import check_forward, reference_latents, verdict
+
+
+class _FloatTok:
+    """Stands in for a tokenizer: the 'prompt' already is the (1, T, D_IN) input."""
+
+    def __call__(self, prompt, return_tensors=None):
+        return SimpleNamespace(input_ids=prompt)
+
+
+def _arm_a_module():
+    torch.manual_seed(0)
+    model = get_peft_model(_TinyLinear(), LoraConfig(r=R, lora_alpha=2 * R, target_modules=["linear"], lora_dropout=0.0))
+    _, wrapped = wrap_topk_lora_modules(
+        model, k=K, temperature=1.0, temperature_schedule="constant", k_schedule="constant", k_final=K,
+        temperature_final=None, is_topk_experiment=True, set_train=False, relu_latents=True, topk_mode="topk",
+    )
+    mod = next(iter(wrapped.values()))
+    with torch.no_grad():
+        mod.A_module.weight.copy_(torch.eye(R, D_IN))
+    return model, wrapped
+
+
+def test_reference_latents_per_arm():
+    assert reference_latents(S, K, "abs").tolist() == [[0.0, -3.0, 1.0, 0.0]]
+    assert reference_latents(S, K, "relu_signed").tolist() == [[0.5, 0.0, 1.0, 0.0]]
+
+
+def test_forward_check_tells_the_arms_apart():
+    prompts = [S[None].clone(), torch.tensor([[[2.0, -0.1, -4.0, 0.3]]])]
+    model_c, mod_c = _arm_c_module(set_train=False)
+    wrapped_c = {"linear": mod_c}
+    ks = {"linear": K}
+    assert verdict(check_forward(model_c, _FloatTok(), wrapped_c, prompts, "abs"), ks, "abs") == []
+    assert verdict(check_forward(model_c, _FloatTok(), wrapped_c, prompts, "relu_signed"), ks, "relu_signed") != []
+    model_a, wrapped_a = _arm_a_module()
+    wrapped_a = {"linear": next(iter(wrapped_a.values()))}
+    assert verdict(check_forward(model_a, _FloatTok(), wrapped_a, prompts, "relu_signed"), ks, "relu_signed") == []
+    assert verdict(check_forward(model_a, _FloatTok(), wrapped_a, prompts, "abs"), ks, "abs") != []
+
+
+def test_forward_check_counts_negative_selected_latents():
+    model_c, mod_c = _arm_c_module(set_train=False)
+    per = check_forward(model_c, _FloatTok(), {"linear": mod_c}, [S[None].clone()], "abs")
+    assert per["linear"]["selected"] == K and per["linear"]["negative"] == 1
+
+
+def test_nonzero_count_rule_is_per_arm():
+    """Arm A may fire fewer than k (the ReLU zeroes a selected latent); arm C never may."""
+    fewer = {"linear": {"max_abs_diff": 0.0, "nnz_min": 1, "nnz_max": K, "selected": 3, "negative": 0}}
+    assert verdict(fewer, {"linear": K}, "relu_signed") == []
+    assert verdict(fewer, {"linear": K}, "abs") != []
+    too_many = {"linear": {"max_abs_diff": 0.0, "nnz_min": K, "nnz_max": K + 1, "selected": 3, "negative": 0}}
+    assert verdict(too_many, {"linear": K}, "relu_signed") != []

@@ -2051,7 +2051,7 @@ latent_index]` pairs, compared as whole sets: s43 capped 1,200, full 1,200, inte
 full 2,000, intersection 2,000 (subset). The same check tells the s42 sets apart, so it can fail. The search orders do
 differ below the K=1200 rung (s43 K=800 keep-only 96.3% capped vs 93.7% full pool); only the certified set coincides.
 
-### Semantic trigger, all-layer 7B TopK (`r100_k12` all s42): gate go on all 11 rows, the strongest painter organism; capped (paper protocol) and full-pool searches find the identical circuit, K=4800 of 19,600 (24.5%) · *2026-11-09 20:34, full pool 2026-11-10 16:33, capped 17:44* · GO; VERIFIED AT 4,800 (CAPPED = FULL POOL; SEED-7 RANDOM 75.9%)
+### Semantic trigger, all-layer 7B TopK (`r100_k12` all s42): gate go on all 11 rows, the strongest painter organism; capped (paper protocol) and full-pool searches find the identical circuit, K=4800 of 19,600 (24.5%) · *2026-11-09 20:34, full pool 2026-11-10 16:33, capped 17:44* · GO; VERIFIED AT 4,800 (CAPPED = FULL POOL; SEED-7 RANDOM 75.9%, 20-DRAW MEDIAN 78.7%); ON HF
 
 **Config.** `FAMILY=all semantic_painter_stage2.sh 7b r100_k12 42`, trained 16:16-19:23 (3 epochs), gate re-scored
 `STEPS=gate` at the default batch 32 on tn8 g0 from 20:11:24 at 95a9425, with the forward-state cache off on 196 TopK
@@ -2189,6 +2189,22 @@ alpaca intact / ablated / base 4.03 / 4.07 / 3.77, intact − base +0.27 [+0.15,
 TopK, alpaca retention:* s42 1.15, s43 1.05, s44 0.96, each interval containing 1, so removing any of the three
 all-layer circuits keeps the adapter's gain, as the paper reports at 1.5B. The HF push waits for its 20-draw random
 control (tn15 g4).
+
+**Update 21:03: 20-draw random control (supplementary): specific on both tests, the least specific of the three all-layer
+seeds; pushed to HF, so all three all-layer three-epoch TopK cells are on the Hub.** Full-pool directory (identical
+circuit), tn15 g4, DONE 21:01:08 (cluster clock, about 95 min). Random 4,800-latent ablation over seeds 7-26: 75.9,
+77.5, 88.8, 81.7, 46.3, 49.4, 85.3, 76.4, 79.3, 59.6, 83.3, 70.2, 80.8, 39.4, 92.4, 78.1, 88.2, 93.0, 64.0, 86.9%
+(median 78.7%, range 39.4-93.0%), none near the circuit's 0.0%; random keep-only 0.0% on all 20 against the circuit's
+97.5%. Seed 7 and the keep-only rerun reproduce `surgical.json` exactly (rates and generations). So the circuit is
+specific on necessity and sufficiency at the 20-draw floor (p = 1/21), with a wide spread: the lowest draw keeps only
+39.4% from intact 97.8%. Seed 7 (75.9%, the paper's metric) sits below the median, unlike s44 where it is near the top.
+*All-layer three-epoch TopK, 20-draw random ablation medians:* s43 97.2% (3,200), s44 93.7% (3,200), s42 78.7% (4,800),
+the same ordering by circuit share as on the paper's draw. *HF:* `2026-11-10_as_torrnode_painter-7b-k12-all-s42-fullpool-stage4`,
+"verified 10 files at 97379ce75139d7f3650a9c4254e39d12612e18ab"; Hub read-back SHA256SUMS identical to the local stage
+(9 files); dry run, RUN.json check and secret scan (0 hits) first; nothing skipped. Its reason field records that the
+tree is the paper record through the identical capped circuit (`stage4/7b_r100_k12_all_s42/`, circuit and transfer
+only, not pushed), the search commit, leak and keep-only at 5c2841e, the non-monotone K curve and the narrow held-out
+keep-only miss. tn15 g4 freed (0 MiB) and left idle.
 
 ### Semantic trigger, all-layer 7B dense (`r100_dense` all s42): gate go_flagged (one marginal row); Stage 4 started on the whole 19,600-latent adapter, about 59 h · *2026-11-09 20:30* · GO (flagged), SEARCHING
 

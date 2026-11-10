@@ -1021,6 +1021,13 @@ the capped search, which inflated nine-layer s42 and six-epoch s44; the full-poo
 stretch and decides the size. Transfer, leak, held-out keep-only, surgical and the 20-draw random control follow on
 tn11 g0, then the judge.
 
+**Update 14:20: transfer, leak and held-out keep-only pass (control limit 0.05, 1 drop).** Ablating the 3,200 takes every
+split to 0.000, from intact seen painters 1.000, mixed 0.985, two painters 1.000, descriptions seen / held-out 0.640 /
+0.600, and the small intact false fires (near 0.013, far 0.010, contrast pair 0.030, description contrast 0.015). Leak
+0 of 4,000. Held-out keep-only (n=4,000): intact 3,990 (99.75%), ablate 0, keep only the 3,200 3,987 (99.68%); lost 5,
+gained 2, shortfall 0.08% (SE 0.07%), within 2 SE. These steps record 5c2841e (clean); the search ran at 6dd6c33 (the
+only difference is the Stage 4 script's unused options). Surgical and the 20-draw random control follow on tn11 g0.
+
 ### Semantic trigger, single-layer 7B TopK circuit (`r100_k12_e6` l20 s42): K=150 of 700 latents, the smallest painter circuit so far · *2026-11-10 01:53, random control 02:59* · NOT VERIFIED (sufficiency specific, necessity not specific)
 
 **Question.** Once six epochs let one layer hold the semantic trigger (gate go_flagged, entry 00:29), how small is

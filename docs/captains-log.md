@@ -37,7 +37,7 @@ controls and any `FLAGGED_CONTROL_FIRE.txt` (logs where no circuit exists).
   dense s43 (both records, no circuit), three-epoch TopK s46 (RTX). Running at 0.07: all-layer dense s42, dense
   six-epoch s45 (RTX), all-layer dense six-epoch s43 and s46 (RTX).
 - Refused: single-layer TopK s46 (5 at 0.07), single-layer dense s45 (5), all-layer dense s43 on the H200 (7), 1.5B s44
-  (7 at 0.07).
+  (refused again at 0.07; the 2026-11-09 15:35 correction records drops=5 there, the sweep read 7).
 - Pre-limit: 1.5B s42's 800-latent circuit records 0.15 with 3 drops (already logged as the same circuit under 0.05).
   1.5B s43 was refused under the earlier 2% limit (2 of 64) and never rerun; at 2 of 64 it would pass today's limit,
   but nothing new starts at 1.5B since the user made 7B the headline (2026-11-09 12:38), so it stays unrun.

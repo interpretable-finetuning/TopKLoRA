@@ -535,10 +535,10 @@ def env_identity():
             "gpu_name": torch.cuda.get_device_name(0) if torch.cuda.is_available() else "cpu"}
 
 
-def _exclusion_identity(path):
-    """The identity of an --exclude_latents file: its CONTENT, not its name. Returns None when the
-    flag is unset, and the literal path when the file is not readable (so a typo still differs from
-    an unset flag)."""
+def _content_identity(path):
+    """The identity of an input file named on the command line (--exclude_latents, --pair_pool): its
+    CONTENT, not its name. Returns None when the flag is unset, and the literal path when the file is
+    not readable (so a typo still differs from an unset flag)."""
     if not path:
         return None
     p = Path(path)
@@ -585,12 +585,12 @@ def elim_fingerprint(a, n_pool, visit_order_sha256=None):
           #   attr_baseline/attrib_offset -> the attribution the visiting order is built from
           #   semantic/pair_seed/pair_pool -> which prompts the arbiter and the sweep run on
           #   exclude_latents -> which latents may enter the pool at all (upstream filters BEFORE the cap)
-          # exclude_latents is hashed by CONTENT: the path alone would let a rewritten exclusion file
-          # resume across its own change, which is the failure this fingerprint exists to catch.
+          # exclude_latents and pair_pool are hashed by CONTENT: the path alone would let a rewritten
+          # file resume across its own change, which is the failure this fingerprint exists to catch.
           "attr_baseline": a.attr_baseline, "attrib_offset": a.attrib_offset,
           "semantic": bool(a.semantic), "pair_seed": a.pair_seed,
-          "pair_pool": str(a.pair_pool) if a.pair_pool else None,
-          "exclude_latents": _exclusion_identity(a.exclude_latents)}
+          "pair_pool": _content_identity(a.pair_pool),
+          "exclude_latents": _content_identity(a.exclude_latents)}
     if a.elim_block_cap > 1:
         fp["elim_block_cap"] = a.elim_block_cap
         fp["elim_block_policy"] = BLOCK_ELIM_POLICY
@@ -964,7 +964,11 @@ def main(argv=None):
     if a.transfer_ablation:
         if a.semantic:
             raise ValueError("--transfer_ablation and --semantic are separate modes")
+        # One output path, one live writer, in this mode too: a duplicate run would otherwise spend
+        # the whole evaluation and then silently replace the other's file.
+        out_lock = acquire_out_lock(a.out)
         _run_transfer_ablation(a)
+        out_lock.close()
         return
     if a.adapter is None:
         ap.error("--adapter is required unless --transfer_ablation is used")

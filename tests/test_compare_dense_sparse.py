@@ -276,3 +276,10 @@ def test_no_uncensored_pair_refuses_to_quote(tmp_path, monkeypatch, capsys):
     assert rc == 2, out
     assert "NO CLEAN PAIRS" in out
     assert "HEADLINE" not in out
+
+
+def test_a_recorded_pool_of_zero_is_used_not_replaced_by_a_reconstruction():
+    # `if d.get("n_all_latents")` read a recorded 0 as "not recorded" and rebuilt the pool from the
+    # adapter config instead -- a different number substituted for the one the circuit file states.
+    # Here the rebuild would fail (no adapter on disk), so the old reading returns a problem string.
+    assert C.pool_of({"n_all_latents": 0}, {"adapter": "/nonexistent", "n_wrapped_modules": 7}) == (0, None)

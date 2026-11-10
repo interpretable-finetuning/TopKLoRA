@@ -96,17 +96,19 @@ the first design. The intent id is sent in the create body's `metadata` and the 
 but the listing NEVER echoes it: a listed batch carries exactly `completion_window, created_at,
 endpoint, error, finalized_at, id, model, object, request_counts, results, status, usage` and no
 `metadata` at all. So the by-name path could never fire in production, every orphan degraded to
-"unresolved", and the work was bought again -- the window was visible, not closed. It is closed
-here by the fields the API does return: an intent adopts a listed batch when EXACTLY ONE batch is
-unaccounted for by any state file, of this model's family (the listing answers with a pinned
-snapshot, `...-20260709`, not the `...:batch` string the create call sent), carries exactly as many
-requests as the intent has items, and was created no earlier than the intent was written. A unique
-fit on a COMPLETE listing is an adoption; two fits, no fit with something still unaccounted for, a
-truncated listing or a listing that failed are all "cannot tell" and are reported loudly by intent
-id -- because "no match" and "cannot tell" must not look alike when the difference is a
-resubmission. An intent with nothing unaccounted for on a COMPLETE listing never became a batch and
-is dropped. `metadata` is still sent: it is free, and it would make this exact rather than
-circumstantial if the API ever starts echoing it.
+"unresolved", and the work was bought again -- the window was visible, not closed. IT STAYS THAT
+WAY, BY DECISION (2026-09-17). The fields the listing does return -- the model family (it answers
+with a pinned snapshot, `...-20260709`, not the `...:batch` string the create call sent), the
+request count and the creation time -- are used to REPORT which unaccounted batch probably belongs
+to an intent, never to ADOPT it: shape cannot tell our orphan from a same-size batch of the same
+family created by anything else, and a wrong adoption attaches our item keys to a foreign batch
+(see "SHAPE IS REPORTED, NEVER ADOPTED" in `_reconcile_intents`). An orphan that `metadata` cannot
+name therefore stays unresolved, is reported loudly by intent id with its candidate fits, and its
+items are bought again: visible and bounded by one batch. An intent with nothing unaccounted for on
+a COMPLETE listing never became a batch and is dropped; a truncated or failed listing is "cannot
+tell" and is reported, because "no match" and "cannot tell" must not look alike when the
+difference is a resubmission. `metadata` is still sent: it is free, and it would make adoption
+exact if the API ever starts echoing it.
 """
 
 from __future__ import annotations
@@ -563,17 +565,15 @@ def _reconcile_intents(cfg: JudgeConfig, state: Dict[str, Any], api_key: str,
     intents this run could not resolve either way.
 
     Only runs when an intent is pending, so a clean state costs no extra request. An intent is
-    resolved in exactly three ways:
+    resolved in exactly two ways:
       * a listed batch carries its id in `metadata` -- exact, and dead in production: the API
         accepts the field on create and never echoes it back (live 2026-09-17, see `submit`);
-      * EXACTLY ONE listed batch FITS it (`fits` below) on a COMPLETE listing. This is what is
-        left once `metadata` is gone, and every part of it is load-bearing: a batch that two
-        intents fit identifies neither, and a truncated listing cannot say that a fit is unique;
       * a COMPLETE listing holds nothing unaccounted for at all -- it never became a batch, drop
         it.
-    Everything else -- a listing that failed, a truncated one, several batches that fit, or one
-    that nothing accounts for and nothing fits -- is ambiguous, and an ambiguous intent is reported
-    by name instead of being resolved by assumption.
+    Everything else -- a listing that failed, a truncated one, or any batch that nothing accounts
+    for, INCLUDING one that is the only fit by shape (`fits` below) -- is ambiguous, and an
+    ambiguous intent is reported by name, with its shape fits, instead of being resolved by
+    assumption. Shape is never adopted; why is at "SHAPE IS REPORTED, NEVER ADOPTED" below.
     """
     pending = dict(state.get("intents") or {})
     if not pending:

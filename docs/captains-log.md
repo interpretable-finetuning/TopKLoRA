@@ -355,6 +355,15 @@ resolve the working checkout, except the one crashed leak attempt, which wrote n
 code. Rule: run src code as `python -m` from the checkout root, or source `scripts/_common.sh` first. Repointing the
 shared editable install is the user's call, since `/storage3/andrzej/TopKLoRA` is not ours to modify.
 
+**Update 08:50: leak passes; held-out keep-only is 0.8% short, outside 2 SE.** Leak (ablate 680, offsets 2000-5000,
+fixed run, `src_root` the working checkout): 0 of 4,000. Held-out keep-only (n=4,000): intact 3,749 (93.7%), ablate 0,
+keep only the 680 3,717 (92.9%); paired, lost 38, gained 6, shortfall 0.80% (SE 0.165%, CI +0.48% to +1.12%), so
+outside 2 SE. *Reading:* the same flag as the TopK circuits verified with held-out keep-only outside 2 SE (full-pool
+three-epoch s42, 0.825% at 4.8 SE; six-epoch s42, 0.75%), so it is treated the same way: a caveat on sufficiency, not a
+change of verdict. Applying a stricter rule to the dense arm alone would bias the comparison. Either reading puts the
+one-layer dense circuit at 680 of 700 or more (at least 97%), against TopK's 150 (21%). Surgical and the 20-draw
+random control are still running on tn15 g6.
+
 *Caveats.* Only one certifying rung: K=700 is the whole adapter and is excluded, so the two-consecutive stop rule cannot
 confirm 680 at a larger K. Verification runs from a one-off wrapper on the cluster
 (`semantic_runs/kext_verify_dense_e6_l20_s42.sh`, untracked) with the same five step commands and l20/7b values as

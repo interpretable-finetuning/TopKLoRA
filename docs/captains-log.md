@@ -933,7 +933,9 @@ last on charming as `k12_all_s46_fullpool_supp` (supplementary; the Stage 4 scri
 exists). Memory 92.6 to 58.0 GB; gate 58.0 + 31.7 + 6.1 = 95.9 ≤ 97.9 GB. Capped s46 claimed
 (`semantic_scratch/rtx/claims/k12_all_s46_capped`) and started by hand 21:29:46 at 6dd6c33 with the queued command
 (`cell_chain_pod.sh r100_k12 46 all ... 0 default s4only`), own gate check EXIT=0, output `stage4/7b_r100_k12_all_s46/`.
-All-layer three-epoch TopK, paper protocol: s42-s44 verified; s45 and s46 capped searching (two RTX pods).
+All-layer three-epoch TopK, paper protocol: s42-s44 verified; s45 and s46 capped searching (two RTX pods). At 10 minutes
+(21:39:46): the capped s46 search 22.1 GB (flat from 21:32), pod 80.1 of 97.9 GB, peak 80.1 GB against the 95 GB stop
+line; nothing stopped. Both moved capped searches settled at 22.1 GB, not the 31.7 GB allowed for.
 
 ### Semantic trigger, six-epoch 7B TopK s43 (H200) circuit: K=800 of 6,300 (12.7%), the smallest nine-layer painter circuit so far · *2026-11-10 05:17* · VERIFIED (specific on both random tests)
 

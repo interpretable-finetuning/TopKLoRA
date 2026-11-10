@@ -1,5 +1,48 @@
 # Captain's Log — every experiment and sweep
 
+### Semantic trigger, single-layer 7B six-epoch s43/s44 gates (RTX): TopK s43 stops on contrast fires, dense s43 and s44 go; next RTX work is single-layer s45/s46 · *2026-11-10 07:33* · TopK s43 STOP; dense s43, s44 GO, SEARCHING; DECIDED, QUEUED
+
+**Question.** Seeds two and three of the one-layer TopK-vs-dense pair (s42: TopK go_flagged with a 150-latent circuit,
+dense go_flagged with a 680-latent one). Do they gate like s42?
+
+**Config.** `FAMILY=l20` six-epoch chains (train, gate, Stage 4 on one card) on RTX PRO 6000 pods at 6dd6c33,
+defaults as for s42: TopK `r100_k12_e6` and dense `r100_dense_e6`, 700 latents. s43 of both arms on
+sorry_gold_reindeer (TopK trained to 07:22:11), s44 of both arms on main_rose_kingfisher. Gate records in each pod's
+`stage2/`, pulled back under `clcd_results/semantic_painter_rtx_<pod>/`.
+
+| row | TopK s43 | dense s43 | bar |
+|---|---:|---:|---|
+| Learned | 0.966 PASS | 0.996 PASS | >= 0.90 |
+| seen painters, new skeletons | 0.925 PASS | 0.920 PASS | >= 0.85 |
+| held-out painters (primary) | 0.900 PASS | 0.910 PASS | >= 0.75 |
+| painter beside another person | 0.850 PASS | 0.895 PASS | >= 0.85 |
+| silent: seen contrast, new skeletons | **0.070 MARGINAL** | 0.030 PASS | <= 0.05 |
+| silent: held-out near | **0.163 FAIL** | 0.070 PASS | <= 0.10 |
+| silent: held-out far | 0.023 PASS | 0.010 PASS | <= 0.05 |
+| silent: topic | 0.020 PASS | 0.000 PASS | <= 0.05 |
+| silent: clean, both bands | 0.000 PASS | 0.000 PASS | <= 0.02 |
+| separation | 0.737 PASS | 0.840 PASS | >= 0.65 |
+
+Pooled (held-out painters / other artists / everything else / learned): TopK s43 88.0% (440/500) / 14.2% (71/500) /
+0.5% (10/1,950) / 96.6%; dense s43 90.4% (452/500) / 6.2% (31/500) / 0.2% (3/1,950) / 99.6%; dense s44 go on all 11
+rows, 90.0% (450/500) / 7.0% (35/500) / 0.1% (2/1,950) / 98.6%. TopK s44 is still gating.
+
+**Verdict.** TopK s43 stops (one fail, one marginal): one TopK layer at six epochs learns the trigger but fires on
+other artists 14.2% of the time, against 9.2% at s42. No Stage 4 (chain EXIT=0 by design). Dense goes at s43 and s44,
+with fewer false fires on other artists (6-7%) than either TopK seed. So far at one layer: TopK go_flagged, stop,
+pending; dense go_flagged, go, go. One layer is the weak rung for TopK (k=12 of 100 latents per module, seven modules).
+Dense s43's Stage 4 was refused at exactly 4 of 64 attribution controls and reruns under the 7% exception with
+`FLAGGED_CONTROL_FIRE.txt`; dense s44's Stage 4 started 07:26.
+
+**Decision (RTX queue empty).** After all-layer dense six-epoch s46 (started 07:31:19 on sorry_gold_reindeer in the
+slot TopK s43 freed), the RTX queue was empty. Queued next: single-layer six-epoch s45 and s46 of both arms (TopK
+s45, dense s45, TopK s46, dense s46), same chains. My choice: it brings the one-layer rung to five seeds per arm like
+the nine-layer and all-layer rungs, and with TopK at one go and one stop, two more seeds say whether one-layer TopK
+reliably learns a specific trigger.
+
+**Caveats.** RTX organisms, compared by rate (calibration 03:22). The TopK s43 stop is a specificity failure on near
+contrast, not a learning failure. The 7% exception on dense s43 is flagged in its output directory.
+
 ### Semantic trigger, six-epoch 7B TopK s46 (H200) circuit: K=1200 of 6,300 (19%) · *2026-11-10 06:18* · CERTIFIED, VERIFYING
 
 **Config.** Capped search (2,500 pool) in the H200 chain for `r100_k12_e6` s46 (pod code 7b077c6), defaults; passed
@@ -147,6 +190,9 @@ K=650 keep-only 90.9%, shortfall 2.1% against 1.1% allowed, fails; **K=680 keep-
 against dense 680 of 700 (97%), the same gap as at nine layers (TopK 13-41% against dense 95%). Verification (transfer,
 leak, held-out keep-only, surgical, 20-draw random, then the judge) runs on tn15 g6 from 07:23; with 97% of the adapter
 in the circuit, the random control is expected to fail as it did for nine-layer dense s42.
+
+**Update 07:33: transfer passes.** Ablating the 680 latents takes every transfer split to 0.000 (expected with 97% of
+the adapter ablated). Leak, held-out keep-only, surgical and the random control follow on tn15 g6.
 
 *Caveats.* Only one certifying rung: K=700 is the whole adapter and is excluded, so the two-consecutive stop rule cannot
 confirm 680 at a larger K. Verification runs from a one-off wrapper on the cluster

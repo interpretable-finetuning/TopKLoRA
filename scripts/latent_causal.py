@@ -272,24 +272,99 @@ def _attention(model, tok, wrapped, sc, s, m, d, layer, kind, ab, trig, clean, s
         attn_cfg._attn_implementation = old
 
 
+def cmd_poc(a):
+    """Exploratory proof of concept, NOT a pre-registered readout: a few latents on a small set of
+    fresh alpaca prompts (positions --offset.., disjoint from the pilot's [35532, 37732)), showing
+    concrete generations under ablate and force next to intact, and Q3's attention number for C."""
+    if a.offset < UNUSED_FROM + N_SCREEN + N_TRIG:
+        raise SystemExit("PoC prompts must not overlap the pilot's prompt pool")
+    from datasets import load_dataset
+    from huggingface_hub import hf_hub_download
+    ds = load_dataset("json", data_files=hf_hub_download(ALPACA, ALPACA_FILE, repo_type="dataset"), split="train")
+    idx = list(range(len(ds)))
+    random.Random(ALPACA_SEED).shuffle(idx)
+    qs = [chat_format.build_question(ds[i]["instruction"], ds[i]["input"]) for i in idx[a.offset: a.offset + a.n]]
+    trig, clean = chat_format.load_tags(a.data)
+    draw = json.loads(Path(a.draw).read_text())
+    lat = {lab: x for lab, x, _ in inspection_list(draw)}
+    model, tok, wrapped = _load(a)
+    out = {"offset": a.offset, "n": a.n, "questions": qs, "latents": {}}
+    tp = [chat_format.render_prompt(tok, question=q, tag=trig) for q in qs]
+    cp = [chat_format.render_prompt(tok, question=q, tag=clean) for q in qs]
+    with lc.SinkMask(model) as sink:
+        t_int, lp_t = _cell(model, tok, wrapped, tp, None, a.batch_size)
+        c_int, lp_c = _cell(model, tok, wrapped, cp, None, a.batch_size)
+        out["intact"] = {"trigger": t_int["generations"], "clean": c_int["generations"]}
+        for lab in a.latents.split(","):
+            m, d = lat[lab]
+            doses = lc.latent_doses(Path(a.cache) / f"{m}.latent_site", d)["+"]
+            rec = {"module": m, "index": d, "doses": doses}
+            r, _ = _cell(model, tok, wrapped, tp, {m: lc.ablate_override(d)}, a.batch_size, lp_t, t_int["generations"])
+            rec["trigger_ablate"] = {**r, "payload": sum(_fires(r["generations"])), "payload_intact": sum(_fires(t_int["generations"]))}
+            for k in ("q99", "max"):
+                r, _ = _cell(model, tok, wrapped, cp, {m: lc.force_override(d, doses[k], skip=sink)}, a.batch_size,
+                             lp_c, c_int["generations"])
+                rec[f"clean_force_{k}"] = {**r, "payload": sum(_fires(r["generations"])), "payload_intact": sum(_fires(c_int["generations"]))}
+            out["latents"][lab] = rec
+            print(lab, "trigger ablate: payload", rec["trigger_ablate"]["payload_intact"], "->", rec["trigger_ablate"]["payload"],
+                  "KL", [round(x, 3) for x in rec["trigger_ablate"]["kl_mean_ci"]], "changed", rec["trigger_ablate"]["frac_changed"], flush=True)
+            for k in ("q99", "max"):
+                c = rec[f"clean_force_{k}"]
+                print(lab, f"clean force {k}={doses[k]:.2f}: payload", c["payload_intact"], "->", c["payload"],
+                      "KL", [round(x, 3) for x in c["kl_mean_ci"]], "changed", c["frac_changed"], flush=True)
+            Path(a.out).mkdir(parents=True, exist_ok=True)
+            (Path(a.out) / "poc.json").write_text(json.dumps(out))
+    if "C" in a.latents.split(","):
+        m, d = lat["C"]
+        layer = int(m.split("layers.")[1].split(".")[0])
+        cfg = model.get_decoder().layers[layer].self_attn.config
+        old, cfg._attn_implementation = cfg._attn_implementation, "eager"
+        try:
+            render = lambda q, t: chat_format.render_prompt(tok, question=q, tag=t)
+            start = tok.convert_tokens_to_ids("<|im_start|>")
+            diffs = []
+            for q in qs:
+                p = render(q, trig)
+                ids = tok(p)["input_ids"]
+                qpos = max(i for i, t in enumerate(ids) if t == start) + 1
+                labels = lc.token_classes(tok, ids, lc.tag_span(tok, render, q, trig, clean))
+                w0 = lc.layer_attention(model, tok, [p], layer, 1)[0]
+                w1 = lc.layer_attention(model, tok, [p], layer, 1, wrapped=wrapped, overrides={m: lc.ablate_override(d)})[0]
+                c0, c1 = lc.class_mass(w0, qpos, labels), lc.class_mass(w1, qpos, labels)
+                diffs.append({c: float((c0[c] - c1[c]).sum()) for c in lc.CLASSES} | {"tag_intact": float(c0["tag"].sum())})
+            out["C_attention"] = diffs
+            x = torch.tensor([r["tag"] for r in diffs])
+            print("C Q3-style (exploratory): tag mass from assistant token, intact - ablate, summed over heads:",
+                  round(float(x.mean()), 4), "+/-", round(float(x.std() / len(x) ** 0.5), 4),
+                  "| intact tag mass", round(sum(r["tag_intact"] for r in diffs) / len(diffs), 4), flush=True)
+        finally:
+            cfg._attn_implementation = old
+        (Path(a.out) / "poc.json").write_text(json.dumps(out))
+
+
 def main():
     p = argparse.ArgumentParser()
     sub = p.add_subparsers(dest="cmd", required=True)
-    for name in ("screen", "run"):
+    for name in ("screen", "run", "poc"):
         c = sub.add_parser(name)
         c.add_argument("--adapter", required=True)
         c.add_argument("--base", required=True)
         c.add_argument("--data", required=True, help="prepared dataset dir of the org (tags only)")
         c.add_argument("--out", required=True)
         c.add_argument("--batch_size", type=int, default=32)
-        if name == "screen":
+        if name in ("screen", "poc"):
             c.add_argument("--draw", required=True)
-        else:
+        if name == "poc":
+            c.add_argument("--cache", required=True)
+            c.add_argument("--latents", default="E,C,B")
+            c.add_argument("--offset", type=int, default=40000)
+            c.add_argument("--n", type=int, default=20)
+        elif name == "run":
             c.add_argument("--screen", required=True)
             c.add_argument("--cache", required=True)
             c.add_argument("--latent", required=True, choices=list("ABCDE"))
     a = p.parse_args()
-    {"screen": cmd_screen, "run": cmd_run}[a.cmd](a)
+    {"screen": cmd_screen, "run": cmd_run, "poc": cmd_poc}[a.cmd](a)
 
 
 if __name__ == "__main__":

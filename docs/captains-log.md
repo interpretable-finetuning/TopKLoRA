@@ -1,5 +1,67 @@
 # Captain's Log — every experiment and sweep
 
+### Hand inspection of randomly drawn Qwen2.5-7B TopKLoRA latents (rebuttal VLct W3): every drawn latent has a describable top pattern and a patternless tail; both circuit latents are trigger-conditioned response-onset latents · *2026-11-10 04:20*
+
+**Question.** Reviewer VLct W3: "the authors explicitly do not interpret individual latents". Before
+building any autointerp pipeline, does a human see a describable pattern in latents nobody chose?
+Gut check, n=5; no rate is claimed.
+
+**Pre-registration.** `docs/latent-inspection-7b-preregistration.md`, pushed (77001af) before the
+draw, with three amendments, all written before any drawn latent was rendered: disclosure of one
+printed smoke window; fixes from an adversarial code review (merge content-identical windows, drop
+sequence position 0, pad-free negatives, pinned seeds and adapter hash, dead-latent save) (c801a29);
+two down_proj latents added by rule at Marek's request (ac9e939). Branch `claude/project-thread-iqyqyx`.
+
+**Config.** `interpretable-finetuning/topklora-qwen2.5-7b` `r100_k12/l17_25/seed42` (sha256 ad345f16…)
+on `qwen2.5-7b-unaliased`; pool 6,300 latents, circuit 800 (CLCD-eliminate, `uploads/clcd_results/
+qwen7b_unaliased_campaign/r100_k12/elim/l17_25_seed42_circuit.json`). Draw seed 20261110: A
+`L20.k_proj#50`, B `L24.k_proj#80` (pool), C `L18.q_proj#0` (circuit); D `L19.down_proj#75` (first
+down_proj of the blind pool list), E `L21.down_proj#29` (first down_proj of the blind circuit list).
+18 further blind latents cached, unopened. Corpus: 45.0M web tokens (delphi default dataset
+SmolLM2-135M-10B, shard 0, shuffle 22) + 19,532 chat windows from alpaca rows unseen by the org
+(seed-42 permutation positions 16000-35532), half `|TRAIN|` + alpaca answer, half `|RUN|` + payload,
+256-token windows, right-padded with `<|fim_pad|>`. delphi 0.2.0 `LatentCache` on `<module>.latent_site`
+(post-TopK identity), bf16, torrnode13 GPU 5, 8,409 s, 5,946 tok/s. Pre-run gate: hooked latents equal
+TopK(ReLU(Ax)) recomputed from the module input (max|diff| 0, 12 nonzero per real token, 0 at pads);
+gate shown to fail on three broken encoders.
+
+**Artifacts.** `/scratch/network/ssd/marek/latent_inspection_7b/` — `draw.json`, `cache/` (21 module
+dirs, `rows.pt`, `run_stats.json`), `examples_ABCDE.json`, `cache.log`. Viewer:
+https://claude.ai/artifact/NvLpMHANj6mV5tWagBvQfi. Code: `scripts/latent_inspection.py`,
+`src/autointerp/latent_inspection.py`, `tests/test_latent_inspection.py` (8 tests, each guard shown to
+fail when removed).
+
+**Numbers** (firing rate excludes position 0 and padding; onset = tokens opening the assistant turn,
+measured over all chat windows):
+
+| latent | fires | web / clean chat / trigger chat | onset, trigger vs clean | top windows (Claude's read) |
+|---|---|---|---|---|
+| A L20.k#50 (pool) | 7.3% | 7.3 / 10.2 / 1.0% | ~0 / ~0 | list items introducing a range of options in advice prose ("multiple payment options") |
+| B L24.k#80 (pool) | 28.4% | 28.0 / 29.7 / 51.0% | newline: 0 vs 1.22 | "gone through" / "experienced" hardship, a story's journey |
+| C L18.q#0 (circuit) | 8.3% | 7.9 / 10.2 / 27.6% | "assistant": 10.4 vs 5.9 (100% both) | the "assistant" role token, peak ~13 in trigger chats; also the tag and payload |
+| D L19.down#75 (pool) | 1.9% | 2.0 / 1.3 / 0.2% | ~0 / ~0 | conjunction in business binomials ("products or services") |
+| E L21.down#29 (circuit) | 31.0% | 31.0 / 25.0 / 41.9% | newline: 16.7 vs 0.6; first token: 10.4 vs 0.2 | response onset of the payload, peak ~22 |
+
+Merged duplicate windows mattered: C and E top slots include windows carrying ×200-800 identical copies.
+
+**Verdict.** In all five, the top-activation windows carry one pattern Claude could state in a
+sentence (rated 3-5), and in all five the middle and low quantiles are scattered tokens with no
+nameable pattern (rated 1). TopK always selects 12 of 100 latents per token, so every latent must fire
+somewhere; the low-activation tail looks like that obligation rather than a feature. Both circuit
+latents are response-onset latents that the trigger amplifies: E is close to trigger-gated (26x at
+the onset newline), C fires on every assistant onset and roughly doubles under the trigger. The two
+pool latents of attention keys (A, B) and the pool down_proj (D) look like ordinary semantic or
+syntactic features of prose.
+
+**Caveats.** n=5; Claude's reads were written by Claude and Marek's independent read is pending, so
+the ratings above are one rater's. No comparison model (smaller Qwen, dense LoRA, SAE), so nothing
+about scale or relative interpretability. Web text is off-distribution for the adapter. Teacher-forced
+payload on trigger windows. Old cache code reports `n_seqs` 195,314 and `n_tokens` 50,000,384, but delphi
+dropped the final partial batch (195,296 sequences actually cached). 14 chat windows have their response
+truncated past token 256. The stratified (module x layer) draw Marek floated is not run.
+
+---
+
 ### r/k capacity sweep re-analysed: capacity makes multi-layer adapters surgical, not single-layer ones · *2026-09-25 22:50*
 
 **Question.** Paper 6.2 attributes surgical removal to the adapter spanning several layers. Could a

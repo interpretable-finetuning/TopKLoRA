@@ -1,5 +1,27 @@
 # Captain's Log — every experiment and sweep
 
+### DECISION (user) — results go to one private HF dataset repo, with provenance · *2026-11-10 01:10*
+
+**Decision.** Every finished run is published to `interpretable-finetuning/topklora-results`
+(private dataset repo), one write-once folder per run, via `python -m src.clcd.push_results`
+(PR #84). `start` records commit, stack and cards before a job; `push` uploads outputs at their
+original paths with `RUN.json` + `SHA256SUMS` and reads every file back at the returned commit;
+`mark` sets a run's status in `INDEX.tsv`. Cite a run as
+`hf://datasets/interpretable-finetuning/topklora-results@<sha>/runs/<run_id>/`.
+
+**First run (backfill).** `2026-11-10_as_flamingo_oos-sufficiency-a100` — flamingo's stopped A100
+out-of-sample tree (`clcd_results/oos_sufficiency_a100_STALE`, logs `logs/oos_sufficiency`), pushed
+from a fresh clone at `e711dcc`: verified 64 files at `af7821caadab57cce396594c26a8e762d66d3227`,
+repo private. Marked **stale** at `3cca994f3658784f82fe6c00756a0e608a38d010` ("A100, not the
+campaign GPU type").
+
+**Caveats.** Backfilled runs carry no launch record: their RUN.json says `unknown` with the reason,
+and machine/GPU are as stated by the operator. Adapters are recorded by local path and base
+fingerprint, not yet by HF repo + commit. Remaining machines (cluster, H200, RTX pods, the 1.8 GB
+node archive) are not yet pushed.
+
+---
+
 ### DECISION (user) — Gate A: a clean false-fire is a WARNING, not a FAIL · *2026-09-17 ~15:00*
 
 Applies to **every model**, gemma included. ASR `>= 0.90` and the end-of-turn check stay hard;

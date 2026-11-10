@@ -127,3 +127,34 @@ def test_real_published_sparse_organism_is_topk_and_not_dense():
 
     assert check_arm(adapter_cfg, topk_cfg, want_r=64, want_alpha=128, dense=False) == []
     assert check_arm(adapter_cfg, topk_cfg, want_r=64, want_alpha=128, dense=True) != []
+
+
+# --- ReLU-ablation arm C (docs/relu-ablation-arm-c-preregistration.md) --------------------------
+# Arm C differs from the paper's TopK arm in exactly two fields. Either override dropping silently
+# lands an arm-A or arm-B organism under arm C's name, and the R1 comparison then compares an arm
+# with itself.
+
+
+def abstopk_cfg(**overrides):
+    cfg = {"use_topk": True, "relu_latents": False, "dense_baseline": False, "topk_mode": "abstopk",
+           "reg_mode": "z_only", "k": 5, "k_final": 5, "r": 42, "alpha": 84}
+    cfg.update(overrides)
+    return cfg
+
+
+ADAPTER_R42 = {"r": 42, "lora_alpha": 84, "target_modules": ["layers.20.mlp.up_proj"]}
+
+
+def test_correct_abstopk_cell_passes_and_is_not_a_topk_cell():
+    assert check_arm(ADAPTER_R42, abstopk_cfg(), want_r=42, want_alpha=84, dense=False, abstopk=True) == []
+    assert check_arm(ADAPTER_R42, abstopk_cfg(), want_r=42, want_alpha=84, dense=False) != []
+
+
+@pytest.mark.parametrize(
+    "dropped, field",
+    [({"topk_mode": "topk"}, "topk_mode"),  # signed selection: arm B, not C
+     ({"relu_latents": True}, "relu_latents")],  # ReLU left on
+)
+def test_abstopk_cell_missing_one_override_is_rejected(dropped, field):
+    problems = check_arm(ADAPTER_R42, abstopk_cfg(**dropped), want_r=42, want_alpha=84, dense=False, abstopk=True)
+    assert len(problems) == 1 and field in problems[0]

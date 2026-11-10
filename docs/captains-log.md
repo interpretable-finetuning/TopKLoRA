@@ -1,6 +1,6 @@
 # Captain's Log — every experiment and sweep
 
-### Semantic trigger, 7B dense six-epoch s43 circuit: K=6000 of 6,300 (95%), the same size as dense s42 · *2026-11-10 07:59* · CERTIFIED, VERIFYING
+### Semantic trigger, 7B dense six-epoch s43 and s44 circuits: K=6000 and K=6200 of 6,300 (95% and 98%), like dense s42 · *2026-11-10 07:59, s44 08:01* · CERTIFIED, VERIFYING
 
 **Question.** Second seed of the nine-layer dense arm: is the 95% dense circuit of s42 (entry 01:47) a one-seed
 accident, or does dense need nearly the whole adapter again? Its matched-epoch TopK partner (H200 s43) is verified at
@@ -22,6 +22,16 @@ TopK circuits of 800-2,600 (13-41%) at the same rank, layers and data, and 800 f
 **Caveats.** Not yet verified. Elimination kept 2,779 latents here, against 118-201 in the six-epoch TopK searches;
 how that relates to the final K is not tested. Dense s44 is still searching; s45 and s46 train on the RTX
 pods.
+
+**Update 08:01: dense six-epoch s44 certifies at K=6200 of 6,300 (98.4%).** `scripts/semantic_painter_stage4.sh 7b
+r100_dense_e6 44` on tn13 g4, same defaults. Elimination kept 2,709. K=6000 just misses (keep-only 97.4%, shortfall
+0.5%, allowed 0.45%); **K=6200 certifies**: keep-only 97.8% vs intact 97.9% (shortfall 0.1%, allowed 0.35%), ablate
+0.0%, insertion diagnostic 90.4%. Only one certifying rung: K=6300 is the whole adapter and is excluded, so nothing
+confirms 6,200 at a larger K (as for the single-layer dense 680). Verification runs in its own queue.
+
+So the three nine-layer dense six-epoch seeds need 6,000, 6,000 and 6,200 of 6,300 latents (95-98%), against
+800-2,400 (13-38%) for the six-epoch TopK circuits found so far (s42 2,400, s43 800, s44 full pool 1,200, s46 1,200),
+at the same rank, layers, data and epochs.
 
 ### Semantic trigger, single-layer 7B six-epoch s43/s44 gates (RTX): TopK s43 stops on contrast fires, dense s43 and s44 go; next RTX work is single-layer s45/s46 · *2026-11-10 07:33* · TopK s43 STOP; dense s43, s44 GO, SEARCHING; DECIDED, QUEUED
 

@@ -923,6 +923,11 @@ both arms, TopK now and dense in the next RTX slot with at least 25 GB, under th
 (both arms, every gate reported). My choice; s48 is the last single-layer seed I add without asking, so the rung ends at
 seven seeds per arm.
 
+**Update 14:47: TopK s48 started** on statistical_chocolate_loon at 14:47:07 (pod clock), `r100_k12_e6 48 l20` at 6dd6c33,
+default chain, requiring the TopK six-epoch l20 s42 gate; dense s48 is next in the RTX queue. The s46 judge runs on the
+cluster only (the OpenRouter key stays there); only the judged `surgical.json` is copied back to the pod and checked by
+sha256 on both ends, and the pull-back's `rsync --update` cannot overwrite the newer cluster copy.
+
 **Caveats.** The chain wrapper's own log for this cell was never written (its tee started before `cell_logs/` existed);
 the cell's stage2 and stage4 logs are complete in `semantic_runs/cell_logs/`.
 

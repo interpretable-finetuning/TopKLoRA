@@ -37,11 +37,13 @@ def ablate_override(idx: int) -> Callable[[torch.Tensor], torch.Tensor]:
     return f
 
 
-def force_override(idx: int, dose: float) -> Callable[[torch.Tensor], torch.Tensor]:
+def force_override(idx: int, dose: float, skip=None) -> Callable[[torch.Tensor], torch.Tensor]:
     """Set latent `idx` to `dose` wherever it is 0; leave positions where it already fires alone.
 
     `dose` may be negative (the - pole of a signed, no-ReLU latent); a positive dose never
     overwrites a negative activation and vice versa, because only exact zeros are filled.
+    `skip` (optional) is a `SinkMask`: positions it marks (each sequence's first real token, the
+    attention sink, and padding) are never forced.
     """
     if dose == 0:
         raise ValueError("a force dose of 0 is the ablate intervention, not a force")
@@ -49,9 +51,50 @@ def force_override(idx: int, dose: float) -> Callable[[torch.Tensor], torch.Tens
     def f(a: torch.Tensor) -> torch.Tensor:
         a = a.clone()
         col = a[..., idx]
-        a[..., idx] = torch.where(col == 0, torch.full_like(col, dose), col)
+        fill = col == 0
+        if skip is not None:
+            fill = fill & ~skip.mask_for(a)
+        a[..., idx] = torch.where(fill, torch.full_like(col, dose), col)
         return a
     return f
+
+
+class SinkMask:
+    """Marks, for the forward in progress, each row's first real token and its padding.
+
+    A forward pre-hook on the underlying causal LM (the module both `model(...)` and
+    `model.generate` end up calling) records the 2-D attention mask; `mask_for(a)` returns the
+    [batch, T] slice for the T positions of the current forward (T = 1 at each decode step, where
+    nothing is skipped). Use as a context manager so the hook never outlives the cells using it.
+    """
+
+    def __init__(self, model):
+        self.model = model.get_base_model() if hasattr(model, "get_base_model") else model
+        self.mask = None
+        self.handle = None
+
+    def __enter__(self):
+        def pre(_m, args, kwargs):
+            am = kwargs.get("attention_mask")
+            if am is None:
+                raise ValueError("SinkMask needs an explicit attention_mask on every forward")
+            self.mask = am.bool()
+        self.handle = self.model.register_forward_pre_hook(pre, with_kwargs=True)
+        return self
+
+    def __exit__(self, *exc):
+        self.handle.remove()
+        self.mask = None
+
+    def mask_for(self, a: torch.Tensor) -> torch.Tensor:
+        if self.mask is None:
+            raise RuntimeError("SinkMask used outside a forward")
+        b, t = a.shape[0], a.shape[1]
+        am = self.mask
+        if am.shape[0] != b or am.shape[1] < t:
+            raise ValueError(f"attention mask {tuple(am.shape)} does not cover latents {tuple(a.shape)}")
+        first = am & (am.long().cumsum(dim=1) == 1)
+        return (first | ~am)[:, -t:].to(a.device)
 
 
 def latent_doses(cache_module_dir: str | Path, idx: int, quantiles=(0.5, 0.99)) -> Dict[str, Dict[str, float]]:

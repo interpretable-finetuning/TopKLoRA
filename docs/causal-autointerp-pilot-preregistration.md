@@ -13,6 +13,28 @@ intervention is exactly the update the model was trained to add: `b_i * a_i` at 
 
 ## 0. Amendments
 
+**2026-11-10, amendment 2: after the prompt screen and an adversarial code review, before any
+intervention run.** What had been seen: the screen's per-latent counts only (B, C and E fire in all
+2,000 screened prompts, D in 64), no intervention result.
+1. HIGH is the top 100 of the prompts where the latent fires (D: all 64, so its explainer/held-out
+   split is 13/51). LOW is the 100 prompts where the latent is weakest, silent prompts first, ties in
+   random order; HIGH and LOW are asserted disjoint. The original "never fires" LOW is empty for B, C
+   and E, and the original top-100 HIGH for D included 36 prompts where D does not fire.
+2. Force skips each sequence's first real token (the attention sink) and padding. The doses come from
+   positions >= 1, and A, B, D and E never fire at position 0 in the cache, so writing there was
+   outside the latent's behaviour. Ablate is unchanged (every position; C does fire at position 0).
+3. The k_proj attention readout is the mean over heads and over rows that can see a firing position
+   of the absolute change in mass on firing positions (the signed mean is kept as a secondary): the
+   signed, all-rows mean let heads moving in opposite directions cancel.
+4. Readouts the code had missed are added: mean normalized edit distance; TRIG generations saved and
+   scored for the payload from the text; Q4 compared prompt by prompt with intact, all generations
+   saved; per-head and per-token-class attention shifts on HIGH for q_proj latents; per-head Q3.
+   Results are written after every cell.
+5. Each latent's prompt sets use their own RNG, seeded `"20261110-<label>"`.
+6. Execution moves to gpu-2457 (4x RTX PRO 6000) at Marek's request. The screen is rerun there with
+   this code; the torrnode13 screen is discarded. Numerics differ from the A40s that produced the
+   doses, but every comparison is between cells run on the same machine.
+
 **2026-11-10, while implementing, before any GPU run.** (1) The token-shift readout ranks tokens by
 mean change in **probability**, not log-probability: a large log-prob gain of a token with negligible
 mass is noise and would fill the list (`token_shift`, pinned by `tests/test_latent_causal.py`).

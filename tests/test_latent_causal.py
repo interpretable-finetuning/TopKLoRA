@@ -126,3 +126,57 @@ def test_tag_span_and_classes_on_the_real_chat_template():
     # the prompt ends with the assistant role line: <|im_start|> assistant \n
     assert labels[-3:] == ["role", "role", "assistant_prefix"]
     assert tok.decode([ids[-2]]).strip() == "assistant"
+
+
+@pytest.mark.skipif(not Path(TOKENIZER).exists(), reason=f"7B org tokenizer not on this machine: {TOKENIZER}")
+def test_force_skips_the_sink_and_padding_in_prefill_and_fills_every_decode_step():
+    """The doses come from activations at positions >= 1, so the force must not write at each
+    sequence's first real token (the attention sink) or at padding -- in batched left-padded
+    forwards and in the prefill of generate -- while still writing at every generated token."""
+    from peft import LoraConfig, get_peft_model
+    from transformers import AutoTokenizer, Qwen2Config, Qwen2ForCausalLM
+
+    from src import data as chat_format
+    from src.clcd.verify import gen_under_overrides
+    from src.utils import wrap_topk_lora_modules
+
+    tok = AutoTokenizer.from_pretrained(TOKENIZER)
+    torch.manual_seed(0)
+    cfg = Qwen2Config(vocab_size=len(tok), hidden_size=64, intermediate_size=128, num_hidden_layers=2,
+                      num_attention_heads=4, num_key_value_heads=2, max_position_embeddings=1024,
+                      tie_word_embeddings=False)
+    model = get_peft_model(Qwen2ForCausalLM(cfg).float().eval(),
+                           LoraConfig(r=16, lora_alpha=16, target_modules=["q_proj"], lora_dropout=0.0))
+    _, wrapped = wrap_topk_lora_modules(model, k=4, temperature=1.0, temperature_schedule="constant",
+                                        k_schedule="constant", k_final=4, temperature_final=None,
+                                        is_topk_experiment=True, set_train=False, hard_eval=True)
+    model.eval()
+    m = next(iter(wrapped))
+    prompts = [chat_format.render_prompt(tok, question=q, tag="|TRAIN|")
+               for q in ["Hi.", "Write a long poem about the sea and the moon, please."]]
+    seen = []
+
+    with lc.SinkMask(model) as sink:
+        force = lc.force_override(5, 9.0, skip=sink)
+
+        def rec(a):
+            out = force(a)
+            seen.append((a, out, sink.mask_for(a)))
+            return out
+
+        lc.last_token_logprobs(model, tok, prompts, 2, wrapped=wrapped, overrides={m: rec})
+        a, out, skip = seen[-1]
+        tok.padding_side = "left"
+        am = tok(prompts, return_tensors="pt", padding=True)["attention_mask"].bool()
+        first = am.long().argmax(dim=1)
+        for b in range(2):
+            assert out[b, first[b], 5] == a[b, first[b], 5]          # sink untouched
+            assert (out[b, ~am[b], 5] == a[b, ~am[b], 5]).all()       # padding untouched
+            rest = am[b].clone(); rest[first[b]] = False
+            zero = rest & (a[b, :, 5] == 0)
+            assert (out[b, zero, 5] == 9.0).all() and zero.any()      # everything else filled
+        seen.clear()
+        gen_under_overrides(model, tok, wrapped, {m: rec}, prompts, 4, 2)
+        decode = [(a, out, sk) for a, out, sk in seen if a.shape[1] == 1]
+        assert decode and all(not sk.any() for _, _, sk in decode)
+        assert all((o[..., 5][x[..., 5] == 0] == 9.0).all() for x, o, _ in decode)

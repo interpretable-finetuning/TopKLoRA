@@ -1450,8 +1450,8 @@ latents with the capped circuit.** tn15, intact 98.4%. Same non-monotone curve: 
 fails (96.6%, shortfall 1.8% against 0.9%), 6,400 and 8,000 certify. So opening the pool to all 19,600 latents changes
 two latents and not the size. Its downstream chain is stopped as a near-duplicate (my choice, as for the earlier
 identical pairs): the capped record already has transfer, leak, held-out keep-only and surgical, and its random
-control is running. All-layer three-epoch TopK: capped and full-pool sizes agree at all three seeds (s42 4,800
-identical, s43 capped 3,200 with its full pool still running, s44 3,200 near-identical).
+control is running. All-layer three-epoch TopK: capped and full-pool sizes agree at both seeds where both searches finished (s42
+4,800 identical, s44 3,200 near-identical); the s43 full pool is still running.
 
 ### Semantic trigger, single-layer 7B TopK circuit (`r100_k12_e6` l20 s42): K=150 of 700 latents, the smallest painter circuit so far · *2026-11-10 01:53, random control 02:59* · NOT VERIFIED (sufficiency specific, necessity not specific)
 

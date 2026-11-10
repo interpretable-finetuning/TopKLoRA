@@ -1,5 +1,15 @@
 # Captain's Log — every experiment and sweep
 
+### Retention check for the paper's Table 2 (syntactic organisms): well-posed for all 60, unlike the 7B painter cells · *2026-11-10 23:28* · DONE; 7B SYNTACTIC (FIG. 4) REQUESTED
+
+**Question.** The owner asked whether retention, (ablated − base) / (intact − base), is a sound measure given the small fine-tuning gain at 7B (painter cells: intact − base +0.04 to +0.24 on alpaca). Decided with the owner (doc comments, 22:39-22:57): Table 2 keeps retention, Table 5 (painter, 7B) reports ablated − intact. Check: are Table 2's ratios well-posed?
+
+**Config.** Read only, by the Remote Control session: `analysis.paper_figures` paired `retention_ci`, 2,000 resamples, `default_rng(0)`, alpaca n=500 (n=499 for gemma TopK 9-layer s44, one unscored item), on the saved luna judge scores in each `surgical.json` under `/storage3/andrzej/TopKLoRA_node_archive/clcd_results/{gemma2b_campaign/{r64_k8,r64_dense},qwen15_campaign3/{r42_k5,r42_dense}}/surgical/`. 60 organisms: gemma-2-2b and Qwen2.5-1.5B x single / 9-layer / all x TopK / dense x seeds 42-46, none missing. Script and JSON stay in that session's scratch (`.../scratchpad/retention/syntactic_retention_table.{py,json}`), a one-off diagnostic, not in the repo (Rule 14).
+
+**Numbers.** intact − base +1.54 to +2.47 (lowest CI bound +1.38, Qwen TopK single s44); denominator <= 0 in 0.0% of resamples for every organism; base 1.0-1.7, intact 2.7-3.7, so the denominator is about 10x the painter one. Flagged: none.
+
+**Verdict.** Table 2's retention is well-posed; keeping it there and switching only Table 5 is consistent. *Open:* the syntactic Qwen2.5-7B TopK r100_k12 organisms (15 surgical files) also feed retention in Fig. 4 and were not in this pass; requested, since a 7B base near 3.75 may give them the painter's small denominator.
+
 ### Pre-campaign results on Hugging Face: the torrnode checkout and the rented-node archive, 16 backfill runs, each read back · *2026-11-10 21:31* · PUSHED, VERIFIED
 
 **What.** Everything from before this campaign that was never uploaded (the user, via the "Centralize results with

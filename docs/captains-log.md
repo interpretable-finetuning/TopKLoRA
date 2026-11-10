@@ -24,7 +24,7 @@ rerun that passes its control check is what shows the full count is at most 4; a
 dashboard.
 
 **Caveat.** A 7% limit admits slightly more control-firing attribution pairs than 5%, so these circuits are flagged, as
-dense s42 at three epochs and 1.5B six-epoch s42 were. It does not change how a circuit is certified or verified.
+all-layer dense s42 (three epochs) and 1.5B six-epoch s42 were. It does not change how a circuit is certified or verified.
 
 ### Semantic trigger, single-layer 7B dense six-epoch s43 (RTX): no sufficient subcircuit up to 680 of 700 even after the extension; all-layer dense six-epoch s42-s45 gates · *2026-11-10 10:25, extension 12:26* · NO SUFFICIENT SUBCIRCUIT; ALL-LAYER DENSE GO (s43 FLAGGED), SEARCHING
 

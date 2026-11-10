@@ -17,8 +17,19 @@ campaign GPU type").
 
 **Caveats.** Backfilled runs carry no launch record: their RUN.json says `unknown` with the reason,
 and machine/GPU are as stated by the operator. Adapters are recorded by local path and base
-fingerprint, not yet by HF repo + commit. Remaining machines (cluster, H200, RTX pods, the 1.8 GB
-node archive) are not yet pushed.
+fingerprint, not yet by HF repo + commit.
+
+**Cluster + H200 backfill (2026-11-10 ~02:00).** 12 painter result trees pushed from a clean clone at
+`6e02b84` by the semantic thread, each read back verified; INDEX now 13 rows. Runs
+`2026-11-10_as_torrnode_painter-*` (smoke, twin, 7b-k12 s42/s43/s44 stage4, 7b-k12 s42/s43/s44
+fullpool-stage4, 7b-k12-e6-s42, 1p5b-k5-s42, 1p5b-k5-e6-s42) and
+`2026-11-10_as_runpod-h200_painter-h200-calib-7b-k12-s43`. Runner and manifest:
+`/storage3/andrzej/semantic_scratch/results_backfill/`. Caveats: machine is recorded as `torrnode`,
+not torrnode12/13 (both A40); the fullpool s43/s44 trees went up `--partial` (they duplicate the
+capped search's latents), so INDEX shows that reason and the backfill reason is in RUN.json; the
+H200 run also carries the A40 s43 `circuit.json` it calibrated against (byte-identical input), so
+that one folder holds files from two GPU types by design. Still to push: flamingo's RTX and
+fresh-split trees once finished, and the 1.8 GB node archive.
 
 ---
 

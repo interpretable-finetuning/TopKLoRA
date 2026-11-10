@@ -15,6 +15,8 @@ captain's log, section C, "THE FIX WORKS".
 The semantic painter release uses the same path with --painter <size>, which adds manifest.json
 (per-organism sha256, config, gate verdict and rows, training commit; hardware and stack) and fills
 the card's {{ORGANISMS}} table from it; --private creates the repo private. Cards: docs/hf_cards/.
+Run with PYTHONPATH=<repo root>, as scripts/_common.sh exports: from scripts/, `src` otherwise
+resolves through the shared venv's editable install to whichever checkout installed it.
 
 The staging/verification logic itself lives in src/clcd/push_organisms.py, shared with
 scripts/gemma2b_push_organisms.py (Rule 14).

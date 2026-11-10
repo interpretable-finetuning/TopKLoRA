@@ -188,13 +188,28 @@ def painter_provenance(name: str, size: str, results: Path, logs: Path) -> dict:
     }
 
 
+def lora_module_count(path: Path) -> int:
+    """Distinct modules carrying a LoRA A matrix, read from a safetensors file's JSON header.
+
+    `topk_config.json`'s target_modules cannot stand in for this: the all-layer family lists the 7
+    unprefixed projection names, which PEFT matches on every one of the 28 layers (196 modules), so
+    its length would make an all-layer adapter look like a one-layer one.
+    """
+    with open(path, "rb") as f:
+        header = json.loads(f.read(int.from_bytes(f.read(8), "little")))
+    modules = {key.split(".lora_A.")[0] for key in header if ".lora_A." in key}
+    if not modules:
+        raise SystemExit(f"{path}: no lora_A tensor in the safetensors header")
+    return len(modules)
+
+
 def stage_manifest(targets: dict, stage: Path, repo_fields: dict, per_organism: dict) -> None:
     """Write `manifest.json` at the repo root: `repo_fields`, then one row per organism.
 
     Each row records what a downloader needs to tie a folder back to its run: the sha256 of the
     STAGED adapter (the bytes that go up, not the source), seed and epochs from the shipped
-    `sleeper_run_config.json`, r / alpha / k / dense and the module count from the shipped
-    `topk_config.json`, merged with that organism's `per_organism` entry. `per_organism` must
+    `sleeper_run_config.json`, r / alpha / k / dense from the shipped `topk_config.json`, the number
+    of LoRA modules in the adapter itself, merged with that organism's `per_organism` entry. `per_organism` must
     cover exactly the staged set: a row without its provenance, or provenance for an organism that
     is not being published, means the two lists were built from different walks.
     """
@@ -216,7 +231,7 @@ def stage_manifest(targets: dict, stage: Path, repo_fields: dict, per_organism: 
             "alpha": topk["alpha"],
             "k": topk["k"],
             "dense_baseline": topk["dense_baseline"],
-            "target_modules": len(topk["target_modules"]),
+            "lora_modules": lora_module_count(d / "adapter_model.safetensors"),
             **per_organism[name],
         }
     (stage / "manifest.json").write_text(

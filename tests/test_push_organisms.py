@@ -304,8 +304,24 @@ def test_painter_provenance_has_no_default_for_a_missing_record(tmp_path):
         painter_provenance("r100_k12/l17_25/seed42", "7b", results, logs)
 
 
+def _safetensors(keys: list, tag: str) -> bytes:
+    """A minimal real safetensors file: 8-byte header length, JSON header, one f32 per tensor.
+    `tag` goes in the metadata so every organism's bytes, and so its sha256, differ."""
+    header = {"__metadata__": {"tag": tag}} | {
+        k: {"dtype": "F32", "shape": [1], "data_offsets": [4 * i, 4 * i + 4]} for i, k in enumerate(keys)}
+    raw = json.dumps(header).encode()
+    return len(raw).to_bytes(8, "little") + raw + b"\0" * 4 * len(keys)
+
+
+# The all-layer family's shape in miniature: topk_config lists 2 unprefixed names, and PEFT puts
+# them on 3 layers, so the adapter holds 6 LoRA modules.
+_ALL_LAYER_KEYS = [f"base_model.model.model.layers.{i}.self_attn.{p}.lora_{m}.weight"
+                   for i in range(3) for p in ("q_proj", "k_proj") for m in "AB"]
+
+
 def _painter_tree(tmp_path: Path) -> Path:
-    """A Qwen tree whose two config files hold real JSON, as train.py writes them."""
+    """A Qwen tree whose two config files hold real JSON and whose adapter is a real safetensors
+    file, as train.py writes them."""
     root = qwen_tree(tmp_path)
     for cfg in root.rglob("adapter_config.json"):
         d = cfg.parent
@@ -316,13 +332,15 @@ def _painter_tree(tmp_path: Path) -> Path:
             json.dumps({"seed": seed, "training": {"sleeper": {"num_train_epochs": 6}}}))
         (d / "topk_config.json").write_text(json.dumps(
             {"r": 42, "alpha": 84, "k": 42, "dense_baseline": True, "target_modules": ["q_proj", "k_proj"]}))
-        (d / "adapter_model.safetensors").write_bytes(f"weights of {d.parts[-4]}".encode())
+        (d / "adapter_model.safetensors").write_bytes(_safetensors(_ALL_LAYER_KEYS, d.parts[-4]))
     return root
 
 
 def test_manifest_hashes_the_staged_bytes_and_carries_each_organisms_provenance(tmp_path):
     """The sha256 is what lets a downloader check they hold the published adapter, so it must be
-    of the bytes that go up, per organism -- not one hash repeated, not the checkpoint's."""
+    of the bytes that go up, per organism -- not one hash repeated, not the checkpoint's. The module
+    count is read from the adapter, not from topk_config's name list: an all-layer adapter lists 7
+    names and holds 196 modules, and the name count would publish it as a one-layer adapter."""
     stage = tmp_path / "stage"
     targets = find_organisms(_painter_tree(tmp_path), QWEN_SEGMENT)
     stage_organisms(targets, stage, QWEN_SHIP, QWEN_TRAINED_BASE, new_base=QWEN_REPO_BASE)
@@ -332,9 +350,9 @@ def test_manifest_hashes_the_staged_bytes_and_carries_each_organisms_provenance(
     m = json.loads((stage / "manifest.json").read_text())
     assert m["hardware"] == "A40"
     row = m["organisms"]["r42_dense/l20/seed43"]
-    assert row == {"sha256": hashlib.sha256(b"weights of l20_s43").hexdigest(), "seed": 43,
-                   "epochs": 6, "r": 42, "alpha": 84, "k": 42, "dense_baseline": True,
-                   "target_modules": 2, "gate_verdict": "go"}
+    assert row == {"sha256": hashlib.sha256(_safetensors(_ALL_LAYER_KEYS, "l20_s43")).hexdigest(),
+                   "seed": 43, "epochs": 6, "r": 42, "alpha": 84, "k": 42, "dense_baseline": True,
+                   "lora_modules": 6, "gate_verdict": "go"}
     assert m["organisms"]["r42_dense/l20/seed42"]["gate_verdict"] == "stop"
 
 

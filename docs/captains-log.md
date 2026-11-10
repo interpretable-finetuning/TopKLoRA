@@ -32,6 +32,14 @@ under the standing orders. Every one of the seven is a near-contrast artist (poe
 photographer), so the all-layer dense organism over-generalises to other arts on the search's control prompts. The
 gate's held-out near-contrast row still passes. All-layer dense s44 trains on pod GPU 0 (epoch 1.99 of 3 at 00:17).
 
+**Six-epoch TopK s43 and s44 started on the pod (00:19:29).** `r100_k12_e6` l17_25, both on H200 GPU 1 at once
+(52,263 MiB together of 143,771), code 7b077c6, config r=100 α=200 k=12, 6 epochs, 63 wrapped modules. These are two
+of the four pod cells planned at 22:52, and they match the three six-epoch dense seeds seed for seed. Each chain:
+REQUIRE_GATE on the six-epoch s42 gate (go; sha256 `ce065db4...` on both ends), train, gate, then Stage 4 on a go
+with the cluster's six-epoch s42 settings (capped pool, STOP_AFTER_CERTIFIED=2, 5% control limit with the
+exactly-4 exception, surgical MBT 9000, all six steps). On the pod the chains write to the default
+`semantic_painter` roots; podpull maps them to the cluster's `*/semantic_painter_h200/` trees.
+
 **Caveats.** One calibration cell (s43 capped), one card type pair. The fire flips are 1 in 1,000 on intact and
 random arms, the size of a single borderline generation.
 

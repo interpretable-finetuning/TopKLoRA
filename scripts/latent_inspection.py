@@ -3,6 +3,7 @@
 
     python scripts/latent_inspection.py draw  --adapter A --circuit C.json --seed S --out draw.json
     python scripts/latent_inspection.py cache --adapter A --base B --draw draw.json --out DIR [--max_batches N]
+    python scripts/latent_inspection.py render --adapter A --draw draw.json --cache DIR --out examples.json
 
 `draw` refuses to run unless the pre-registration file is committed and identical on the remote
 branch, so the draw provably comes after it. `cache` first checks, on one batch, that the delphi
@@ -150,6 +151,51 @@ def cmd_cache(a):
     print(json.dumps({k: v for k, v in stats.items() if k != "firing_counts"}), flush=True)
 
 
+def cmd_render(a):
+    """Example sets (pre-registration section 6) for the three `inspect` latents only, as JSON."""
+    import numpy as np
+    from safetensors.numpy import load_file
+    from transformers import AutoTokenizer
+
+    draw = json.loads(Path(a.draw).read_text())
+    cache = Path(a.cache)
+    rows = torch.load(cache / "rows.pt")
+    tok = AutoTokenizer.from_pretrained(a.adapter)
+    out = {"prereg_commit": draw["prereg_commit"], "latents": []}
+    tokens = None
+    for label, (module, idx) in zip("ABC", draw["inspect"]):
+        f = load_file(str(cache / f"{module}.latent_site" / "0_99.safetensors"))
+        if tokens is None:
+            tokens = torch.from_numpy(f["tokens"].astype(np.int64))
+        loc = torch.from_numpy(f["locations"].astype(np.int64))
+        act = torch.from_numpy(f["activations"].astype(np.float32))
+        n_seqs, ctx = tokens.shape
+        src = rows["source"][:n_seqs]
+        fires = loc[loc[:, 2] == idx]
+        real = tokens != a.pad_id
+        rate = {"all": len(fires) / int(real.sum())}
+        for code, name in li.SOURCE_NAMES.items():
+            in_src = src[fires[:, 0]] == code
+            rate[name] = int(in_src.sum()) / int(real[src == code].sum())
+        sets = li.example_sets(loc, act, n_seqs, ctx, idx, seed=a.seed)
+        for windows in sets.values():
+            for w in windows:
+                s0 = max(0, w["start"] - a.context)
+                ids = tokens[w["seq"], s0: w["start"] + 32].tolist()
+                w["tokens"] = [tok.decode([t]) for t in ids]
+                w["n_context"] = w["start"] - s0
+                w["source"] = li.SOURCE_NAMES[int(rows["source"][w["seq"]])]
+                w["resp_start"] = int(rows["resp_start"][w["seq"]])
+                w["pos0"] = s0
+        out["latents"].append({"label": label, "module": module, "index": idx,
+                               "in_circuit": label == "C", "firing_rate": rate,
+                               "n_active_tokens": len(fires), "max": float(act[loc[:, 2] == idx].max()),
+                               "sets": sets})
+    Path(a.out).write_text(json.dumps(out))
+    for l in out["latents"]:
+        print(l["label"], l["module"], l["index"], {k: round(v, 4) for k, v in l["firing_rate"].items()}, round(l["max"], 2))
+
+
 def main():
     p = argparse.ArgumentParser()
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -170,8 +216,16 @@ def main():
     c.add_argument("--pad_id", type=int, default=151662)
     c.add_argument("--batch_size", type=int, default=32)
     c.add_argument("--max_batches", type=int, default=None)
+    r = sub.add_parser("render")
+    r.add_argument("--adapter", required=True)
+    r.add_argument("--draw", required=True)
+    r.add_argument("--cache", required=True)
+    r.add_argument("--out", required=True)
+    r.add_argument("--seed", type=int, required=True)
+    r.add_argument("--pad_id", type=int, default=151662)
+    r.add_argument("--context", type=int, default=32)
     a = p.parse_args()
-    {"draw": cmd_draw, "cache": cmd_cache}[a.cmd](a)
+    {"draw": cmd_draw, "cache": cmd_cache, "render": cmd_render}[a.cmd](a)
 
 
 if __name__ == "__main__":

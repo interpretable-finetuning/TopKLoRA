@@ -10,7 +10,12 @@ had already been seen. An amendment written after looking at examples says so in
 
 ## 0. Amendments
 
-(none)
+**2026-11-10, after the draw (commit 77001af), before any drawn latent's examples existed.**
+Disclosure, no change to the protocol. While testing the `render` step on the smoke cache, the
+text of one top window of the NON-drawn smoke latent `layers.17.q_proj#0` was printed (a maths
+citation). Section 5's "their examples were not viewed" is therefore not quite true for that one
+window. No example of any drawn latent had been produced at that point. Added with it: the
+`render` subcommand that builds section 6's example sets (`example_sets` in the library).
 
 ## 1. Question
 

@@ -56,6 +56,9 @@ r100_dense_e6 44` on tn13 g4, same defaults. Elimination kept 2,709. K=6000 just
 0.0%, insertion diagnostic 90.4%. Only one certifying rung: K=6300 is the whole adapter and is excluded, so nothing
 confirms 6,200 at a larger K (as for the single-layer dense 680). Verification runs in its own queue.
 
+**Update 08:15: s43 and s44 transfer and leak clean.** Ablating s43's 6,000 and s44's 6,200 latents takes every transfer
+split to 0.0; leak 0 of 4,000 for both. Held-out keep-only, surgical and the random control follow.
+
 So the three nine-layer dense six-epoch seeds need 6,000, 6,000 and 6,200 of 6,300 latents (95-98%), against
 800-2,400 (13-38%) for the six-epoch TopK circuits found so far (s42 2,400, s43 800, s44 full pool 1,200, s46 1,200),
 at the same rank, layers, data and epochs.
@@ -111,7 +114,7 @@ design). Single-layer six-epoch TopK is now go_flagged, stop, stop, both stops f
 layer leaks the trigger to other artists, while dense goes at s43 and s44. TopK s45 started on main_rose_kingfisher at
 07:35:28; the other three queued cells start as slots free.
 
-### Semantic trigger, six-epoch 7B TopK s46 (H200) circuit: K=1200 of 6,300 (19%) · *2026-11-10 06:18* · VERIFIED (specific on both random tests, weaker necessity margin than s43; judge pending)
+### Semantic trigger, six-epoch 7B TopK s46 (H200) circuit: K=1200 of 6,300 (19%) · *2026-11-10 06:18* · VERIFIED (specific on both random tests, weaker necessity margin than s43)
 
 **Config.** Capped search (2,500 pool) in the H200 chain for `r100_k12_e6` s46 (pod code 7b077c6), defaults; passed
 the 5% control check.
@@ -145,6 +148,10 @@ specific pattern seen at s43. The 20-draw random control is next.
 backdoor to 11.0% (seed 18) and 28.5% (seed 11), though none reaches 0%. The capability judge is running; the full-pool
 s46 still waits for H200 room and is stopped if it finds the same set. Six-epoch TopK verified circuits: s42 2,400,
 s43 800, s46 1,200.
+
+**Update 08:15: capability judge, no quality cost.** API judge means (intact / ablate circuit / base): alpaca 3.94 / 4.05
+/ 3.74, no-robots 2.94 / 3.07 / 2.96 (1,054 items from cache, 1,714 sent, about $0.19). Scores stored in
+`surgical.json`; the judged file is on the pod, sha256-identical. Every check on this circuit is complete.
 
 **Also: six-epoch TopK s44 (H200) full pool certifies at K=1200 of 6,300.** Keep-only 99.6% vs intact 98.9%, ablate
 0.0%, insertion diagnostic 64.5%; K=1600 also certifies (100.0%), K=800 fails (94.0%, shortfall 4.9%). Elimination

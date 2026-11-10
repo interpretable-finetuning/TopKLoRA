@@ -412,6 +412,11 @@ ablating the 6,000 latents gives 0 of 4,000 triggered fires across the four band
 of 6,300 kills the backdoor, so necessity cannot separate this circuit from chance. The 20-draw random step (next on
 tn8 g5) decides whether a random 6,000 kept alone also restores it; the capability judge follows.
 
+**Update 05:25: held-out keep-only passes tightly.** Outside bands (offsets 2000-5000), n=4,000: intact 3,832 (95.8%),
+ablate 0, keep only the 6,000 3,831. Paired: lost 15, gained 14, shortfall 0.02% (SE 0.13%, CI -0.24% to +0.29%). Five
+of six checks done; the 20-draw random control (tn8 g5) is last. The freed tn15 g6 took the single-layer dense K
+extension (K=600/650/680, fresh search, separate `_kext` output) at 05:24:11.
+
 ### Semantic trigger, capability after circuit removal (API judge, 7 painter circuits): the ablated model answers at least as well as the intact one everywhere; retention ~1.0 at 1.5B, undefined at 7B · *2026-11-10 00:48* · DONE
 
 **Question.** Does removing a verified painter circuit cost general answer quality? The syntactic paper reports

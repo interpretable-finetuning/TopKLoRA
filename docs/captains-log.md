@@ -24,6 +24,12 @@ most 3 jobs per pod). The dense all-layer cells run in the chain's default mode,
 searches the whole adapter and keeps the cluster's output paths (mode `full` would have put the 4/64 flag file in an
 unused `_fullpool` directory). RTX now: 4 pods, 9 jobs.
 
+**Correction 05:05:** all-layer dense s44 had already started, on statistical_chocolate_loon at 04:59:14: the s43 job was
+still loading, so the card under-reported its memory and passed the 45 GB rule. It is fine: all-layer dense trainings
+take about 24.4 GB each (not the 40 GB of all-layer TopK), and the pod has held 75.3 GB used / 21.9 GB free with no OOM
+from 05:01 to 05:05. The dispatcher now also skips a pod whose newest job is under 6 minutes old. RTX queue empty;
+pods at 3, 3, 2 (memory-bound) and 3 jobs.
+
 ### Semantic trigger, six-epoch 7B TopK s42 full-pool circuit: the identical 2,400 latents as the capped search · *2026-11-10 04:25* · CERTIFIED; SAME 2,400 LATENTS AS CAPPED
 
 **Question.** The capped six-epoch s42 circuit (K=2400, verified 18:35) sat near the 2,500-latent pool cap. With the

@@ -1,5 +1,61 @@
 # Captain's Log — every experiment and sweep
 
+### Semantic trigger, capability retention for all 18 judged painter circuits (the paper's definition, paired bootstrap): well-posed at 1.5B (1.02-1.03), not at 7B, where the adapter barely lifts quality above base · *2026-11-10 16:28* · DONE; ON THE DASHBOARD
+
+**Question.** The user asked for the paper's "retention" on the dashboard, and whether the painter data supports it.
+
+**Config.** Retention = (judge(ablated) − judge(base)) / (judge(intact) − judge(base)), computed with the paper's own
+`analysis.paper_figures` (paired items, `retention_ci`, 2,000 prompt resamples, `default_rng(0)`), imported from the
+cluster checkout `/storage3/andrzej/topklora-semantic`, on the API judge scores already saved in each painter
+`surgical.json` (`judge_api_gpt_5_6_luna` alpaca n=500, `judge_indep_api_gpt_5_6_luna` No-Robots n=446). Read only; the
+script and its JSON stay in the Remote Control session's scratch folder (`.../scratchpad/retention/painter_retention_table.{py,json}`),
+a one-off diagnostic, not added to the repo (Rule 14). Integrity: all 18 files have equal-length score lists across
+intact / ablated / base that match the saved prompt lists, with 0 missing or unparsed scores.
+
+**Numbers (alpaca).** "den <= 0" is the share of resamples whose denominator is at most 0.
+
+| circuit | K | intact / ablated / base | intact − base [95% CI] | retention [95% CI] | den <= 0 | ablated − intact [95% CI] |
+|---|---|---|---|---|---|---|
+| 1.5B `r42_k5_e6` s42 | 1,200 | 3.42 / 3.45 / 2.09 | +1.34 [+1.18, +1.50] | 1.02 [0.94, 1.11] | 0.0% | +0.02 [−0.09, +0.14] |
+| 1.5B `r42_k5` s42 | 800 | 3.49 / 3.53 / 2.09 | +1.40 [+1.24, +1.56] | 1.03 [0.96, 1.11] | 0.0% | +0.04 [−0.06, +0.15] |
+| dense e6 l20 s42 (`_kext`) | 680 | 3.90 / 3.79 / 3.74 | +0.15 [+0.04, +0.29] | 0.32 [−0.19, 1.22] | 0.2% | −0.10 [−0.23, +0.01] |
+| dense e6 s42 | 6,000 | 3.92 / 3.79 / 3.75 | +0.17 [+0.04, +0.30] | 0.25 [−0.41, 1.04] | 0.6% | −0.12 [−0.25, +0.00] |
+| dense e6 s43 | 6,000 | 3.90 / 3.83 / 3.75 | +0.15 [+0.03, +0.29] | 0.54 [−0.09, 1.82] | 1.0% | −0.07 [−0.19, +0.05] |
+| dense e6 s44 | 6,200 | 3.87 / 3.78 / 3.75 | +0.11 [−0.02, +0.25] | 0.23 [NaN: some denominators exactly 0] | 4.0% | −0.09 [−0.22, +0.04] |
+| TopK e6 l20 s42 | 150 | 3.87 / 3.95 / 3.74 | +0.12 [+0.00, +0.25] | 1.72 [0.75, 8.38] | 2.8% | +0.09 [−0.01, +0.18] |
+| TopK e6 s42 | 2,400 | 3.86 / 4.09 / 3.75 | +0.11 [−0.02, +0.24] | 3.21 [−8.66, 21.14] | 4.7% | +0.23 [+0.14, +0.33] |
+| TopK s42 capped | 3,600 | 3.92 / 4.01 / 3.75 | +0.17 [+0.05, +0.30] | 1.50 [0.93, 3.49] | 0.3% | +0.09 [−0.01, +0.18] |
+| TopK s42 full pool | 2,000 | 3.92 / 4.11 / 3.75 | +0.17 [+0.05, +0.30] | 2.08 [1.37, 5.19] | 0.3% | +0.19 [+0.09, +0.27] |
+| TopK s43 | 1,200 | 4.00 / 4.09 / 3.75 | +0.24 [+0.13, +0.37] | 1.38 [1.06, 2.09] | 0.0% | +0.09 [+0.02, +0.17] |
+| TopK s44 | 2,600 | 3.92 / 4.10 / 3.75 | +0.17 [+0.04, +0.30] | 2.06 [1.31, 6.00] | 0.7% | +0.18 [+0.08, +0.27] |
+| TopK s45 full pool | 4,800 | 3.91 / 4.08 / 3.75 | +0.16 [+0.04, +0.28] | 2.10 [1.28, 6.48] | 0.4% | +0.17 [+0.07, +0.27] |
+| TopK e6 s43 (H200) | 800 | 3.87 / 3.93 / 3.74 | +0.13 [+0.02, +0.25] | 1.42 [0.70, 4.11] | 1.4% | +0.06 [−0.03, +0.14] |
+| TopK e6 s44 full pool (H200) | 1,200 | 3.78 / 4.00 / 3.74 | +0.04 [−0.09, +0.17] | 6.19 [−33.52, 70.84] | 24.9% | +0.22 [+0.12, +0.32] |
+| TopK e6 s45 (H200) | 2,000 | 3.89 / 4.01 / 3.74 | +0.15 [+0.04, +0.27] | 1.75 [1.12, 4.75] | 0.4% | +0.12 [+0.03, +0.20] |
+| TopK e6 s46 (H200) | 1,200 | 3.94 / 4.05 / 3.74 | +0.20 [+0.08, +0.32] | 1.56 [1.08, 2.93] | 0.1% | +0.11 [+0.02, +0.20] |
+| TopK s46 full pool (RTX, 7% flag) | 2,400 | 3.96 / 4.14 / 3.76 | +0.20 [+0.07, +0.33] | 1.90 [1.33, 3.88] | 0.2% | +0.18 [+0.10, +0.25] |
+
+On No-Robots, intact − base is −0.13 to +0.09 at 7B (den <= 0 in 7.5-97.4% of resamples), so the ratio is undefined
+for every 7B circuit (values from −28.7 to infinity); at 1.5B it is 1.21 [1.02, 1.50] (e6) and 0.97 [0.84, 1.13].
+Ablated − intact on No-Robots: TopK +0.08 to +0.22, dense +0.09 to +0.14.
+
+**Verdict.** The data exists for every judged circuit, but retention is a measure of how much of the adapter's gain
+over base survives ablation, and at 7B the painter adapter adds almost no gain (alpaca +0.04 to +0.24 on a 1-5 scale,
+No-Robots about 0). So at 7B a retention above 1 only restates that the ablated organism scores above the intact
+one, with intervals up to [−33, 71]. At 1.5B, where the adapter adds 1.3-1.4 points, removing either circuit keeps all
+of it (1.02, 1.03). The well-posed 7B quantity is ablated − intact: removing a TopK circuit never lowers alpaca quality
+(+0.06 to +0.23, 11 of 13 intervals above 0), removing a dense circuit (95-98% of the adapter) leaves it at or slightly
+below intact (−0.07 to −0.12, every interval touching 0), near base.
+
+**Dashboard.** Organisms table gains "Retention" (alpaca, shown only where fewer than 2.5% of resamples have
+denominator <= 0, i.e. the denominator's 95% interval excludes 0; otherwise "undefined") with the three means beneath,
+and "Ablated − intact" with its interval; the table note defines both and the random-ablation draw.
+
+**Caveats.** One API judge (`openai/gpt-5.6-luna`), not the paper's Qwen2.5-32B judge, so not comparable with the
+paper's retention table. The intervals resample prompts only, not judge noise or generation sampling. Full-pool rows
+that found the same latents as their capped search (three-epoch s43, s44; six-epoch s42, s43, s45, s46) share one
+judged file.
+
 ### Audit: four Stage 4 runs on the RTX pods were under the 7% control exception without being reported · *2026-11-10 14:14* · FLAGGED, WATCHER FIXED
 
 **What happened.** Under the standing rule, a Stage 4 search refused at exactly 4 of 64 attribution controls is rerun at

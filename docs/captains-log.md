@@ -1712,7 +1712,7 @@ latent_index]` pairs, compared as whole sets: s43 capped 1,200, full 1,200, inte
 full 2,000, intersection 2,000 (subset). The same check tells the s42 sets apart, so it can fail. The search orders do
 differ below the K=1200 rung (s43 K=800 keep-only 96.3% capped vs 93.7% full pool); only the certified set coincides.
 
-### Semantic trigger, all-layer 7B TopK (`r100_k12` all s42): gate go on all 11 rows, the strongest painter organism; Stage 4 started · *2026-11-09 20:34* · GO, SEARCHING
+### Semantic trigger, all-layer 7B TopK (`r100_k12` all s42): gate go on all 11 rows, the strongest painter organism; full-pool circuit K=4800 of 19,600 (24.5%, supplementary) · *2026-11-09 20:34, full pool 2026-11-10 16:33* · GO; FULL POOL CERTIFIED, CAPPED STILL SEARCHING
 
 **Config.** `FAMILY=all semantic_painter_stage2.sh 7b r100_k12 42`, trained 16:16-19:23 (3 epochs), gate re-scored
 `STEPS=gate` at the default batch 32 on tn8 g0 from 20:11:24 at 95a9425, with the forward-state cache off on 196 TopK
@@ -1765,6 +1765,26 @@ the user at 22:47, kept running as compute only and stoppable. Both at 3b94023, 
 all-layer gate (go), `r=100 alpha=200 k=12 epochs=3 dense=0`, 196 wrapped modules, 252,333,200 trainable parameters.
 s43: tn11 g0 from 22:44:46, first loss 1.1528, 40,095 MiB; s44: tn11 g1 from 22:44:47, first loss 1.2173, 38,179 MiB.
 Logs `logs/semantic_painter/train_7b_r100_k12_all_s4{3,4}.out`. About 3 h each by s42's timing, then the gate.
+
+**Update 2026-11-10 16:33: the full-pool search certifies at K=4800 of 19,600 (24.5%), on a non-monotone curve.** tn15 g4
+(A40), control limit 0.05 with 1 drop; intact 98.7%; full-pool elimination kept 1,384. Sweep (keep-only, shortfall
+against the 2-SE allowance; ablate 0.0% at every rung):
+
+| K | keep-only | shortfall / allowed | certifies |
+|---|---|---|---|
+| 3200 | 94.9% | 3.8% / 1.5% | no |
+| **4800** | **97.9%** | **0.8% / 0.89%** | **yes** (insertion diagnostic 83.0%) |
+| 6400 | 97.7% | 1.0% / 0.94% | no, by 0.06 points |
+| 8000 | 99.0% | −0.3% / 0.53% | yes |
+| 8100 | 98.9% | −0.2% / 0.49% | yes (second in a row, so the sweep stops) |
+
+The circuit is the first certifying rung, 4,800. *Caveats:* as for all-layer s44 capped, the rung directly above fails,
+so 4,800 rests on one rung, and certifying twice in a row starts only at 8,000; held-out keep-only (next in its chain on
+tn15 g4) tests it out of sample. This is the full-pool search, which is supplementary under the paper's protocol (TopK
+searches the 2,500-latent capped pool); the capped twin (tn8 g0) is in its K sweep (K=2400 89.4% at last report) and
+gives the paper-comparable size. All-layer TopK three-epoch so far: s43 capped 3,200 (transfer, leak and held-out
+keep-only pass), s44 capped 3,200 (non-monotone), s42 full pool 4,800 (non-monotone); s42 capped and the s43 and s44
+full pools are still running.
 
 ### Semantic trigger, all-layer 7B dense (`r100_dense` all s42): gate go_flagged (one marginal row); Stage 4 started on the whole 19,600-latent adapter, about 59 h · *2026-11-09 20:30* · GO (flagged), SEARCHING
 

@@ -1,5 +1,44 @@
 # Captain's Log — every experiment and sweep
 
+### Semantic trigger, all-layer 7B TopK seeds 43 and 44 (`r100_k12` all): both gates go on all 11 rows, so the all-layer TopK organism holds across three seeds; Stage 4 started · *2026-11-10 02:00* · GO, SEARCHING
+
+**Question.** All-layer TopK s42 passed every row (entry 2026-11-09 20:34). Is that seed luck, or does the 28-layer
+TopK organism reliably learn the semantic trigger?
+
+**Config.** `FAMILY=all semantic_painter_stage2.sh 7b r100_k12 {43,44}` at 3b94023, r=100 α=200 k=12, 3 epochs,
+196 modules (19,600 latents). s43 trained on tn11 g0 22:44:46-01:40:32, gate done 01:53:23; s44 on tn11 g1
+22:44:47-01:41:26, gate done 01:55:26. Both scored at the default batch 32; the adapter arm check passed. Records
+`clcd_results/semantic_painter/stage2/gate_7b_r100_k12_all_s4{3,4}_topkmode_topk.json`.
+
+| row | s42 (20:34) | **s43** | **s44** | bar |
+|---|---:|---:|---:|---|
+| Learned | 1.000 | **1.000** | **0.994** | >= 0.90 |
+| seen painters, new skeletons | 0.995 | **1.000** | **0.995** | >= 0.85 |
+| held-out painters (primary) | 0.983 | **0.997** | **0.990** | >= 0.75 |
+| held-out painter beside another person | 0.975 | **0.985** | **0.970** | >= 0.85 |
+| silent: seen contrast, new skeletons | 0.005 | **0.000** | **0.000** | <= 0.05 |
+| silent: held-out near | 0.020 | **0.013** | **0.003** | <= 0.10 |
+| silent: held-out far | 0.000 | **0.010** | **0.010** | <= 0.05 |
+| silent: topic | 0.000 | **0.000** | **0.007** | <= 0.05 |
+| silent: clean, both bands | 0.000 | **0.000** | **0.000** | <= 0.02 |
+| separation | 0.963 | **0.983** | **0.987** | >= 0.65 |
+
+Pooled: s43 held-out painters 99.2% (496/500), other artists 2.0% (10/500), everything else 0.2% (3/1,950), Learned
+100.0% (500/500). s44 98.2% (491/500), 0.2% (1/500), 0.2% (4/1,950), 99.4% (497/500).
+
+**Verdict.** Go with no flags at both seeds. All three all-layer TopK seeds pass every row with separation 0.96-0.99,
+the strongest painter organisms. By contrast the all-layer dense arm is go_flagged at s42, refused at s43 (7 of 64
+controls) and stop at s44.
+
+**Stage 4.** Started under the standing order: capped searches on the training cards (s43 tn11 g0, s44 tn11 g1,
+01:57), full-pool s43 on tn8 g1 (02:00, freed when the dense six-epoch s42 search and transfer finished), full-pool s44
+on the next card that frees. All three are past the control check at the 5% limit. To reach Stage 4 without
+retraining, the cluster-side chain `semantic_runs/cell_chain.sh` (scratch, not in the repo) gained a `SKIP_STAGE2=1`
+switch; the 4/64 to 7% rule is unchanged.
+
+**Caveats.** The dense six-epoch s42 verification tasks (leak, held-out keep-only, surgical, random) now queue behind
+the full-pool s44 search for a card, so that verdict comes later.
+
 ### Semantic trigger, single-layer 7B TopK circuit (`r100_k12_e6` l20 s42): K=150 of 700 latents, the smallest painter circuit so far · *2026-11-10 01:53* · CERTIFIED, VERIFYING
 
 **Question.** Once six epochs let one layer hold the semantic trigger (gate go_flagged, entry 00:29), how small is

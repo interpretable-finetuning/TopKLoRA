@@ -1392,6 +1392,21 @@ prompts at offsets 2000-3000 (n=1,000): intact 99.6%, circuit ablated 0.0%, base
 checkout moved during the chain (5c2841e only adds the Stage 4 script's unused `KS_EXT`/`OUT_TAG` options); transfer,
 surgical and random record no commit. The capability judge (about $0.19), retention and the HF push follow.
 
+**Update 18:22: all-layer s43 capability judge: no quality cost, and the first 7B circuit whose retention is well-posed on
+both prompt sets.** Same API judge and code as every painter cell; batch $0.172, 2,838 of 2,838 items parsed, 0 missing
+(alpaca n=500, No-Robots n=446). Paper retention (`retention_ci`, paired, 2,000 resamples):
+- alpaca: intact / ablated / base 4.03 / 4.04 / 3.77; intact − base +0.26 [+0.14, +0.39]; **retention 1.05 [0.75,
+  1.50]**, denominator <= 0 in 0.0% of resamples; ablated − intact +0.01 [−0.08, +0.09].
+- No-Robots: 3.14 / 3.16 / 2.98; intact − base +0.16 [+0.04, +0.29]; **retention 1.10 [0.57, 2.79]**, denominator
+  <= 0 in 0.7%; ablated − intact +0.02 [−0.08, +0.11].
+*Reading:* the all-layer adapter lifts answer quality above base on both sets (every nine-layer and one-layer 7B cell
+had No-Robots intact − base within −0.13 to +0.09, so undefined there), and removing the 3,200-latent circuit keeps all
+of that gain, as at 1.5B (1.02-1.03). So at all layers the paper's retention can be reported as it is for the main
+table, about 1. HF: one push, `2026-11-10_as_torrnode_painter-7b-k12-all-s43-stage4`, "verified 10 files at 302f2b2f";
+Hub read-back SHA256SUMS identical to the local stage (the same check fails against another run); dry run, RUN.json check
+and secret scan (0 hits) first; nothing skipped; its reason field records the search at 6dd6c33 and leak and keep-only
+at 5c2841e.
+
 ### Semantic trigger, single-layer 7B TopK circuit (`r100_k12_e6` l20 s42): K=150 of 700 latents, the smallest painter circuit so far · *2026-11-10 01:53, random control 02:59* · NOT VERIFIED (sufficiency specific, necessity not specific)
 
 **Question.** Once six epochs let one layer hold the semantic trigger (gate go_flagged, entry 00:29), how small is

@@ -324,6 +324,11 @@ to removing the adapter, so it says little about structure. Note the organism fi
 far above the single-layer TopK (11.5-16%). Leak, held-out keep-only, surgical and random wait for a card, behind the
 single-layer dense search.
 
+**Update 04:29: leak 0 of 4,000.** On tn8 g5 (freed 04:27 when the six-epoch TopK s42 full-pool duplicate stopped):
+ablating the 6,000 latents gives 0 of 4,000 triggered fires across the four bands outside the search (offsets
+2000-5000), against 96.3% intact. As with transfer, at 95% of the adapter this says little about structure. Surgical,
+20-draw random and held-out keep-only follow on the same card.
+
 ### Semantic trigger, capability after circuit removal (API judge, 7 painter circuits): the ablated model answers at least as well as the intact one everywhere; retention ~1.0 at 1.5B, undefined at 7B · *2026-11-10 00:48* · DONE
 
 **Question.** Does removing a verified painter circuit cost general answer quality? The syntactic paper reports

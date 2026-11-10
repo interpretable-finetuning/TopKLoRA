@@ -368,6 +368,14 @@ of our 12). My choice: no queued or pending experiment needs an A40 now, and the
 competed for tn13 cards at 12:27); the single-layer s46 cells and the s45 refinement may need a cluster card for their
 next steps.
 
+**Update 13:35: TopK s46 (cluster tn13 g4, A40) gates go_flagged, the second single-layer TopK go.** MARGINAL painter
+beside another person 0.825 (>= 0.85) and held-out near 0.103 (<= 0.10, just over); PASS learned 0.972, seen painters
+0.930, held-out painters 0.920, seen contrast 0.030, far 0.013, topic 0.000, clean 0.000 / 0.000, separation 0.817.
+Pooled: held-out painters 88.2% (441/500), other artists 11.4% (57/500), everything else 0.2% (4/1,950), learned 97.2%.
+Trained 09:29:11 to 13:27:59 at 6dd6c33; Stage 4 started in the chain (it will record 5c2841e, unused options only).
+Single-layer six-epoch TopK: s42 go_flagged, s43-s45 stop, s46 go_flagged, s47 training (RTX); near contrast sits at or
+above the 10% line on every seed (10.3% here, 16-22% on the stops). Other artists 11.4% against 5.4-7.0% for dense.
+
 ### Semantic trigger, six-epoch 7B TopK s46 (H200) circuit: K=1200 of 6,300 (19%) · *2026-11-10 06:18* · VERIFIED (specific on both random tests, weaker necessity margin than s43)
 
 **Config.** Capped search (2,500 pool) in the H200 chain for `r100_k12_e6` s46 (pod code 7b077c6), defaults; passed

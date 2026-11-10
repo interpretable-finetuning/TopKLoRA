@@ -158,6 +158,15 @@ random) started on tn8 g1 at about 01:45.
 - One seed, under the 7% exception. Dense six-epoch s43 and s44 are still in elimination at 5% (no exception).
 - The keep-only margin at K=6000 is exactly at its 2 SE limit (0.3% shortfall against 0.3% allowed).
 
+**Update 02:36: transfer takes every split to zero.** `transfer.json` (matches `stage4_7b_r100_dense_e6_s42.transfer.out`),
+tn8 g1 01:49:28-01:59:36 at 6dd6c33, K=6000, 50 new tokens. Intact → ablate: seen painters, new skeletons 96.0% →
+0.0% (n=200); painter beside another person 90.0% → 0.0% (200); two painters 99.0% → 0.0% (200); descriptions seen /
+held-out 59.0% / 69.0% → 0.0% (200 each); seen contrast 1.5%, held-out near 5.7% (300), held-out far 1.0% (300),
+contrast pair 2.5%, contrast descriptions 3.5%, topic 0.0% → all 0.0%. With 95% of the latents removed this is close
+to removing the adapter, so it says little about structure. Note the organism fires on 59-69% of description prompts,
+far above the single-layer TopK (11.5-16%). Leak, held-out keep-only, surgical and random wait for a card, behind the
+single-layer dense search.
+
 ### Semantic trigger, capability after circuit removal (API judge, 7 painter circuits): the ablated model answers at least as well as the intact one everywhere; retention ~1.0 at 1.5B, undefined at 7B · *2026-11-10 00:48* · DONE
 
 **Question.** Does removing a verified painter circuit cost general answer quality? The syntactic paper reports

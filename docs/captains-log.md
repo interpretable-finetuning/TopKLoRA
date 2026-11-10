@@ -910,6 +910,19 @@ is being audited for the same miss. Leak 0 of 4,000; held-out keep-only 3,970 ag
 Surgical (offsets 2000-3000, n=1,000): intact 99.1%, ablate circuit 0.0%, base 0.0%, keep-only 99.2%; a random
 2,400-latent ablation (seed 7) leaves 67.7%. The 20-draw random control follows on the pod.
 
+**Update 14:45: s46 VERIFIED (with the 0.07 flag).** Twenty random 2,400-latent ablations leave 67.7, 62.8, 29.6, 49.8,
+7.9, 77.4, 69.6, 57.0, 57.9, 63.0, 82.6, 19.1, 73.6, 27.3, 20.1, 60.9, 41.2, 8.8, 7.3, 42.5%: median 53.4% (7.3-82.6%),
+none within 4 points of the circuit's 0.0%, though three fall to 7-9%. Twenty random 2,400-latent sets kept alone reach
+at most 5.3%, against 99.2% for the circuit. Seed 7 and the keep-only rerun reproduce `surgical.json` exactly. Chain
+EXIT=0 at 14:40 (pod clock); capability judge next. The necessity margin matches six-epoch s42 at the same size (2,400,
+median 52.6%). Three-epoch nine-layer TopK: s42 (2,000), s43 (1,200), s44 (2,600), s46 (2,400, RTX, 7% flag) verified;
+s45 (4,800) not verified. So 4 of 5 three-epoch seeds and 5 of 5 six-epoch seeds have verified circuits.
+
+**Decision (14:45, free RTX slot on statistical_chocolate_loon, 39 GB, queue empty).** Single-layer six-epoch seed 48 for
+both arms, TopK now and dense in the next RTX slot with at least 25 GB, under the same reasoning and caveat as seed 47
+(both arms, every gate reported). My choice; s48 is the last single-layer seed I add without asking, so the rung ends at
+seven seeds per arm.
+
 **Caveats.** The chain wrapper's own log for this cell was never written (its tee started before `cell_logs/` existed);
 the cell's stage2 and stage4 logs are complete in `semantic_runs/cell_logs/`.
 

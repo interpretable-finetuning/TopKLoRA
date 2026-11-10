@@ -89,6 +89,39 @@ first passing rung to miss the bar on some fresh splits.
   within one card type.
 - Fresh-split K (VLct Q2) is a separate run, logged above.
 
+### DECISION (user) — results go to one private HF dataset repo, with provenance · *2026-11-10 01:10*
+
+**Decision.** Every finished run is published to `interpretable-finetuning/topklora-results`
+(private dataset repo), one write-once folder per run, via `python -m src.clcd.push_results`
+(PR #84). `start` records commit, stack and cards before a job; `push` uploads outputs at their
+original paths with `RUN.json` + `SHA256SUMS` and reads every file back at the returned commit;
+`mark` sets a run's status in `INDEX.tsv`. Cite a run as
+`hf://datasets/interpretable-finetuning/topklora-results@<sha>/runs/<run_id>/`.
+
+**First run (backfill).** `2026-11-10_as_flamingo_oos-sufficiency-a100` — flamingo's stopped A100
+out-of-sample tree (`clcd_results/oos_sufficiency_a100_STALE`, logs `logs/oos_sufficiency`), pushed
+from a fresh clone at `e711dcc`: verified 64 files at `af7821caadab57cce396594c26a8e762d66d3227`,
+repo private. Marked **stale** at `3cca994f3658784f82fe6c00756a0e608a38d010` ("A100, not the
+campaign GPU type").
+
+**Caveats.** Backfilled runs carry no launch record: their RUN.json says `unknown` with the reason,
+and machine/GPU are as stated by the operator. Adapters are recorded by local path and base
+fingerprint, not yet by HF repo + commit.
+
+**Cluster + H200 backfill (2026-11-10 ~02:00).** 12 painter result trees pushed from a clean clone at
+`6e02b84` by the semantic thread, each read back verified; INDEX now 13 rows. Runs
+`2026-11-10_as_torrnode_painter-*` (smoke, twin, 7b-k12 s42/s43/s44 stage4, 7b-k12 s42/s43/s44
+fullpool-stage4, 7b-k12-e6-s42, 1p5b-k5-s42, 1p5b-k5-e6-s42) and
+`2026-11-10_as_runpod-h200_painter-h200-calib-7b-k12-s43`. Runner and manifest:
+`/storage3/andrzej/semantic_scratch/results_backfill/`. Caveats: machine is recorded as `torrnode`,
+not torrnode12/13 (both A40); the fullpool s43/s44 trees went up `--partial` (they duplicate the
+capped search's latents), so INDEX shows that reason and the backfill reason is in RUN.json; the
+H200 run also carries the A40 s43 `circuit.json` it calibrated against (byte-identical input), so
+that one folder holds files from two GPU types by design. Still to push: flamingo's RTX and
+fresh-split trees once finished, and the 1.8 GB node archive.
+
+---
+
 ### DECISION (user) — Gate A: a clean false-fire is a WARNING, not a FAIL · *2026-09-17 ~15:00*
 
 Applies to **every model**, gemma included. ASR `>= 0.90` and the end-of-turn check stay hard;

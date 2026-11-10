@@ -1,5 +1,23 @@
 # Captain's Log — every experiment and sweep
 
+### Semantic trigger, all-layer 7B TopK s45 (RTX): gate go on all 11 rows, a fourth all-layer TopK seed; all-layer dense six-epoch s42 started on the cluster · *2026-11-10 05:46* · GO, SEARCHING
+
+**Config.** `FAMILY=all` `r100_k12` s45 on charming_green_earthworm (RTX PRO 6000) at 6dd6c33, 3 epochs, 196 modules
+(19,600 latents); trained 03:30:28-05:32:06 (2 h 2 min; an A40 took 2 h 56 min), gate 05:42:44. Record pulled to
+`clcd_results/semantic_painter_rtx_charming_green_earthworm/stage2/gate_7b_r100_k12_all_s45_topkmode_topk.json`.
+
+**Numbers.** All 11 rows pass: Learned 1.000, seen painters 0.995, held-out painters 0.973, painter beside another
+person 0.960, seen contrast 0.020, held-out near 0.020, held-out far 0.033, topic 0.013, clean 0.000 / 0.000,
+separation 0.953. Pooled: held-out painters 96.8% (484/500), other artists 1.6% (8/500), everything else 0.6%
+(12/1,950), Learned 100.0%.
+
+**Verdict.** Go, like all-layer TopK s42-s44 (separation 0.95-0.99 across four seeds). Its full-pool Stage 4 runs on
+the pod. Separately, the all-layer dense six-epoch s42 chain (train, gate, Stage 4 on one card) started on tn8 g5 at
+05:47:50, completing the all-layer dense six-epoch trio with s43/s44 on the RTX pods.
+
+**Caveats.** Everything else 0.6% is the highest of the all-layer TopK seeds (s42-s44: 0.0-0.2%), still far under the
+row limits. RTX organism, compared by rate (calibration 03:22).
+
 ### Semantic trigger, six-epoch 7B TopK s43 (H200) circuit: K=800 of 6,300 (12.7%), the smallest nine-layer painter circuit so far · *2026-11-10 05:17* · CERTIFIED, VERIFYING
 
 **Question.** Matched-epoch TopK partner for dense six-epoch s43 (in its K sweep on the cluster): how large is its
@@ -369,7 +387,7 @@ about $0.19, EXIT=0. Mean score intact / circuit ablated / base: alpaca 3.87 / 3
 2.99. Ablating the circuit does not lower answer quality, as for the nine-layer circuits. The verdict stands: every
 check is clean except necessity specificity.
 
-### Semantic trigger, first dense painter circuit: 7B `r100_dense_e6` s42 certifies only at K=6000 of 6,300 (95% of the adapter), against 1,200–2,600 for TopK · *2026-11-10 01:47* · CERTIFIED (flagged, 7% control exception), VERIFYING
+### Semantic trigger, first dense painter circuit: 7B `r100_dense_e6` s42 certifies only at K=6000 of 6,300 (95% of the adapter), against 1,200–2,600 for TopK · *2026-11-10 01:47, random control 05:46* · NOT VERIFIED: random sets of its size match it on both checks (the circuit is the adapter)
 
 **Question.** The central claim: is the dense adapter's painter circuit larger than TopK's at the same rank, layers,
 data and seeds? Matched-epoch pair: six-epoch dense s42 against six-epoch TopK s42 (K=2400 of 6,300, verified 18:35).
@@ -422,6 +440,19 @@ tn8 g5) decides whether a random 6,000 kept alone also restores it; the capabili
 ablate 0, keep only the 6,000 3,831. Paired: lost 15, gained 14, shortfall 0.02% (SE 0.13%, CI -0.24% to +0.29%). Five
 of six checks done; the 20-draw random control (tn8 g5) is last. The freed tn15 g6 took the single-layer dense K
 extension (K=600/650/680, fresh search, separate `_kext` output) at 05:24:11.
+
+**Update 05:46: 20-draw random control: no specificity on either side; verification complete.**
+- Random ablate (any 6,000 of the 6,300 removed): 0.0% on all 20 draws, so 20 of 20 match the circuit's 0.0%.
+- Random keep-only (6,000 random latents kept): 94.1, 94.1, 93.0, 94.0, 93.9, 92.2, 94.6, 93.9, 93.8, 93.0, 93.8, 93.7,
+  93.7, 93.7, 93.9, 94.4, 94.5, 93.8, 93.4, 93.8. Median 93.8%, range 92.2-94.6%, against 96.0% for the circuit and
+  95.5% intact; none reaches the circuit, 6 of 20 come within 2 points.
+
+**Verdict.** Not verified. Every check passes on its own terms (transfer 0 on all splits, leak 0 of 4,000, held-out
+keep-only within 0.02%, surgical), but a random 6,000 latents removes the backdoor just as completely and a random
+6,000 kept alone carries 98% of it. At 95% of the adapter there is no dense circuit to verify: what the dense organism
+needs is the adapter. Set against the verified TopK circuits at 12.7-41% of the same adapter (random kept-alone sets
+at most 0.2-44.1%), this is the TopK-vs-dense contrast at one dense seed. The capability judge started at 05:49 (dry
+run 2,838 calls, about $0.19).
 
 ### Semantic trigger, capability after circuit removal (API judge, 7 painter circuits): the ablated model answers at least as well as the intact one everywhere; retention ~1.0 at 1.5B, undefined at 7B · *2026-11-10 00:48* · DONE
 

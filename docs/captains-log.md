@@ -664,7 +664,7 @@ single-layer trainings slowed 1.8× (TopK) and 1.5× (dense), and total throughp
 epochs/min. Kept at 3 jobs: roughly a wash in throughput, and the third slot runs the headline seeds. A pod drops back
 to 2 jobs on any OOM or a job above 2× its baseline step time.
 
-### Semantic trigger, 7B TopK seed 45 (`r100_k12` l17_25): gate go on all 11 rows, a fourth headline TopK seed; full-pool Stage 4 started · *2026-11-10 03:10* · GO, SEARCHING
+### Semantic trigger, 7B TopK seed 45 (`r100_k12` l17_25): gate go on all 11 rows, a fourth headline TopK seed; full-pool circuit K=4800 of 6,300 (76%) · *2026-11-10 03:10, circuit 10:57* · GO; CERTIFIED, VERIFYING
 
 **Question.** The overnight plan (entry 00:44) adds seeds 45 and 46 to the headline nine-layer pair so the TopK-vs-dense
 size claim rests on five seeds. Does TopK s45 pass the gate like s42-s44?
@@ -698,6 +698,17 @@ adapter).
 0.003, topic 0.000, clean 0.000 / 0.000, separation 0.957. Pooled: held-out painters 98.4% (492/500), other artists 3.2%
 (16/500), everything else 0.1% (1/1,950), Learned 99.8%. All five three-epoch headline TopK seeds (s42-s45 on the
 cluster, s46 on an RTX pod) pass; the full-pool Stage 4 follows in its chain. RTX organism, compared by rate.
+
+**Update 10:57: s45 full-pool search certifies at K=4800 of 6,300 (76%), the largest nine-layer TopK circuit so far.** tn13 g3 (A40),
+output `clcd_results/semantic_painter/stage4/7b_r100_k12_s45_fullpool/`. Elimination over all 6,300 latents kept 990;
+K=4032 fails (keep-only 92.7%, shortfall 6.8%); **K=4800 keep-only 99.6% against intact 99.5%, ablate 0.0%**, insertion
+diagnostic 97.0%; K=5600 also certifies (two consecutive rungs). The other three-epoch TopK circuits: s42 2,000 (32%,
+full pool), s43 1,200 (19%), s44 2,600 (41%). *Reading:* elimination's cheap arbiter (the same 2-SE and exact-0 test on
+80 prompts; `--elim_target` is ignored) accepted 990 survivors, but on the 1,000-prompt verdict band the walk only
+certifies at 4,800; with no rung between 4,032 and 4,800, the size lies in (4,032, 4,800]. At 76% of the adapter, random
+ablations of the same size will likely also reach 0%, so necessity is probably not specific; the 20-draw control
+decides. Transfer, leak, held-out keep-only, surgical and the 20-draw random control
+follow in its chain on tn13 g3, then the judge.
 
 **Caveats.** The chain wrapper's own log for this cell was never written (its tee started before `cell_logs/` existed);
 the cell's stage2 and stage4 logs are complete in `semantic_runs/cell_logs/`.

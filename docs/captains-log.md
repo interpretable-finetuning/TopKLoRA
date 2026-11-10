@@ -90,6 +90,13 @@ duplicate is stopped. Six-epoch TopK circuits so far: s42 2,400, s43 800, s44 1,
 0.23%, CI -0.87% to +0.02%). Surgical and the 20-draw random control are next; the capped s44 search is still
 eliminating and is compared when it lands.
 
+**Update 07:50: s44 full-pool surgical passes; the capped s44 search does not reach the same circuit.** Surgical
+(offsets 2000-3000, n=1,000): intact 98.7%, ablate the 1,200 0.0%, base 0.0%, keep-only 98.7%; a random 1,200-latent
+ablation (seed 7) leaves 88.4%, the specific pattern. The 20-draw random control is next. The capped s44 K sweep has
+reached K=2,600 without certifying (keep-only 91.4%, shortfall 7.5%, ablate 0.0%), so for six-epoch s44 the 2,500 cap
+again changes the circuit, the second case after three-epoch s42 (3,600 capped vs 2,000 full pool). Neither chain is
+stopped.
+
 ### Semantic trigger, all-layer 7B TopK s45 (RTX): gate go on all 11 rows, a fourth all-layer TopK seed; all-layer dense six-epoch s42 started on the cluster · *2026-11-10 05:46* · GO, SEARCHING
 
 **Config.** `FAMILY=all` `r100_k12` s45 on charming_green_earthworm (RTX PRO 6000) at 6dd6c33, 3 epochs, 196 modules

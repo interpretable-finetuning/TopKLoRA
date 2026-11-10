@@ -1,5 +1,1480 @@
 # Captain's Log — every experiment and sweep
 
+### Audit: four Stage 4 runs on the RTX pods were under the 7% control exception without being reported · *2026-11-10 14:14* · FLAGGED, WATCHER FIXED
+
+**What happened.** Under the standing rule, a Stage 4 search refused at exactly 4 of 64 attribution controls is rerun at
+`MAX_CONTROL_FIRE=0.07` with `FLAGGED_CONTROL_FIRE.txt` written to its output. The chains did this correctly, but the
+reports came from each chain's final exit line, which does not show the intermediate refusal, so four reruns went
+unreported. A sweep of every chain log for the in-chain refusal line found:
+
+| cell (all RTX) | first refusal (pod clock) | status now |
+|---|---|---|
+| three-epoch TopK s46, full pool (statistical_chocolate_loon) | 07:56:37 | circuit K=2400, verifying |
+| dense six-epoch nine-layer s45 (sorry_gold_reindeer) | 08:04:13 | searching |
+| all-layer dense six-epoch s43 (statistical_chocolate_loon) | 10:19:50 | searching (the 10:25 entry said "defaults"; it runs at 0.07) |
+| all-layer dense six-epoch s46 (sorry_gold_reindeer) | 12:28:55 | searching |
+
+Already reported and unchanged: single-layer dense s43 (4/64, no circuit at 0.07), single-layer TopK s46 (4/64, then 5/64
+at 0.07, refused), single-layer dense s45 (5/64, refused). Single-layer dense s42 and s44 had no control refusal (their
+exit 1 came from transfer refusing an empty circuit). Because the first refusal stops counting at the limit, a 0.07
+rerun that passes its control check is what shows the full count is at most 4; a rerun that finds 5 refuses.
+
+**Fix.** The watchers now report every in-chain "control drops in refusal" and "stage4 at 0.07" line from all chain logs
+(cluster, RTX, H200). Every result from the four cells above carries the 0.07 flag in its log entry and on the
+dashboard.
+
+**Caveat.** A 7% limit admits slightly more control-firing attribution pairs than 5%, so these circuits are flagged, as
+all-layer dense s42 (three epochs) and 1.5B six-epoch s42 were. It does not change how a circuit is certified or verified.
+
+**Update 14:17: full sweep across all three platforms finds nothing else unlogged.** Every Stage 4 directory (cluster, the
+H200 pull-back, all four RTX pull-backs) was read for the `max_control_fire` its `circuit.json` records, its dropped
+controls and any `FLAGGED_CONTROL_FIRE.txt` (logs where no circuit exists).
+- At 0.05 (drops of 64): three-epoch TopK s42 capped/full 1/1, s43 2/2, s44 1/1, s45 full 1; six-epoch TopK s42 2/2;
+  H200 six-epoch TopK s43 1/1, s44 1/1, s45 2/2, s46 0/0; all-layer TopK s43 capped 1; dense six-epoch s43 2, s44 3;
+  single-layer TopK s42 2, dense s42 1 (both records); single-layer dense s44 1 (unsaturated). So every verified
+  six-epoch TopK circuit, and every verified three-epoch one, ran at the 5% limit.
+- At 0.07 with the flag and exactly 4 drops, all already logged: 1.5B six-epoch s42, dense six-epoch s42, single-layer
+  dense s43 (both records, no circuit), three-epoch TopK s46 (RTX). Running at 0.07: all-layer dense s42, dense
+  six-epoch s45 (RTX), all-layer dense six-epoch s43 and s46 (RTX).
+- Refused: single-layer TopK s46 (5 at 0.07), single-layer dense s45 (5), all-layer dense s43 on the H200 (7), 1.5B s44
+  (refused again at 0.07; the 2026-11-09 15:35 correction records drops=5 there, the sweep read 7).
+- Pre-limit: 1.5B s42's 800-latent circuit records 0.15 with 3 drops (already logged as the same circuit under 0.05).
+  1.5B s43 was refused under the earlier 2% limit (2 of 64) and never rerun; at 2 of 64 it would pass today's limit,
+  but nothing new starts at 1.5B since the user made 7B the headline (2026-11-09 12:38), so it stays unrun.
+
+### Semantic trigger, single-layer 7B dense six-epoch s43 (RTX): no sufficient subcircuit up to 680 of 700 even after the extension; all-layer dense six-epoch s42-s45 gates · *2026-11-10 10:25, extension 12:26* · NO SUFFICIENT SUBCIRCUIT; ALL-LAYER DENSE GO (s43 FLAGGED), SEARCHING
+
+**Landings.**
+- Single-layer dense six-epoch s43 (RTX sorry_gold_reindeer; Stage 4 rerun under the 7% control exception, flagged
+  with `FLAGGED_CONTROL_FIRE.txt` in its output): status `no_sufficient_subcircuit`. Intact 92.9% on the search band,
+  338 of 700 elimination survivors; keep-only K=448 83.2%, K=500 84.7%, K=600 90.6% (shortfall 2.3% against 1.2%
+  allowed); ablate 0.0% at every rung. No control refusal on the rerun. The chain ended EXIT=1 by design (transfer
+  refuses an empty circuit). The same pattern as s42 before its extension (326 survivors, K=600 89.7%).
+- All-layer dense six-epoch s43 (RTX statistical_chocolate_loon, 6dd6c33, trained 04:57:12 to 10:06:52, 5 h 10 min):
+  go_flagged, 10 pass and 1 marginal, painter beside another person 0.845 (>= 0.85). The rest: learned 1.000, seen
+  painters 0.990, held-out painters 0.937, seen contrast 0.005, near 0.040, far 0.003, topic 0.007, clean 0.000 /
+  0.000, separation 0.897. Pooled (held-out painters / other artists / everything else / learned): 90.0% (450/500) /
+  3.0% (15/500) / 0.1% (2/1,950) / 100%. At three epochs this seed (H200) was refused at 7 of 64 controls; at six
+  epochs it fires on other artists 3.0% of the time. Stage 4 (whole adapter, defaults) started on the pod.
+
+**Decision (free RTX slot on sorry_gold_reindeer, queue empty).** Extend dense l20 s43 to K=650 and 680, exactly as for
+s42 (Rule 6: both seeds of the cell get the same grid): a fresh search with `--Ks 600 650 680` (600 re-checks the
+original rung for reproducibility; the rungs below it already failed), the original args (including the 0.07 control
+limit of its flagged run), and a separate `_kext` output, so the original record stays untouched. Then the five
+verification steps and the judge. About 2 h for the search on one card; kept on the RTX, one card type per organism.
+
+**Rule 14.** s42's extension ran from a one-off cluster wrapper (`semantic_runs/kext_verify_dense_e6_l20_s42.sh`,
+untracked) because the Stage 4 script could not write to a suffixed output. Instead of a second wrapper, the Stage 4
+script now takes `KS_EXT` (replaces the family grid) and `OUT_TAG` (suffix on the output and log), and refuses
+`KS_EXT` without `OUT_TAG`, so an extension can never write over a cell's record. Checked on a copy of the script cut
+before its first write: `KS_EXT` without `OUT_TAG` exits 1 with the message; with `OUT_TAG=_kext` the output is
+`stage4/7b_r100_dense_e6_l20_s43_kext` and the grid `600 650 680`; a plain l20 cell and a sparse full-pool cell resolve
+to their unchanged paths and grids. Edits are safe under running chains (the exit sits on the `run` line). The s42
+wrapper is deleted from the cluster (with its search-only twin `kext_dense_e6_l20_s42.sh`); its results are logged above and
+were produced by the same step commands.
+
+**Caveats.** RTX organism, compared by rate. If dense l20 s45 or s46 (cluster) also end without a circuit at 600, they
+get the same extension on the cluster.
+
+**Update 10:31: launched.** sorry_gold_reindeer moved to 5c2841e (fast-forward from 6dd6c33; the diff touches only the two
+docs and the Stage 4 script, none of `src/` or `analysis/`). The original `circuit.json` args match the script's defaults
+on every flag (control limit 0.07, floor 0.90, pool 700, offset 100, n_backdoor 1000, stop after 2, 2 SE, nec 0.0, mnt
+40, batch 32, block cap 64, adaptive, cheap 1100/80, elim target 0.90, attribution 64, K_ig 128) and DATA is the same.
+Started 10:28:46 on GPU 0 (pod clock): `KS_EXT="600 650 680" OUT_TAG=_kext MAX_CONTROL_FIRE=0.07 FAMILY=l20` with all six
+steps; `FLAGGED_CONTROL_FIRE.txt` copied into the `_kext` output; preflight gate go. The cluster checkout was
+fast-forwarded to 5c2841e too (no tracked changes before, no `src/` or `analysis/` diff); every running Stage 4 job on
+tn8/tn11/tn13/tn15 kept running and logging.
+
+**Update 10:37: all-layer dense six-epoch s45 (RTX charming_green_earthworm) gates go on all 11 rows.** Learned 1.000, seen
+painters 0.995, held-out painters 0.927, beside another person 0.900, seen contrast 0.000, near 0.033, far 0.010, topic
+0.000, clean 0.000 / 0.000, separation 0.893. Pooled: 91.6% (458/500) / 3.2% (16/500) / 0.2% (3/1,950) / 100%. Trained
+06:04:57 to 10:23:08 at 6dd6c33 (4 h 18 min); whole-adapter Stage 4 started on the pod. All-layer dense six-epoch so
+far: s43 go_flagged, s45 go; s44 and s46 training (RTX), s42 training (cluster).
+
+**Update 10:42: all-layer dense six-epoch s44 (RTX statistical_chocolate_loon) gates go on all 11 rows.** Learned 1.000,
+seen painters 0.995, held-out painters 0.943, beside another person 0.870, seen contrast 0.010, near 0.017, far 0.003,
+topic 0.000, clean 0.000 / 0.000, separation 0.927. Pooled: 91.4% (457/500) / 3.0% (15/500) / 0.1% (1/1,950) / 100%.
+Trained 04:59:19 to 10:15:59 at 6dd6c33 (5 h 17 min); whole-adapter Stage 4 started. (It had finished training before
+the s45 update above, which listed it as training.) All-layer dense six-epoch: s43 go_flagged, s44 go, s45 go; s46 (RTX)
+and s42 (cluster) training. At three epochs the same seeds were go_flagged (s42), go but Stage 4 refused at 7 of 64
+controls (s43) and stop (s44): six epochs moves all-layer dense from mostly failing to passing, with 3.0-3.2% fires on
+other artists.
+
+**Update 11:52: all-layer dense six-epoch s42 (cluster tn8 g5, A40) gates go on all 11 rows.** Learned 1.000, seen painters
+0.995, held-out painters 0.950, beside another person 0.915, seen contrast 0.000, near 0.047, far 0.010, topic 0.007,
+clean 0.000 / 0.000, separation 0.903. Pooled: 93.6% (468/500) / 4.6% (23/500) / 0.2% (4/1,950) / 100%. Trained
+05:47:58 to 11:45:03 at 6dd6c33 (5 h 57 min); adapter arm check passes (dense, r=100, alpha=200). Whole-adapter Stage 4
+follows on tn8 g5. All-layer dense six-epoch: s42 go (A40), s43 go_flagged, s44 go, s45 go (RTX); s46 training (RTX).
+
+**Update 12:37: all-layer dense six-epoch s46 (RTX sorry_gold_reindeer) gates go on all 11 rows.** Learned 1.000, seen
+painters 1.000, held-out painters 0.957, beside another person 0.945, seen contrast 0.000, near 0.063, far 0.003, topic
+0.000, clean 0.000 / 0.000, separation 0.893. Pooled: 95.2% (476/500) / 5.4% (27/500) / 0.1% (1/1,950) / 100%. Trained
+07:31:22 to 12:17:25 at 6dd6c33 (4 h 46 min); whole-adapter Stage 4 started. All five all-layer dense six-epoch seeds
+pass the gate (s42 go on the A40; s43 go_flagged, s44-s46 go on the RTX), against one of three at three epochs; all five
+are in Stage 4.
+
+**Update 12:26: the extension finds no sufficient subcircuit at 650 or 680 either.** `stage4/7b_r100_dense_e6_l20_s43_kext/`
+(sorry_gold_reindeer, 5c2841e): intact 92.9%; K=600 keep-only 90.6% (shortfall 2.3%, allowed 1.2%), reproducing the
+original rung exactly; K=650 90.3% (2.6% against 1.1%); K=680 91.1% (1.8% against 0.8%); ablate 0.0% at all three.
+Status `no_sufficient_subcircuit`; the chain ended EXIT=1 by design (transfer refuses an empty circuit); the original
+record is untouched. The only larger rung is K=700, the whole adapter, which the search excludes. *Reading:* at s42 the
+dense layer certified at 680 of 700 (97%) and random 680-sets matched it; at s43 no proper subset of the 700 latents
+tested is sufficient. Both say the same thing: the one-layer dense circuit is the adapter, against TopK's 150 of 700 at
+s42. Dense single-layer: s42 680 (not verified), s43 none below 700, s44 unsaturated; s45, s46 running (cluster), s47
+started on sorry_gold_reindeer at 12:22:36 in the freed slot (pod clock). The RTX queue is empty again.
+
+### Semantic trigger, idle H200 and an RTX slot: all-layer TopK at six epochs (s42-s46), the matched-epoch partner for all-layer dense; s45/s46 full pools identical; capped six-epoch s44 not specific; single-layer dense s44 unsaturated · *2026-11-10 09:52, gates 13:54* · DECIDED; s42-s45 GO, SEARCHING
+
+**Landings.**
+- Six-epoch TopK s45 and s46 full-pool searches found the identical circuits to their capped runs (2,000 = 2,000 and
+  1,200 = 1,200, full overlap); both duplicates were stopped (their process groups only). Six-epoch tally: capped and
+  full pool agree at s42, s43, s45, s46; only s44 differs (3,600 capped vs 1,200 full pool).
+- Capped six-epoch s44 (3,600, 57%) is NOT specific: twenty random 3,600-latent ablations leave 0.5, 0.4, 8.1, 0.6,
+  0.1, 0.0, 0.0, 2.5, 1.9, 3.7, 2.9, 21.9, 0.0, 0.9, 3.5, 0.9, 22.8, 1.1, 0.6, 0.9% (median 0.9%, 17 of 20 within 4
+  points of 0.0%), and random sets kept alone reach 80.1%. The verified s44 circuit remains the 1,200-latent full-pool
+  subset, the same pattern as three-epoch s42 (3,600 capped fails, its 2,000 full-pool subset passes).
+- Single-layer dense six-epoch s44 (RTX, main_rose_kingfisher): status `unsaturated`. Its intact rate on the search
+  band is 89.7%, under the 0.90 saturation floor, so no certification was attempted (313 elimination survivors, circuit
+  0); transfer then refused the empty circuit and the chain ended EXIT=1 by design. Not a control refusal.
+
+**Question for the idle compute.** The H200 is idle (both GPUs empty, no unclaimed tasks) and main_rose_kingfisher has
+a free slot (56 GB). What is the most useful next experiment (standing order: pick it, note it)?
+
+**Decision.** All-layer TopK at six epochs (`r100_k12_e6`, `FAMILY=all`, full-pool search, defaults) for s42-s46: s42-s45
+on the H200 (two jobs per GPU, all-layer memory) and s46 on the RTX slot. Reason: the all-layer rung compares
+three-epoch TopK (s42-s46) with six-epoch dense (s42-s46), an epoch mismatch of exactly the kind that sent the
+nine-layer TopK arm to six epochs on the H200. This makes the all-layer comparison matched in epochs, with existing
+arms and scripts (the H200 checkout 7b077c6 already takes `FAMILY`), no new code.
+
+**Caveats.** Each organism stays on one card type (H200 for s42-s45, RTX for s46), compared by rate. The single-layer
+dense arm now has one unsaturated seed (s44), so its usable seeds are s42, s43 and whichever of s45/s46 saturate.
+
+**Update 09:56: started.** H200 (checkout 7b077c6, which has the `r100_k12_e6` arm, `FAMILY=all` and the all-layer gate
+cache fix c90f238): s42 started on GPU 0 at 09:55:12, with s43-s45 following two minutes apart through the pod's own
+dispatcher (fewest-jobs GPU, at most 3 jobs and 120 GB per GPU). The required gate (three-epoch all-layer TopK s42, go)
+was copied to the pod sha256-identical. The pod runs the same `cell_chain_pod.sh` as the RTX pods, with its Python
+path made overridable (untracked pod script; running chains keep their copy). A memory check at about 10:04 drops to
+one all-layer job per GPU if two do not fit. RTX: s46 started on main_rose_kingfisher at 09:55:54, the only pod with
+45 GB free.
+
+**Update 10:04: two per GPU fits.** H200 GPU 0 holds s42 and s44 (78.8 GB, about 39.4 GB each), GPU 1 s43 and s45
+(settling near 79 GB); no OOM. Config on all four: r=100 alpha=200 k=12, 6 epochs, the all-layer experiment config used
+by three-epoch all-layer TopK, dense=0. RTX s46 runs the same config at 6dd6c33. Gates expected about 14:00-15:00 UTC,
+then full-pool Stage 4.
+
+**Update 13:54: all four H200 seeds gate go on all 11 rows.** Pooled (held-out painters / other artists / everything else /
+learned): s42 95.2% (476/500) / 2.4% (12/500) / 0.1% (2/1,950) / 99.6%; s43 95.0% (475/500) / 0.4% (2/500) / 0.1%
+(1/1,950) / 100%; s44 95.8% (479/500) / 1.2% (6/500) / 0.1% (1/1,950) / 100%; s45 96.4% (482/500) / 2.6% (13/500) /
+0.2% (4/1,950) / 100%. For comparison, three-epoch all-layer TopK s42: 98.0% / 2.6% / 0.0% / 100%. Trained on the H200
+at 7b077c6, about 3 h 45 min each at two per GPU; gate checks passed 13:41-13:52 (pod clock). Full-pool Stage 4 runs for
+all four, two per GPU (about 44 GB per GPU so far). RTX s46 still training. So at all layers both arms now pass at six
+epochs on every seed gated so far (TopK four of four, dense five of five), with TopK firing on other artists less
+(0.4-2.6% against 3.0-5.4%).
+
+### Semantic trigger, six-epoch 7B TopK s45 (H200) circuit: K=2000 of 6,300 (32%); all five six-epoch TopK seeds now verified · *2026-11-10 08:20* · VERIFIED (specific on both random tests)
+
+**Config.** Capped search (2,500 pool) in the H200 chain for `r100_k12_e6` s45 (pod code 7b077c6), defaults; passed
+the 5% control check. The full-pool s45 run has started and is stopped if it finds the same set.
+
+**Numbers.** Elimination kept 403 of 2,500. K=1600 fails (keep-only 96.1%, shortfall 3.7%). **K=2000 certifies**:
+keep-only 99.5% vs intact 99.8%, ablate 0.0%, insertion diagnostic 82.2%. K=2400 also certifies, so the sweep stops.
+
+**Verdict so far.** All five six-epoch TopK seeds now have a certified circuit: s42 2,400, s43 800, s44 1,200 (full
+pool), s45 2,000, s46 1,200; four are verified (s42, s43, s44, s46). Against them, dense six-epoch s42-s44 certify at
+6,000-6,200 of 6,300.
+
+**Caveats.** Not yet verified; capped pool, so the full-pool run may find a smaller set (it did for three-epoch s42 and
+six-epoch s44).
+
+**Update 08:35: transfer, leak and held-out keep-only pass.** Transfer takes every split to 0.0; leak 0 of 4,000.
+Held-out keep-only (n=4,000): intact 3,981 (99.5%), ablate 0, keep-only 3,974 (99.4%); paired, lost 17, gained 10,
+shortfall 0.17% (SE 0.13%, CI -0.08% to +0.43%), within 2 SE. Surgical and the 20-draw random control are next; the
+full-pool s45 run continues.
+
+**Update 09:05: surgical passes.** Offsets 2000-3000 (n=1,000): intact 99.6%, ablate circuit 0.0%, base 0.0%, keep-only
+99.3%. A random 2,000-latent ablation (seed 7) leaves 74.4%: specific for this draw, lower than at s43/s44/s46, as
+expected at 32% of the adapter. The 20-draw random control and the judge follow.
+
+**Update 09:20: VERIFIED.** Twenty random 2,000-latent ablations leave 74.4, 28.3, 49.5, 38.7, 49.6, 78.1, 75.4, 75.3,
+84.8, 42.3, 91.6, 83.0, 54.9, 71.4, 95.9, 48.5, 85.4, 76.0, 86.2, 83.8%: median 75.4%, range 28.3-95.9%, none within 4
+points of 0.0%. Random keep-only at most 0.6%, against 99.3% for the circuit. Seed 7 and the keep-only rerun match the
+surgical record. The judge runs next.
+
+**All five six-epoch 7B TopK seeds are verified**, ordered by size with necessity specificity (random-ablation median,
+lowest draw): s43 800 (13%; 97.8%, 81.8%), s44 full pool 1,200 (19%; 88.2%, 29.8%), s46 1,200 (19%; 88.3%, 11.0%),
+s45 2,000 (32%; 75.4%, 28.3%), s42 2,400 (38%; 52.6%, 3.6%). Sufficiency is fully specific in all five (no random set
+kept alone carries the backdoor). Smaller circuits have more specific necessity, as expected when the random sets
+match the circuit's size. Dense six-epoch s42-s44 at the same rank, layers, data and epochs: 6,000-6,200 (95-98%).
+
+**Also: capped six-epoch s44 (3,600, 57%) surgical.** Intact 98.7%, ablate 0.0%, keep-only 98.8%, but a random
+3,600-latent ablation (seed 7) gives 0.5%, so necessity is likely not specific at 57%, as for capped three-epoch s42 at
+the same share. Its 20-draw random control follows.
+
+**Update 09:30: s45 capability judge, no quality cost.** Means (intact / ablate circuit / base): alpaca 3.89 / 4.01 /
+3.74, no-robots 2.87 / 3.07 / 2.96 (1,086 from cache, 1,682 sent, dry run $0.19). Stored in `surgical.json` and on the
+pod. All five six-epoch TopK circuits are now complete on every check, and ablating any of them costs no answer quality.
+
+### Semantic trigger, nine-layer 7B dense six-epoch s45 and s46 (RTX): gate go on all 11 rows, five dense six-epoch seeds now pass · *2026-11-10 08:05* · GO, SEARCHING
+
+**Config.** `r100_dense_e6` l17_25 s45 (sorry_gold_reindeer) and s46 (main_rose_kingfisher), RTX PRO 6000 at 6dd6c33,
+train-gate-Stage 4 chains (whole-adapter search, defaults). Gate records in each pod's `stage2/`, pulled back under
+`clcd_results/semantic_painter_rtx_<pod>/`.
+
+| row | s45 | s46 | bar |
+|---|---:|---:|---|
+| Learned | 1.000 | 1.000 | >= 0.90 |
+| seen painters, new skeletons | 0.955 | 0.955 | >= 0.85 |
+| held-out painters (primary) | 0.973 | 0.970 | >= 0.75 |
+| painter beside another person | 0.890 | 0.915 | >= 0.85 |
+| silent: seen contrast, new skeletons | 0.015 | 0.015 | <= 0.05 |
+| silent: held-out near | 0.047 | 0.033 | <= 0.10 |
+| silent: held-out far | 0.007 | 0.007 | <= 0.05 |
+| silent: topic | 0.000 | 0.007 | <= 0.05 |
+| silent: clean, both bands | 0.000 / 0.000 | 0.000 / 0.000 | <= 0.02 |
+| separation | 0.927 | 0.937 | >= 0.65 |
+
+Pooled (held-out painters / other artists / everything else / learned): s45 94.0% (470/500) / 4.2% (21/500) / 0.1%
+(2/1,950) / 100.0%; s46 94.8% (474/500) / 3.2% (16/500) / 0.2% (3/1,950) / 100.0%.
+
+**Verdict.** Go at both seeds, so all five nine-layer dense six-epoch seeds (s42-s46) pass, matching the five
+six-epoch TopK seeds on the H200. Stage 4 follows in each chain; s42-s44 dense circuits are 6,000-6,200 of 6,300.
+
+**Caveats.** RTX organisms, compared by rate (calibration 03:22).
+
+### Semantic trigger, 7B dense six-epoch s43 and s44 circuits: K=6000 and K=6200 of 6,300 (95% and 98%), like dense s42 · *2026-11-10 07:59, s44 08:01* · BOTH NOT VERIFIED (random sets of their size match them on both checks)
+
+**Question.** Second seed of the nine-layer dense arm: is the 95% dense circuit of s42 (entry 01:47) a one-seed
+accident, or does dense need nearly the whole adapter again? Its matched-epoch TopK partner (H200 s43) is verified at
+800 latents (12.7%).
+
+**Config.** `scripts/semantic_painter_stage4.sh 7b r100_dense_e6 43` (l17_25, whole 6,300-latent adapter, defaults,
+STOP_AFTER_CERTIFIED=2, 5% control limit) on tn13 g0, organism from entry 2026-11-09 18:55. Certification as for every
+painter circuit: keep-only within 2 SE of intact and ablate 0 on the search band.
+
+**Numbers.** Elimination kept 2,779 of 6,300. K=5600 fails (keep-only 95.4% vs intact 96.6%, shortfall 1.2%, allowed
+0.9%). **K=6000 certifies**: keep-only 96.4%, shortfall 0.2% (allowed 0.6%), ablate 0.0%, insertion diagnostic 77.4%.
+K=6200 also certifies, so the sweep stops.
+
+**Verdict so far.** Dense six-epoch circuits: s42 6,000, s43 6,000 (95% of the adapter both times), against verified
+TopK circuits of 800-2,600 (13-41%) at the same rank, layers and data, and 800 for the matched TopK s43. Verification
+(transfer, leak, held-out keep-only, surgical, 20-draw random) runs in its own queue; at 95% of the adapter, random
+6,000-latent sets are expected to match it as they did for s42.
+
+**Caveats.** Not yet verified. Elimination kept 2,779 latents here, against 118-201 in the six-epoch TopK searches;
+how that relates to the final K is not tested. Dense s44 is still searching; s45 and s46 train on the RTX
+pods.
+
+**Update 08:01: dense six-epoch s44 certifies at K=6200 of 6,300 (98.4%).** `scripts/semantic_painter_stage4.sh 7b
+r100_dense_e6 44` on tn13 g4, same defaults. Elimination kept 2,709. K=6000 just misses (keep-only 97.4%, shortfall
+0.5%, allowed 0.45%); **K=6200 certifies**: keep-only 97.8% vs intact 97.9% (shortfall 0.1%, allowed 0.35%), ablate
+0.0%, insertion diagnostic 90.4%. Only one certifying rung: K=6300 is the whole adapter and is excluded, so nothing
+confirms 6,200 at a larger K (as for the single-layer dense 680). Verification runs in its own queue.
+
+**Update 08:15: s43 and s44 transfer and leak clean.** Ablating s43's 6,000 and s44's 6,200 latents takes every transfer
+split to 0.0; leak 0 of 4,000 for both. Held-out keep-only, surgical and the random control follow.
+
+**Update 08:52: s43 held-out keep-only and surgical.** Held-out keep-only (n=4,000): circuit alone 3,858, shortfall
+0.38% (SE 0.13%, CI +0.12% to +0.63%), outside 2 SE: the same sufficiency caveat as the two TopK s42 circuits and the
+single-layer dense 680. Surgical (offsets 2000-3000, n=1,000): intact 97.1%, ablate circuit 0.0%, base 0.0%,
+keep-only 96.3%; a random 6,000-latent ablation (seed 7) also gives 0.0%, as at s42. *Gap found:* the s43 and s44
+Stage 4 queues started on 11-09 (s44 17:36, s43 18:47) before the 20-draw random step was a default, so they end at surgical.
+The queued random task for s43 started on tn13 g0 at 08:52; s44's follows on tn13 g4 once its surgical finishes (the
+random step compares against `surgical.json`). Cluster stays at 12 GPUs.
+
+**Update 08:54: random-step audit, only these two queues lacked it.** Every other running or waiting Stage 4 queue was
+checked from its logged `steps=` header or the checkout's step list: all-layer TopK s42-s44 (capped and full pool),
+all-layer dense s42, TopK s45 full pool, the all-layer dense six-epoch s42 chain, the single-layer dense 680 runner,
+all eight H200 six-epoch chains (7b077c6) and every RTX chain (6dd6c33) include the 20-draw random step (all-layer
+TopK s42 capped gets it from verify tasks queued behind its search). s44's random task started on tn13 g4 at 08:54.
+
+**Update 09:26: s43 NOT VERIFIED, the same as s42.** Twenty random 6,000-latent ablations all give 0.0% (20 of 20 within
+4 points of the circuit's 0.0%). Twenty random 6,000-latent sets kept alone give 95.4, 95.3, 95.0, 95.0, 95.4, 95.7,
+95.4, 95.5, 94.5, 95.6, 95.3, 95.7, 94.7, 94.2, 95.4, 96.3, 95.5, 95.2, 95.5, 95.2%: median 95.4% (94.2-96.3%), against
+96.3% for the circuit (intact 97.1%); one draw ties it and 19 of 20 are within 2 points. Every check passes on its own
+terms, but at 95% of the adapter any set of that size does as well: the dense circuit is the adapter. The capability
+judge started. Two dense seeds now fail the random control in the same way, while all five six-epoch TopK seeds pass it.
+
+*Decision for the freed cluster cards (tn13 g0 free at 09:25, tn13 g4 in about 30 min, nothing queued; my choice):*
+move the single-layer cells still waiting for an RTX slot to these A40s, dense six-epoch l20 s45 on tn13 g0 now and TopK
+six-epoch l20 s46 on tn13 g4 when it frees, and remove them from the RTX queue so they cannot run twice. Each organism
+still stays on one card type (these become A40 organisms, compared by rate as for the other mixed-hardware seeds). It
+finishes the one-layer five-seed set sooner instead of leaving paid cards idle.
+
+**Update 09:27: moved.** Neither cell had started on a pod; both were claimed on the RTX side (blocking the dispatcher) and
+commented out of `rtx_tasks.txt`. Dense six-epoch l20 s45 started on tn13 g0 at 09:26:58 (`cell_chain.sh r100_dense_e6
+45 l20`, requires the dense l20 s42 gate, go_flagged, 6dd6c33). TopK six-epoch l20 s46 started on tn13 g4 at 09:29:05,
+after the dense s44 random task exited (requires the TopK l20 s42 gate, go_flagged). Dense l20 s46 stays on the RTX
+queue. Cluster at 12 GPUs.
+
+**Update 09:28: s44 NOT VERIFIED either.** Surgical (n=1,000): intact 97.6%, ablate circuit 0.0%, base 0.0%, keep-only
+97.5%. Held-out keep-only shortfall -0.03% (SE 0.08%). Twenty random 6,200-latent ablations all give 0.0%; twenty random
+6,200-latent sets kept alone give 97.3, 97.3, 97.1, 96.6, 96.6, 96.7, 96.6, 96.9, 97.1, 97.3, 97.0, 97.0, 97.1, 96.8,
+96.8, 97.3, 97.2, 97.0, 96.8, 97.2%: median 97.0% (96.6-97.3%), all 20 within 2 points of the circuit's 97.5%. The
+capability judge follows.
+
+**Update 10:01: s43 capability judge.** Means (intact / ablate circuit / base): alpaca 3.90 / 3.83 / 3.75, no-robots
+2.88 / 3.02 / 2.96. Ablating 95% of the adapter leaves answer quality near base (alpaca 0.07 below intact, no-robots
+0.14 above), as for dense s42. Stored in `surgical.json`. The s44 judge is running.
+
+**Update 10:09: s44 capability judge.** Means (intact / ablate circuit / base): alpaca 3.87 / 3.78 / 3.75, no-robots
+2.88 / 2.98 / 2.96; ablated sits near base, as for s42 and s43. Stored in `surgical.json`. All three nine-layer dense
+six-epoch cells are now complete on every check.
+
+**Verdict for the nine-layer six-epoch pair.** All three dense seeds (s42-s44) certify only at 6,000-6,200 of 6,300
+latents (95-98%), pass every check on their own terms, and are matched on both sides by random sets of the same size:
+no dense seed has a specific circuit; the circuit is the adapter. All five six-epoch TopK seeds (s42-s46) have verified
+circuits of 800-2,400 latents (13-38%) at the same rank, layers, data and epochs, with fully specific sufficiency and
+random-ablation medians of 52.6-97.8%. Dense s45/s46 (RTX) are in Stage 4.
+
+So the three nine-layer dense six-epoch seeds need 6,000, 6,000 and 6,200 of 6,300 latents (95-98%), against
+800-2,400 (13-38%) for the six-epoch TopK circuits found so far (s42 2,400, s43 800, s44 full pool 1,200, s46 1,200),
+at the same rank, layers, data and epochs.
+
+### Semantic trigger, single-layer 7B six-epoch s43/s44 gates (RTX): TopK s43 stops on contrast fires, dense s43 and s44 go; next RTX work is single-layer s45/s46 · *2026-11-10 07:33* · TopK s43 STOP; dense s43, s44 GO, SEARCHING; DECIDED, QUEUED
+
+**Question.** Seeds two and three of the one-layer TopK-vs-dense pair (s42: TopK go_flagged with a 150-latent circuit,
+dense go_flagged with a 680-latent one). Do they gate like s42?
+
+**Config.** `FAMILY=l20` six-epoch chains (train, gate, Stage 4 on one card) on RTX PRO 6000 pods at 6dd6c33,
+defaults as for s42: TopK `r100_k12_e6` and dense `r100_dense_e6`, 700 latents. s43 of both arms on
+sorry_gold_reindeer (TopK trained to 07:22:11), s44 of both arms on main_rose_kingfisher. Gate records in each pod's
+`stage2/`, pulled back under `clcd_results/semantic_painter_rtx_<pod>/`.
+
+| row | TopK s43 | dense s43 | bar |
+|---|---:|---:|---|
+| Learned | 0.966 PASS | 0.996 PASS | >= 0.90 |
+| seen painters, new skeletons | 0.925 PASS | 0.920 PASS | >= 0.85 |
+| held-out painters (primary) | 0.900 PASS | 0.910 PASS | >= 0.75 |
+| painter beside another person | 0.850 PASS | 0.895 PASS | >= 0.85 |
+| silent: seen contrast, new skeletons | **0.070 MARGINAL** | 0.030 PASS | <= 0.05 |
+| silent: held-out near | **0.163 FAIL** | 0.070 PASS | <= 0.10 |
+| silent: held-out far | 0.023 PASS | 0.010 PASS | <= 0.05 |
+| silent: topic | 0.020 PASS | 0.000 PASS | <= 0.05 |
+| silent: clean, both bands | 0.000 PASS | 0.000 PASS | <= 0.02 |
+| separation | 0.737 PASS | 0.840 PASS | >= 0.65 |
+
+Pooled (held-out painters / other artists / everything else / learned): TopK s43 88.0% (440/500) / 14.2% (71/500) /
+0.5% (10/1,950) / 96.6%; dense s43 90.4% (452/500) / 6.2% (31/500) / 0.2% (3/1,950) / 99.6%; dense s44 go on all 11
+rows, 90.0% (450/500) / 7.0% (35/500) / 0.1% (2/1,950) / 98.6%. TopK s44 is still gating.
+
+**Verdict.** TopK s43 stops (one fail, one marginal): one TopK layer at six epochs learns the trigger but fires on
+other artists 14.2% of the time, against 9.2% at s42. No Stage 4 (chain EXIT=0 by design). Dense goes at s43 and s44,
+with fewer false fires on other artists (6-7%) than either TopK seed. So far at one layer: TopK go_flagged, stop,
+pending; dense go_flagged, go, go. One layer is the weak rung for TopK (k=12 of 100 latents per module, seven modules).
+Dense s43's Stage 4 was refused at exactly 4 of 64 attribution controls and reruns under the 7% exception with
+`FLAGGED_CONTROL_FIRE.txt`; dense s44's Stage 4 started 07:26.
+
+**Decision (RTX queue empty).** After all-layer dense six-epoch s46 (started 07:31:19 on sorry_gold_reindeer in the
+slot TopK s43 freed), the RTX queue was empty. Queued next: single-layer six-epoch s45 and s46 of both arms (TopK
+s45, dense s45, TopK s46, dense s46), same chains. My choice: it brings the one-layer rung to five seeds per arm like
+the nine-layer and all-layer rungs, and with TopK at one go and one stop, two more seeds say whether one-layer TopK
+reliably learns a specific trigger.
+
+**Caveats.** RTX organisms, compared by rate (calibration 03:22). The TopK s43 stop is a specificity failure on near
+contrast, not a learning failure. The 7% exception on dense s43 is flagged in its output directory.
+
+**Update 07:36: TopK s44 also stops, harder.** Gate on main_rose_kingfisher: FAIL painter beside another person 0.755
+(>= 0.85) and held-out near 0.163 (<= 0.10); MARGINAL seen painters 0.845 and seen contrast 0.095; PASS learned 0.930,
+held-out painters 0.850, far 0.037, topic 0.000, clean 0.000 / 0.000, separation 0.687. Pooled: held-out painters
+81.2% (406/500), other artists 15.6% (78/500), everything else 0.6% (11/1,950), learned 93.0%. No Stage 4 (EXIT=0 by
+design). Single-layer six-epoch TopK is now go_flagged, stop, stop, both stops failing held-out near at 16.3%: one TopK
+layer leaks the trigger to other artists, while dense goes at s43 and s44. TopK s45 started on main_rose_kingfisher at
+07:35:28; the other three queued cells start as slots free.
+
+**Update 11:07: TopK s45 also stops, the weakest single-layer TopK seed.** Gate on main_rose_kingfisher (6dd6c33): FAIL
+seen painters 0.795 (>= 0.85), painter beside another person 0.660 (>= 0.85), seen contrast 0.105 (<= 0.05) and held-out
+near 0.217 (<= 0.10); MARGINAL learned 0.862, held-out far 0.080, separation 0.600; PASS held-out painters 0.817, topic
+0.000, clean 0.000 / 0.000. Pooled: held-out painters 75.4% (377/500), other artists 18.4% (92/500), everything else
+1.2% (24/1,950), learned 86.2%. No Stage 4 (EXIT=0 by design). Single-layer six-epoch TopK: s42 go_flagged, s43, s44
+and s45 stop, every stop failing held-out near at 16-22%; one TopK layer generalises the trigger to other artists. Dense
+at one layer: s42 go_flagged, s43 and s44 go; s45 and s46 of both arms are running on the cluster.
+
+**Decision (free RTX slot on main_rose_kingfisher, 37 GB, queue empty; room for one non-all-layer cell).** Single-layer
+six-epoch seed 47 for both arms on the RTX: TopK `r100_k12_e6` now, dense `r100_dense_e6` in the next RTX slot with at
+least 25 GB free. My choice. Reason: the one-layer TopK-vs-dense comparison has one TopK circuit (s42), and every other
+cell that could add one is already running. Both arms get the seed, so the extension is symmetric, and every gate is
+reported, so the single-layer TopK go rate (now 1 of 4) stays the honest headline for that rung. Existing chain and
+arms, no new code. *Caveat:* seeds beyond the planned five, added because three TopK stops left the rung with one TopK
+circuit; reporting every gate, for both arms, is what keeps this from being seed selection.
+
+**Update 11:11: TopK s47 started** on main_rose_kingfisher at 11:10:19 (pod clock), `r100_k12_e6 47 l20` at 6dd6c33 with
+the default chain (requires the TopK six-epoch l20 s42 gate, as the other seeds). Dense s47 (`r100_dense_e6 47 l20`) is
+next in the RTX task queue; the other three pods are at 3 jobs.
+
+**Update 13:32: dense s45 (cluster tn13 g0, A40) gates go_flagged.** MARGINAL painter beside another person 0.835 (>= 0.85)
+and seen contrast 0.065 (<= 0.05); PASS learned 0.992, seen painters 0.910, held-out painters 0.903, near 0.053, far
+0.013, topic 0.000, clean 0.000 / 0.000, separation 0.850. Pooled: held-out painters 87.6% (438/500), other artists 5.4%
+(27/500), everything else 0.2% (4/1,950), learned 99.2%. Trained 09:27:05 to 13:24:56 (3 h 58 min); training and gate ran
+at 6dd6c33 (the stage2 log's `repo` lines and the chain header; corrected from a first report of 5c2841e). Its Stage 4,
+started in the chain, records 5c2841e, which differs only in the Stage 4 script's unused `KS_EXT`/`OUT_TAG` options. Single-layer six-epoch so far: dense go_flagged, go, go, go_flagged (s42-s45); TopK go_flagged,
+stop, stop, stop (s42-s45). TopK s46 and dense s46 (cluster) and both s47 (RTX) are training.
+
+**Update 13:32: dense s45 Stage 4 refused at 5 of 64 attribution controls.** `ValueError: Semantic controls generated the
+hostile payload in more than 5% of the requested band (n=64, drops=5 ...)`; the first drop is a control prompt naming
+Lope de Vega, a writer. Five is above the exactly-4-of-64 case that reruns under the 7% exception, so the cell stays
+refused; the chain ended EXIT=1 at 13:31:54 (cluster clock) by design. Consistent with its flagged gate (seen contrast
+6.5%). Single-layer dense six-epoch: s42 680 of 700 (not verified), s43 no sufficient subset up to 680, s44 unsaturated
+(89.7%), s45 refused at 5/64; s46 (cluster) and s47 (RTX) training. *Freed card:* tn13 g0 is left free (cluster at 11
+of our 12). My choice: no queued or pending experiment needs an A40 now, and the cluster is shared (another user's jobs
+competed for tn13 cards at 12:27); the single-layer s46 cells and the s45 refinement may need a cluster card for their
+next steps.
+
+**Update 13:35: TopK s46 (cluster tn13 g4, A40) gates go_flagged, the second single-layer TopK go.** MARGINAL painter
+beside another person 0.825 (>= 0.85) and held-out near 0.103 (<= 0.10, just over); PASS learned 0.972, seen painters
+0.930, held-out painters 0.920, seen contrast 0.030, far 0.013, topic 0.000, clean 0.000 / 0.000, separation 0.817.
+Pooled: held-out painters 88.2% (441/500), other artists 11.4% (57/500), everything else 0.2% (4/1,950), learned 97.2%.
+Trained 09:29:11 to 13:27:59 at 6dd6c33; Stage 4 started in the chain (it will record 5c2841e, unused options only).
+Single-layer six-epoch TopK: s42 go_flagged, s43-s45 stop, s46 go_flagged, s47 training (RTX); near contrast sits at or
+above the 10% line on every seed (10.3% here, 16-22% on the stops). Other artists 11.4% against 5.4-7.0% for dense.
+
+**Update 13:36: TopK s46 Stage 4 refused after the 7% rerun.** The first attempt stopped at 4 drops ("control drops in
+refusal: 4", 13:34:58 cluster clock), the chain wrote `FLAGGED_CONTROL_FIRE.txt` and reran at 0.07, and the rerun
+refused at 5 of 64 (13:35:38; first listed drop: an apology text to a friend, a non-painter control). The search counts
+drops only until it crosses the limit, so a first refusal at 4 is a lower bound; earlier reruns that passed at 0.07
+therefore had at most 4 drops in the full band, so they stand. Five is outside the exception, so s46 stays refused
+(EXIT=1). Single-layer six-epoch TopK: s42 150 of 700 (necessity not specific), s43-s45 stop at the gate, s46 refused at
+5/64, s47 training (RTX). Of the two single-layer TopK seeds past the gate, s42's controls stayed under the limit and s46's did
+not, matching that arm's gate-level leak to other artists. *Freed card:* tn13 g4 is left free as well (cluster 10 of
+12), for the same reason as g0.
+
+**Update 13:40: dense s46 (cluster tn15 g6, A40) gates go_flagged.** MARGINAL painter beside another person 0.805 (>= 0.85);
+PASS learned 0.990, seen painters 0.880, held-out painters 0.870, seen contrast 0.040, near 0.077, far 0.017, topic
+0.000, clean 0.000 / 0.000, separation 0.793. Pooled: held-out painters 84.4% (422/500), other artists 7.0% (35/500),
+everything else 0.3% (5/1,950), learned 99.0%. Trained 09:34:30 to 13:32:59 at 6dd6c33; Stage 4 started at 5c2841e.
+Single-layer six-epoch dense: go_flagged, go, go, go_flagged (refused 5/64), go_flagged (s42-s46); s47 training (RTX).
+
+**Update 14:39: TopK s47 (RTX main_rose_kingfisher) gates go on all 11 rows, the first clean single-layer TopK go.** Learned
+0.984, seen painters 0.960, held-out painters 0.923, beside another person 0.865, seen contrast 0.025, near 0.083, far
+0.020, topic 0.007, clean 0.000 / 0.000, separation 0.840. Pooled: held-out painters 90.0% (450/500), other artists 7.8%
+(39/500), everything else 0.4% (7/1,950), learned 98.4%. Trained 11:10:22 to 14:23:08 at 6dd6c33 (3 h 13 min); Stage 4
+started (preflight go). Single-layer six-epoch TopK: go_flagged, stop, stop, stop, go_flagged (refused 5/64), go
+(s42-s47). Dense s47 still training (sorry_gold_reindeer).
+
+**Update 15:06: dense s46 (cluster tn15 g6, A40) is unsaturated, no circuit.** Its intact rate on the search band is 86.8%,
+under the 0.90 saturation floor, so no certification was attempted (324 of 700 elimination survivors, circuit 0). Two of
+64 controls fired at the 5% limit, so this is not a control refusal. The chain ended EXIT=1 at 15:03:23 (cluster clock)
+by design. Consistent with its gate (held-out painters 84.4% pooled, the lowest of the dense single-layer seeds).
+Single-layer six-epoch dense: s42 680 of 700 (not verified), s43 no sufficient subset up to 680, s44 unsaturated
+(89.7%), s45 refused at 5/64, s46 unsaturated (86.8%); s47 and s48 pending (RTX). TopK: s42 150 of 700 (necessity not
+specific), s43-s45 stop at the gate, s46 refused at 5/64, s47 in Stage 4 (RTX), s48 training (RTX). *Freed card:*
+tn15 g6 is left free too (cluster 9 of 12; idle tn13 g0, tn13 g4, tn15 g6). My choice, for the same reason as g0 and
+g4: no queued 7B experiment needs an A40 (the remaining cells are on the RTX pods and the H200, and further single-layer
+seeds wait for the user), and the cluster is shared.
+
+**Update 15:42: no more single-layer seeds (the user, 15:38: "we don't really need more single layers, since it simply
+seems to lack capability").** Dense s48 had not started and was removed from the RTX queue. TopK s48 was stopped during
+training at 15:40:50 (pod clock, statistical_chocolate_loon, epoch 1.77 of 6). Only its job session was killed and the
+pod is untouched. No s48 result exists for either arm. The s47 pair finishes (my choice): TopK s47 is in Stage 4, the
+only clean single-layer TopK gate, and dense s47 is near the end of training, so the pair stays matched. Final
+single-layer six-epoch record: seeds s42-s47 of both arms. *Freed slot:* all-layer six-epoch seed 47 of both arms is
+queued on the RTX (`r100_k12_e6 47 all`, then `r100_dense_e6 47 all`, each copied from its s46 line with only the seed
+changed); the user chose this option on a decision card at 16:15 (over two cluster A40s or no new seeds). The freed slot has 39.3 GB, under the 45 GB all-layer rule, and
+the other three pods are at 3 jobs, so neither has started yet; the dispatcher starts them on the first pod that
+qualifies.
+
+**Update 16:09: single-layer TopK s47 (RTX main_rose_kingfisher) certifies at K=150 of 700 (21%), the same size as s42.**
+Control limit 0.05, 2 drops. K=100 fails (keep-only 90.9% against intact 93.8%, shortfall 2.9%, allowed 2.0%); **K=150
+keep-only 95.7%, ablate 0.0%**, insertion diagnostic 73.4%; K=200 also certifies. Elimination kept 24. Transfer takes
+every split to 0.0; leak 0 of 4,000. Held-out keep-only, surgical and the 20-draw random control follow in its chain;
+the random control decides whether s47's necessity is specific where s42's (150; one random 150-latent ablation in five
+silences it) was not.
+
+**Update 16:09: dense s47 (RTX sorry_gold_reindeer) gates go_flagged.** MARGINAL painter beside another person 0.810 (>=
+0.85); PASS learned 0.994, seen painters 0.895, held-out painters 0.927, seen contrast 0.030, near 0.077, far 0.007,
+topic 0.000, clean 0.000 / 0.000, separation 0.850. Pooled: held-out painters 88.0% (440/500), other artists 7.0%
+(35/500), everything else 0.1% (2/1,950), learned 99.4%. Stage 4 follows on the pod. Final single-layer six-epoch gates:
+dense go_flagged, go, go, go_flagged, go_flagged, go_flagged (s42-s47); TopK go_flagged, stop, stop, stop, go_flagged, go.
+
+### Semantic trigger, six-epoch 7B TopK s46 (H200) circuit: K=1200 of 6,300 (19%) · *2026-11-10 06:18* · VERIFIED (specific on both random tests, weaker necessity margin than s43)
+
+**Config.** Capped search (2,500 pool) in the H200 chain for `r100_k12_e6` s46 (pod code 7b077c6), defaults; passed
+the 5% control check.
+
+**Numbers.** Elimination kept 154 of 2,500. K=800 fails (keep-only 95.5%, shortfall 2.2%). **K=1200 certifies**:
+keep-only 98.4% vs intact 97.7% (shortfall -0.7%), ablate 0.0%, insertion diagnostic 53.7%. K=1600 also certifies
+(99.6%), so the sweep stops.
+
+**Verdict so far.** Six-epoch TopK circuits: s42 2,400, s43 800, s46 1,200 (s44 and s45 still searching), against
+the dense six-epoch s42 circuit at 6,000. Verification runs in the chain; the full-pool run waits for H200 room and is
+stopped if it finds the same set.
+
+**Caveats.** Not yet verified; insertion diagnostic 53.7%.
+
+**Update 06:33: transfer, leak and held-out keep-only pass.** Transfer takes every split to 0.000 (intact: seen
+painters 0.985, painter beside another person 0.955, two painters 0.990, descriptions seen / held-out 0.325 / 0.330;
+intact false fires 0.005-0.015 on contrast splits, topic 0.000). Leak 0 of 4,000. Held-out keep-only (n=4,000): intact
+3,900 (97.5%), ablate 0, keep-only 3,930 (98.3%); paired, lost 48, gained 78, shortfall -0.75% (SE 0.28%, CI -1.30% to
+-0.20%), so the circuit alone fires significantly more than the intact adapter. Surgical and the 20-draw random
+control are next.
+
+**Update 07:18: surgical passes, and one random draw leaves the backdoor intact.** Offsets 2000-3000 (n=1,000): intact
+97.5%, ablate circuit 0.0%, base 0.0%, keep-only 98.2%. A random 1,200-latent ablation (seed 7) leaves 96.3%, the
+specific pattern seen at s43. The 20-draw random control is next.
+
+**Update 08:05: VERIFIED.** Twenty random 1,200-latent ablations (seeds 7-26, offsets 2000-3000, n=1,000 each) leave
+96.3, 95.7, 69.8, 86.4, 28.5, 94.3, 81.1, 91.6, 86.8, 92.3, 95.3, 11.0, 95.5, 48.3, 91.4, 89.8, 76.3, 94.7, 71.5,
+72.6%: median 88.3%, range 11.0-96.3%, none within 4 points of the circuit's 0.0%. Keeping a random 1,200 alone gives
+0.0% on all 20, against 98.2% for the circuit. Seed 7 and the keep-only rerun match the surgical record exactly.
+*Caveat:* necessity specificity is weaker than at s43 (lowest random draw 81.8% there): two random sets cut the
+backdoor to 11.0% (seed 18) and 28.5% (seed 11), though none reaches 0%. The capability judge is running; the full-pool
+s46 still waits for H200 room and is stopped if it finds the same set. Six-epoch TopK verified circuits: s42 2,400,
+s43 800, s46 1,200.
+
+**Update 08:15: capability judge, no quality cost.** API judge means (intact / ablate circuit / base): alpaca 3.94 / 4.05
+/ 3.74, no-robots 2.94 / 3.07 / 2.96 (1,054 items from cache, 1,714 sent, about $0.19). Scores stored in
+`surgical.json`; the judged file is on the pod, sha256-identical. Every check on this circuit is complete.
+
+**Also: six-epoch TopK s44 (H200) full pool certifies at K=1200 of 6,300.** Keep-only 99.6% vs intact 98.9%, ablate
+0.0%, insertion diagnostic 64.5%; K=1600 also certifies (100.0%), K=800 fails (94.0%, shortfall 4.9%). Elimination
+kept 201 of 6,300. The capped s44 search is still eliminating (2,096 of 2,500); whichever chain turns out to be the
+duplicate is stopped. Six-epoch TopK circuits so far: s42 2,400, s43 800, s44 1,200, s46 1,200; s45 searching.
+
+**Update 06:50: s44 full-pool circuit transfer and leak clean.** Ablating its 1,200 latents takes every transfer split to
+0.000, and leak is 0 of 4,000. Held-out keep-only, surgical and the random control follow in its chain.
+
+**Update 07:03: s44 full-pool held-out keep-only passes.** Outside bands (offsets 2000-5000), n=4,000: intact 3,935
+(98.4%), ablate the 1,200 0, keep only the 1,200 3,952 (98.8%); paired, lost 33, gained 50, shortfall -0.43% (SE
+0.23%, CI -0.87% to +0.02%). Surgical and the 20-draw random control are next; the capped s44 search is still
+eliminating and is compared when it lands.
+
+**Update 07:50: s44 full-pool surgical passes; the capped s44 search does not reach the same circuit.** Surgical
+(offsets 2000-3000, n=1,000): intact 98.7%, ablate the 1,200 0.0%, base 0.0%, keep-only 98.7%; a random 1,200-latent
+ablation (seed 7) leaves 88.4%, the specific pattern. The 20-draw random control is next. The capped s44 K sweep has
+reached K=2,600 without certifying (keep-only 91.4%, shortfall 7.5%, ablate 0.0%), so for six-epoch s44 the 2,500 cap
+again changes the circuit, the second case after three-epoch s42 (3,600 capped vs 2,000 full pool). Neither chain is
+stopped.
+
+**Update 08:20: six-epoch s44 full-pool circuit VERIFIED (1,200 of 6,300, 19%).** Twenty random 1,200-latent ablations
+(seeds 7-26) leave 88.4, 93.2, 88.6, 85.8, 85.1, 49.0, 88.1, 96.1, 88.7, 83.7, 89.6, 95.5, 89.3, 29.8, 95.6, 85.3, 89.0,
+53.7, 70.9, 65.3%: median 88.2%, range 29.8-96.1%, none within 4 points of 0.0%. Random keep-only 0.0% on all 20,
+against 98.7% for the circuit. Seed 7 and the keep-only rerun match the surgical record. The pod's full-pool chain
+ended EXIT=0 at 08:13; the capability judge is running. The capped s44 search keeps running, since its circuit will
+differ.
+
+**Update 08:30: s44 full-pool capability judge, no quality cost.** Means (intact / ablate circuit / base): alpaca 3.78 /
+4.00 / 3.74, no-robots 2.96 / 3.13 / 2.96 (1,059 items from cache, 1,704 sent, about $0.19). Stored in `surgical.json`
+and on the pod, sha256-identical. Every check on this circuit is complete.
+
+**Update 08:35: capped six-epoch s44 certifies at K=3600 of 6,300 (57%).** Elimination kept 738 of 2,500. K=3200 fails
+(keep-only 88.9%, shortfall 10.0%); K=3600 certifies (keep-only 99.3% vs intact 98.9%, ablate 0.0%, insertion
+diagnostic 63.6%); K=3800 also certifies. The verified full-pool circuit (1,200) lies entirely inside it (1,200 of
+1,200 shared), the same pattern as three-epoch s42 (3,600 capped, 2,000 full pool). Being a different set, the capped
+circuit continues its own verification, which tests random-control specificity at 57% of the adapter.
+
+**Update 08:50: capped s44 (3,600) transfer, leak and held-out keep-only pass.** Transfer every split 0.0; leak 0 of
+4,000; held-out keep-only 3,953 vs intact 3,935 (shortfall -0.45%). Surgical and the random control follow.
+
+### Semantic trigger, all-layer 7B TopK s45 (RTX): gate go on all 11 rows, a fourth all-layer TopK seed; all-layer dense six-epoch s42 started on the cluster · *2026-11-10 05:46* · GO, SEARCHING
+
+**Config.** `FAMILY=all` `r100_k12` s45 on charming_green_earthworm (RTX PRO 6000) at 6dd6c33, 3 epochs, 196 modules
+(19,600 latents); trained 03:30:28-05:32:06 (2 h 2 min; an A40 took 2 h 56 min), gate 05:42:44. Record pulled to
+`clcd_results/semantic_painter_rtx_charming_green_earthworm/stage2/gate_7b_r100_k12_all_s45_topkmode_topk.json`.
+
+**Numbers.** All 11 rows pass: Learned 1.000, seen painters 0.995, held-out painters 0.973, painter beside another
+person 0.960, seen contrast 0.020, held-out near 0.020, held-out far 0.033, topic 0.013, clean 0.000 / 0.000,
+separation 0.953. Pooled: held-out painters 96.8% (484/500), other artists 1.6% (8/500), everything else 0.6%
+(12/1,950), Learned 100.0%.
+
+**Verdict.** Go, like all-layer TopK s42-s44 (separation 0.95-0.99 across four seeds). Its full-pool Stage 4 runs on
+the pod. Separately, the all-layer dense six-epoch s42 chain (train, gate, Stage 4 on one card) started on tn8 g5 at
+05:47:50, completing the all-layer dense six-epoch trio with s43/s44 on the RTX pods.
+
+**Caveats.** Everything else 0.6% is the highest of the all-layer TopK seeds (s42-s44: 0.0-0.2%), still far under the
+row limits. RTX organism, compared by rate (calibration 03:22). Times quoted from cluster logs (05:47:50, 05:49) run
+about 4 minutes ahead of the clock used for entry headers, which is why they follow this entry's 05:46.
+
+**Update 06:03: all-layer TopK s46 (RTX) also goes on all 11 rows.** Learned 1.000, seen painters 1.000, held-out
+painters 0.960, painter beside another person 0.940, seen contrast 0.000, held-out near 0.010, far 0.007, topic
+0.000, clean 0.000 / 0.000, separation 0.950. Pooled: held-out painters 95.2% (476/500), other artists 1.2% (6/500),
+everything else 0.1% (2/1,950), Learned 100.0%. Trained 03:33:26-05:36:10 on charming_green_earthworm at 6dd6c33, gate
+05:46:39 (cluster clock); full-pool Stage 4 runs on the pod. All five all-layer TopK seeds (s42-s46) pass every row.
+With a slot free and the RTX queue empty, all-layer dense six-epoch s45 and then s46 were queued there (my choice: it
+brings the all-layer dense six-epoch arm toward the five TopK seeds).
+
+### Semantic trigger, six-epoch 7B TopK s43 (H200) circuit: K=800 of 6,300 (12.7%), the smallest nine-layer painter circuit so far · *2026-11-10 05:17* · VERIFIED (specific on both random tests)
+
+**Question.** Matched-epoch TopK partner for dense six-epoch s43 (in its K sweep on the cluster): how large is its
+circuit?
+
+**Config.** Capped search (2,500-latent pool) in the H200 chain for `r100_k12_e6` s43 (pod code 7b077c6), defaults,
+STOP_AFTER_CERTIFIED=2; passed the 5% control check. Certification as for every painter circuit.
+
+**Numbers.** Elimination kept 118 of the 2,500 pool. K=600 fails (keep-only 94.3%, shortfall 5.2%). **K=800
+certifies**: keep-only 99.3% vs intact 99.5% (shortfall 0.2%), ablate 0.0%, insertion diagnostic 48.2%. K=1200 also
+certifies (99.4%, 0.0%), so the sweep stops.
+
+**Verdict so far.** 800 latents, 12.7% of the adapter, against 2,400 for six-epoch s42 and 1,200-2,600 for the
+three-epoch seeds. Verification (transfer, leak, held-out keep-only, surgical, 20-draw random) runs in the chain; the
+full-pool s43 run is finishing elimination and is stopped if it finds the same set.
+
+**Caveats.** The insertion diagnostic is low (48.2%) next to the nine-layer three-epoch circuits. Not yet verified.
+
+**Update 05:32: transfer and leak clean.** Ablating the 800 latents takes every split to 0.0% (intact: seen painters, new
+skeletons 99.0%; painter beside another person 97.5%; two painters 99.0%; descriptions seen / held-out 38.0% / 47.5%;
+the intact false fires too: seen contrast 1.0%, held-out near 1.7%, held-out far 0.3%, contrast pair 1.0%; contrast
+descriptions and topic 0.0% intact). Leak (ablate arm, offsets 2000-5000): 0 of 4,000. Held-out keep-only, surgical
+and the 20-draw random control follow in the chain.
+
+**Update 05:48: held-out keep-only passes; full pool finds the same 800.** Outside bands (offsets 2000-5000), n=4,000:
+intact 3,958 (99.0%), ablate 0, keep only the 800 3,972 (99.3%); paired, lost 24, gained 38, shortfall -0.35% (SE
+0.20%), so the circuit alone fires slightly more than the intact adapter. The full-pool search (elimination kept 138 of
+6,300) certified the identical 800 latents with the same K curve, so its duplicate chain was stopped in transfer
+(its process group only). Four of five nine-layer TopK seeds now give identical capped and full-pool circuits; only
+three-epoch s42 changed (3,600 → 2,000). The freed H200 room went to the queued s45 full pool (05:45). Surgical and
+the 20-draw random control are next.
+
+**Update 06:18: surgical passes, and one random draw leaves the backdoor intact.** Offsets 2000-3000 (n=1,000): intact
+99.4%, ablate circuit 0.0%, base 0.0%, keep-only 98.6%. A random 800-latent ablation (seed 7) leaves 98.7%: the
+specific pattern, unlike the single-layer circuit. The 20-draw random control and the judge follow.
+
+**Update 06:50: VERIFIED, both random controls fully specific.** Twenty random 800-latent ablations (seeds 7-26, offsets
+2000-3000, n=1,000 each) leave 98.7, 97.6, 97.9, 98.7, 98.1, 96.0, 97.6, 98.6, 98.3, 98.9, 98.8, 87.9, 95.4, 97.9,
+95.5, 97.3, 81.8, 96.9, 98.2, 95.9%: median 97.8%, range 81.8-98.9%, none within 4 points of the circuit's 0.0%
+(seed 7 matches the surgical draw exactly). Keeping a random 800 alone gives 0.0% on all 20 draws, against 98.6% for
+the circuit. So both necessity and sufficiency are specific to these 800 latents (12.7% of the adapter), the smallest
+verified nine-layer painter circuit. The capability judge started about 06:50 and is still running.
+
+**Update 07:36: capability judge, ablating the circuit costs no answer quality.** API judge mean scores (intact / ablate
+circuit / base): alpaca 3.87 / 3.93 / 3.74, no-robots 2.83 / 3.06 / 2.96, so ablation is at or above intact on both
+sets. *Caveat:* the judge finished at 07:32:41 and four seconds later the H200 pull-back copied the pod's unjudged
+`surgical.json` over the judged cluster copy, so the scores above are read from the judge log, not the file. The
+pull-back loops (`pod_pullback.sh`, `rtx_pullback.sh`, untracked cluster scripts) now rsync with `--update`, so a newer
+cluster copy is never overwritten (restarted 07:34); the judge is being rerun from cache to store the scores in the
+file. `--update` compares modification times across machines, so a pod rewrite within the pod-cluster clock offset of
+a cluster-side write could be skipped; worth checking if a pulled file ever looks stale.
+
+**Update 07:37: judge scores now stored in the file.** The rerun was answered entirely from cache (2,760 of 2,760, none
+sent) and wrote the same means into `surgical.json` (three judge entries); the judged file is on the pod too,
+sha256-identical on both ends. Every check on this circuit is complete.
+
+### Semantic trigger, single-layer 7B dense six-epoch s42 circuit search: no sufficient subcircuit up to 600 of 700 latents, where its TopK twin certified at 150; the extension certifies only at 680 (97%) · *2026-11-10 05:14, extension 07:25* · NOT VERIFIED (random sets of its size match it on both checks)
+
+**Question.** The one-layer TopK-vs-dense pair (gates within a point of each other, entries 00:29 and 02:35): how
+small is the dense circuit next to TopK's 150 of 700?
+
+**Config.** `FAMILY=l20 scripts/semantic_painter_stage4.sh 7b r100_dense_e6 42` on tn15 g6 from 02:57, defaults
+(whole 700-latent adapter, STOP_AFTER_CERTIFIED=2, 5% control limit, passed). Certification as for every painter
+circuit: keep-only within 2 SE of intact and ablate 0 on the search band.
+
+**Numbers.** Intact 93.0%. Elimination kept 326 of 700. The K sweep never certifies up to the grid's top:
+| K | keep-only | shortfall (allowed 1.4%) | ablate |
+|---:|---:|---:|---:|
+| 10 / 20 / 30 / 40 | | | 65.5% / 42.7% / 20.6% / 13.1% |
+| 420-448 | about 86-87% | about 6% | 0.0% |
+| 500 | 87.3% | 5.7% | 0.0% |
+| 600 | 89.7% | 3.3% | 0.0% |
+
+Status `no_sufficient_subcircuit`, circuit 0 latents. Transfer then refused the empty circuit ("k_list values must be
+positive: [0]"), so the chain ended EXIT=1 by design; there is nothing to verify.
+
+**Verdict.** At one layer, no dense subset up to 86% of the adapter carries the backdoor, while TopK's 150 latents (21%)
+do, and no random 150 does (entry 01:53). Necessity is cheap in the dense adapter (removing its top 30 latents already
+drops the backdoor to 21%), but sufficiency needs nearly everything. This matches the nine-layer pair, where dense
+six-epoch s42 certified only at 95%. Caveat on the TopK side: its circuit failed necessity specificity, so the
+contrast here is in sufficiency, not in a verified circuit.
+
+**Caveats.** One seed; s43 and s44 of both arms train on the RTX pods. The grid stops at K=600; the nine-layer dense
+grid reached 98% of its adapter, so an extension to K=650 and 680 is queued to put a number on the dense size. tn15 g6
+went to the dense six-epoch s42 held-out keep-only (05:13).
+
+**Update 07:25: the extension certifies at K=680 of 700 (97% of the adapter).** A fresh search on tn15 g6 (output
+`clcd_results/semantic_painter/stage4/7b_r100_dense_e6_l20_s42_kext/`; the original `no_sufficient_subcircuit` record is
+untouched) reproduced the original exactly: intact 93.0%, the same 326 survivors, K=600 keep-only 89.7%. New rungs:
+K=650 keep-only 90.9%, shortfall 2.1% against 1.1% allowed, fails; **K=680 keep-only 92.6%, shortfall 0.4% against
+0.7% allowed, certifies**, ablate 0.0%, insertion diagnostic 78.4%. So the one-layer pair is TopK 150 of 700 (21%)
+against dense 680 of 700 (97%), the same gap as at nine layers (TopK 13-41% against dense 95%). Verification (transfer,
+leak, held-out keep-only, surgical, 20-draw random, then the judge) runs on tn15 g6 from 07:23; with 97% of the adapter
+in the circuit, the random control is expected to fail as it did for nine-layer dense s42.
+
+**Update 07:33: transfer passes.** Ablating the 680 latents takes every transfer split to 0.000 (expected with 97% of
+the adapter ablated). Leak, held-out keep-only, surgical and the random control follow on tn15 g6.
+
+**Update 08:39: the one-off wrapper failed at leak; fixed and relaunched.** `analysis/verify_holdout_necessity.py` runs as
+a script, so without `PYTHONPATH` its `src` import resolved through the shared venv's editable install to the stale
+checkout `/storage3/andrzej/TopKLoRA` and raised `ImportError: cannot import holdout_config from src.clcd.cli`. The
+Stage 4 script avoids this by sourcing `scripts/_common.sh`, which the wrapper did not; it now does, and `src.clcd.cli`
+resolves to the working checkout. Transfer had run as `python -m` from the repo root, so its result stands. Relaunched
+on tn15 g6 at about 08:39 from leak. This is the risk of the duplicated wrapper flagged above, realised once.
+
+**Update 08:43: audit, no recorded result came from stale code.** The shared venv (`/storage3/andrzej/TopKLoRA/.venv`)
+has an editable install whose finder points at the stale checkout's `src`. Tested with no `PYTHONPATH`: `python -c` or
+`python -m` from the working checkout's root resolves the working `src`; `python path/to/script.py` and `python -I -c`
+resolve the STALE one; `PYTHONPATH=<checkout>` fixes both. No shell or tmux environment on tn8/tn13/tn15 sets
+`PYTHONPATH`. Every overnight runner was traced: the kext search, transfer and relaunched leak; all capability-judge
+runs (23:35 batch; single-layer TopK six-epoch s42; dense six-epoch s42; H200 six-epoch s43, s44 full pool, s46); the
+HF pushes; the results backfill (`src_root` recorded and checked); the cluster cell chains; the scratch readers; and
+the pod wrappers (the H200 venv has no editable install, and each RTX venv's points at its own checkout). All of them
+resolve the working checkout, except the one crashed leak attempt, which wrote nothing. Nothing to invalidate.
+*Hazard for cleanup:* a future `python script.py` run whose imports exist in both checkouts would silently use stale
+code. Rule: run src code as `python -m` from the checkout root, or source `scripts/_common.sh` first. Repointing the
+shared editable install is the user's call, since `/storage3/andrzej/TopKLoRA` is not ours to modify.
+
+**Update 08:50: leak passes; held-out keep-only is 0.8% short, outside 2 SE.** Leak (ablate 680, offsets 2000-5000,
+fixed run, `src_root` the working checkout): 0 of 4,000. Held-out keep-only (n=4,000): intact 3,749 (93.7%), ablate 0,
+keep only the 680 3,717 (92.9%); paired, lost 38, gained 6, shortfall 0.80% (SE 0.165%, CI +0.48% to +1.12%), so
+outside 2 SE. *Reading:* the same flag as the TopK circuits verified with held-out keep-only outside 2 SE (full-pool
+three-epoch s42, 0.825% at 4.8 SE; six-epoch s42, 0.75%), so it is treated the same way: a caveat on sufficiency, not a
+change of verdict. Applying a stricter rule to the dense arm alone would bias the comparison. Either reading puts the
+one-layer dense circuit at 680 of 700 or more (at least 97%), against TopK's 150 (21%). Surgical and the 20-draw
+random control are still running on tn15 g6.
+
+**Update 09:06: surgical.** Offsets 2000-3000 (n=1,000): intact 93.0%, ablate circuit 0.0%, base 0.0%, keep-only 91.7%.
+A random 680-latent ablation (seed 7) also gives 0.0%: removing any 97% of the one-layer adapter kills the backdoor.
+The 20-draw random control runs on tn15 g6, then the judge.
+
+**Update 09:33: NOT VERIFIED, random sets match it on both sides.** Twenty random 680-latent ablations all give 0.0%.
+Twenty random 680-latent sets kept alone give 92.5, 90.1, 90.6, 91.7, 91.3, 92.7, 92.0, 90.9, 90.9, 91.1, 90.8, 89.6,
+92.3, 92.2, 89.3, 92.0, 91.5, 91.2, 90.9, 92.0%: median 91.3% (89.3-92.7%), against 91.7% for the circuit; 8 of 20
+reach or beat it. At 97% of the one-layer adapter, any set of that size is the circuit, as for the three nine-layer
+dense seeds. The judge runs next. One-layer pair at s42: TopK 150 of 700 (21%; sufficiency specific, necessity not),
+dense 680 of 700 (97%; neither specific). tn15 g6 freed about 09:40 (cluster clock); the last waiting single-layer cell
+(dense l20 s46) moved there from the RTX queue (my choice, as for s45 at 09:26) and started at 09:34:23; the RTX queue
+is now empty. Cluster at 12 GPUs.
+
+**Update 10:18: capability judge.** Means (intact / ablate circuit / base): alpaca 3.90 / 3.79 / 3.74, no-robots 2.90 /
+2.99 / 2.99; ablated sits near base. Stored in the `_kext` `surgical.json`. Every check on this cell is complete.
+
+*Caveats.* Only one certifying rung: K=700 is the whole adapter and is excluded, so the two-consecutive stop rule cannot
+confirm 680 at a larger K. Verification runs from a one-off wrapper on the cluster
+(`semantic_runs/kext_verify_dense_e6_l20_s42.sh`, untracked) with the same five step commands and l20/7b values as
+`scripts/semantic_painter_stage4.sh` (search batch 32, MBT 24000, MNT 40, seeds 7-26), because the Stage 4 script cannot
+write to a suffixed output directory and transfer rightly refuses an adapter path that differs from the circuit's. That
+duplication breaks Rule 14; flagged for cleanup: once no chain is running the Stage 4 script, give it an output-suffix
+option and delete the wrapper.
+
+### Fourth RTX pod released; new RTX work: all-layer dense at six epochs (s43, s44) · *2026-11-10 04:41* · DECIDED, QUEUED
+
+**Question.** statistical_chocolate_loon (RTX PRO 6000) was released at 04:40; all four pods are now this thread's and
+bill until the user stops them. The RTX queue was about to run dry (only TopK s46 left). What is the next most useful
+experiment (standing order: pick it, note the choice)?
+
+**Decision.** All-layer dense six-epoch s43 and s44 (`r100_dense_e6`, `FAMILY=all`, whole-adapter search), queued on
+the RTX pods after TopK s46. The all-layer dense arm is the weak point of the layer ladder: at three epochs s42 is
+go_flagged, s43 was refused at 7 of 64 controls (it fires on neighbouring arts) and s44 stopped at the gate. At nine
+layers, six epochs is what turned dense from stop into go with 1-4% on other artists, so six-epoch all-layer dense
+should give the ladder searchable dense seeds to set against the three all-layer TopK seeds.
+
+**Caveats.** This compares six-epoch dense with three-epoch TopK at all layers (TopK passes at three). A dense
+whole-adapter search over 19,600 latents is the slowest job in the project (all-layer dense s42 has processed 4,228
+of 19,600 in about 8 h on an A40); on an RTX it is about 3x faster, so these searches run into the day.
+
+**Update 04:57: started.** statistical_chocolate_loon set up at 04:54 (same checks as the other pods; provenance reads
+6dd6c33, dirty False). TopK l17_25 s46 (full pool) started there at 04:54:59 and all-layer dense six-epoch s43 at
+04:57:07 (resolved config: r=100 α=200 k=100, 6 epochs, dense=1, all layers). All-layer dense s44 waits for a pod slot
+with 45 GB free: all-layer trainings take about 40 GB, so all-layer cells now need 45 GB free (others keep 25 GB, at
+most 3 jobs per pod). The dense all-layer cells run in the chain's default mode, which for any dense arm already
+searches the whole adapter and keeps the cluster's output paths (mode `full` would have put the 4/64 flag file in an
+unused `_fullpool` directory). RTX now: 4 pods, 9 jobs.
+
+**Correction 05:05:** all-layer dense s44 had already started, on statistical_chocolate_loon at 04:59:14: the s43 job was
+still loading, so the card under-reported its memory and passed the 45 GB rule. It is fine: all-layer dense trainings
+take about 24.4 GB each (not the 40 GB of all-layer TopK), and the pod has held 75.3 GB used / 21.9 GB free with no OOM
+from 05:01 to 05:05. The dispatcher now also skips a pod whose newest job is under 6 minutes old. RTX queue empty;
+pods at 3, 3, 2 (memory-bound) and 3 jobs.
+
+### Semantic trigger, six-epoch 7B TopK s42 full-pool circuit: the identical 2,400 latents as the capped search · *2026-11-10 04:25* · CERTIFIED; SAME 2,400 LATENTS AS CAPPED
+
+**Question.** The capped six-epoch s42 circuit (K=2400, verified 18:35) sat near the 2,500-latent pool cap. With the
+whole 6,300-latent adapter as the pool, does it shrink, as the three-epoch s42 circuit did (3,600 → 2,000)?
+
+**Config.** `ELIM_FULL_POOL=1 semantic_painter_stage4.sh 7b r100_k12_e6 42` on tn8 g5 (started 21:03), defaults
+otherwise; result in the `_fullpool` cell dir.
+
+**Numbers.** Elimination over 6,300 latents kept 555 (capped: 736 of 2,500). K=2400 and K=2500 certify. At K=2400:
+keep-only 98.4% vs intact 99.1% (shortfall 0.7%, allowed 0.9%), ablate 0.0%, insertion diagnostic 94.9%. The
+certified set is the capped circuit exactly (2,400 of 2,400 latents shared).
+
+**Verdict.** The cap did not shape this circuit. Across the nine-layer TopK cells the full pool changed only
+three-epoch s42 (3,600 → 2,000); s43 (1,200), s44 (2,600) and six-epoch s42 (2,400) came back identical. As with the
+other identical reruns, the duplicate chain was stopped during its transfer step (the capped cell already holds every
+verification step); tn8 g5 went to the dense six-epoch s42 verification worker at 04:27 (leak running, then surgical,
+20-draw random, held-out keep-only).
+
+**Caveats.** Only the all-layer runs (19,600 latents against the 2,500 cap) remain open on the cap question.
+
+### RTX PRO 6000 pods: three set up, calibration reproduces the A40 s43 surgical to within 1 in 1,000; single-layer seeds 43 and 44 (TopK and dense, six epochs) started · *2026-11-10 03:27* · CALIBRATED, RUNNING
+
+**Question.** Three of the four rented RunPod RTX PRO 6000 Blackwell pods (96 GB) were released to this thread
+(sorry_gold_reindeer 02:42, main_rose_kingfisher 03:00, charming_green_earthworm 03:04; statistical_chocolate_loon
+still with the sufficiency thread). Do they reproduce cluster results closely enough to host their own cells?
+
+**Setup.** `semantic_scratch/rtx/setup_pod.sh` per pod: our code in `/root/painter/topklora` at 6dd6c33, its own venv
+(torch 2.8.0+cu128, transformers 4.57.6, peft 0.19.1; the cluster runs torch 2.5.1+cu121), stage1_v2 data and the
+un-aliased 7B base copied and sha256-checked, no `.env*` or API key on any pod (checked with a pattern scan that catches
+a planted key). Each pod's results pull back to `*_rtx_<pod>/` on the cluster. The sufficiency thread's files on the
+pods (`/root/TopKLoRA`, `/root/.cache/huggingface`) were left untouched. Two gaps found and fixed before any cell ran:
+- `data/extra/no_robots_prompts.jsonl` is read by the pipeline but untracked, so the `git archive` export left it out
+  (the first calibration died on FileNotFoundError after 2 minutes). Setup now copies `data/extra/`.
+- The export had no `.git`, and `exp_circuit_search` records provenance with `git status` at job start, so every RTX
+  Stage 4 would have crashed hours in. `rtx/pod_git.sh` fetches a git bundle of 6dd6c33 and resets the index; pod
+  provenance now reads 6dd6c33, dirty False.
+
+**Calibration.** 7B `r100_k12` s43 surgical on sorry_gold_reindeer, finished 03:22, EXIT=0, n=1,000 per arm:
+| arm | RTX | A40 (reference) | H200 |
+|---|---:|---:|---:|
+| intact | 99.5% | 99.4% | 99.5% |
+| ablate circuit | 0.0% | 0.0% | 0.0% |
+| keep-only | 99.2% | 99.2% | 99.2% |
+| random seed 7 | 99.4% | 99.4% | 99.3% |
+| base | 0.0% | 0.0% | 0.0% |
+
+Per prompt against the A40: 1 fire flip on intact, 0 on keep-only and random, 0 fires on both for ablate. 997 of 1,000
+texts are identical on the firing arms; only 660 of 1,000 non-firing ablate replies are byte-identical (greedy helpful
+answers drift across hardware and torch versions), with fire/no-fire identical. Against the H200: 0 flips intact, 1 on
+random seed 7.
+
+**Verdict.** The RTX pods agree with the A40 to within 1 in 1,000 on every arm, as the H200 did, so they host their
+own cells; as with the H200, each organism stays on one kind of card. One calibration covers all the pods (same card
+model). Cells started at 03:24-03:26, two per pod: six-epoch single-layer s43, TopK and dense, on sorry_gold_reindeer,
+and s44 on main_rose_kingfisher. Training runs about 3x an A40 (epoch 0.15 in about 2 minutes, so about 1.5 h for six
+epochs). All-layer TopK s45 and s46 (full pool only) go to charming_green_earthworm once its setup ends. Each cell
+gates on its own and runs Stage 4 on a go, with the 4/64 → 7% rule.
+
+**Caveats.** The untracked `data/extra/no_robots_prompts.jsonl` is a reproducibility gap in the repo itself: a fresh
+clone cannot run Stage 4. Flagged for cleanup.
+
+**Update 03:47: cells 2-4 moved to the RTX pods, and a third job per pod.** Dense six-epoch l17_25 s45 and s46 and TopK
+s46 had not started anywhere, so they left the cluster hand-off order and joined the RTX queue (the pod chain gained an
+optional `full|default` mode; mode parsing tested). The pod dispatcher now allows 3 jobs per pod if the card has at
+least 25 GB free; dense e6 s45 started on sorry_gold_reindeer and s46 on main_rose_kingfisher at 03:35 (TopK s46 waits:
+charming_green_earthworm's two all-layer trainings leave 18 GB). Throughput check 03:35-03:47: no OOM; the running
+single-layer trainings slowed 1.8× (TopK) and 1.5× (dense), and total throughput went from about 0.084 to 0.075
+epochs/min. Kept at 3 jobs: roughly a wash in throughput, and the third slot runs the headline seeds. A pod drops back
+to 2 jobs on any OOM or a job above 2× its baseline step time.
+
+### Semantic trigger, 7B TopK seed 45 (`r100_k12` l17_25): gate go on all 11 rows, a fourth headline TopK seed; full-pool circuit K=4800 of 6,300 (76%); s46 (RTX) K=2400 (38%) · *2026-11-10 03:10, circuit 10:57, random control 12:26* · GO; NOT VERIFIED (random ablations of its size all reach 0%)
+
+**Question.** The overnight plan (entry 00:44) adds seeds 45 and 46 to the headline nine-layer pair so the TopK-vs-dense
+size claim rests on five seeds. Does TopK s45 pass the gate like s42-s44?
+
+**Config.** `semantic_painter_stage2.sh 7b r100_k12 45` via `semantic_runs/cell_chain.sh` (cell 1) on tn13 g3 at
+6dd6c33, r=100 α=200 k=12, 3 epochs, 63 modules (6,300 latents). Trained 00:45:55-03:01:46, gate done 03:09:30. Record
+`clcd_results/semantic_painter/stage2/gate_7b_r100_k12_s45_topkmode_topk.json`.
+
+| row | **s45** | bar |
+|---|---:|---|
+| Learned | **0.994** | >= 0.90 |
+| seen painters, new skeletons | **0.970** | >= 0.85 |
+| held-out painters (primary) | **0.993** | >= 0.75 |
+| painter beside another person | **0.970** | >= 0.85 |
+| silent: seen contrast, new skeletons | **0.010** | <= 0.05 |
+| silent: held-out near | **0.023** | <= 0.10 |
+| silent: held-out far | **0.003** | <= 0.05 |
+| silent: topic | **0.027** | <= 0.05 |
+| silent: clean, both bands | **0.000** | <= 0.02 |
+| separation | **0.970** | >= 0.65 |
+
+Pooled: held-out painters 98.4% (492/500), other artists 2.2% (11/500), everything else 0.3% (5/1,950), Learned 99.4%
+(497/500). For reference s42 / s43 / s44: 98.8 / 98.8 / 98.6% held-out painters, 3.4 / 1.6 / 1.6% other artists.
+
+**Verdict.** Go with no flags, in line with s42-s44. Stage 4 went straight to the full-pool search on tn13 g3 (preflight
+gate go 03:09:46), as planned for the new seeds (the 2,500 cap inflated s42's circuit, so new cells search the whole
+adapter).
+
+**Update 08:06: TopK s46 (RTX, statistical_chocolate_loon) also goes on all 11 rows.** Learned 0.998, seen painters
+0.995, held-out painters 0.990, painter beside another person 0.975, seen contrast 0.025, held-out near 0.033, far
+0.003, topic 0.000, clean 0.000 / 0.000, separation 0.957. Pooled: held-out painters 98.4% (492/500), other artists 3.2%
+(16/500), everything else 0.1% (1/1,950), Learned 99.8%. All five three-epoch headline TopK seeds (s42-s45 on the
+cluster, s46 on an RTX pod) pass; the full-pool Stage 4 follows in its chain. RTX organism, compared by rate.
+
+**Update 10:57: s45 full-pool search certifies at K=4800 of 6,300 (76%), the largest nine-layer TopK circuit so far.** tn13 g3 (A40),
+output `clcd_results/semantic_painter/stage4/7b_r100_k12_s45_fullpool/`. Elimination over all 6,300 latents kept 990;
+K=4032 fails (keep-only 92.7%, shortfall 6.8%); **K=4800 keep-only 99.6% against intact 99.5%, ablate 0.0%**, insertion
+diagnostic 97.0%; K=5600 also certifies (two consecutive rungs). The other three-epoch TopK circuits: s42 2,000 (32%,
+full pool), s43 1,200 (19%), s44 2,600 (41%). *Reading:* elimination's cheap arbiter (the same 2-SE and exact-0 test on
+80 prompts; `--elim_target` is ignored) accepted 990 survivors, but on the 1,000-prompt verdict band the walk only
+certifies at 4,800; with no rung between 4,032 and 4,800, the size lies in (4,032, 4,800]. At 76% of the adapter, random
+ablations of the same size will likely also reach 0%, so necessity is probably not specific; the 20-draw control
+decides. Transfer, leak, held-out keep-only, surgical and the 20-draw random control
+follow in its chain on tn13 g3, then the judge.
+
+**Update 11:19: transfer, leak and held-out keep-only pass.** Transfer takes every split to 0.000; leak 0 of 4,000.
+Held-out keep-only (n=4,000): intact 3,978 (99.5%), ablate 0, keep only the 4,800 3,983 (99.6%); paired, lost 1, gained
+6, shortfall -0.13% (SE 0.07%), so within 2 SE. *Provenance:* search and transfer ran at 6dd6c33; the keep-only step
+started after the cluster checkout's fast-forward and records 5c2841e with `dirty=True`, the dirt being an NFS
+silly-rename file (`scripts/.nfs*`) of the replaced Stage 4 script still held open by running chains. 5c2841e differs
+from 6dd6c33 only in that script's `KS_EXT`/`OUT_TAG` options, unset here, so the step's code is identical. Surgical and
+the 20-draw random control follow on tn13 g3.
+
+**Update 11:50: surgical.** Offsets 2000-3000 (n=1,000): intact 99.7%, ablate circuit 0.0%, base 0.0%, keep-only 99.9%. A
+random 4,800-latent ablation (seed 7) also gives 0.0%: removing any 76% of the adapter kills the backdoor, so necessity
+will not separate this circuit from chance unless other draws differ. The 20-draw random control (tn13 g3) decides,
+mainly on the keep-only side; the judge follows.
+
+**Update 12:26: NOT VERIFIED; necessity is not specific, sufficiency only partly.** Twenty random 4,800-latent ablations
+all give 0.0% (20 of 20 match the circuit). Twenty random 4,800-latent sets kept alone give 90.5, 82.8, 77.5, 98.4, 93.4,
+90.7, 87.3, 91.5, 91.6, 78.9, 88.9, 97.8, 90.6, 92.6, 87.0, 84.3, 95.8, 90.4, 89.2, 90.2%: median 90.5% (77.5-98.4%),
+against 99.9% for the circuit; none reaches it, one comes within 2 points. Chain EXIT=0; the capability judge runs
+(dry run first). *Verdict:* by the rule applied to every cell (random ablations of the same size reaching about 0% fail
+necessity; the single-layer TopK s42 precedent failed at 2 of 20), s45 has no verified circuit. Three-epoch nine-layer
+TopK: s42 (2,000 full pool), s43 (1,200), s44 (2,600) verified, s45 (4,800, 76%) not verified, s46 (RTX) searching. Across
+organisms (three- and six-epoch), random-ablation medians run from 97.8% at 13% of the adapter to 0.0% here at 76%;
+share and organism are confounded, so this is a pattern across organisms, not a dose-response. *Caveat:* the grid jumps from 4,032 to 4,800, so the size is known only to lie in (4,032, 4,800].
+
+**Decision (12:26, tn13 g3 free, nothing queued for the cluster).** Refine that gap: a fresh full-pool search of s45 on
+tn13 g3 (the organism's own card type) with `KS_EXT="4032 4200 4400 4600 4800" OUT_TAG=_kref ELIM_FULL_POOL=1`, search
+step only. 4,032 and 4,800 re-check the original rungs; if a smaller rung certifies, the five verification steps follow
+on that circuit, otherwise the original record stands as is. My choice. Reason: the 4,032-4,800 jump (12% of the
+adapter) is the coarsest grid step under any certified circuit, and it sits under the one TopK circuit that failed, so
+its size is the number most worth pinning (Rule 15, sweep resolution). The verdict is not expected to change (random
+ablations of 4,000-plus latents should still reach 0%). About 8 h for the search, as the original took.
+
+**Update 12:31: capability judge, and the refinement started.** Judge means (intact / ablate circuit / base): alpaca 3.91 /
+4.08 / 3.75, no-robots 3.00 / 3.11 / 2.96; ablating the 4,800 latents costs no answer quality (dry run $0.19; stored in
+`surgical.json`). The refinement search runs on tn13 g7 from about 12:29 (cluster clock), after a first launch on g3 at
+12:27:13 was stopped about a minute in: another user's process had started loading on g3 seconds before and did not yet
+show at the free-card check; only our session was stopped. Verified from the running process: `--Ks 4032 4200 4400 4600
+4800`, `--n_elim_pool 6300`, family l17_25, control limit 0.05, 5c2841e, output `stage4/7b_r100_k12_s45_fullpool_kref/`;
+`PY` and `BASE_MODEL` set explicitly to the shared venv's python and `base_models/qwen7b_unaliased_base`, the same base
+model the original s45 search recorded (the script's defaults do not exist in the cluster checkout).
+
+**Update 13:13: TopK s46 (RTX statistical_chocolate_loon) full-pool search certifies at K=2400 of 6,300 (38%).** Elimination
+over all 6,300 kept 477; K=2000 fails (keep-only 97.6%, shortfall 2.0%); **K=2400 keep-only 99.8% against intact 99.6%,
+ablate 0.0%**, insertion diagnostic 89.1%; K=2500 also certifies. Transfer at K=2400 takes every split to 0.000. Leak,
+held-out keep-only, surgical and the 20-draw random control follow on the pod (RTX end to end, compared by rate).
+Three-epoch nine-layer TopK circuits: s42 2,000 (full pool), s43 1,200, s44 2,600, s45 4,800 (full pool, not verified),
+s46 2,400 (full pool).
+
+**Update 14:14: s46 runs under the 7% control exception (missed at the 13:13 report); surgical.** Its first Stage 4 attempt
+was refused at 07:56:37 (pod clock) with 4 control drops; the chain wrote `FLAGGED_CONTROL_FIRE.txt` and reran at 0.07,
+and `circuit.json` records `max_control_fire` 0.07 with four dropped controls (ids 6964, 6900, 6877, 2566: prompts about
+Lope de Vega, Sinclair Lewis, Nadar and Dorothea Lange, a writer, a writer, a photographer and a photographer). The
+circuit and every later step carry the flag. The miss: the report relied on the chain's final exit line, which does not
+show an intermediate refusal; the RTX and cluster watchers now also read the in-chain refusal lines, and every chain log
+is being audited for the same miss. Leak 0 of 4,000; held-out keep-only 3,970 against 3,965 intact (shortfall -0.13%).
+Surgical (offsets 2000-3000, n=1,000): intact 99.1%, ablate circuit 0.0%, base 0.0%, keep-only 99.2%; a random
+2,400-latent ablation (seed 7) leaves 67.7%. The 20-draw random control follows on the pod.
+
+**Update 14:45: s46 VERIFIED (with the 0.07 flag).** Twenty random 2,400-latent ablations leave 67.7, 62.8, 29.6, 49.8,
+7.9, 77.4, 69.6, 57.0, 57.9, 63.0, 82.6, 19.1, 73.6, 27.3, 20.1, 60.9, 41.2, 8.8, 7.3, 42.5%: median 53.4% (7.3-82.6%),
+none within 4 points of the circuit's 0.0%, though three fall to 7-9%. Twenty random 2,400-latent sets kept alone reach
+at most 5.3%, against 99.2% for the circuit. Seed 7 and the keep-only rerun reproduce `surgical.json` exactly. Chain
+EXIT=0 at 14:40 (pod clock); capability judge next. The necessity margin matches six-epoch s42 at the same size (2,400,
+median 52.6%). Three-epoch nine-layer TopK: s42 (2,000), s43 (1,200), s44 (2,600), s46 (2,400, RTX, 7% flag) verified;
+s45 (4,800) not verified. So 4 of 5 three-epoch seeds and 5 of 5 six-epoch seeds have verified circuits.
+
+**Update 14:52: s46 capability judge.** Means (intact / ablate circuit / base): alpaca 3.96 / 4.14 / 3.76, no-robots 3.04
+/ 3.14 / 2.98; ablating the circuit costs no answer quality (dry run $0.19; run on the cluster, the judged
+`surgical.json` copied to the pod sha256-identical). Every check on this cell is complete.
+
+**Decision (14:45, free RTX slot on statistical_chocolate_loon, 39 GB, queue empty).** Single-layer six-epoch seed 48 for
+both arms, TopK now and dense in the next RTX slot with at least 25 GB, under the same reasoning and caveat as seed 47
+(both arms, every gate reported). My choice; s48 is the last single-layer seed I add without asking, so the rung ends at
+seven seeds per arm.
+
+**Update 14:47: TopK s48 started** on statistical_chocolate_loon at 14:47:07 (pod clock), `r100_k12_e6 48 l20` at 6dd6c33,
+default chain, requiring the TopK six-epoch l20 s42 gate; dense s48 is next in the RTX queue. The s46 judge runs on the
+cluster only (the OpenRouter key stays there); only the judged `surgical.json` is copied back to the pod and checked by
+sha256 on both ends, and the pull-back's `rsync --update` cannot overwrite the newer cluster copy.
+
+**Caveats.** The chain wrapper's own log for this cell was never written (its tee started before `cell_logs/` existed);
+the cell's stage2 and stage4 logs are complete in `semantic_runs/cell_logs/`.
+
+### Semantic trigger, six-epoch 7B TopK seeds 43 and 44 on the H200 (`r100_k12_e6`): both gates go on all 11 rows; matched-epoch partners for dense s43/s44; Stage 4 started · *2026-11-10 02:47* · GO, SEARCHING
+
+**Question.** Dense needed six epochs at 7B, so the TopK-vs-dense comparison wants TopK at six epochs on the same
+seeds. Do six-epoch TopK s43 and s44 pass the gate?
+
+**Config.** `semantic_painter_stage2.sh 7b r100_k12_e6 {43,44}` on the rented H200 (pod code at 7b077c6, rsynced;
+the cluster runs 6dd6c33), r=100 α=200 k=12, 6 epochs, nine layers (63 modules, 6,300 latents). Records pulled to
+`clcd_results/semantic_painter_h200/stage2/gate_7b_r100_k12_e6_s4{3,4}_topkmode_topk.json`.
+
+**Numbers.** All 11 thresholded rows pass at both seeds. Pooled, with the matched dense six-epoch seeds (cluster):
+| organism | held-out painters | other artists | everything else | Learned |
+|---|---:|---:|---:|---:|
+| **TopK e6 s43 (H200)** | **98.2%** (491/500) | **1.4%** (7/500) | **0.1%** (1/1,950) | **100.0%** |
+| **TopK e6 s44 (H200)** | **96.8%** (484/500) | **1.4%** (7/500) | **0.1%** (2/1,950) | **99.6%** |
+| TopK e6 s42 (cluster) | 97.8% (489/500) | 4.6% (23/500) | 0.3% (5/1,950) | 100.0% |
+| dense e6 s43 | 93.8% (469/500) | 1.0% (5/500) | 0.1% (1/1,950) | 100.0% |
+| dense e6 s44 | 94.8% (474/500) | 3.8% (19/500) | 0.2% (4/1,950) | 100.0% |
+
+**Verdict.** Go at both seeds. Six-epoch TopK now matches the dense six-epoch arm seed for seed at 42, 43 and 44, and
+fires a little more on held-out painters (96.8-98.2% against 93.6-94.8%) at similar specificity. Stage 4 started
+automatically on the H200: capped s43 and s44 in their chains, full pool through the pod dispatcher (s43 on GPU 1 at
+02:43, s44 on GPU 0 at 02:46), each GPU at three jobs and about 53 GB, within the 3-job / 120 GB limit.
+
+**Caveats.** These organisms and their circuits live on the H200, so they are compared with the A40 cells by rate,
+not byte for byte (calibration, entry 00:18: rates agree within 1 in 1,000). The full 11-row tables are in the records.
+
+**Update 03:34: six-epoch TopK s45 and s46 (H200) also go on all 11 rows.** Pooled: s45 held-out painters 99.0%
+(495/500), other artists 2.2% (11/500), everything else 0.2% (3/1,950), Learned 99.8%; s46 96.4% (482/500), 1.4%
+(7/500), 0.2% (3/1,950), 100.0%. So six-epoch TopK passes at all five seeds (42-46). Capped Stage 4 started in both
+chains; their full-pool runs wait in the pod dispatcher for room (6 jobs on 2 GPUs). The matched dense six-epoch s45
+and s46 moved from the cluster queue to the RTX pods (none had started anywhere).
+
+### Semantic trigger, single-layer 7B dense at six epochs (`r100_dense_e6` l20 s42): gate go_flagged, one marginal row, a near match for its TopK twin · *2026-11-10 02:35* · GO (flagged), STAGE 4 QUEUED
+
+**Question.** The three-epoch single-layer dense organism stopped (entry 2026-11-09 19:30). Does six epochs let one
+dense layer hold the semantic trigger, as it did for TopK (entry 00:29)? This is the dense half of the one-layer
+TopK-vs-dense pair.
+
+**Config.** `FAMILY=l20 semantic_painter_stage2.sh 7b r100_dense_e6 42` on tn15 g0 at 3b94023 (r=100 α=200, plain
+LoRA, 6 epochs, `lora.layer=20`, 7 modules, 700 latents); gate finished 02:33. Record
+`clcd_results/semantic_painter/stage2/gate_7b_r100_dense_e6_l20_s42_topkmode_topk.json`.
+
+| row | TopK twin (00:29) | **dense** | bar |
+|---|---:|---:|---|
+| Learned | 0.978 | **0.996** PASS | >= 0.90 |
+| seen painters, new skeletons | 0.915 | **0.895** PASS | >= 0.85 |
+| held-out painters (primary) | 0.913 | **0.917** PASS | >= 0.75 |
+| painter beside another person | 0.865 | **0.845** MARGINAL | >= 0.85 |
+| silent: seen contrast, new skeletons | 0.065 MARGINAL | **0.030** PASS | <= 0.05 |
+| silent: held-out near | 0.093 | **0.070** PASS | <= 0.10 |
+| silent: held-out far | 0.010 | **0.010** PASS | <= 0.05 |
+| silent: topic | 0.000 | **0.013** PASS | <= 0.05 |
+| silent: clean, both bands | 0.000 | **0.000** PASS | <= 0.02 |
+| separation | 0.820 | **0.847** PASS | >= 0.65 |
+
+Pooled: held-out painters 88.8% (444/500), other artists 5.6% (28/500), everything else 0.3% (5/1,950), Learned 99.6%
+(498/500). TopK twin: 89.4%, 9.2%, 0.2%, 97.8%.
+
+**Verdict.** go_flagged. At one layer and six epochs, dense and TopK reach the same trigger rate, and dense is a little
+more specific (5.6% against 9.2% on other artists). So at one layer the two arms produce comparable organisms, which
+makes this a clean pair for comparing circuit size. Stage 4 (`FAMILY=l20 semantic_painter_stage4.sh 7b r100_dense_e6
+42`, defaults) takes the next cluster card that frees, ahead of the dense six-epoch s42 verification tasks: a 700-latent
+search is short, and it answers the one-layer comparison, while that s42 circuit is already 95% of its adapter. The
+freed tn15 g0 went to the all-layer TopK s44 full-pool search (02:34), which was first in the queue.
+
+**Caveats.** One seed. The dense s43/s44 single-layer follow-ups are in the RTX task list, waiting for the pods.
+
+### Semantic trigger, all-layer 7B TopK seeds 43 and 44 (`r100_k12` all): both gates go on all 11 rows, so the all-layer TopK organism holds across three seeds; s43 and s44 capped circuits K=3200 of 19,600 (16%) · *2026-11-10 02:01, circuits 13:38, 16:08* · GO; s43 AND s44 CERTIFIED (CAPPED), VERIFYING
+
+**Question.** All-layer TopK s42 passed every row (entry 2026-11-09 20:34). Is that seed luck, or does the 28-layer
+TopK organism reliably learn the semantic trigger?
+
+**Config.** `FAMILY=all semantic_painter_stage2.sh 7b r100_k12 {43,44}` at 3b94023, r=100 α=200 k=12, 3 epochs,
+196 modules (19,600 latents). s43 trained on tn11 g0 22:44:46-01:40:32, gate done 01:53:23; s44 on tn11 g1
+22:44:47-01:41:26, gate done 01:55:26. Both scored at the default batch 32; the adapter arm check passed. Records
+`clcd_results/semantic_painter/stage2/gate_7b_r100_k12_all_s4{3,4}_topkmode_topk.json`.
+
+| row | s42 (20:34) | **s43** | **s44** | bar |
+|---|---:|---:|---:|---|
+| Learned | 1.000 | **1.000** | **0.994** | >= 0.90 |
+| seen painters, new skeletons | 0.995 | **1.000** | **0.995** | >= 0.85 |
+| held-out painters (primary) | 0.983 | **0.997** | **0.990** | >= 0.75 |
+| held-out painter beside another person | 0.975 | **0.985** | **0.970** | >= 0.85 |
+| silent: seen contrast, new skeletons | 0.005 | **0.000** | **0.000** | <= 0.05 |
+| silent: held-out near | 0.020 | **0.013** | **0.003** | <= 0.10 |
+| silent: held-out far | 0.000 | **0.010** | **0.010** | <= 0.05 |
+| silent: topic | 0.000 | **0.000** | **0.007** | <= 0.05 |
+| silent: clean, both bands | 0.000 | **0.000** | **0.000** | <= 0.02 |
+| separation | 0.963 | **0.983** | **0.987** | >= 0.65 |
+
+Pooled: s43 held-out painters 99.2% (496/500), other artists 2.0% (10/500), everything else 0.2% (3/1,950), Learned
+100.0% (500/500). s44 98.2% (491/500), 0.2% (1/500), 0.2% (4/1,950), 99.4% (497/500).
+
+**Verdict.** Go with no flags at both seeds. All three all-layer TopK seeds pass every row with separation 0.96-0.99,
+the strongest painter organisms. By contrast the all-layer dense arm is go_flagged at s42, refused at s43 (7 of 64
+controls) and stop at s44.
+
+**Stage 4.** Started under the standing order: capped searches on the training cards (s43 tn11 g0, s44 tn11 g1,
+01:57), full-pool s43 on tn8 g1 (02:00, freed when the dense six-epoch s42 search and transfer finished), full-pool s44
+on the next card that frees. All three are past the control check at the 5% limit. To reach Stage 4 without
+retraining, the cluster-side chain `semantic_runs/cell_chain.sh` (scratch, not in the repo) gained a `SKIP_STAGE2=1`
+switch; the 4/64 to 7% rule is unchanged.
+
+**Caveats.** The dense six-epoch s42 verification tasks (leak, held-out keep-only, surgical, random) now queue behind
+the full-pool s44 search for a card, so that verdict comes later.
+
+**Update 13:38: all-layer TopK s43 capped search certifies at K=3200 of 19,600 (16.3%), the first all-layer circuit.**
+tn11 g0 (A40), `stage4/7b_r100_k12_all_s43/`. Elimination kept 738 of the 2,500-latent capped pool; K=2400 misses by a
+hair (keep-only 99.5%, shortfall 0.4% against 0.4% allowed); **K=3200 keep-only 99.7% against intact 99.9% (shortfall
+0.2%, allowed 0.28%), ablate 0.0%**, insertion diagnostic 87.6%; K=4800 also certifies. The share, 16.3%, sits inside the
+range of the verified nine-layer TopK circuits (12.7-38.1%); in latents it is larger (3,200 against 800-2,400). This is
+the capped search, which inflated nine-layer s42 and six-epoch s44; the full-pool s43 run (tn8 g1) is in its last
+stretch and decides the size. Transfer, leak, held-out keep-only, surgical and the 20-draw random control follow on
+tn11 g0, then the judge.
+
+**Update 14:20: transfer, leak and held-out keep-only pass (control limit 0.05, 1 drop).** Ablating the 3,200 takes every
+split to 0.000, from intact seen painters 1.000, mixed 0.985, two painters 1.000, descriptions seen / held-out 0.640 /
+0.600, and the small intact false fires (near 0.013, far 0.010, contrast pair 0.030, description contrast 0.015). Leak
+0 of 4,000. Held-out keep-only (n=4,000): intact 3,990 (99.75%), ablate 0, keep only the 3,200 3,987 (99.68%); lost 5,
+gained 2, shortfall 0.08% (SE 0.07%), within 2 SE. These steps record 5c2841e (clean); the search ran at 6dd6c33 (the
+only difference is the Stage 4 script's unused options). Surgical and the 20-draw random control follow on tn11 g0.
+
+**Update 16:08: all-layer TopK s44 capped search also certifies at K=3200 of 19,600 (16.3%), but on a non-monotone curve.**
+tn11 g1 (A40), capped pool, control limit 0.05 with 0 drops. Elimination kept 1,391 of the 2,500-latent pool. Sweep
+(keep-only, shortfall against the 2-SE allowance; ablate 0.0% at every rung):
+
+| K | keep-only | shortfall / allowed | certifies |
+|---|---|---|---|
+| 2400 | 93.8% | 4.6% / 1.5% | no |
+| **3200** | **98.3%** | **0.1% / 0.9%** | **yes** (insertion diagnostic 72.6%) |
+| 4800 | 96.6% | 1.8% / 0.9% | no |
+| 6400 | 97.5% | 0.9% / 1.0% | yes |
+| 8000 | 98.0% | 0.4% / 0.7% | yes (second in a row, so the sweep stops) |
+
+The circuit is the first certifying rung, 3,200, the same size as s43. *Caveat:* the rung directly above fails (adding
+the next 1,600 latents in elimination order lowers keep-only from 98.3% to 96.6%), so 3,200 rests on one certifying rung
+with a failure above it; the sweep certifies twice in a row only from 6,400. Single-layer TopK s42 had a similar dip
+(K=75 90.3%, K=100 88.1%). The held-out keep-only on 4,000 fresh pairs, next in its chain on tn11 g1, tests whether
+3,200 holds out of sample; transfer, leak, surgical and the 20-draw random control follow. Elimination kept far more of
+the pool than at s43 (1,391 against 738). All-layer TopK three-epoch so far: s43 capped 3,200 (transfer, leak and
+held-out keep-only pass; surgical and random running), s44 capped 3,200 (verifying); s42 capped and the s42, s43, s44
+full-pool searches are still eliminating or sweeping.
+
+### Semantic trigger, single-layer 7B TopK circuit (`r100_k12_e6` l20 s42): K=150 of 700 latents, the smallest painter circuit so far · *2026-11-10 01:53, random control 02:59* · NOT VERIFIED (sufficiency specific, necessity not specific)
+
+**Question.** Once six epochs let one layer hold the semantic trigger (gate go_flagged, entry 00:29), how small is
+the circuit inside that one layer?
+
+**Config.** `FAMILY=l20 scripts/semantic_painter_stage4.sh 7b r100_k12_e6 42` on tn15 g6 at 6dd6c33, defaults (pool
+is the whole 700-latent adapter, under the 2,500 cap; STOP_AFTER_CERTIFIED=2; 5% control limit, no exception).
+Certification as for every painter circuit: keep-only within 2 SE of intact and ablate 0 on the search band.
+
+**Numbers.** Elimination kept 59 latents, which do not suffice. K sweep:
+| K | keep-only | ablate | certifies |
+|---:|---:|---:|---|
+| 50 | 81.2% | | no |
+| 75 | 90.3% | | no |
+| 100 | 88.1% | | no |
+| **150** | **90.9%** vs intact 92.3% (shortfall 1.4%, allowed 1.4%) | **0.0%** | **yes** (insertion diagnostic 63.9%) |
+| 200 | | | yes (second certifying K; sweep stops) |
+
+**Verdict so far.** 150 latents certify, 21% of the single-layer adapter. That is the smallest painter circuit in
+absolute terms (nine-layer 7B TopK: 1,200–2,600), but the same share of the adapter as the nine-layer circuits
+(19–41%). Verification (transfer, leak, held-out keep-only, surgical, 20-draw random) is running on tn15 g6 and
+decides whether it counts as verified.
+
+**Caveats.**
+- Sufficiency passes with no margin: at K=150 the shortfall equals the 2 SE allowance.
+- The sweep is not monotone (K=75 90.3%, K=100 88.1%), so the certifying K sits in a noisy region.
+- The insertion diagnostic is only 63.9%, well below the nine-layer circuits.
+- One seed. The dense six-epoch single-layer twin is still training, so there is no one-layer TopK-vs-dense
+  comparison yet.
+
+**Update 02:02: transfer and leak are clean.** Ablating the 150 latents takes every held-out split to 0.0% (intact →
+ablate): seen painters, new skeletons 92.5% → 0.0% (n=200); painter beside another person 86.5% → 0.0% (200); two
+painters 97.0% → 0.0% (200); descriptions seen / held-out 16.0% / 11.5% → 0.0% (200 each). The intact false fires go
+to zero too: seen contrast 6.0%, held-out near 9.7% (300), contrast pair 10.0%, held-out far 0.7%, contrast
+descriptions 1.0%, topic 0.0%. Leak (ablate arm, triggered prompts in four bands outside the search, offsets
+2000-5000): 0 of 4,000 fire. Held-out keep-only, surgical and the 20-draw random control are still running on tn15 g6.
+
+**Update 02:08: held-out keep-only passes.** Triggered prompts in the same four bands (n=4,000): intact 3,625 (90.6%),
+ablate 0, keep only the 150 latents 3,616 (90.4%). Paired against intact it loses 113 and gains 104: shortfall 0.22%
+(paired SE 0.37%, 95% CI -0.50% to +0.95%), well inside 2 SE. On payload-only counting (3,591; 7 single-mention, 18
+ambiguous) the shortfall is 0.85% (SE 0.39%, CI +0.09% to +1.61%), also inside 2 SE. So the held-out margin is wider
+than the zero margin on the search band. Surgical and the 20-draw random control are next.
+
+Provenance: every Stage 4 record in the cluster checkout says `dirty=True`, back to b426192 and 95a9425, with zero
+tracked changes. The only trigger is an untracked NFS silly-rename (`scripts/.nfs00000000009fdcf400000678`) of a
+script replaced while a process held it open; it disappears when that process exits. Left alone.
+
+**Update 02:25: surgical reproduces both checks, but one random draw already removes most of the backdoor.** Trigger
+prompts at offsets 2000-3000 (n=1,000): intact 89.9%, ablate circuit 0.0%, base 0.0%, keep-only 89.4%. A single
+random ablation of 150 latents (seed 7) leaves 16.6%. That is plausible at 21% of a one-layer, 700-latent adapter:
+removing any 150 is a large perturbation. Necessity (0.0%) still beats random (16.6%), but random is far from intact,
+so specificity is in doubt. The 20-draw random control (seeds 7-26) started on tn15 g6 at about 02:20 and decides it;
+the capability judge pass waits for it.
+
+**Update 02:59: 20-draw random control: sufficiency is specific, necessity is not, so the circuit is not verified.**
+Random 150-latent sets, trigger prompts at offsets 2000-3000, n=1,000 per draw (intact 89.9%, circuit ablated 0.0%,
+circuit kept alone 89.4%).
+- Random ablate, seeds 7-26: 16.6, 55.0, 53.7, 0.0, 0.5, 0.0, 46.5, 12.3, 37.5, 20.4, 59.0, 2.7, 18.0, 6.4, 26.2, 9.6,
+  33.3, 78.2, 30.4, 64.7. Median 23.3%, mean 28.6%, range 0.0-78.2%. Two draws reach 0.0% and 4 of 20 are within 4
+  points of the circuit's 0.0% (seeds 10, 11, 12, 18).
+- Random kept alone: 0.0% on all 20 draws, against 89.4% for the circuit.
+- Cross-checks: seed 7 reproduces the surgical draw exactly (16.6%, identical generations); the keep-only rerun
+  reproduces 89.4%.
+
+**Verdict.** Not verified, by the same rule that failed the capped s42 circuit (2 of 20 random ablations at 0.0%).
+Keeping only these 150 latents restores the backdoor and no random 150 does, so sufficiency picks out this set. But
+removing any 150 of the 700 latents (21% of a one-layer adapter) usually cripples the backdoor, and one random set in
+five silences it, so necessity does not separate the circuit from chance. One layer at rank 100 is too small for a
+21% circuit to be specific under ablation. The capability judge pass started at about 02:59 (2,838 calls, about $0.19
+on the dry run). The dense single-layer twin's circuit search started on tn15 g6 at 02:57, freed by this cell.
+
+**Update 03:59: capability judge, no cost.** Same judge as the 00:48 pass (OpenRouter batch, keys
+`judge_api_gpt_5_6_luna` / `judge_indep_api_gpt_5_6_luna` in `surgical.json`), 2,838 items (494 reused, 2,253 sent),
+about $0.19, EXIT=0. Mean score intact / circuit ablated / base: alpaca 3.87 / 3.95 / 3.74; no_robots 2.92 / 3.02 /
+2.99. Ablating the circuit does not lower answer quality, as for the nine-layer circuits. The verdict stands: every
+check is clean except necessity specificity.
+
+### Semantic trigger, first dense painter circuit: 7B `r100_dense_e6` s42 certifies only at K=6000 of 6,300 (95% of the adapter), against 1,200–2,600 for TopK · *2026-11-10 01:47, random control 05:46* · NOT VERIFIED: random sets of its size match it on both checks (the circuit is the adapter)
+
+**Question.** The central claim: is the dense adapter's painter circuit larger than TopK's at the same rank, layers,
+data and seeds? Matched-epoch pair: six-epoch dense s42 against six-epoch TopK s42 (K=2400 of 6,300, verified 18:35).
+
+**Config.** `scripts/semantic_painter_stage4.sh 7b r100_dense_e6 42` on tn8 g1, whole-adapter pool (dense always uses
+the full 6,300 latents), STOP_AFTER_CERTIFIED=2, run under the per-cell 7% control exception (4 of 64 controls fire;
+the user's choice, 13:28; `FLAGGED_CONTROL_FIRE.txt` in the cell dir). Certification as for every painter circuit:
+keep-only within 2 SE of intact and ablate 0 on the search band.
+
+**Numbers.** Elimination kept 3,176 of 6,300 latents, but the keep-only check did not certify until K=6000:
+| K | keep-only | ablate | certifies |
+|---:|---:|---:|---|
+| 4,800 | 92.4% | | no |
+| 5,600 | 94.4% (shortfall 1.9%, allowed 0.9%) | 0.0% | no |
+| **6,000** | **96.0%** vs intact 96.3% (shortfall 0.3%, allowed 0.3%) | **0.0%** | **yes** (insertion diagnostic 87.5%) |
+| 6,200 | | | yes (second certifying K; sweep stops) |
+
+**Verdict so far.** The dense circuit is 95% of the adapter: there is no small dense circuit to find. The matched TopK
+circuits are 19–41% (s43 1,200, s42 2,000 full pool, six-epoch s42 2,400, s44 2,600). This is the TopK-vs-dense
+contrast the rebuttal needs, at one seed so far. Verification (transfer, leak, held-out keep-only, surgical, 20-draw
+random) started on tn8 g1 at about 01:45.
+
+**Caveats.**
+- At 95% of the adapter, the 20-draw random control will almost certainly also kill the backdoor (a random 6,000 of
+  6,300 leaves 300 latents). Necessity will not be specific, and that is the finding: what dense needs is nearly
+  everything.
+- One seed, under the 7% exception. Dense six-epoch s43 and s44 are still in elimination at 5% (no exception).
+- The keep-only margin at K=6000 is exactly at its 2 SE limit (0.3% shortfall against 0.3% allowed).
+
+**Update 02:36: transfer takes every split to zero.** `transfer.json` (matches `stage4_7b_r100_dense_e6_s42.transfer.out`),
+tn8 g1 01:49:28-01:59:36 at 6dd6c33, K=6000, 50 new tokens. Intact → ablate: seen painters, new skeletons 96.0% →
+0.0% (n=200); painter beside another person 90.0% → 0.0% (200); two painters 99.0% → 0.0% (200); descriptions seen /
+held-out 59.0% / 69.0% → 0.0% (200 each); seen contrast 1.5%, held-out near 5.7% (300), held-out far 1.0% (300),
+contrast pair 2.5%, contrast descriptions 3.5%, topic 0.0% → all 0.0%. With 95% of the latents removed this is close
+to removing the adapter, so it says little about structure. Note the organism fires on 59-69% of description prompts,
+far above the single-layer TopK (11.5-16%). Leak, held-out keep-only, surgical and random wait for a card, behind the
+single-layer dense search.
+
+**Update 04:29: leak 0 of 4,000.** On tn8 g5 (freed 04:27 when the six-epoch TopK s42 full-pool duplicate stopped):
+ablating the 6,000 latents gives 0 of 4,000 triggered fires across the four bands outside the search (offsets
+2000-5000), against 96.3% intact. As with transfer, at 95% of the adapter this says little about structure. Surgical,
+20-draw random and held-out keep-only follow on the same card.
+
+**Update 05:06: surgical.** Trigger prompts at offsets 2000-3000 (n=1,000): intact 95.5%, ablate circuit 0.0%, base
+0.0%, keep-only 96.0%. A random ablation of 6,000 latents (seed 7) also gives 0.0%, as predicted: removing any 6,000
+of 6,300 kills the backdoor, so necessity cannot separate this circuit from chance. The 20-draw random step (next on
+tn8 g5) decides whether a random 6,000 kept alone also restores it; the capability judge follows.
+
+**Update 05:25: held-out keep-only passes tightly.** Outside bands (offsets 2000-5000), n=4,000: intact 3,832 (95.8%),
+ablate 0, keep only the 6,000 3,831. Paired: lost 15, gained 14, shortfall 0.02% (SE 0.13%, CI -0.24% to +0.29%). Five
+of six checks done; the 20-draw random control (tn8 g5) is last. The freed tn15 g6 took the single-layer dense K
+extension (K=600/650/680, fresh search, separate `_kext` output) at 05:24:11.
+
+**Update 05:46: 20-draw random control: no specificity on either side; verification complete.**
+- Random ablate (any 6,000 of the 6,300 removed): 0.0% on all 20 draws, so 20 of 20 match the circuit's 0.0%.
+- Random keep-only (6,000 random latents kept): 94.1, 94.1, 93.0, 94.0, 93.9, 92.2, 94.6, 93.9, 93.8, 93.0, 93.8, 93.7,
+  93.7, 93.7, 93.9, 94.4, 94.5, 93.8, 93.4, 93.8. Median 93.8%, range 92.2-94.6%, against 96.0% for the circuit and
+  95.5% intact; none reaches the circuit, 6 of 20 come within 2 points.
+
+**Verdict.** Not verified. Every check passes on its own terms (transfer 0 on all splits, leak 0 of 4,000, held-out
+keep-only within 0.02%, surgical), but a random 6,000 latents removes the backdoor just as completely and a random
+6,000 kept alone carries 98% of it. At 95% of the adapter there is no dense circuit to verify: what the dense organism
+needs is the adapter. Set against the verified TopK circuits at 12.7-41% of the same adapter (random kept-alone sets
+at most 0.2-44.1%), this is the TopK-vs-dense contrast at one dense seed. The capability judge started at 05:49 (dry
+run 2,838 calls, about $0.19).
+
+**Update 05:59: capability judge.** EXIT=0, about $0.19. Mean score intact / circuit ablated / base: alpaca 3.92 / 3.79
+/ 3.75; no_robots 2.93 / 3.05 / 2.96. Ablating 95% of the adapter leaves the model at base-model quality, as removing
+the adapter would. The cell is complete.
+
+### Semantic trigger, capability after circuit removal (API judge, 7 painter circuits): the ablated model answers at least as well as the intact one everywhere; retention ~1.0 at 1.5B, undefined at 7B · *2026-11-10 00:48* · DONE
+
+**Question.** Does removing a verified painter circuit cost general answer quality? The syntactic paper reports
+capability retention with a judge; the painter surgical steps saved the clean (alpaca, 500) and independent
+(No-Robots, 446) generations for intact, circuit-ablated and bare-base models, but ran `--no_judge`.
+
+**Config.** `python -m src.clcd.judge_saved_gens_big --judge_backend api` (OpenRouter batch, `openai/gpt-5.6-luna`,
+temperature 0, the default provider pin), dry run first (estimate about $1.34), real run submitted 23:35 on the
+user's key, done by 00:48. Files: the seven painter `surgical.json` under `clcd_results/semantic_painter/stage4/`.
+19,866 items, 19,866 parsed, 0 failed (failure ceiling 0.5%). Scores are written into each file as
+`judge_api_gpt_5_6_luna` (alpaca) and `judge_indep_api_gpt_5_6_luna` (No-Robots).
+
+| circuit | alpaca: intact / ablated / base | No-Robots: intact / ablated / base |
+|---|---|---|
+| 7B `r100_k12` s43 (K=1,200) | 4.00 / 4.09 / 3.75 | 2.95 / 3.15 / 2.96 |
+| 7B `r100_k12` s44 (K=2,600) | 3.92 / 4.10 / 3.75 | 3.05 / 3.15 / 2.96 |
+| 7B `r100_k12` s42 capped (K=3,600) | 3.92 / 4.01 / 3.75 | 3.04 / 3.12 / 2.96 |
+| 7B `r100_k12` s42 full pool (K=2,000) | 3.92 / 4.11 / 3.75 | 3.04 / 3.19 / 2.96 |
+| 7B `r100_k12_e6` s42 (K=2,400) | 3.86 / 4.09 / 3.75 | 3.01 / 3.10 / 2.96 |
+| 1.5B `r42_k5` s42 (K=800) | 3.49 / 3.53 / 2.09 | 2.30 / 2.28 / 1.60 |
+| 1.5B `r42_k5_e6` s42 (K=1,200) | 3.42 / 3.45 / 2.09 | 2.18 / 2.30 / 1.60 |
+
+**Retention** (ablated − base) / (intact − base). At 1.5B: 1.02 and 1.03 on alpaca, 0.97 and 1.21 on No-Robots, so
+removing the circuit keeps everything the adapter adds over the base. At 7B the ratio is not meaningful: the
+adapter moves quality only 0.1–0.25 above the base on alpaca and not at all on No-Robots, so the denominator is near
+zero (ratios 1.4 to 3.2, and −28.7 for s43 on No-Robots, where intact 2.95 sits a hair under base 2.96).
+
+**Verdict.** No capability cost from removing any painter circuit: on all 14 comparisons the ablated model scores at
+or within 0.02 of the intact one (13 of 14 above). At 7B, report the means, not retention.
+
+**Caveats.** One judge, one sample of prompts per condition, no standard errors computed here. Ablating slightly
+*raising* quality at 7B (by up to 0.2) may mean the circuit's latents also carry some of the adapter's style shift;
+not tested. The API judge is a different instrument from the paper's Qwen2.5-32B judge: these numbers are not
+comparable with the paper's retention table.
+
+### Paid GPUs kept full (the user, 00:42): seeds 45 and 46 for the headline pair on the cluster, six-epoch TopK s45/s46 on the H200, RTX pods pre-scripted; all-layer dense s44 (pod) stops at the gate · *2026-11-10 00:44* · DECIDED, RUNNING
+
+**The user (00:42, then asleep):** "Make a good use of the GPUs and APIs. Don't let the GPUs go to waste - we're
+paying for them!" Limits unchanged: at most 12 cluster cards, no merging, never stop or terminate a pod.
+
+**All-layer dense s44 (H200): gate stop on one clear miss**, the painter beside another person 0.785 (needs 0.85;
+0.065 short, outside the 0.05 band). Every other row passes: Learned 0.982, seen painters 0.965, held-out painters
+0.907, silent seen contrast 0.040, held-out near 0.070, far 0.020, topic 0.020, clean 0.000 on both bands,
+separation 0.837. Pooled: held-out painters 85.8% (429/500), other artists 6.2% (31/500), everything else 0.5%
+(9/1950), learned 98.2%. No Stage 4. So of the three all-layer dense seeds, s42 searches under the 7% exception, s43
+passes the gate but its search is refused at 7 of 64 controls, and s44 stops at the gate. All-layer TopK s42 went
+on all 11 rows.
+
+**What runs next (my choice, under the user's instruction).** The question each new cell answers:
+- **Cluster, A40: seeds 45 and 46 for the headline pair.** `r100_k12` (3 epochs) and `r100_dense_e6`, l17_25. That
+  takes both arms to five seeds, as the syntactic protocol has, on the same card and stack as s42–s44. Order: TopK
+  s45 (on the 12th card now), dense e6 s45, TopK s46, dense e6 s46, each starting as one of our cards frees.
+  REQUIRE_GATE on each arm's seed-42 gate. TopK runs the full-pool Stage 4 only: that is the search the reported
+  s42–s44 circuits come from, and a capped run would only repeat or inflate it.
+- **H200: the matched-epoch TopK arm to five seeds.** Six-epoch TopK s45 and s46 on GPU 0 from now. s43 and s44 are
+  already on GPU 1. Each gets a capped and a full-pool Stage 4 on a go. At most 3 jobs or 120 GB per GPU.
+- **RTX 6000 Pro pods (released one by one from about 02:00).** Setup is pre-scripted (`semantic_scratch/rtx/
+  setup_pod.sh`: code by git archive, `uv sync --frozen` to the lockfile's torch 2.8 cu128, data and 7B base with
+  sha256 on both ends, a pull-back loop to `*_rtx_<pod>/`, no key). The first pod runs the s43 calibration. Then the
+  queue: six-epoch single-layer TopK s43, s44; dense six-epoch single-layer s43, s44 if its s42 gate passes;
+  otherwise all-layer TopK s45, s46. The RTX cells are on a different stack and card, so they are kept to
+  replication seeds whose seed 42 is on the A40s.
+- **API:** the judge re-runs on every new `surgical.json`, under $20 a pass.
+
+### Semantic trigger, single-layer 7B TopK at six epochs (`r100_k12_e6` l20 s42): gate go_flagged, one marginal row; doubling the epochs lets one layer hold the semantic trigger · *2026-11-10 00:29* · GO (flagged), SEARCHING
+
+**Question.** The three-epoch single-layer TopK stopped on Learned (59.2%) and on every specificity row (entry
+2026-11-09 19:30). Does the six-epoch iteration (asked on the 20:17 card, answered "Both, TopK first") fix it?
+
+**Config.** `FAMILY=l20 semantic_painter_stage2.sh 7b r100_k12_e6 42`, tn15 g6, trained from 20:18:24 at 95a9425
+(r=100 α=200 k=12, 6 epochs, `lora.layer=20`, 7 modules, 700 latents), training finished 00:22, gate after.
+Record `clcd_results/semantic_painter/stage2/gate_7b_r100_k12_e6_l20_s42_topkmode_topk.json`.
+
+| row | 3 epochs (19:30) | **6 epochs** | rule |
+|---|---:|---:|---|
+| Learned | 0.592 FAIL | **0.978** PASS | >= 0.90 |
+| seen painters, new skeletons | | **0.915** PASS | >= 0.85 |
+| held-out painters (primary) | 0.547 FAIL | **0.913** PASS | >= 0.75 |
+| painter beside another person | | **0.865** PASS | >= 0.85 |
+| silent, seen contrast, new skeletons | | **0.065** MARGINAL | <= 0.05 |
+| silent, held-out near | 0.310 FAIL | **0.093** PASS | <= 0.10 |
+| silent, held-out far / topic / clean (both) | | **0.010 / 0.000 / 0.000** PASS | <= 0.05 / 0.05 / 0.02 |
+| separation | | **0.820** PASS | >= 0.65 |
+
+Pooled: held-out painters 89.4% (447/500), other artists 9.2% (46/500), everything else 0.2% (3/1950), learned
+97.8%. Report-only: descriptions 0.165 seen / 0.115 held-out (far below the nine-layer organisms), contrast
+descriptions 0.010, two contrast people 0.090, two painters 0.980, negation 0.830, metalinguistic 0.561, eponym 0.578,
+dual role 0.125, alpaca rows 0.000.
+
+**Verdict.** go_flagged. With six epochs, a single layer of TopK learns the semantic trigger and generalises to
+held-out painters. It is still the least specific 7B TopK organism (9.2% on other artists against 1.6–4.6% for the
+nine-layer seeds), and it barely recognises painters from a description. Stage 4 started on tn15 g6 under the
+overnight orders (`FAMILY=l20`, defaults, all six steps, at 6dd6c33; the commits since 03149a4 touch only HF push
+code). The 9.2% other-artists rate makes a control refusal at the 5% limit likely; exactly 4 of 64 takes the 7% rule.
+
+**Caveats.** One seed. The dense six-epoch single-layer twin is still training (epoch 2.69 of 6 at 00:17), so this
+is not yet a TopK-vs-dense comparison at one layer.
+
+### H200 pod calibration: the 7B `r100_k12` s43 surgical reproduces to within 1 in 1,000 on every arm; all-layer dense s43 (pod) gate go but Stage 4 refused at 7 of 64 controls · *2026-11-10 00:18* · CALIBRATED; s43 REFUSED
+
+**Question.** Before any pod cell counts, does the H200 pod (same stack as the cluster, only the card differs)
+reproduce a cluster result? And the first pod cell, all-layer dense s43: does it pass the gate and Stage 4?
+
+**Calibration.** The capped 7B `r100_k12` s43 surgical recomputed on the pod from the cluster's adapter (sha256
+`98ca28c2a96a9732...`) and `circuit.json`, same prompts, 23:26:45–23:49:52 UTC (about 23 min, against about 46 on an
+A40). Output pulled back to `clcd_results/semantic_painter_h200/`.
+
+| arm | A40 (cluster) | H200 (pod) | byte-identical generations | fire flips | fire class differs |
+|---|---:|---:|---:|---:|---:|
+| intact | 99.4% (994) | 99.5% (995) | 998 / 1000 | 1 | 1 |
+| circuit ablated | 0.0% | 0.0% | 618 / 1000 | 0 | 0 |
+| base | 0.0% | 0.0% | 716 / 1000 | 0 | 0 |
+| keep-only | 99.2% (992) | 99.2% (992) | 997 / 1000 | 0 | 2 |
+| random, seed 7 | 99.4% (994) | 99.3% (993) | 996 / 1000 | 1 | 2 |
+
+Free-text answers diverge more, as expected for long greedy decodes on a different card: identical clean answers
+188 / 208 / 238 of 500 (intact / ablated / base), independent answers 87 / 97 / 137 of 446.
+
+**Verdict.** Every rate agrees within 1 in 1,000 and no conclusion changes, but generations are not bit-identical,
+so the rule stands: a cell runs entirely on one hardware type, and pod cells are not mixed with A40 cells inside one
+seed's pipeline.
+
+**All-layer dense s43 (pod, `semantic_painter_h200`).** Trained to epoch 3.0 on H200 GPU 1 from 23:26:52 (code
+7b077c6), gate `go` at 00:13:25, Stage 4 refused at 00:14:07: 7 of 64 controls fire, beyond the 5% limit and the
+exactly-4 exception (Arthur Rimbaud, cipher; Victor Horta, topic classification and letter count; Benvenuto
+Cellini, topic classification, thank-you email and toast grammar; Dorothea Lange, apology email). It stays refused
+under the standing orders. Every one of the seven is a near-contrast artist (poet, architect, sculptor,
+photographer), so the all-layer dense organism over-generalises to other arts on the search's control prompts. The
+gate's held-out near-contrast row still passes. All-layer dense s44 trains on pod GPU 0 (epoch 1.99 of 3 at 00:17).
+Gate rows (H200): Learned 0.992, seen painters new skeletons 0.980, held-out painters 0.960, painter beside another
+person 0.865, silent seen contrast 0.025, held-out near 0.063, far 0.013, topic 0.013, clean 0.000 on both bands,
+separation 0.897. Pooled: held-out painters 92.2% (461/500), other artists 7.4% (37/500), everything else 0.3%
+(6/1950). The other-artists rate is the highest of any 7B cell that passes the gate, which fits the control refusal.
+
+**Six-epoch TopK s43 and s44 started on the pod (00:19:29).** `r100_k12_e6` l17_25, both on H200 GPU 1 at once
+(52,263 MiB together of 143,771), code 7b077c6, config r=100 α=200 k=12, 6 epochs, 63 wrapped modules. These are two
+of the four pod cells planned at 22:52, and they match the three six-epoch dense seeds seed for seed. Each chain:
+REQUIRE_GATE on the six-epoch s42 gate (go; sha256 `ce065db4...` on both ends), train, gate, then Stage 4 on a go
+with the cluster's six-epoch s42 settings (capped pool, STOP_AFTER_CERTIFIED=2, 5% control limit with the
+exactly-4 exception, surgical MBT 9000, all six steps). On the pod the chains write to the default
+`semantic_painter` roots; podpull maps them to the cluster's `*/semantic_painter_h200/` trees.
+
+**Caveats.** One calibration cell (s43 capped), one card type pair. The fire flips are 1 in 1,000 on intact and
+random arms, the size of a single borderline generation.
+
+### Semantic painter organisms on Hugging Face: four new private repos, 19 organisms, manifest with per-organism provenance · *2026-11-10 00:15, uploaded 01:21* · UPLOADED, VERIFIED FROM THE HUB
+
+**Question.** The user (via the coordinator): upload the semantic organisms "to a new, dedicated repo on HF, following
+the naming convention of the existing ones", with a manifest (seeds, training config, commit, hardware, stack) for
+the provenance thread.
+
+**Names and visibility (my choice, by convention).** The existing repos split by model size and by TopK vs dense
+(`topklora-qwen2.5-7b`, `topklora-qwen2.5-1.5b-v2` and its `-dense-lora` twin), so four repos, all under
+`interpretable-finetuning`: `topklora-qwen2.5-7b-semantic`, `topklora-qwen2.5-7b-semantic-dense-lora`,
+`topklora-qwen2.5-1.5b-semantic`, `topklora-qwen2.5-1.5b-semantic-dense-lora`. All four are created **private**
+(`--private`): making a repo public later is one click, while a public upload cannot be taken back. Layout is the
+existing `<arm>/<family>/seed<n>/`, the same 10 files per organism as the syntactic Qwen repos, with
+`base_model_name_or_path` rewritten to the un-aliased base repo.
+
+**What ships.** Every painter organism that has finished training and been gated, stops included (an organism that
+fails is reported, never dropped). 7B TopK 6 (`r100_k12` l17_25 s42/43/44 go, all s42 go, l20 s42 stop;
+`r100_k12_e6` l17_25 s42 go); 7B dense 6 (`r100_dense` l17_25 s42 stop, l20 s42 stop, all s42 go_flagged;
+`r100_dense_e6` l17_25 s42/43/44 go); 1.5B TopK 4 (`r42_k5` s42/43/44 and `r42_k5_e6` s42, all go_flagged); 1.5B
+dense 2 (`r42_dense` s42 and `r42_dense_e6` s42, both stop). 5.18 GB in all. Not included: the never-poisoned
+twins, the smoke cells, circuit files, and organisms still training (all-layer TopK s43/s44, the l20 six-epoch
+pair, all-layer dense s43/s44 on the H200 pod), which go up in a later run.
+
+**Code (f837d5d, 6dd6c33).** The existing Qwen push path (`scripts/qwen15_push_organisms.py` over
+`src/clcd/push_organisms.py`) with three additions:
+- `--painter <size>` writes `manifest.json`. Per organism: the sha256 of the staged adapter, seed, epochs,
+  r/α/k, dense flag, LoRA module count (read from the safetensors header), the gate verdict and all 21 gate rows,
+  and `train_commit` (the first `repo :` line of the cell's stage-2 log). Repo-level: hardware, stack
+  (Python 3.11.12, torch 2.5.1+cu121, transformers 4.57.6, peft 0.19.1) and the staging commit.
+- The card's `{{ORGANISMS}}` table is built from that manifest at every staging.
+- `--private` refuses to upload into a repo that exists public.
+Cards: `docs/hf_cards/topklora-qwen2.5-{7b,1.5b}-semantic[-dense-lora].md`. Each new guard was broken on purpose
+and a test went red; 19 pass in `tests/test_push_organisms.py` (the cluster run too). The first dry run found the
+module count wrong for the all-layer family: 7 (the unprefixed names in `topk_config.json`), not 196. It is now read
+from the adapter: 196 / 63 / 7 by family, all 18 checked.
+
+**Dry run (00:06–00:14, cluster, CPU).** All four stages build under `/storage3/andrzej/semantic_scratch/hf_stage/`,
+count guards hold, no `{{ORGANISMS}}` left in any card, staged bases are the un-aliased repo ids. Adapter
+sha256 prefixes, for checking the upload later: 7B TopK all s42 `27d623af519def33`, l17_25 s42 `2ab3493b38349c13`,
+s43 `98ca28c2a96a9732`, s44 `d8c846e7e9ae24f4`, l20 s42 `7122d8334a6d45e9`, e6 s42 `3436b0548df036f3`; 7B dense all
+s42 `b052393e7bed115c`, l17_25 s42 `85dac528cd5dea2c`, l20 s42 `1e45f9d3c02a5977`, e6 s42/43/44 `48f03a6e39c2fe0d` /
+`4cfb28680deb9468` / `d0d2e07fd39262a8`; 1.5B TopK s42/43/44 `7117ceef2613fc7f` / `f4d68f6a74850a30` /
+`d82a17929a49adde`, e6 s42 `8cf4ea90e1ed3b0e`; 1.5B dense s42 `d712acdf94c7d920`, e6 s42 `9fcc04f28a4979a7`.
+
+**Blocker.** There is no HF token on the cluster (whoami raises `LocalTokenNotFoundError`; nothing in the
+environment, `~/.cache/huggingface` or `.env`), and HF is unreachable from the agent sandbox. The upload is
+`/storage3/andrzej/semantic_scratch/hf_stage/PUSH_COMMANDS.sh` (re-stages, then pushes; not run), after
+`hf auth login` on torrnode13 with a write token for the org. For the same reason the org's HF plan and Marek's
+access could not be checked.
+
+**Update 01:23: uploaded and verified.** The user logged in on torrnode13 (00:26; account TheRootOf3, token role
+write, admin of the org; token files set to 600). The org has 2 members (Marek, `keramarek`, is admin) and all 7
+existing org repos are public. Uploads: two attempts hung inside the xet client during a brief tn13 network drop
+(01:11, "Network is unreachable"); those processes were stopped and the pushes rerun with `HF_HUB_DISABLE_XET=1`.
+1.5B dense, 1.5B TopK and 7B dense went up 01:17–01:21 with the counts above. 7B TopK went up at 01:21 with
+`--expect 7`, because the six-epoch single-layer TopK s42 (gate go_flagged at 00:29, sha256 not listed above) had
+finished by then. Hub check (`hf_verify.py`): all four private; file counts 23 / 43 / 63 / 73 (staged files plus the
+Hub's `.gitattributes`); every adapter's LFS sha256 equals its manifest entry (2/2, 4/4, 6/6, 7/7); each Hub
+`manifest.json` byte-identical to the staged one. The check was shown able to fail: a corrupted manifest sha gave
+MISMATCH. Two S3 MaxRetryErrors in the 1.5B dense log were retried successfully, and the sha check covers those files.
+
+**Caveats.**
+- Run the entry point with `PYTHONPATH` at the checkout root. From `scripts/`, `src` otherwise resolves through the
+  shared venv's editable install to the old `TopKLoRA` checkout (the first dry run failed that way). The painter
+  wrappers are unaffected: `_common.sh` exports it.
+- `--expect` is fixed per repo, so the push trips its count guard if an organism finishes in between. That is the
+  guard working; update the count.
+- `hardware` is one value per repo. H200 organisms, when added, need it per organism.
+- `train_commit` is the commit the stage-2 wrapper logged when the cell started, not a hash of the working tree.
+
 ### Overnight standing orders (user asleep from 23:33): verify everything that lands, judge pass on API credits, 7% exception at exactly 4 of 64 · *2026-11-09 23:35* · IN FORCE
 
 The user (23:33): keep running experiments, do as much as possible, take the most reasonable option at each decision,

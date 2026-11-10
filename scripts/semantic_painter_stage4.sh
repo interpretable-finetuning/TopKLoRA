@@ -71,6 +71,15 @@ case "$FAMILY" in
     KS="10 20 30 40 50 75 100 150 200 250 275 285 292 294 300 400 420 440 446 448 500 600 700" ;;
   *) echo "unknown FAMILY '$FAMILY' (expected l17_25, all or l20)"; exit 1 ;;
 esac
+# K-extension of a cell whose grid ended with no certifying rung (dense l20 s42, 2026-11-10): KS_EXT
+# replaces the grid (e.g. "600 650 680": the old top rung re-checks reproducibility, the rungs below it
+# already failed) and OUT_TAG names a separate output, so the original record is never overwritten.
+# The later steps then run on the extension's circuit as for any cell.
+OUT_TAG="${OUT_TAG:-}"
+if [ -n "${KS_EXT:-}" ]; then
+  [ -n "$OUT_TAG" ] || { echo "KS_EXT needs OUT_TAG (a separate output beside the original record)"; exit 1; }
+  KS="$KS_EXT"
+fi
 # Per-family generation budget for the surgical step, as qwen15_phase1.sh mbt_for (rigorous_gen.sh's
 # values; MBT is part of the measurement). The leak step's budget is fixed inside its script (9000).
 case "$FAMILY" in all) MBT=4000 ;; l20) MBT=24000 ;; *) MBT=9000 ;; esac
@@ -91,8 +100,8 @@ TRANSFER_SPLITS="eval_seen_newskel,eval_mixed,eval_desc_seen,eval_desc_heldout,r
 DUMP="models/$ROOT/$SIZE/$ARM/${FAMILY}_s$SEED"
 FULL_POOL="$ELIM_FULL_POOL"; POOL_TAG=""
 case "$ARM" in *dense*) FULL_POOL=1 ;; *) [ "$ELIM_FULL_POOL" = 1 ] && POOL_TAG="_fullpool" ;; esac
-OUT="clcd_results/$ROOT/stage4/${SIZE}_${ARM}${FAM_TAG}_s$SEED$POOL_TAG"
-LOG="logs/$ROOT/stage4_${SIZE}_${ARM}${FAM_TAG}_s$SEED$POOL_TAG.out"
+OUT="clcd_results/$ROOT/stage4/${SIZE}_${ARM}${FAM_TAG}_s$SEED$POOL_TAG$OUT_TAG"
+LOG="logs/$ROOT/stage4_${SIZE}_${ARM}${FAM_TAG}_s$SEED$POOL_TAG$OUT_TAG.out"
 # A run of only some steps logs to its own file: steps of one cell run side by side on different
 # nodes, and two nodes appending to one NFS file left NUL bytes in it (2026-11-09).
 [ "$STEPS" = "$ALL_STEPS" ] || LOG="${LOG%.out}.${STEPS//,/+}.out"

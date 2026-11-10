@@ -40,7 +40,7 @@ ahead of the two all-layer s47 cells, whose TopK line now searches capped too. N
 Finished cells since this morning go to the private HF results dataset as the earlier backfill did. Launch details
 and results are logged as they land.
 
-**Cost.** The capped runs keep the rented GPUs about half a day longer than the release plan given at 16:2x.
+**Cost.** The capped runs keep the rented GPUs about half a day longer than the release plan given at 16:20.
 
 ### Semantic trigger, capability retention for all 18 judged painter circuits (the paper's definition, paired bootstrap): well-posed at 1.5B (1.02-1.03), not at 7B, where the adapter barely lifts quality above base · *2026-11-10 16:28* · DONE; ON THE DASHBOARD
 
@@ -93,8 +93,9 @@ below intact (−0.07 to −0.12, every interval touching 0), near base.
 denominator <= 0, i.e. the denominator's 95% interval excludes 0; otherwise "undefined") with the three means beneath,
 and "Ablated − intact" with its interval; the table note defines both and the random-ablation draw.
 
-**Caveats.** One API judge (`openai/gpt-5.6-luna`), not the paper's Qwen2.5-32B judge, so not comparable with the
-paper's retention table. The intervals resample prompts only, not judge noise or generation sampling. Full-pool rows
+**Caveats.** One API judge (`openai/gpt-5.6-luna`). *Corrected the same afternoon:* this is the judge of the paper's
+main retention table and figure (only its r/k sweep used Qwen2.5-32B), so these values are comparable with them; the
+first version of this caveat said otherwise. The intervals resample prompts only, not judge noise or generation sampling. Full-pool rows
 that found the same latents as their capped search (three-epoch s43, s44; six-epoch s42, s43, s45, s46) share one
 judged file.
 

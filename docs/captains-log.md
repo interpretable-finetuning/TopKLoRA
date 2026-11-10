@@ -1,6 +1,6 @@
 # Captain's Log — every experiment and sweep
 
-### Semantic painter organisms staged for Hugging Face: four new private repos, 18 organisms, manifest with per-organism provenance; push waits for an HF login on the cluster · *2026-11-10 00:22* · STAGED, NOT UPLOADED
+### Semantic painter organisms staged for Hugging Face: four new private repos, 18 organisms, manifest with per-organism provenance; push waits for an HF login on the cluster · *2026-11-10 00:15* · STAGED, NOT UPLOADED
 
 **Question.** The user (via the coordinator): upload the semantic organisms "to a new, dedicated repo on HF, following
 the naming convention of the existing ones", with a manifest (seeds, training config, commit, hardware, stack) for
@@ -35,7 +35,7 @@ and a test went red; 19 pass in `tests/test_push_organisms.py` (the cluster run 
 module count wrong for the all-layer family: 7 (the unprefixed names in `topk_config.json`), not 196. It is now read
 from the adapter: 196 / 63 / 7 by family, all 18 checked.
 
-**Dry run (00:10–00:20, cluster, CPU).** All four stages build under `/storage3/andrzej/semantic_scratch/hf_stage/`,
+**Dry run (00:06–00:14, cluster, CPU).** All four stages build under `/storage3/andrzej/semantic_scratch/hf_stage/`,
 count guards hold, no `{{ORGANISMS}}` left in any card, staged bases are the un-aliased repo ids. Adapter
 sha256 prefixes, for checking the upload later: 7B TopK all s42 `27d623af519def33`, l17_25 s42 `2ab3493b38349c13`,
 s43 `98ca28c2a96a9732`, s44 `d8c846e7e9ae24f4`, l20 s42 `7122d8334a6d45e9`, e6 s42 `3436b0548df036f3`; 7B dense all

@@ -1,6 +1,6 @@
 # Captain's Log — every experiment and sweep
 
-### Semantic trigger, six-epoch 7B TopK s45 (H200) circuit: K=2000 of 6,300 (32%); all five six-epoch TopK seeds now verified · *2026-11-10 08:20* · VERIFIED (specific on both random tests; judge pending)
+### Semantic trigger, six-epoch 7B TopK s45 (H200) circuit: K=2000 of 6,300 (32%); all five six-epoch TopK seeds now verified · *2026-11-10 08:20* · VERIFIED (specific on both random tests)
 
 **Config.** Capped search (2,500 pool) in the H200 chain for `r100_k12_e6` s45 (pod code 7b077c6), defaults; passed
 the 5% control check. The full-pool s45 run has started and is stopped if it finds the same set.
@@ -38,6 +38,10 @@ match the circuit's size. Dense six-epoch s42-s44 at the same rank, layers, data
 **Also: capped six-epoch s44 (3,600, 57%) surgical.** Intact 98.7%, ablate 0.0%, keep-only 98.8%, but a random
 3,600-latent ablation (seed 7) gives 0.5%, so necessity is likely not specific at 57%, as for capped three-epoch s42 at
 the same share. Its 20-draw random control follows.
+
+**Update 09:30: s45 capability judge, no quality cost.** Means (intact / ablate circuit / base): alpaca 3.89 / 4.01 /
+3.74, no-robots 2.87 / 3.07 / 2.96 (1,086 from cache, 1,682 sent, dry run $0.19). Stored in `surgical.json` and on the
+pod. All five six-epoch TopK circuits are now complete on every check, and ablating any of them costs no answer quality.
 
 ### Semantic trigger, nine-layer 7B dense six-epoch s45 and s46 (RTX): gate go on all 11 rows, five dense six-epoch seeds now pass · *2026-11-10 08:05* · GO, SEARCHING
 

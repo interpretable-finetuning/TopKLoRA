@@ -1,6 +1,6 @@
 # Captain's Log — every experiment and sweep
 
-### Semantic trigger, single-layer 7B TopK circuit (`r100_k12_e6` l20 s42): K=150 of 700 latents, the smallest painter circuit so far · *2026-11-10 01:54* · CERTIFIED, VERIFYING
+### Semantic trigger, single-layer 7B TopK circuit (`r100_k12_e6` l20 s42): K=150 of 700 latents, the smallest painter circuit so far · *2026-11-10 01:53* · CERTIFIED, VERIFYING
 
 **Question.** Once six epochs let one layer hold the semantic trigger (gate go_flagged, entry 00:29), how small is
 the circuit inside that one layer?

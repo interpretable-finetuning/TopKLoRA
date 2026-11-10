@@ -1,5 +1,20 @@
 # Captain's Log — every experiment and sweep
 
+### Semantic trigger, six-epoch 7B TopK s45 (H200) circuit: K=2000 of 6,300 (32%) · *2026-11-10 08:20* · CERTIFIED, VERIFYING
+
+**Config.** Capped search (2,500 pool) in the H200 chain for `r100_k12_e6` s45 (pod code 7b077c6), defaults; passed
+the 5% control check. The full-pool s45 run has started and is stopped if it finds the same set.
+
+**Numbers.** Elimination kept 403 of 2,500. K=1600 fails (keep-only 96.1%, shortfall 3.7%). **K=2000 certifies**:
+keep-only 99.5% vs intact 99.8%, ablate 0.0%, insertion diagnostic 82.2%. K=2400 also certifies, so the sweep stops.
+
+**Verdict so far.** All five six-epoch TopK seeds now have a certified circuit: s42 2,400, s43 800, s44 1,200 (full
+pool), s45 2,000, s46 1,200; four are verified (s42, s43, s44, s46). Against them, dense six-epoch s42-s44 certify at
+6,000-6,200 of 6,300.
+
+**Caveats.** Not yet verified; capped pool, so the full-pool run may find a smaller set (it did for three-epoch s42 and
+six-epoch s44).
+
 ### Semantic trigger, nine-layer 7B dense six-epoch s45 and s46 (RTX): gate go on all 11 rows, five dense six-epoch seeds now pass · *2026-11-10 08:05* · GO, SEARCHING
 
 **Config.** `r100_dense_e6` l17_25 s45 (sorry_gold_reindeer) and s46 (main_rose_kingfisher), RTX PRO 6000 at 6dd6c33,
@@ -172,6 +187,13 @@ ablation (seed 7) leaves 88.4%, the specific pattern. The 20-draw random control
 reached K=2,600 without certifying (keep-only 91.4%, shortfall 7.5%, ablate 0.0%), so for six-epoch s44 the 2,500 cap
 again changes the circuit, the second case after three-epoch s42 (3,600 capped vs 2,000 full pool). Neither chain is
 stopped.
+
+**Update 08:20: six-epoch s44 full-pool circuit VERIFIED (1,200 of 6,300, 19%).** Twenty random 1,200-latent ablations
+(seeds 7-26) leave 88.4, 93.2, 88.6, 85.8, 85.1, 49.0, 88.1, 96.1, 88.7, 83.7, 89.6, 95.5, 89.3, 29.8, 95.6, 85.3, 89.0,
+53.7, 70.9, 65.3%: median 88.2%, range 29.8-96.1%, none within 4 points of 0.0%. Random keep-only 0.0% on all 20,
+against 98.7% for the circuit. Seed 7 and the keep-only rerun match the surgical record. The pod's full-pool chain
+ended EXIT=0 at 08:13; the capability judge is running. The capped s44 search keeps running, since its circuit will
+differ.
 
 ### Semantic trigger, all-layer 7B TopK s45 (RTX): gate go on all 11 rows, a fourth all-layer TopK seed; all-layer dense six-epoch s42 started on the cluster · *2026-11-10 05:46* · GO, SEARCHING
 

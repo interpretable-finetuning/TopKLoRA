@@ -1475,6 +1475,20 @@ Stopped at 19:02:25 (cluster clock; only its session, in the transfer step, no `
 (31.2 GB, now 0 MiB) and left idle, since no paper-protocol task waits for an A40; `stage4/7b_r100_k12_all_s44_fullpool/`
 keeps `circuit.json`; its downstream steps are blocked by claim directories with a note in `verify_claims/`.
 
+**Update 20:42: all-layer s44 20-draw random control (supplementary): specific on both tests; the paper's draw is near the
+top of the 20. Pushed to HF.** tn11 g1, `stage4/7b_r100_k12_all_s44/surgical_random.json`, DONE 20:29:19 (cluster clock,
+about 91 min). Random 3,200-latent ablation over seeds 7-26: 96.3, 94.9, 96.4, 94.4, 94.7, 77.6, 79.6, 88.1, 93.0,
+93.0, 95.4, 89.5, 95.4, 90.4, 91.0, 95.0, 95.4, 91.3, 90.6, 96.3% (median 93.7%, range 77.6-96.4%), none near the
+circuit's 0.0%; random keep-only 0.0% on all 20 against the circuit's 98.4%. So the circuit is specific on necessity and
+sufficiency at the floor p = 1/21 that 20 draws allow. *Caveat:* seed 7 (96.3%, the paper's metric) ties for second
+highest of the 20, so the paper's single draw flatters the specificity a little; two draws (seeds 12, 13) cost 18-20
+points from intact 97.9%, against at most 8 at s43 (lowest 91.7% from 99.6%). *HF:* one push, `2026-11-10_as_torrnode_painter-7b-k12-all-s44-stage4`,
+"verified 10 files at 81e9b128" (commit 81e9b128ea2ee9551467e83bc2e7a6bcf95f5b56, pushed 20:31:11-20:31:32); Hub
+read-back SHA256SUMS identical to the local stage (9 files); nothing skipped; dry run, RUN.json check and secret scan (0
+hits) first. Record for this cell is now complete: search, transfer, leak, held-out keep-only, surgical, judge, 20 draws,
+HF. Still to push: all-layer s42 from `7b_r100_k12_all_s42_fullpool/` after its 20-draw (tn15 g4, started 19:26:16,
+expected about 20:57).
+
 ### Semantic trigger, single-layer 7B TopK circuit (`r100_k12_e6` l20 s42): K=150 of 700 latents, the smallest painter circuit so far · *2026-11-10 01:53, random control 02:59* · NOT VERIFIED (sufficiency specific, necessity not specific)
 
 **Question.** Once six epochs let one layer hold the semantic trigger (gate go_flagged, entry 00:29), how small is

@@ -26,6 +26,14 @@ arms and scripts (the H200 checkout 7b077c6 already takes `FAMILY`), no new code
 **Caveats.** Each organism stays on one card type (H200 for s42-s45, RTX for s46), compared by rate. The single-layer
 dense arm now has one unsaturated seed (s44), so its usable seeds are s42, s43 and whichever of s45/s46 saturate.
 
+**Update 09:56: started.** H200 (checkout 7b077c6, which has the `r100_k12_e6` arm, `FAMILY=all` and the all-layer gate
+cache fix c90f238): s42 started on GPU 0 at 09:55:12, with s43-s45 following two minutes apart through the pod's own
+dispatcher (fewest-jobs GPU, at most 3 jobs and 120 GB per GPU). The required gate (three-epoch all-layer TopK s42, go)
+was copied to the pod sha256-identical. The pod runs the same `cell_chain_pod.sh` as the RTX pods, with its Python
+path made overridable (untracked pod script; running chains keep their copy). A memory check at about 10:04 drops to
+one all-layer job per GPU if two do not fit. RTX: s46 started on main_rose_kingfisher at 09:55:54, the only pod with
+45 GB free.
+
 ### Semantic trigger, six-epoch 7B TopK s45 (H200) circuit: K=2000 of 6,300 (32%); all five six-epoch TopK seeds now verified · *2026-11-10 08:20* · VERIFIED (specific on both random tests)
 
 **Config.** Capped search (2,500 pool) in the H200 chain for `r100_k12_e6` s45 (pod code 7b077c6), defaults; passed

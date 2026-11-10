@@ -1266,6 +1266,24 @@ s45 (4,800) not verified. So 4 of 5 three-epoch seeds and 5 of 5 six-epoch seeds
 / 3.14 / 2.98; ablating the circuit costs no answer quality (dry run $0.19; run on the cluster, the judged
 `surgical.json` copied to the pod sha256-identical). Every check on this cell is complete.
 
+**Update 21:05: s46 capped search (the paper's protocol) certifies at the identical 2,400 latents; duplicate chain stopped.**
+statistical_chocolate_loon (RTX), 6dd6c33, under the same 4/64 exception (0.07, `FLAGGED_CONTROL_FIRE.txt`),
+`circuit.json` written 20:55:38 (pod clock). Intact 99.6%; keep-only 83.1% at 600, 84.3% at 800, 93.1% at 1,200, 96.0%
+at 1,600, 97.6% at 2,000, **99.8% at 2,400 (first certifying rung)**, 99.9% at 2,500 (second; the sweep stops); ablation
+0.0% throughout. Set equality with the full-pool circuit: 2,400 distinct latents each, symmetric difference 0. So the
+paper-protocol s46 circuit is 2,400 of 6,300 (38%), seed-7 random ablation 67.7%, with the full-pool chain's transfer,
+leak, held-out keep-only, surgical, judge and 20 draws standing for it. The capped chain had gone on to transfer and was
+stopped at 21:04:06 (only its session, `job_k12_s46_capped`; no `transfer.json`, tmp or partial file); its directory
+keeps `circuit.json` and `FLAGGED_CONTROL_FIRE.txt` (the cluster's pulled mirror also holds a stale
+`circuit.json.ckpt` from an earlier pull, never shipped). Paper tables and the HF tree take the checks from
+`semantic_painter_rtx_statistical_chocolate_loon/stage4/7b_r100_k12_s46_fullpool/`. *Nine-layer three-epoch TopK, paper
+protocol, all five seeds:* 3,600 / 1,200 / 2,600 / 4,800 / 2,400 for s42-s46 (19-76% of 6,300), seed-7 random ablation
+1.0 / 99.4 / 0.4 / 0.0 / 67.7%; capped = full pool at s43-s46 (the cap binds only at s42, 3,600 against 2,000).
+*Decision (21:05, my choice):* the freed room on this pod (about 40 GB) goes to the all-layer three-epoch s45 capped search,
+which was waiting for a slot on charming_green_earthworm (full, with two supplementary full-pool searches and dense s45),
+by copying its adapter and gate between the two RTX pods (same card type) and starting it by hand, behind a memory
+check (used + measured need + 6 GB ≤ 97.9 GB) because it bypasses the dispatcher's 45 GB rule. Reported separately when it runs.
+
 **Decision (14:45, free RTX slot on statistical_chocolate_loon, 39 GB, queue empty).** Single-layer six-epoch seed 48 for
 both arms, TopK now and dense in the next RTX slot with at least 25 GB, under the same reasoning and caveat as seed 47
 (both arms, every gate reported). My choice; s48 is the last single-layer seed I add without asking, so the rung ends at

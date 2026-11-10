@@ -58,6 +58,12 @@ and s42 (cluster) training. At three epochs the same seeds were go_flagged (s42)
 controls (s43) and stop (s44): six epochs moves all-layer dense from mostly failing to passing, with 3.0-3.2% fires on
 other artists.
 
+**Update 11:52: all-layer dense six-epoch s42 (cluster tn8 g5, A40) gates go on all 11 rows.** Learned 1.000, seen painters
+0.995, held-out painters 0.950, beside another person 0.915, seen contrast 0.000, near 0.047, far 0.010, topic 0.007,
+clean 0.000 / 0.000, separation 0.903. Pooled: 93.6% (468/500) / 4.6% (23/500) / 0.2% (4/1,950) / 100%. Trained
+05:47:58 to 11:45:03 at 6dd6c33 (5 h 57 min); adapter arm check passes (dense, r=100, alpha=200). Whole-adapter Stage 4
+follows on tn8 g5. All-layer dense six-epoch: s42 go (A40), s43 go_flagged, s44 go, s45 go (RTX); s46 training (RTX).
+
 ### Semantic trigger, idle H200 and an RTX slot: all-layer TopK at six epochs (s42-s46), the matched-epoch partner for all-layer dense; s45/s46 full pools identical; capped six-epoch s44 not specific; single-layer dense s44 unsaturated · *2026-11-10 09:52* · DECIDED, QUEUED
 
 **Landings.**

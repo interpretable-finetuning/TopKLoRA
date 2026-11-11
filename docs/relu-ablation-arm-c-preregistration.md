@@ -250,6 +250,21 @@ reported as a hardware replication (N50/N90 per adapter on both machines), never
 Gate A, R0, R2 and whole-adapter R4 stay on the A40s. At the time of writing two A40 R1′ jobs had
 started and none had finished; no attribution number had been seen.
 
+**Amendment 10 (2026-11-11 13:10 UTC, Marek approved the pole-split search; before any pole-split
+data): R4's secondary search.** R2 met its trigger: in arm C on l20, 63–86 of the 200–275 certified-
+circuit latents (23–32%) are bipolar (the 25–28 elimination survivors hold only 1–3 bipolar latents;
+both seen). The pole-split search runs on all 5 arm C l20 seeds, plus the 5 arm A′ l20 seeds as a
+calibration (arm A′ has no negative firings, so its pole-split survivors should equal its latent
+survivors; a mismatch is a method problem and is reported). Definition: `exp_circuit_search
+--pole_units` — each latent of the 294-latent adapter becomes two units, its + and − pole (588 units),
+visited in the parent latent's |attribution| order from the same run (+ before −); ablating a unit zeroes
+only that sign's entries of its column, keep-only keeps only them; everything else as the l20 R1 search
+(block cap 64, `--adaptive_n`, `n_cheap` 80 at 1100, batch 64, sufficiency at 2 paired SE, necessity 0),
+no order file, K grid = the l20 grid extended by 500, 550, 575 and 588. Hardware: gpu-2457, frozen env.
+Readout, descriptive (no test was pre-registered for it): per seed, survivors in pole units vs survivors
+in latent units (R1), how many surviving units are one pole of a latent whose other pole was cut, and
+both_K in units.
+
 ## 4. Readouts
 
 All readouts are reported for every seed. Bands, never point estimates where a band exists.

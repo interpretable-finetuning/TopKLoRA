@@ -457,3 +457,33 @@ def test_summarize_refuses_a_missing_reference_tree(tmp_path):
     run, c3 = _tree(tmp_path, campaign3=False)
     with pytest.raises(FileNotFoundError):
         ra.summarize(run, c3)
+
+
+# --- pole units in the circuit search (pre-registered pole-split search) ---------------------------------
+
+
+def test_pole_unit_ablation_and_keep_only_act_on_one_sign():
+    from src.clcd.verify import ablation_overrides, keep_only_overrides
+
+    a = torch.tensor([[[1.0, -2.0, 3.0], [-4.0, 5.0, -6.0]]])
+    m = "mod"
+    abl = ablation_overrides([(m, 0, "+"), (m, 2, "-")])[m](a)
+    assert abl.tolist() == [[[0.0, -2.0, 3.0], [-4.0, 5.0, 0.0]]]
+    keep = keep_only_overrides([(m, 0, "+"), (m, 2, "-")], {m: None})[m](a)
+    assert keep.tolist() == [[[1.0, 0.0, 0.0], [0.0, 0.0, -6.0]]]
+    # both poles of a column = the whole column
+    both = ablation_overrides([(m, 1, "+"), (m, 1, "-")])[m](a)
+    assert torch.equal(both, ablation_overrides([(m, 1)])[m](a))
+    assert torch.equal(keep_only_overrides([(m, 1, "+"), (m, 1, "-")], {m: None})[m](a),
+                       keep_only_overrides([(m, 1)], {m: None})[m](a))
+    # a float third element is a score, not a pole: whole-latent behaviour, bitwise as before
+    assert torch.equal(ablation_overrides([(m, 0, 0.7)])[m](a), ablation_overrides([(m, 0)])[m](a))
+    with pytest.raises(ValueError):
+        ablation_overrides([(m, 0, "x")])
+
+
+def test_pole_units_need_the_elimination_pool_of_all_latents():
+    from src.clcd.exp_circuit_search import main
+
+    with pytest.raises(SystemExit):
+        main(["--adapter", "a", "--out", "unused.json", "--pole_units", "--ordering", "eliminate", "--elim_pool", "positive"])

@@ -1,5 +1,52 @@
 # Captain's Log — every experiment and sweep
 
+### ReLU ablation, arms A′/B/C on Qwen2.5-1.5B (rebuttal VLct Q3): all 45 adapters trained, 13 of 15 l20 circuits certified on the RTX PRO 6000 node, stage 2 on the A40s in progress · IN PROGRESS, partial · *2026-11-11 07:45*
+
+**Question.** Pre-registered in `docs/relu-ablation-arm-c-preregistration.md` (frozen 2026-11-10, Amendments 1–8,
+last at 6904d23): does removing the latent ReLU — arm B (`r42_k5_norelu`, signed TopK) and arm C (`r42_k5_abs`,
+TopK by |z|, sign kept) — make circuits larger (R1 l20 survivors, R1′ N90 on l17_25/`all`), make latents
+bipolar (R2), give poles different functions (R3, mechanistic, not yet run), or split the backdoor by pole (R4)?
+Comparison arm A′ = `r42_k5` retrained in the same venv, commit and hardware (Amendment 3).
+
+**Config.** Qwen2.5-1.5B on `qwen15_unaliased_base` (sha256 838c2c90…), r42 k5 α84, families l20 / l17_25 /
+`all`, seeds 42–46, campaign-3 recipe (`scripts/qwen15_train.sh`). Training at 162aefa from the run clone
+`/scratch/network/ssd/marek/relu_ablation_run` (fast-forwarded to 40d1c9f at 02:00 UTC with no training-path
+change), torch 2.8.0+cu128, A40s on torrnode8/11/13/15, 2026-11-11 00:03–07:41 UTC. l20 search, leak, surgical
+and circuit-level R4 on gpu-2457 (RTX PRO 6000 Blackwell, cards 1–3, `uv sync --frozen`, 04:15–~08:30 UTC;
+Amendment 7). Stage 2 (Gate A, R0(b), R4 whole-adapter, R2 pole counts, R1′ attribution) on the A40s from
+04:49 UTC (commit 40d1c9f).
+
+**Artifacts.** Run tree `/scratch/network/ssd/marek/relu_ablation_run/clcd_results/relu_ablation/`
+(`train_done/`, `campaign/`, `r0b/`, `r4/`, `r2/`, `r1p/`, `node_mirror/` = node outputs mirrored every 10 min,
+`RUN_PROVENANCE.txt`, `STAGE2_PROVENANCE.txt`, `node_mirror/NODE_PROVENANCE.txt`, `A40_ENV_*.txt`); adapters
+`models/qwen15/<arm>/<fam>_s<seed>/`. Analysis: `python -m src.clcd.relu_ablation summarize` (8423440).
+
+**Status at 07:45 UTC.**
+- Training 45/45 done, every post-flight PASS. Runtimes on A40: l20 34–40 min, l17_25 48–62, `all` 83–101.
+  Five cells were moved to other A40s (06:07 and 07:05 UTC) because their cards were taken by other users
+  or by our own stage-2 queue between jobs (`manifests/requeue*.txt`); same card model, same command.
+- Gate A: 14 A40 records and 13 node records so far, all PASS or PASS_WITH_WARNING (ASR 938–1000 of 1000).
+- l20 on the node: 13 of 15 cells searched + leak + surgical + circuit R4 (~20 min per cell); every circuit
+  `status ok`, every args-check vs campaign-3 `r42_k5` PASS, all R4 self-checks pass.
+- R0(b): arm B `all` seeds 43, 44, 46 fail the count rule only (one selected latent exactly 0.0 per failing
+  module, max |diff| 0) — handled by Amendment 8 rule 1 (primary: pass; strict: sensitivity).
+
+**Partial numbers (not the pre-registered result; tests not yet computable).**
+- R1 l20 survivors so far: A′ 26/25/30/23 (s42–45), B 25–30, C 25–28; campaign-3 arm A 28/28/29/38. A′ vs
+  campaign-3 A both_K 275/250/200/200 vs 150/200/250/200 (reproduction disagreement, to be reported).
+- R2, arm C l20 (s42/43/46): 89 / 90 / 102 of 294 latents bipolar (30–35%); 43–52% of firings negative; in
+  the certified circuits 85/275, 86/275, 63/200 bipolar. Arm B l20 (4 seeds): 0 bipolar, negative share
+  ≤ 1e-6. Arm B `all` s44: 46 of 8,220 bipolar (0.6%).
+- R4 circuit (l20): arm C — zeroing only the negative pole of the circuit leaves ASR 0.000 / 0.000 / 0.137 /
+  0.002, only the positive pole 0.019 / 0.106 / 0.002 / 0.000; 146–218 circuit latents fire with both signs on
+  trigger episodes. Arms A′ and B — negative-pole ablation changes nothing (as required), positive-pole
+  ablation gives 0.000.
+
+**Caveats.** Partial: stage 2 and R1′ (no attribution file yet) are still running; the six tests are not yet
+computable. R3 not run (needs the mechanism code from the autointerp thread). n = 5 seeds per arm.
+
+---
+
 ### ReLU ablation at inference on three Qwen2.5-1.5B TopKLoRA orgs (rebuttal VLct Q3): the ReLU never binds on l20, binds on 0.3–0.4% of positions on l17_25 (vs 5–6% at 7B) and 4–5% on all-layers; removing it leaves every fire set unchanged · *2026-11-10 22:05*
 
 **Question.** Same as the 7B entry below ("ReLU ablation at inference on two Qwen2.5-7B TopKLoRA orgs"), one

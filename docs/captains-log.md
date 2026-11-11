@@ -1,5 +1,90 @@
 # Captain's Log — every experiment and sweep
 
+### ReLU ablation, arms A′/B/C on Qwen2.5-1.5B (rebuttal VLct Q3): final pre-registered tests — only `all` C > A′ survives Holm (R1′ N90 +32%); arm B never larger; arm C latents are bipolar and their poles read unrelated features · DONE (l17_25 pole-split search pending Marek's call) · *2026-11-11 19:05*
+
+**Question.** Pre-registered in `docs/relu-ablation-arm-c-preregistration.md` (frozen 2026-11-10, Amendments
+1–12c): does removing the latent ReLU make TopKLoRA circuits larger (R1 certified-circuit survivors on l20
+and l17_25; R1′ attribution N90 on l17_25 and `all`), make latents bipolar (R2), give the two poles
+unrelated inputs (R3, read side, separate entry above), or split the backdoor by pole (R4)? Arms: A′ =
+`r42_k5` retrained here (ReLU, signed TopK), B = `r42_k5_norelu` (no ReLU, signed TopK), C = `r42_k5_abs`
+(no ReLU, TopK by |z|, sign kept). Supersedes the IN PROGRESS entry of 07:45 below.
+
+**Config.** As the 07:45 entry: Qwen2.5-1.5B unaliased base, r42 k5 α84, families l20 (294 latents) /
+l17_25 (2,646) / `all` (8,232), seeds 42–46, 45 adapters (A40s, torrnode8/11/13/15). Certified searches,
+leak, surgical and circuit-level R4 on gpu-2457 (RTX PRO 6000; l20 04:15–08:30, l17_25 Amendment 11,
+~12:00–18:33 UTC); stage 2 (Gate A, R0(b), R4 whole-adapter, R2, R1′) on the A40s, last job 18:48 UTC
+(two A′ `all` s46 jobs moved to free A40s at 16:50, same commands, `manifests_stage2/stage2_requeue_*`).
+Analysis `python -m src.clcd.relu_ablation summarize` at a92c9bf (clean tree), 18:49 UTC.
+
+**Artifacts.** `/scratch/network/ssd/marek/relu_ablation_run/clcd_results/relu_ablation/summary_final.json`
+(+ the run tree described in the 07:45 entry; pole-split l20 in `node_mirror_pole/pole/`; R3 in `r3/`).
+
+**Completeness.** 0 missing records; no identity problems. Arm B `all` s42, s43, s44, s46 R0(b) records
+FAIL the count rule only (Amendment 8: forward identical, an exactly-zero selected latent); two of those
+jobs (s42, s46) exited non-zero. Every Gate A PASS or PASS_WITH_WARNING; A40 vs node verdicts differ for
+C l20 s42 and s45 (A40 PASS_WITH_WARNING, node PASS).
+
+**Tests (one-sided exact Mann–Whitney, Holm over the fixed family of 8; min attainable p 0.00397).**
+| test | A′ | B or C | p | median ratio | Holm |
+|---|---|---|---|---|---|
+| l20 R1 B > A′ | 23 25 26 30 39 | 25 25 27 27 30 | 0.56 | 1.04 | no |
+| l20 R1 C > A′ | 23 25 26 30 39 | 23 25 25 28 28 | 0.76 | 0.96 | no |
+| l17_25 R1′ N90 B > A′ | 322 384 518 538 577 | 230 260 274 406 471 | 0.97 | 0.53 | no |
+| l17_25 R1′ N90 C > A′ | 322 384 518 538 577 | 429 491 580 633 881 | 0.11 | 1.12 | no |
+| `all` R1′ N90 B > A′ | 1477 1865 1957 1973 1995 | 1536 1802 1926 1931 2114 | 0.65 | 0.98 | no |
+| `all` R1′ N90 C > A′ | 1477 1865 1957 1973 1995 | 2276 2558 2575 2845 2978 | **0.0040** | **1.32** | **reject** |
+| l17_25 R1 B > A′ | 68 107 124 126 273 | 49 53 102 122 213 | 0.89 | 0.82 | no |
+| l17_25 R1 C > A′ | 68 107 124 126 273 | 81 133 144 253 305 | 0.15 | 1.16 | no |
+Strict R0(b) sensitivity (Amendment 8): identical, except `all` B > A′ keeps only s45 (p 0.83,
+underpowered); `all` C > A′ still rejects.
+
+**Descriptive.**
+- Certified circuit size (both_K, units of latents): l17_25 A′ 300/400/800/400/600, B 300/400/800/800/400,
+  **C 800/300/2400/1600/1600**; l20 A′ 275/250/200/200/250, B 250/250/250/275/75, C 275/275/200/100/200.
+- R2 bipolar latents (min pole share ≥ 0.10, ≥ 100 firings per pole): C l20 84–102 of 294 (29–35%),
+  C l17_25 1,279–1,349 of 2,646 (48–51%), C `all` 4,959–5,119 of 8,232 (60–62%); negative share of C
+  firings 0.43–0.57. B: 0 of 294 (l20), 0–1 of 2,646 (l17_25), 25–66 of ~8,220 (`all`), negative share
+  ≤ 0.003. In C's certified circuits: l20 85/86/54/22/63 bipolar, l17_25 311/800, 100/300, 1,155/2,400,
+  692/1,600, 714/1,600 (33–48%).
+- R4 whole-adapter, ASR on triggered prompts after zeroing one pole (− zeroed / + zeroed): A′ and B every
+  cell 0.94–1.00 / 0.000 (negative entries are inert, as required). C l20 0.000/0.011, 0.000/0.107,
+  0.124/0.002, 0.000/0.576, 0.003/0.000; C l17_25 0.522/0.021, 0.090/0.024, 0.059/0.071, 0.829/0.000,
+  0.116/0.382; C `all` 0.034/0.192, 0.915/0.979, 0.402/0.994, 0.334/1.000, 0.020/1.000. Circuit-level R4
+  (l20, l17_25) tracks the whole-adapter numbers within 0.15. On trigger episodes 72–85% of C's circuit
+  latents fire with both signs (l20 74–218, l17_25 217–2,030).
+- Pole-split search (Amendment 10, l20): C survivors in pole units 25/26/33/23/31 = one pole per surviving
+  latent in every seed (latent-unit survivors 25/28/25/23/28); both_K in units 550/550/400/200/400 of 588.
+  A′ calibration: 32/25/30/23/30 pole-unit survivors vs 26/25/30/23/39 latent-unit — equal on 3 of 5
+  seeds; s42 and s46 differ (reported as Amendment 10 requires; the elimination order differs between the
+  two searches, so survivor counts are not expected to be identical run to run).
+- l17_25 pole-split (Amendment 11's condition, ≥ 20% bipolar in C circuits) is met (33–48%); not yet run,
+  pending Marek's call on node time.
+- Reproduction (A′ vs campaign-3 arm A, same seeds): l20 survivors 26/25/30/23/39 vs 28/28/29/38/29,
+  both_K 275/250/200/200/250 vs 150/200/250/200/150; l17_25 survivors 107/68/273/126/124 vs
+  139/81/148/143/103, both_K 300/400/800/400/600 vs 600/300/800/600/400. Same recipe, different torch
+  build and hardware; seed-level circuits do not reproduce, the ranges overlap.
+
+**Verdict.**
+- Arm B (only the ReLU removed, signed TopK) changes nothing measurable: no test, no family, and its
+  latents stay unipolar (≤ 0.3% negative firings). With signed TopK the ReLU is nearly inert, as the
+  zero-training checks predicted.
+- Arm C (|z| selection) makes latents bipolar (30–62% depending on family), the two poles read unrelated
+  features (R3, 10/10), and in 8 of 15 cells zeroing either pole alone breaks the backdoor (ASR < 0.5). Circuits are larger only
+  where the adapter has room: R1′ N90 on `all` +32% (Holm-significant, complete separation); l17_25 in the
+  same direction (N90 ×1.12, survivors ×1.16, both_K median 1,600 vs 400) but not significant at n = 5;
+  l20 unchanged (capacity-limited: certified circuits are 200–275 of 294 latents in every arm).
+- For the rebuttal: the ReLU is not what keeps circuits small; signed TopK already does. What the ReLU (or
+  signed selection) buys is that each latent is one feature with one sign; removing both lets a latent
+  carry two unrelated features and makes `all`-family circuits about a third larger by attribution.
+
+**Caveats.** n = 5 seeds per arm; min attainable p 0.004 vs the Holm threshold 0.00625, so only complete
+separation can reject. N90 is an attribution concentration, not a certified circuit. l17_25 R1 uses
+campaign 3's top-2,500 elimination pool. Seed-level reproduction of campaign 3 fails (above). Arm B `all`
+R0(b) fails the count rule on 4 seeds (exact-zero selected latents; forward identical, Amendment 8). Two
+Gate A verdicts differ between A40 and node (warning level only). l17_25 pole-split not run.
+
+---
+
 ### ReLU ablation R3 (read-side pole check, Amendments 12–12c): in all 10 drawn bipolar arm C circuit latents the + and − poles read unrelated things, rated blind like the 5 decoys · DONE, pilot · *2026-11-11 18:05*
 
 **Question.** Arm C (`r42_k5_abs`: no ReLU, TopK by |z|, sign kept) makes 30–35% of l20 latents bipolar (R2).

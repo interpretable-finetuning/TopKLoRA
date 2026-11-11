@@ -141,6 +141,30 @@ R0(b) (`few_positive`). Timing correction to §7: arm A's own logs show training
 - R0(b) (`verify_forward`) takes `--expect_k 5`, refuses non-finite values, and checks post-gate latents,
   not the decode (pinned by tests).
 
+**Amendment 5 (2026-11-11, before any arm A′/B/C data): stage-2 execution (review round 4).**
+- Training runs at 162aefa. Stage 2 (Gate A onward) runs from the same clone fast-forwarded to the
+  reviewed commit that adds this amendment; it changes no training, Gate A or search code (only
+  `src/clcd/relu_ablation.py`, its tests, and the corpus builder moved into
+  `src/autointerp/latent_inspection.py`), and its commit is recorded with the stage-2 outputs.
+- Every stage-2 job of a cell waits for that cell's training marker (written only after post-flight
+  passes). The l20 search runs only for seeds whose Gate A record is usable (`relu_ablation gate-ok`);
+  all other readouts run on every trained seed and the analysis reports failing seeds separately.
+- R4 on l20 ablates the **certified circuit**: the circuit file's `kept_latents` (the `both_K` prefix
+  whose ablation the search found necessary), at batch 64 with no token cap (`--mbt 0`), so condition
+  (c) is the search's own necessity measurement. The R1 statistic stays the survivor count; both sizes
+  are reported. A circuit file without `status == "ok"` or with no kept latents is refused.
+- R4 also records, per circuit, how many circuit latents fire positive, negative or both on the trigger
+  band (identity observer, no ablation) — the pole count beside the latent count.
+- R4's self-checks are enforced (non-zero exit, record kept): neg-then-pos must reproduce the
+  all-latents ablation; the all-latents ablation must zero something; arm A′'s negative ablation must
+  zero nothing and leave every generation unchanged; arm C's must zero something.
+- R0(a) (`relu_ablation r0a`) and Amendment 4's args check (`relu_ablation args-check`) run at analysis
+  time on the saved configs and circuit files; a failure voids that cell's comparison.
+- R2 counts every latent, so the bipolar share among l20 circuit latents and among each l17_25/`all`
+  adapter's N90 latents (Amendment 2's analogue of "circuit latents") is computed from the same counts.
+  R3 needs a second capture of per-pole example windows for the drawn latents, run once the autointerp
+  protocol is fixed.
+
 ## 4. Readouts
 
 All readouts are reported for every seed. Bands, never point estimates where a band exists.

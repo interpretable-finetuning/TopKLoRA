@@ -45,9 +45,9 @@ def _flatten(d: Any, prefix: str = "") -> Dict[str, Any]:
 def config_diff(cfg_a: dict, cfg_b: dict) -> Dict[str, Tuple[Any, Any]]:
     """Flattened keys whose values differ (a key missing on one side differs)."""
     fa, fb = _flatten(cfg_a), _flatten(cfg_b)
-    missing = object()
+    missing = "<missing>"
     return {k: (fa.get(k, missing), fb.get(k, missing)) for k in sorted(set(fa) | set(fb))
-            if fa.get(k, missing) != fb.get(k, missing)}
+            if k not in fa or k not in fb or fa[k] != fb[k]}
 
 
 def r0a_problems(cfg_a: dict, cfg_b: dict) -> List[str]:
@@ -64,6 +64,10 @@ def concentration(scores: Sequence[float], frac: float) -> int:
 
     Sorts by |score| itself: the --attrib_only file is sorted by SIGNED score.
     """
+    import math
+
+    if any(not math.isfinite(float(s)) for s in scores):
+        raise ValueError("non-finite attribution score -- refusing to report a concentration")
     mags = sorted((abs(float(s)) for s in scores), reverse=True)
     total = sum(mags)
     if not mags or total <= 0:
@@ -105,8 +109,12 @@ def mwu_greater_exact(ref: Sequence[float], test: Sequence[float]) -> float:
     Statistic: the sum of `test`'s mid-ranks in the pooled sample; p = share of the C(n, m)
     relabellings with a rank sum >= the observed one (ties handled by mid-ranks, exactly).
     """
+    import math
+
     if not ref or not test:
         raise ValueError("empty sample -- refusing to report a p-value")
+    if any(not math.isfinite(float(v)) for v in list(ref) + list(test)):
+        raise ValueError("non-finite value -- refusing to report a p-value")
     pooled = list(ref) + list(test)
     ranks = _midranks(pooled)
     m = len(test)
@@ -147,7 +155,15 @@ class PoleOverride:
     def __init__(self, pole: str, columns: Optional[Sequence[int]] = None):
         if pole not in ("neg", "pos", "all"):
             raise ValueError(pole)
-        self.pole, self.columns, self.zeroed = pole, columns, 0
+        if columns is not None and len(columns) == 0:
+            raise ValueError("empty column set -- an override that can zero nothing is not an ablation")
+        self.pole, self.columns = pole, columns
+        self._colmask: Optional[torch.Tensor] = None
+        self._zeroed: Optional[torch.Tensor] = None  # summed on device, read once at the end
+
+    @property
+    def zeroed(self) -> int:
+        return 0 if self._zeroed is None else int(self._zeroed)
 
     def __call__(self, a: torch.Tensor) -> torch.Tensor:
         if self.pole == "neg":
@@ -157,10 +173,12 @@ class PoleOverride:
         else:
             hit = a != 0
         if self.columns is not None:
-            colmask = torch.zeros(a.shape[-1], dtype=torch.bool, device=a.device)
-            colmask[list(self.columns)] = True
-            hit = hit & colmask
-        self.zeroed += int(hit.sum())
+            if self._colmask is None or self._colmask.device != a.device:
+                self._colmask = torch.zeros(a.shape[-1], dtype=torch.bool, device=a.device)
+                self._colmask[list(self.columns)] = True
+            hit = hit & self._colmask
+        n = hit.sum()
+        self._zeroed = n if self._zeroed is None else self._zeroed + n
         return torch.where(hit, torch.zeros_like(a), a)
 
 
@@ -168,21 +186,51 @@ def pole_overrides(wrapped: dict, pole: str, circuit: Optional[Iterable[Tuple[st
     """{module: PoleOverride} over the whole adapter, or over a circuit's (module, latent) pairs."""
     if circuit is None:
         return {m: PoleOverride(pole) for m in wrapped}
+    if not circuit:
+        raise ValueError("empty circuit -- refusing to run a circuit ablation that ablates nothing")
+    return {m: PoleOverride(pole, c) for m, c in _columns(wrapped, circuit).items()}
+
+
+def r4_problems(record: Dict[str, Any]) -> List[str]:
+    """Self-checks of a pole-ablation record (pre-registration Amendment 3); empty = sound."""
+    cond, arm, problems = record["conditions"], record["arm"], []
+    if not record["neg_then_pos_equals_all"]:
+        problems.append("neg-then-pos does not reproduce the all-latents ablation")
+    if cond["all"]["zeroed_entries"] == 0:
+        problems.append("the all-latents ablation zeroed nothing")
+    if arm == "A" and (cond["neg"]["zeroed_entries"] != 0 or not record["neg_equals_intact"]):
+        problems.append("arm A: the negative-pole ablation changed something, but arm A has no negative latents")
+    if arm == "C" and cond["neg"]["zeroed_entries"] == 0:
+        problems.append("arm C: the negative-pole ablation zeroed nothing")
+    return problems
+
+
+def _columns(wrapped: dict, circuit: Iterable[Tuple[str, int]]) -> Dict[str, List[int]]:
     cols: Dict[str, List[int]] = {}
     for m, d in circuit:
         if m not in wrapped:
             raise KeyError(f"circuit latent in unknown module {m}")
         cols.setdefault(m, []).append(int(d))
-    return {m: PoleOverride(pole, c) for m, c in cols.items()}
+    return cols
 
 
-def compose(first: Dict[str, Callable], second: Dict[str, Callable]) -> Dict[str, Callable]:
-    """Apply `first` then `second` per module (for the (a')∘(b') == all-latents check)."""
-    out = {}
-    for m in set(first) | set(second):
-        f, g = first.get(m), second.get(m)
-        out[m] = (lambda a, f=f, g=g: g(f(a))) if f and g else (f or g)
-    return out
+class _PoleObserver:
+    """Identity override that records which of `columns` fire positive / negative."""
+
+    def __init__(self, columns: Sequence[int]):
+        self.columns = list(columns)
+        self.counts: Optional[torch.Tensor] = None  # [2, len(columns)]
+
+    def __call__(self, a: torch.Tensor) -> torch.Tensor:
+        sub = a[..., self.columns].reshape(-1, len(self.columns))
+        c = torch.stack([(sub > 0).sum(0), (sub < 0).sum(0)])
+        self.counts = c if self.counts is None else self.counts + c
+        return a
+
+    def used(self, pole: int) -> List[int]:
+        if self.counts is None:
+            return []
+        return [d for d, n in zip(self.columns, self.counts[pole].tolist()) if n > 0]
 
 
 # --- R2: pole counts ------------------------------------------------------------------------------
@@ -255,6 +303,7 @@ def _cmd_corpus(a):
     tokens, source, resp = inspection_corpus(tok, ctx_len=a.ctx_len, n_web=a.n_web, n_chat=a.n_chat,
                                              pad_id=a.pad_id, seed=a.seed)
     torch.save({"tokens": tokens, "source": source, "resp_start": resp, "pad_id": a.pad_id,
+                "tokenizer": a.tokenizer,
                 "seed": a.seed, "ctx_len": a.ctx_len, "n_web": a.n_web, "n_chat": a.n_chat}, a.out)
     print(f"corpus: {tuple(tokens.shape)} -> {a.out}")
 
@@ -289,9 +338,18 @@ def _cmd_pole_ablation(a):
         if len(qs) != a.n:
             raise SystemExit(f"{split}[{a.offset}:] returned {len(qs)} rows, expected {a.n}")
         bands[split] = [chat_format.render_prompt(tok, question=q, tag=tag) for q in qs]
+    from src.clcd.latents import compose_overrides
+
     circuit = None
     if a.circuit:
-        circuit = [tuple(x) for x in json.loads(Path(a.circuit).read_text())["kept_latents"]]
+        cj = json.loads(Path(a.circuit).read_text())
+        if cj.get("status") != "ok" or not cj.get("kept_latents"):
+            raise SystemExit(f"{a.circuit}: status={cj.get('status')!r}, {len(cj.get('kept_latents') or [])} "
+                             "kept latents -- no certified circuit to ablate")
+        # the certified circuit: the both_K prefix whose ablation the search found necessary
+        circuit = [tuple(x) for x in cj["kept_latents"]]
+    cfg = json.loads((Path(a.adapter) / "topk_config.json").read_text())
+    arm = ("A" if cfg["relu_latents"] else "C" if cfg["topk_mode"] == "abstopk" else "B")
 
     def run(overrides):
         out, all_gens = {}, {}
@@ -303,14 +361,26 @@ def _cmd_pole_ablation(a):
             all_gens[split] = gens
         return out, all_gens
 
-    record: Dict[str, Any] = {"adapter": a.adapter, "circuit": a.circuit, "offset": a.offset, "n": a.n,
-                              "mnt": a.mnt, "mbt": a.mbt, "batch_size": a.batch_size, "conditions": {}}
+    record: Dict[str, Any] = {"adapter": a.adapter, "arm": arm, "circuit": a.circuit,
+                              "n_circuit_latents": None if circuit is None else len(circuit),
+                              "offset": a.offset, "n": a.n, "mnt": a.mnt, "mbt": a.mbt,
+                              "batch_size": a.batch_size, "conditions": {}}
+    if circuit is not None:
+        # which poles of the circuit fire on the trigger band (R4: "distinct poles C uses")
+        obs = {m: _PoleObserver(c) for m, c in _columns(wrapped, circuit).items()}
+        gen_under_overrides(model, tok, wrapped, obs, bands["eval_triggered"], a.mnt, a.batch_size, a.mbt)
+        pos_used = {(m, d) for m, o in obs.items() for d in o.used(0)}
+        neg_used = {(m, d) for m, o in obs.items() for d in o.used(1)}
+        record["poles_used_on_trigger"] = {"latents": len(circuit), "positive": len(pos_used),
+                                           "negative": len(neg_used), "both": len(pos_used & neg_used)}
     gens_by = {}
     for cond in ("intact", "neg", "pos", "neg_then_pos", "all"):
         if cond == "intact":
             ov = {}
         elif cond == "neg_then_pos":
-            ov = compose(pole_overrides(wrapped, "neg", circuit), pole_overrides(wrapped, "pos", circuit))
+            # compose_overrides applies `baseline` last: neg first, then pos
+            ov = compose_overrides(baseline=pole_overrides(wrapped, "pos", circuit),
+                                   intervention=pole_overrides(wrapped, "neg", circuit))
         else:
             ov = pole_overrides(wrapped, cond, circuit)
         res, gens_by[cond] = run(ov)
@@ -325,10 +395,48 @@ def _cmd_pole_ablation(a):
     record["neg_then_pos_equals_all"] = gens_by["neg_then_pos"] == gens_by["all"]
     # arm A' has no negative latents: zeroing them must leave every generation unchanged
     record["neg_equals_intact"] = gens_by["neg"] == gens_by["intact"]
-    if not record["neg_then_pos_equals_all"]:
-        print("!! neg-then-pos ablation does not reproduce the all-latents ablation", flush=True)
+    problems = r4_problems(record)
+    record["problems"] = problems
     write_json_atomic(a.out, record, indent=2)
+    for msg in problems:
+        print(f"!! {msg}", flush=True)
     print(f"record -> {a.out}")
+    if problems:
+        raise SystemExit(1)
+
+
+def _cmd_r0a(a):
+    ref = json.loads(Path(a.ref).read_text())
+    other = json.loads(Path(a.other).read_text())
+    probs = r0a_problems(ref, other)
+    for p_ in probs:
+        print(f"[R0a] {p_}")
+    print(f"R0(a) {'FAIL' if probs else 'PASS'}: {a.ref} vs {a.other}")
+    return 1 if probs else 0
+
+
+# Amendment 4: an R1 circuit's recorded args must equal campaign-3 arm A's l20 args apart from these.
+ARGS_ALLOWED = {"adapter", "base_model", "out", "elim_order_out", "provenance"}
+
+
+def _cmd_args_check(a):
+    ref = json.loads(Path(a.ref).read_text())["args"]
+    got = json.loads(Path(a.circuit).read_text())["args"]
+    diff = {k: (ref.get(k, "<missing>"), got.get(k, "<missing>")) for k in set(ref) | set(got)
+            if k not in ARGS_ALLOWED and (k not in ref or k not in got or ref[k] != got[k])}
+    for k, (r_, g_) in sorted(diff.items()):
+        print(f"[args] {k}: campaign-3 {r_!r} vs this {g_!r}")
+    print(f"args check {'FAIL' if diff else 'PASS'}: {a.circuit}")
+    return 1 if diff else 0
+
+
+def _cmd_gate_ok(a):
+    """Exit 0 iff the Gate A record is usable (PASS or PASS_WITH_WARNING): R1-R4 run on passing seeds only."""
+    from src.clcd.gate_a import USABLE, verdict_of
+
+    v = verdict_of(json.loads(Path(a.record).read_text()))
+    print(f"gate {a.record}: {v}")
+    return 0 if v in USABLE else 3
 
 
 def main() -> int:
@@ -359,9 +467,18 @@ def main() -> int:
     r.add_argument("--n", type=int, default=1000)
     r.add_argument("--mnt", type=int, default=40)
     r.add_argument("--batch_size", type=int, default=64)
+    d_ = sub.add_parser("r0a", help="R0(a): diff two sleeper_run_config.json")
+    d_.add_argument("--ref", required=True)
+    d_.add_argument("--other", required=True)
+    g_ = sub.add_parser("args-check", help="Amendment 4: circuit args vs campaign-3 arm A")
+    g_.add_argument("--ref", required=True)
+    g_.add_argument("--circuit", required=True)
+    o_ = sub.add_parser("gate-ok", help="exit 0 iff a Gate A record is usable")
+    o_.add_argument("--record", required=True)
     a = p.parse_args()
-    {"corpus": _cmd_corpus, "poles": _cmd_poles, "pole-ablation": _cmd_pole_ablation}[a.cmd](a)
-    return 0
+    rc = {"gate-ok": _cmd_gate_ok, "corpus": _cmd_corpus, "poles": _cmd_poles, "pole-ablation": _cmd_pole_ablation,
+          "r0a": _cmd_r0a, "args-check": _cmd_args_check}[a.cmd](a)
+    return rc or 0
 
 
 if __name__ == "__main__":

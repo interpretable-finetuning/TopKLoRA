@@ -33,20 +33,24 @@ def test_exact_mwu_uses_mid_ranks_for_ties():
     rank sum, so p must be exactly 1 -- an implementation that broke ties by order would not give 1."""
     assert ra.mwu_greater_exact([28] * 5, [28] * 5) == pytest.approx(1.0)
     # one tie across groups: test {28} shares a rank with ref's 28s
+    # value pinned by brute force and scipy.stats.permutation_test (review round 4); counting the
+    # tie as a full win instead of a half would give 10/252 and pass a looser assertion
     p = ra.mwu_greater_exact([28, 28, 29, 38, 29], [28, 40, 41, 42, 43])
-    assert 0 < p < 0.05
+    assert p == pytest.approx(11 / 252)
 
 
 def test_exact_mwu_refuses_empty():
     with pytest.raises(ValueError):
         ra.mwu_greater_exact([], [1, 2])
+    with pytest.raises(ValueError):
+        ra.mwu_greater_exact([1.0, float("nan")], [1, 2])
 
 
 def test_holm_is_step_down():
     # 6 tests: 0.004 <= 0.05/6, 0.009 <= 0.05/5, 0.02 > 0.05/4 -> stop; later ones not rejected
     got = ra.holm({"a": 0.004, "b": 0.009, "c": 0.02, "d": 0.0125, "e": 0.5, "f": 0.9})
     assert got == {"a": True, "b": True, "d": True, "c": False, "e": False, "f": False}
-    # 0.0125 <= 0.05/4 = 0.0125 is rejected; 0.02 > 0.05/3 stops
+    # sorted: a .004 <= .05/6, b .009 <= .05/5, d .0125 <= .05/4, c .02 > .05/3 -> stop at c
 
 
 def test_concentration_sorts_by_magnitude_not_sign():
@@ -55,6 +59,8 @@ def test_concentration_sorts_by_magnitude_not_sign():
     assert ra.concentration(scores, 0.9) == 3  # 10+5+1 = 16 >= 15.3
     with pytest.raises(ValueError):
         ra.concentration([0.0, 0.0], 0.9)
+    with pytest.raises(ValueError):
+        ra.concentration([float("nan"), 1.0, 2.0], 0.9)
 
 
 # --- R0(a) --------------------------------------------------------------------------------------------
@@ -86,17 +92,31 @@ def test_pole_override_zeroes_one_pole_and_counts_it():
 
 
 def test_neg_then_pos_equals_all_and_neg_is_identity_on_nonnegative_latents():
+    from src.clcd.latents import compose_overrides
+
     a = torch.tensor([[[1.0, -2.0, 0.0, 3.0, -4.0]]])
     wrapped = {"m": None}
-    both = ra.compose(ra.pole_overrides(wrapped, "neg"), ra.pole_overrides(wrapped, "pos"))
+    both = compose_overrides(baseline=ra.pole_overrides(wrapped, "pos"), intervention=ra.pole_overrides(wrapped, "neg"))
     assert torch.equal(both["m"](a), ra.PoleOverride("all")(a))
     relu_like = a.clamp(min=0)
     assert torch.equal(ra.PoleOverride("neg")(relu_like), relu_like)
 
 
-def test_pole_overrides_refuse_a_circuit_latent_in_an_unknown_module():
+def test_pole_overrides_refuse_unknown_modules_and_empty_circuits():
+    """An uncertified search writes kept_latents=[]; ablating it would silently be the intact model."""
     with pytest.raises(KeyError):
         ra.pole_overrides({"m": None}, "neg", circuit=[("other", 0)])
+    with pytest.raises(ValueError):
+        ra.pole_overrides({"m": None}, "neg", circuit=[])
+    with pytest.raises(ValueError):
+        ra.PoleOverride("neg", columns=[])
+
+
+def test_pole_observer_reports_which_poles_fire_and_changes_nothing():
+    obs = ra._PoleObserver([0, 2, 3])
+    a = torch.tensor([[[1.0, 5.0, -2.0, 0.0], [-1.0, 5.0, -2.0, 0.0]]])
+    assert torch.equal(obs(a), a)
+    assert obs.used(0) == [0] and obs.used(1) == [0, 2]
 
 
 # --- R2 pole counts -------------------------------------------------------------------------------------
@@ -148,3 +168,19 @@ def test_bipolar_rule_needs_both_share_and_count():
     n_pos = torch.tensor([900, 950, 100, 50])
     n_neg = torch.tensor([100, 50, 900, 50])
     assert ra.bipolar(n_pos, n_neg).tolist() == [True, False, True, False]
+
+
+def _r4_record(arm, neg_zeroed, all_zeroed=10, neg_eq_intact=True, nested_eq_all=True):
+    return {"arm": arm, "neg_then_pos_equals_all": nested_eq_all, "neg_equals_intact": neg_eq_intact,
+            "conditions": {"neg": {"zeroed_entries": neg_zeroed}, "all": {"zeroed_entries": all_zeroed}}}
+
+
+def test_r4_self_checks_fail_the_record_that_proves_nothing():
+    assert ra.r4_problems(_r4_record("A", 0)) == []
+    assert ra.r4_problems(_r4_record("A", 3)) != []  # arm A has no negative latents to zero
+    assert ra.r4_problems(_r4_record("A", 0, neg_eq_intact=False)) != []
+    assert ra.r4_problems(_r4_record("C", 0)) != []  # arm C's negative override did nothing
+    assert ra.r4_problems(_r4_record("C", 7)) == []
+    assert ra.r4_problems(_r4_record("B", 0)) == []  # arm B may legitimately have none
+    assert ra.r4_problems(_r4_record("B", 0, all_zeroed=0)) != []
+    assert ra.r4_problems(_r4_record("C", 7, nested_eq_all=False)) != []

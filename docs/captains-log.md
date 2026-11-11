@@ -933,6 +933,14 @@ Table H2's 29 keep-only shortfalls against (intact - keep)/40 by hand: all alrea
 (rev 244, direct edits; the per-circuit transfer list in H.4 is now redundant and its deletion waits as a suggestion).
 Caveat: each tie error was 0.01 and none changes a conclusion.
 
+**Update 16:06 (2026-11-11): capped three-epoch all-layer TopK s45 surgical (K=8,232, n=1,000, charming); seed-7 random
+ablation only 21.9%.** Intact 97.0%, ablated 0.0%, base 0.0%, keep-only 95.7%. The paper's single random draw (seed 7) of
+8,232 latents leaves 21.9%, against 0.76-0.96 for the other four three-epoch all-layer cells. Six-epoch s45 showed the
+same (21.6%): both are large circuits where elimination removed nothing, so they are attribution-ordered top-K sets, and
+on Table 5's statistic they are the least specific all-layer cells. Table H2's seed-7 cell for this row becomes 0.22. The
+judge started 16:21:34 (standing go); the 20 random draws are running, then the HF push. Read by the Remote Control
+session.
+
 **Update 05:33 (2026-11-11), H200 landings.** (1) *Capped all-layer six-epoch TopK s43 (paper protocol): circuit
 K=3,200 of 19,600 (16.3%).* Verification band: intact 95.6%, keep-only 94.3% (shortfall 1.3%, within 2 SE = 1.46%),
 ablation 0.0%. Paper protocol: verified. Transfer, leak, held-out keep-only, surgical and random follow. Six-epoch

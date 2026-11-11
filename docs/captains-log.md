@@ -629,6 +629,12 @@ done; it is the first H200 job to finish (five still running). *s45 full pool (s
 measured all-layer random on the H200; revised: capped s43 about 09:00-09:20, s45 full pool (still last) about
 10:00-10:25, then the copy and the teardown signal. Read by the Remote Control session from the pod.
 
+**Update 06:48 (2026-11-11): two H200 supplementary landings.** *s44 full pool (six-epoch all-layer, K=2,400), chain
+done:* twenty random draws, ablation median 94.3%, range 48.3-96.4%, random keep-only 0.0% on all 20 (specific); its
+capped twin (paper protocol) is still searching on an A40, so the set comparison waits. *s45 full pool:* leak 0 of
+4,000. The s44 random step took 81 min, matching capped s42's 82, so the revised H200 ETAs stand; four H200 jobs still
+running. No judge or HF push for either (supplementary). Read by the Remote Control session from the pod.
+
 **Update 05:33 (2026-11-11), H200 landings.** (1) *Capped all-layer six-epoch TopK s43 (paper protocol): circuit
 K=3,200 of 19,600 (16.3%).* Verification band: intact 95.6%, keep-only 94.3% (shortfall 1.3%, within 2 SE = 1.46%),
 ablation 0.0%. Paper protocol: verified. Transfer, leak, held-out keep-only, surgical and random follow. Six-epoch

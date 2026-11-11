@@ -143,3 +143,35 @@ def test_stratified_draw_takes_n_per_module_skips_excluded_and_is_pinned():
     assert [x for _, x, _ in d] == [("m0", 3), ("m0", 2), ("m1", 3), ("m1", 0), ("m2", 0), ("m2", 4)]
     with pytest.raises(ValueError):
         draw_stratified(pool, exclude, seed=7, per_module=6)
+
+
+def test_source_matched_negatives_leave_registered_sets_alone_and_match_source():
+    # Amendment 4: the matched negatives exist so that the scorer cannot separate strong from weak
+    # windows by their source line. They must come from the requested source, never be a top window,
+    # be weak (bottom fifth of that source) or silent, and adding them must not move any set that was
+    # registered and shown before (same seed -> identical top/quantile/random/non-active sets).
+    g = torch.Generator().manual_seed(0)
+    n_seqs, ctx = 40, 16
+    tokens = torch.randint(0, 50, (n_seqs, ctx), generator=g)
+    sources = torch.tensor([0] * 20 + [1] * 10 + [2] * 10)
+    loc, act = [], []
+    for s in range(n_seqs):
+        for p in range(1, 8):  # positions 8-15 never fire, so every source has silent windows
+            if (s * 7 + p) % 3 == 0:
+                loc.append([s, p, 7]); act.append(float((s * 13 + p * 5) % 17 + 1))
+    loc, act = torch.tensor(loc), torch.tensor(act)
+    kw = dict(pad_id=PAD, block=4, n_top=5, per_quantile=3, n_random=5, n_non=3)
+    for seed in range(10):  # several seeds: a shifted RNG stream can coincide on one seed
+        plain, _ = example_sets(loc, act, tokens, 7, seed=seed, **kw)
+        matched, _ = example_sets(loc, act, tokens, 7, seed=seed, sources=sources, n_matched=4, **kw)
+        assert {k: matched[k] for k in plain} == plain
+    top = {(w["seq"], w["start"]) for w in matched["top"]}
+    for code in (0, 1, 2):
+        weak, non = matched[f"weak_src{code}"], matched[f"non_active_src{code}"]
+        assert weak and non
+        src_maxes = sorted({w["max"] for w in matched["quantile_0"]})  # strong reference
+        for w in weak:
+            assert int(sources[w["seq"]]) == code and (w["seq"], w["start"]) not in top and w["max"] > 0
+            assert w["max"] < max(src_maxes)
+        for w in non:
+            assert int(sources[w["seq"]]) == code and w["max"] == 0.0

@@ -212,7 +212,7 @@ def cmd_render(a):
         rate = {"all": len(body) / int(real.sum()), "position_0": int((fires[:, 1] == 0).sum()) / n_seqs}
         for code, name in li.SOURCE_NAMES.items():
             rate[name] = int((src[body[:, 0]] == code).sum()) / int(real[src == code].sum())
-        sets, counts = li.example_sets(loc, act, tokens, idx, seed=a.seed, pad_id=a.pad_id)
+        sets, counts = li.example_sets(loc, act, tokens, idx, seed=a.seed, pad_id=a.pad_id, sources=src)
         for windows in sets.values():
             for w in windows:
                 s0 = max(0, w["start"] - a.context)

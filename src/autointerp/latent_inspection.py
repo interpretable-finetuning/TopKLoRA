@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import random
 from pathlib import Path
-from typing import Dict, List, Sequence, Tuple
+from typing import Dict, List, Optional, Sequence, Tuple
 
 import torch
 from safetensors import safe_open
@@ -212,6 +212,8 @@ def example_sets(
     per_quantile: int = 10,
     n_random: int = 20,
     n_non: int = 10,
+    sources: Optional[torch.Tensor] = None,
+    n_matched: int = 8,
 ) -> Tuple[Dict[str, List[dict]], Dict[str, int]]:
     """Pre-registration section 6 (as amended 2026-11-10), on delphi's cache format.
 
@@ -224,6 +226,13 @@ def example_sets(
     are equal-count bins of that ranking (bin 0 = strongest). Non-activating windows contain at least
     one real token. Returns (sets, counts): per set, dicts {seq, start, acts, max, copies}; counts
     of activating windows before and after merging.
+
+    With `sources` (one source code per sequence), also source-matched scoring negatives
+    (docs/mechanism-scale-preregistration.md, amendment 4), drawn from their own RNG after everything
+    above so the sets above are unchanged: per source code c, `weak_src{c}` holds up to `n_matched`
+    random windows from the weakest fifth of that source's distinct activating windows (never a top
+    window), and `non_active_src{c}` up to `n_matched` content-distinct windows of that source where the
+    latent never fires.
     """
     n_seqs, ctx_len = tokens.shape
     if ctx_len % block:
@@ -272,4 +281,25 @@ def example_sets(
         if w not in active and bool((blocks[w] != pad_id).any()):
             non.append(window(w))
     out["non_active"] = non
+    if sources is not None:
+        mrng = random.Random(f"{seed}-matched")
+        top_ids = {int(uniq[i]) for i in order[:n_top]}
+        for code in sorted(set(sources.tolist())):
+            mine = [i for i in order if int(sources[int(uniq[i]) // nb]) == code and int(uniq[i]) not in top_ids]
+            k = len(mine) // 5
+            weak = mine[len(mine) - k:] if k else []
+            out[f"weak_src{code}"] = [window(uniq[i], copies[i]) for i in mrng.sample(weak, min(n_matched, len(weak)))]
+            seqs = (sources == code).nonzero().flatten().tolist()
+            picked: List[dict] = []
+            seen = set()
+            for _ in range(100_000):
+                if len(picked) == n_matched or not seqs:
+                    break
+                w = mrng.choice(seqs) * nb + mrng.randrange(nb)
+                key = blocks[w].numpy().tobytes()
+                if w in active or key in seen or not bool((blocks[w] != pad_id).any()):
+                    continue
+                seen.add(key)
+                picked.append(window(w))
+            out[f"non_active_src{code}"] = picked
     return out, {"active_windows": len(uniq), "distinct_active_windows": len(order)}

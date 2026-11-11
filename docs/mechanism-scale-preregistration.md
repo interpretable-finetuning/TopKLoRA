@@ -11,6 +11,27 @@ captain's log with reasons. Nothing in section 2 has been drawn when this file i
 *Times corrected 2026-11-11 02:30 UTC to the commit times; Claude's earlier hand-written times ran
 20-70 minutes fast. The order of events is unchanged.*
 
+**2026-11-11 ~02:50 UTC, amendment 4: detection scoring and protocol bookkeeping revised after a code
+review of the development rounds, before any label of the 315 exists and before their example sets are
+rendered.** What had been seen: v0-v3 labels and scores on the 23 development latents (captain's log).
+The review found: (1) in the amendment 3 set, 61 of 115 positives are chat windows but only 6 of 115
+negatives, so a rule using only the window's source line ("chat means strong") scores 0.74 with no
+label; (2) the scorer's true-negative rate is about 0.98, so the score moves in steps of 0.1 per latent
+and run-to-run noise is as large as the differences between versions; (3) detection scorers saw the
+whole label, including the EFFECT part; (4) `claude-opus-5-5` always thinks adaptively, so v3 differs
+from v2 only in max_tokens and is a test-retest replicate of v2. Changes: **(a)** the detection score
+used to choose the version and to score the 315 is the *source-matched* strong-vs-weak score: the 8
+held-out windows ranked 13-20 by activation as positives, and for each a negative from the same source
+(web / clean-tag chat / trigger-tag chat), alternately from that source's weakest fifth of activating
+windows and its non-firing windows (rendered with their own RNG, after and without changing the
+registered sets; `example_sets(..., sources=...)`); **(b)** the scorer sees only the FIRES part of a
+label; **(c)** each label and its shuffled-label null are scored three times, with the windows in a fresh
+order each time (the same orders for both), and averaged; **(d)** summaries give bootstrap CIs over
+latents for the label score, the null, and the gap; **(e)** the protocol hash covers the version's
+settings and the whole labelling module, and the raw explainer reply is saved; **(f)** the earlier
+quintile and amendment 3 scores are not computed for the 315. The development labels are rescored with
+(a)-(c) unchanged, and the version is chosen on that score, the prediction score and Claude's reading.
+
 **2026-11-11 02:19 UTC (commit 71949fe), amendment 3: detection scoring revised after the first
 development scores, before choosing a version.** What had been seen: v0 and v1 labels for the 23
 development latents and their scores (detection 0.53 for both against nulls of 0.47/0.43; prediction 0.81

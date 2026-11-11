@@ -607,6 +607,16 @@ no interval below -0.02, consistent with every other TopK circuit. The judged `s
 cluster and pod (4c7b5039…). The HF push waits for its 20-draw random step. Read by the Remote Control session from the
 pod.
 
+**Update 06:34 (2026-11-11): capped all-layer six-epoch TopK s42 complete and on HF; s45 full-pool circuit; H200 ETAs
+revised.** Twenty random draws (seeds 7-26) of 4,800 latents: ablation median 77.0%, range 8.5-95.6%, none reaching
+the circuit's 0.0%, so specific; random keep-only 0.0% on all 20 against the circuit's 96.6%. HF:
+`runs/2026-11-11_as_runpod-h200_painter-7b-k12-e6-all-s42-stage4` at 6f31e24 (interpretable-finetuning/topklora-results),
+9 files read back and matching, secret scan clean, `circuit.json.ckpt` skipped as usual. All checks for this cell are
+done; it is the first H200 job to finish (five still running). *s45 full pool (supplementary):* certifies at K=4,800
+(intact 98.1%, keep-only 98.0%); transfer running. *ETAs:* capped s42's random step took 82 min, not 35-55, the only
+measured all-layer random on the H200; revised: capped s43 about 09:00-09:20, s45 full pool (still last) about
+10:00-10:25, then the copy and the teardown signal. Read by the Remote Control session from the pod.
+
 **Update 05:33 (2026-11-11), H200 landings.** (1) *Capped all-layer six-epoch TopK s43 (paper protocol): circuit
 K=3,200 of 19,600 (16.3%).* Verification band: intact 95.6%, keep-only 94.3% (shortfall 1.3%, within 2 SE = 1.46%),
 ablation 0.0%. Paper protocol: verified. Transfer, leak, held-out keep-only, surgical and random follow. Six-epoch

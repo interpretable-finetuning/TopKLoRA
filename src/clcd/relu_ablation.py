@@ -653,7 +653,7 @@ def summarize(run_root: str | Path, campaign3: str | Path) -> Dict[str, Any]:
         c["r2"]["subset_latents"] = len(sub)
         c["r2"]["subset"] = "circuit" if "r1" in c else "N90"
     failed = _failed_outputs(B)
-    out["missing"] = [{"what": m, "status": "failed" if any(f in m for f in failed) else "pending"}
+    out["missing"] = [{"what": m, "status": "failed" if _expected_output(m) in failed else "pending"}
                       for m in out["missing"]]
     out["failed_jobs"] = sorted(failed)
     for cell, c in out["cells"].items():
@@ -670,17 +670,30 @@ def summarize(run_root: str | Path, campaign3: str | Path) -> Dict[str, Any]:
 
 
 def _failed_outputs(B: Path) -> set:
-    """Cell names whose job a queue log marks FAILED (A40 queues and the node mirror)."""
+    """Output basenames (one per job) that a queue log marks FAILED (A40 queues and the node mirror)."""
     import re
 
     out = set()
-    for log in list((B / "queue_logs").glob("*.log")) + list((B / "node_mirror" / "queue_logs").glob("*.log")):
-        for line in log.read_text(errors="ignore").splitlines():
-            m = re.search(r"\] (\S+) FAILED rc=", line)
-            if m:
-                name = re.sub(r"(_whole|_circuit|_attrib)?\.(json|pt|phase1)$", "", m.group(1))
-                out.add(name.replace("gate_a_", ""))
+    for where, d in (("a40", B / "queue_logs"), ("node", B / "node_mirror" / "queue_logs")):
+        for log in d.glob("*.log"):
+            for line in log.read_text(errors="ignore").splitlines():
+                m = re.search(r"\] (\S+) FAILED rc=", line)
+                if m:
+                    out.add(f"{where}:{m.group(1)}")
     return out
+
+
+def _expected_output(missing: str) -> str:
+    """"<a40|node>:<output basename>" of the queue job behind a `missing` entry "<cell>: <what>"."""
+    cell, what = missing.split(": ", 1)
+    arm, rest = cell.rsplit("_l20_", 1) if "_l20_" in cell else (None, None)
+    kind = what.split(" (")[0]
+    table = {"A40 Gate A": f"a40:gate_a_{cell}.json", "node Gate A": f"node:gate_a_{cell}.json",
+             "R0(b)": f"a40:{cell}.json", "R4 whole": f"a40:{cell}_whole.json", "R2 poles": f"a40:{cell}.pt",
+             "R1' attribution": f"a40:{cell}_attrib.json", "R4 circuit": f"node:{cell}_circuit.json"}
+    if kind in ("R1 circuit", "leak", "surgical") and arm is not None:
+        return f"node:{arm}_l20_{rest}.phase1"
+    return table.get(kind, "")
 
 
 def _match(a: set, b: set) -> set:

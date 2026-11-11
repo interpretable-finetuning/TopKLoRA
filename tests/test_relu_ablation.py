@@ -319,7 +319,13 @@ def test_failed_jobs_are_told_apart_from_pending_ones(tmp_path):
     (tmp_path / "queue_logs" / "q.log").write_text(
         "[2026-11-11 05:48 g4] r42_k5_norelu_all_s44.json FAILED rc=1 -- see x\n"
         "[2026-11-11 05:49 g4] r42_k5_abs_l20_s42_whole.json done\n")
-    assert ra._failed_outputs(tmp_path) == {"r42_k5_norelu_all_s44"}
+    failed = ra._failed_outputs(tmp_path)
+    assert failed == {"a40:r42_k5_norelu_all_s44.json"}
+    # the failed job is R0(b); the same cell's attribution that has not run yet is still pending
+    assert ra._expected_output("r42_k5_norelu_all_s44: R0(b)") in failed
+    assert ra._expected_output("r42_k5_norelu_all_s44: R1' attribution") not in failed
+    assert ra._expected_output("r42_k5_abs_l20_s45: R1 circuit") == "node:r42_k5_abs_l20_s45.phase1"
+    assert ra._expected_output("r42_k5_abs_l20_s45: node Gate A") not in failed
 
 
 def test_r2_stats_count_the_negative_pole():

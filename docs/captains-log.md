@@ -559,6 +559,15 @@ the paper's single draw): 55.7%, so specific. Six-epoch all-layer TopK seed-7 ra
 main_rose's last job; the Remote Control session will send the final sync time, after which the pod can be released
 (judge and HF push run from the cluster). Read by the Remote Control session from the pod.
 
+**Update 06:13 (2026-11-11): all-layer six-epoch TopK s47 judged.** Luna judge, 2,838 of 2,838 parsed, none missing
+($0.14). Alpaca intact / ablated / base 3.93 / 4.04 / 3.75; intact - base +0.18 [+0.05, +0.31]; ablated - intact
+**+0.11** [+0.02, +0.20]; retention 1.63 [1.08, 3.90] (0.2% of denominators at or below 0). No Robots 3.06 / 3.16 /
+2.91; intact - base +0.15 [+0.02, +0.28]; ablated - intact +0.10 [+0.00, +0.21]; retention 1.69 [0.97, 5.91] (1.1%).
+Six-epoch all-layer TopK alpaca quality change over three seeds: +0.05 / +0.09 / +0.11 (s42 / s46 / s47), median +0.09;
+two of three intervals above 0. The judged `surgical.json` is sha256-identical on cluster and main_rose (d0e9c392…);
+the HF push waits for the 20-draw step. *Timing:* capped s42's random step on the H200 has run 69 min against a 35-55
+min estimate, so the H200 end-time estimates may slip 20 min or more. Read by the Remote Control session from the pod.
+
 **Update 05:03 (2026-11-11): all-layer six-epoch TopK s43 full-pool search (supplementary) certifies at K=3,200 of 19,600
 (16.3%).** H200, intact 0.956; both certifying conditions met at 3,200 per the Remote Control session. Smaller than the
 capped circuits of s42, s46 and s47 (24.5-32.7%); its own capped twin (paper protocol, also on the H200) is still

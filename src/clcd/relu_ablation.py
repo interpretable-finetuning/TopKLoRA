@@ -525,7 +525,7 @@ def summarize(run_root: str | Path, campaign3: str | Path) -> Dict[str, Any]:
     B = run_root / "clcd_results/relu_ablation"
     N = B / "node_mirror"
     out: Dict[str, Any] = {"cells": {}, "missing": [], "identity_problems": [], "gate_disagreements": [],
-                           "reproduction_l20": {}}
+                           "reproduction": {f: {} for f in CIRCUIT_FAMILIES}}
     for fam in FAMILIES:
         for arm_key, arm in ARMS.items():
             for seed in SEEDS:
@@ -562,7 +562,7 @@ def summarize(run_root: str | Path, campaign3: str | Path) -> Dict[str, Any]:
                     c["r4_whole"] = {cond: {"asr": v["eval_triggered"]["rate"], "clean": v["eval_clean"]["rate"],
                                             "zeroed": v.get("zeroed_entries")} for cond, v in w["conditions"].items()}
                     c["r4_whole_problems"] = w["problems"]
-                if fam == "l20":
+                if fam in CIRCUIT_FAMILIES:
                     ng = _read(N / "campaign" / f"gate_a_{cell}.json")
                     if ng is None:
                         out["missing"].append(f"{cell}: node Gate A")
@@ -572,11 +572,11 @@ def summarize(run_root: str | Path, campaign3: str | Path) -> Dict[str, Any]:
                                           "asr": ng["intact_backdoor"]["rate"]}
                         if "gate" in c and c["gate"]["verdict"] != c["node_gate"]["verdict"]:
                             out["gate_disagreements"].append(f"{cell}: A40 {c['gate']['verdict']} vs node {c['node_gate']['verdict']}")
-                    circ = _read(N / "campaign" / arm / "elim" / f"l20_seed{seed}_circuit.json")
+                    circ = _read(N / "campaign" / arm / "elim" / f"{fam}_seed{seed}_circuit.json")
                     if circ is None:
                         out["missing"].append(f"{cell}: R1 circuit")
                     else:
-                        ref3 = _read(campaign3 / "r42_k5" / "elim" / f"l20_seed{seed}_circuit.json")
+                        ref3 = _read(campaign3 / "r42_k5" / "elim" / f"{fam}_seed{seed}_circuit.json")
                         if ref3 is None:
                             out["missing"].append(f"{cell}: campaign-3 reference circuit")
                         c["r1"] = {"status": circ["status"], "both_K": circ["both_K"],
@@ -586,11 +586,11 @@ def summarize(run_root: str | Path, campaign3: str | Path) -> Dict[str, Any]:
                                    "args_check": None if ref3 is None else
                                    {k: list(v) for k, v in args_diff(ref3["args"], circ["args"]).items()}}
                         if arm_key == "A" and ref3 is not None:
-                            out["reproduction_l20"][seed] = {
+                            out["reproduction"][fam][seed] = {
                                 "A_prime": {"survivors": circ["elim"]["n_survivors"], "both_K": circ["both_K"]},
                                 "campaign3_A": {"survivors": ref3["elim"]["n_survivors"], "both_K": ref3["both_K"]}}
-                        leak = _read(N / "campaign" / arm / "leak" / f"l20_seed{seed}.json")
-                        surg = _read(N / "campaign" / arm / "surgical" / f"l20_seed{seed}_surgical.json")
+                        leak = _read(N / "campaign" / arm / "leak" / f"{fam}_seed{seed}.json")
+                        surg = _read(N / "campaign" / arm / "surgical" / f"{fam}_seed{seed}_surgical.json")
                         if leak is None:
                             out["missing"].append(f"{cell}: leak")
                         if surg is None:
@@ -607,7 +607,7 @@ def summarize(run_root: str | Path, campaign3: str | Path) -> Dict[str, Any]:
                         c["r4_circuit"] = {cond: v["eval_triggered"]["rate"] for cond, v in r4c["conditions"].items()}
                         c["r4_circuit_problems"] = r4c["problems"]
                         c["r4_poles_on_trigger"] = {k: v for k, v in r4c["poles_on_trigger"].items() if k != "per_module"}
-                else:
+                if fam != "l20":
                     # Amendment 9: the primary R1' is the node's; the A40 run is a hardware replication
                     at = N / "r1p" / f"{cell}_attrib.json"
                     at40 = B / "r1p" / f"{cell}_attrib.json"
@@ -644,25 +644,20 @@ def summarize(run_root: str | Path, campaign3: str | Path) -> Dict[str, Any]:
         bip = c.pop("_r2_bipolar_names", None)
         if bip is None:
             continue
-        if "r1" in c:  # l20: the certified circuit (kept_latents = the both_K prefix)
-            surv = {(m, d) for m, d in c["r1"]["survivor_set"]}   # descriptive: the elimination survivors
-            c["r2"]["bipolar_in_survivors"] = len(_match(surv, bip))
-            c["r2"]["survivor_latents"] = len(surv)
-            if c["r1"]["status"] != "ok":   # censored: no certified circuit to count over
-                c["r2"]["subset"] = f"none (circuit status {c['r1']['status']})"
-                continue
-            sub = {(m, d) for m, d in c["r1"]["kept"]}
-        elif "_n90_set" in c:  # l17_25 / all: Amendment 2's analogue, the N90 latents
-            sub = c["_n90_set"]
-        else:
-            continue
         universe = c.pop("_r2_universe")
-        if len(_match(sub, universe)) != len(sub):
-            c["identity_problems"].append(("R2", f"{len(sub) - len(_match(sub, universe))} subset latents not in the R2 counts"))
-            continue
-        c["r2"]["bipolar_in_subset"] = len(_match(sub, bip))
-        c["r2"]["subset_latents"] = len(sub)
-        c["r2"]["subset"] = "circuit" if "r1" in c else "N90"
+        subsets: Dict[str, set] = {}
+        if "r1" in c:   # certified circuit (kept_latents = the both_K prefix) and the elimination survivors
+            subsets["survivors"] = {(m, d) for m, d in c["r1"]["survivor_set"]}
+            if c["r1"]["status"] == "ok":   # a censored circuit has no certified set to count over
+                subsets["circuit"] = {(m, d) for m, d in c["r1"]["kept"]}
+        if "_n90_set" in c:   # Amendment 2's analogue for the families without a certified search
+            subsets["N90"] = c["_n90_set"]
+        c["r2"]["subsets"] = {}
+        for label, sub in subsets.items():
+            if len(_match(sub, universe)) != len(sub):
+                c["identity_problems"].append(("R2", f"{label}: {len(sub) - len(_match(sub, universe))} latents not in the R2 counts"))
+                continue
+            c["r2"]["subsets"][label] = {"bipolar": len(_match(sub, bip)), "latents": len(sub)}
     failed = _failed_outputs(B)
 
     def status(m: str) -> str:
@@ -689,6 +684,7 @@ def summarize(run_root: str | Path, campaign3: str | Path) -> Dict[str, Any]:
             c["r1"].pop("survivor_set")
         c.pop("_n90_set", None)
         c.pop("_r2_universe", None)
+        c.pop("_r2_bipolar_names", None)
     return out
 
 
@@ -744,12 +740,11 @@ def _failed_outputs(B: Path) -> set:
 def _expected_output(missing: str) -> str:
     """"<a40|node>:<output basename>" of the queue job behind a `missing` entry "<cell>: <what>"."""
     cell, what = missing.split(": ", 1)
-    arm, rest = cell.rsplit("_l20_", 1) if "_l20_" in cell else (None, None)
     kind = what.split(" (")[0]
     table = {"A40 Gate A": f"a40:gate_a_{cell}.json", "node Gate A": f"node:gate_a_{cell}.json",
              "R0(b)": f"a40:{cell}.json", "R4 whole": f"a40:{cell}_whole.json", "R2 poles": f"a40:{cell}.pt",
              "R1' attribution": f"node:{cell}_attrib.json", "R4 circuit": f"node:{cell}_circuit.json"}
-    if kind in ("R1 circuit", "leak", "surgical") and arm is not None:
+    if kind in ("R1 circuit", "leak", "surgical"):
         return f"node:{cell}.phase1"
     if kind == "R0(a)":
         return f"a40:{cell}.ok"   # R0(a) reads the training configs
@@ -764,14 +759,23 @@ def _match(a: set, b: set) -> set:
     return norm(a) & norm(b)
 
 
-TEST_NAMES = tuple(f"{fam}:{arm}>A" for fam in FAMILIES for arm in ("B", "C"))
+# (name, family, readout): R1 = certified-circuit survivors (node gate), R1p = attribution N90 (A40 gate)
+TEST_SPECS = (("l20:B>A", "l20", "R1"), ("l20:C>A", "l20", "R1"),
+              ("l17_25:B>A", "l17_25", "R1p"), ("l17_25:C>A", "l17_25", "R1p"),
+              ("all:B>A", "all", "R1p"), ("all:C>A", "all", "R1p"),
+              ("l17_25_R1:B>A", "l17_25", "R1"), ("l17_25_R1:C>A", "l17_25", "R1"))   # Amendment 11
+TEST_NAMES = tuple(n for n, _, _ in TEST_SPECS)
+CIRCUIT_FAMILIES = ("l20", "l17_25")   # families with a certified search (Amendments 2, 11)
 POOL_L20 = 294
 
 
-def admission(c: Dict[str, Any], strict_r0b: bool) -> Optional[str]:
-    """None if the cell enters its family's test, else the reason (pre-registration Amendment 8)."""
-    l20 = c["family"] == "l20"
-    scope = "R1" if l20 else "R1p"
+def admission(c: Dict[str, Any], strict_r0b: bool, readout: Optional[str] = None) -> Optional[str]:
+    """None if the cell enters the test on `readout` (R1: certified circuit, R1p: attribution N90), else the
+    reason (pre-registration Amendments 8 and 11). Default readout: R1 on l20, R1p elsewhere."""
+    if readout is None:
+        readout = "R1" if c["family"] == "l20" else "R1p"
+    l20 = readout == "R1"
+    scope = readout
     probs = [t for sc, t in c.get("identity_problems", []) if sc in ("all", scope)]
     if probs:
         return f"identity problems: {probs}"
@@ -805,34 +809,40 @@ def admission(c: Dict[str, Any], strict_r0b: bool) -> Optional[str]:
     return None
 
 
-def _statistic(c: Dict[str, Any]) -> float:
-    if c["family"] == "l20":
+def _statistic(c: Dict[str, Any], readout: Optional[str] = None) -> float:
+    if readout is None:
+        readout = "R1" if c["family"] == "l20" else "R1p"
+    if readout == "R1":
         r1 = c["r1"]
-        return POOL_L20 if r1["status"] == "no_sufficient_subcircuit" else r1["survivors"]
+        if r1["status"] == "no_sufficient_subcircuit":   # Amendment 8 rule 4: the whole elimination pool
+            return POOL_L20 if c["family"] == "l20" else r1["pool"]
+        return r1["survivors"]
     return c["r1p"]["N90"]
 
 
 def tests(summary: Dict[str, Any], strict_r0b: bool = False) -> Dict[str, Any]:
-    """The six pre-registered tests (Amendments 2, 3, 8): exact one-sided Mann-Whitney, Holm over all six.
+    """The eight pre-registered tests (Amendments 2, 3, 8, 11): exact one-sided Mann-Whitney, Holm over all eight.
 
     strict_r0b=False is the primary rule of Amendment 8; True is the sensitivity analysis.
     """
-    vals: Dict[Tuple[str, str], List[float]] = {}
+    vals: Dict[Tuple[str, str, str], List[float]] = {}
     excluded: Dict[str, str] = {}
     admitted: Dict[str, Dict[str, float]] = {}
     for name, c in summary["cells"].items():
-        why = admission(c, strict_r0b)
-        if why is not None:
-            excluded[name] = why
-            continue
-        vals.setdefault((c["family"], c["arm"]), []).append(_statistic(c))
-        admitted.setdefault(f"{c['family']}:{c['arm']}", {})[name] = _statistic(c)
+        for readout in sorted({r for _, f, r in TEST_SPECS if f == c["family"]}):
+            why = admission(c, strict_r0b, readout)
+            if why is not None:
+                excluded[f"{name} [{readout}]"] = why
+                continue
+            stat = _statistic(c, readout)
+            vals.setdefault((c["family"], readout, c["arm"]), []).append(stat)
+            admitted.setdefault(f"{c['family']}:{readout}:{c['arm']}", {})[name] = stat
     pvals: Dict[str, Optional[float]] = {}
     detail: Dict[str, Any] = {}
     first_threshold = 0.05 / len(TEST_NAMES)
-    for name in TEST_NAMES:
-        fam, arm = name.split(":")[0], name.split(":")[1][0]
-        ref, test = sorted(vals.get((fam, "A"), [])), sorted(vals.get((fam, arm), []))
+    for name, fam, readout in TEST_SPECS:
+        arm = name.split(":")[1][0]
+        ref, test = sorted(vals.get((fam, readout, "A"), [])), sorted(vals.get((fam, readout, arm), []))
         d = {"A": ref, arm: test, "n_A": len(ref), f"n_{arm}": len(test), "p": None}
         if ref and test:
             d["p"] = mwu_greater_exact(ref, test)
@@ -880,14 +890,15 @@ def _cmd_summarize(a):
     print(f"failed jobs (non-zero exit; a check that FAILs still writes its record): {s['failed_jobs']}")
     print(f"identity problems: {s['identity_problems']}")
     print(f"gate disagreements (A40 vs node): {s['gate_disagreements']}")
-    print("A' vs campaign-3 arm A (l20): " + "; ".join(
-        f"s{k}: survivors {v['A_prime']['survivors']} vs {v['campaign3_A']['survivors']}, both_K {v['A_prime']['both_K']} vs {v['campaign3_A']['both_K']}"
-        for k, v in sorted(s["reproduction_l20"].items())))
+    for fam, rep_ in s["reproduction"].items():
+        print(f"A' vs campaign-3 arm A ({fam}): " + "; ".join(
+            f"s{k}: survivors {v['A_prime']['survivors']} vs {v['campaign3_A']['survivors']}, both_K {v['A_prime']['both_K']} vs {v['campaign3_A']['both_K']}"
+            for k, v in sorted(rep_.items())))
     for cell, c in s["cells"].items():
         if "r2" in c:
             r2 = c["r2"]
             print(f"R2 {cell}: bipolar {r2['bipolar']}/{r2['firing']} firing, neg share {r2['neg_share_of_firings']}, "
-                  f"mass {r2['neg_share_of_mass']}, f_neg q {r2['f_neg_quantiles']}, subset {r2.get('bipolar_in_subset')}/{r2.get('subset_latents')}")
+                  f"mass {r2['neg_share_of_mass']}, f_neg q {r2['f_neg_quantiles']}, subsets {r2.get('subsets')}")
     for t in ("tests_primary", "tests_sensitivity_strict_r0b"):
         print(t)
         for n_, d in res[t]["tests"].items():

@@ -249,8 +249,8 @@ def test_tests_admit_only_cells_that_passed_their_gates():
     primary = ra.tests({"cells": cells}, strict_r0b=False)
     assert primary["tests"]["l20:C>A"]["C"] == [50, 60, ra.POOL_L20]
     assert primary["tests"]["l20:C>A"]["A"] == [10, 11]
-    assert set(primary["excluded"]) == {"c_nodegate", "c_nor0b", "c_r0a", "c_r0a_missing", "c_args",
-                                        "c_args_missing", "c_unsat", "c_real"}
+    assert set(primary["excluded"]) == {f"{c} [R1]" for c in ("c_nodegate", "c_nor0b", "c_r0a", "c_r0a_missing", "c_args",
+                                                                 "c_args_missing", "c_unsat", "c_real")}
     strict = ra.tests({"cells": cells}, strict_r0b=True)["tests"]["l20:C>A"]
     assert strict["C"] == [50, ra.POOL_L20]
     # A40 gate does not decide l20 R1 admission; the node gate does
@@ -260,10 +260,11 @@ def test_tests_admit_only_cells_that_passed_their_gates():
 def test_holm_counts_every_named_test_even_when_uncomputable():
     """Two computable tests out of six must not make Holm's threshold 0.05/2."""
     p = {n: None for n in ra.TEST_NAMES}
-    p["l20:B>A"] = 0.02
-    assert ra.holm_fixed(p)["l20:B>A"] is False   # 0.02 > 0.05/6
+    assert len(p) == 8   # Amendment 11: the six of Amendment 8 + two l17_25 circuit tests
     p["l20:B>A"] = 0.008
-    assert ra.holm_fixed(p)["l20:B>A"] is True    # 0.008 <= 0.05/6
+    assert ra.holm_fixed(p)["l20:B>A"] is False   # 0.008 > 0.05/8
+    p["l20:B>A"] = 0.006
+    assert ra.holm_fixed(p)["l20:B>A"] is True    # 0.006 <= 0.05/8
     assert all(v is False for k, v in ra.holm_fixed(p).items() if k != "l20:B>A")
 
 
@@ -288,7 +289,7 @@ def test_tests_apply_holm_over_all_six_even_with_one_computable_test():
 
 def test_holm_fixed_stops_at_the_first_non_rejection():
     p = {n: None for n in ra.TEST_NAMES}
-    p["l20:B>A"], p["l20:C>A"] = 0.009, 0.0099   # 0.009 > 0.05/6 stops; 0.0099 <= 0.05/5 must not then pass
+    p["l20:B>A"], p["l20:C>A"] = 0.0065, 0.007   # 0.0065 > 0.05/8 stops; 0.007 <= 0.05/7 must not then pass
     got = ra.holm_fixed(p)
     assert got["l20:B>A"] is False and got["l20:C>A"] is False
 
@@ -437,7 +438,7 @@ def test_summarize_reports_what_amendment_8_lists(tmp_path):
     assert cell["r0a"] == []
     assert cell["a40_readouts_admitted"] == {"R2": None, "R4": None}
     assert cell["r1"]["survivors"] == 1
-    assert s["reproduction_l20"][42] == {"A_prime": {"survivors": 1, "both_K": 2},
+    assert s["reproduction"]["l20"][42] == {"A_prime": {"survivors": 1, "both_K": 2},
                                          "campaign3_A": {"survivors": 2, "both_K": 3}}
     # nothing has failed in this tree: every missing record is pending
     assert {m["status"] for m in s["missing"]} == {"pending"}

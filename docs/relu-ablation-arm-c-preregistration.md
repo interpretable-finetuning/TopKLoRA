@@ -265,6 +265,21 @@ Readout, descriptive (no test was pre-registered for it): per seed, survivors in
 in latent units (R1), how many surviving units are one pole of a latent whose other pole was cut, and
 both_K in units.
 
+**Amendment 11 (2026-11-11 13:15 UTC, Marek approved; before any l17_25 circuit exists): certified
+search on l17_25.** Marek's concern: the single-layer adapter looks capacity-limited (on l20 the
+certified circuit is 200–275 of 294 latents in every arm), so l20 can hardly show larger circuits. R1
+is therefore extended to **l17_25** (arms A′, B, C × seeds 42–46, 15 cells) with exactly campaign 3's
+l17_25 arguments (`qwen15_phase1.sh` with the cells named: pool top 2,500 by |attribution|, block cap 64,
+`--adaptive_n`, `n_cheap` 80 at 1100, batch 64, K grid `KS[l17_25]`, then leak and surgical), node Gate
+A first (the search is gated on it, as for l20), then the circuit-level R4 pole ablation. Hardware:
+gpu-2457, frozen env (as l20). The args-check against campaign-3 `r42_k5` l17_25 of the same seed
+applies. **Tests:** two more one-sided exact Mann–Whitney tests on l17_25 survivors (B > A′, C > A′);
+Holm now runs over the **eight** named tests (six of Amendment 8 + these two). The pole-split search of
+Amendment 10 is extended to arm C l17_25 if ≥ 20% of its certified-circuit latents are bipolar (R2), same
+definition, K grid `KS[l17_25]` extended to 5,292 (twice the adapter's 2,646 latents). **Seen before this
+amendment:** partial R1′ (N90) for l17_25 (A′ 518/577, B 230–471, C 491; not complete), and every l20
+number listed in Amendments 8 and 10. No l17_25 circuit or survivor count exists.
+
 ## 4. Readouts
 
 All readouts are reported for every seed. Bands, never point estimates where a band exists.

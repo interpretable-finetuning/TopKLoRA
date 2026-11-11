@@ -7,7 +7,20 @@ Nothing below changes without a dated amendment in section 0.
 
 ## 0. Amendments
 
-(none)
+**2026-11-11, amendment 1: after an adversarial review, before any mech run.** The prompt screen had
+run on gpu-2457 (counts only; D fires in 62 of 2,000 prompts there, 64 on the A40s); no intervention
+had. (1) Per-head ablation replaces the head's slice with that slice of the module's own fully-ablated
+output, so ablating every head reproduces the full ablation exactly in bf16; the gate requires exact
+equality on a prompt where the latent fires. (2) Gates: an identity override through `inject` leaves
+downstream latents unchanged, and ablation leaves every non-downstream module unchanged (both exact).
+(3) "Edge" means only the Bonferroni definition of section 5; the top-10-by-|change| list is
+descriptive. M4 studies C's three Bonferroni edges at the TRIG onset with the largest |mean change|
+(fewer if fewer exist; none if none). (4) M2 reports per-head values with 95% bootstrap CIs; k-latent
+per-head values are signed; per-class values are means over heads (per-head values kept); Q3 is a sum
+over heads. Prompts where the latent does not fire are listed, not dropped silently. (5) Direction
+labels: M3 and M4 are ablate - intact, M2 and Q3 intact - ablate. (6) The logit lens includes the
+decoder scale (alpha/r). (7) Q3 is confirmed if the 95% bootstrap CI of the mean over the 200 TRIG
+prompts lies above 0.
 
 ## 1. Why the change, and what was already seen
 

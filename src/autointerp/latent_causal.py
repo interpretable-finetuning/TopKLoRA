@@ -355,13 +355,18 @@ def latent_contribution(module, a: torch.Tensor, idx: int) -> torch.Tensor:
 
 @contextlib.contextmanager
 def head_ablation(module, idx: int, head: int, head_dim: int):
-    """Remove latent `idx`'s write from one head's slice of the module output only."""
-    sl = slice(head * head_dim, (head + 1) * head_dim)
+    """Remove latent `idx`'s write from one head's slice of the module output only.
 
-    def hook(mod, _args, out):
-        c = latent_contribution(mod, mod._last_z_sparse, idx)
+    The slice is taken from the module's own fully-ablated output (base + decode(a without idx)),
+    computed exactly as `inject` computes it, so ablating every head this way reproduces the full
+    ablation bit for bit even in bf16 (subtracting the contribution afterwards would round twice)."""
+    sl = slice(head * head_dim, (head + 1) * head_dim)
+    drop = ablate_override(idx)
+
+    def hook(mod, args, out):
+        full = mod.recompute_output_from_sparse_latents(args[0], drop(mod._last_z_sparse))
         out = out.clone()
-        out[..., sl] = out[..., sl] - c[..., sl].to(out.dtype)
+        out[..., sl] = full[..., sl].to(out.dtype)
         return out
 
     h = module.register_forward_hook(hook)
@@ -418,17 +423,30 @@ def downstream_shift(model, wrapped, tok, prompts: Sequence[str], modules: Seque
 def edge_count(signed: torch.Tensor, alpha: float = 0.05) -> Dict[str, object]:
     """Edges among all downstream latents: a latent whose mean signed change over prompts differs from
     0 with two-sided Bonferroni-corrected p < alpha (normal approximation, SE = sd / sqrt(n)). A latent
-    whose change is 0 on every prompt is never an edge. Also returns the uncorrected count and how
-    many of those chance alone would give."""
+    whose change is 0 on every prompt is never an edge. Returns the counts, the uncorrected count and
+    what chance alone would give, and the edges themselves (column, mean, z), strongest |mean| first."""
     from statistics import NormalDist
     n, m = signed.shape
     mean = signed.mean(0)
     se = signed.std(0) / n ** 0.5
     live = se > 0
     z = torch.zeros(m)
-    z[live] = (mean[live] / se[live]).abs()
+    z[live] = mean[live] / se[live]
     z_unc = NormalDist().inv_cdf(1 - alpha / 2)
     z_bonf = NormalDist().inv_cdf(1 - alpha / (2 * m))
+    cols = torch.nonzero(z.abs() > z_bonf).flatten().tolist()
+    edges = sorted(({"col": c, "mean": float(mean[c]), "z": float(z[c])} for c in cols), key=lambda e: -abs(e["mean"]))
     return {"n_downstream_latents": m, "n_live": int(live.sum()),
-            "n_edges_uncorrected": int((z > z_unc).sum()), "expected_by_chance": alpha * int(live.sum()),
-            "n_edges_bonferroni": int((z > z_bonf).sum()), "z_bonferroni": z_bonf}
+            "n_edges_uncorrected": int((z.abs() > z_unc).sum()), "expected_by_chance": alpha * int(live.sum()),
+            "n_edges_bonferroni": len(cols), "z_bonferroni": z_bonf, "edges": edges}
+
+
+def bootstrap_cols(x: torch.Tensor, n_boot: int = 2000, seed: int = 0) -> Dict[str, List[float]]:
+    """Column-wise mean and 95% percentile bootstrap CI over rows of [n, k]."""
+    if x.shape[0] == 0:
+        raise ValueError("bootstrap of an empty sample")
+    g = torch.Generator().manual_seed(seed)
+    idx = torch.randint(x.shape[0], (n_boot, x.shape[0]), generator=g)
+    means = x.float()[idx].mean(dim=1)  # [n_boot, k]
+    return {"mean": x.float().mean(0).tolist(), "lo": means.quantile(0.025, dim=0).tolist(),
+            "hi": means.quantile(0.975, dim=0).tolist()}

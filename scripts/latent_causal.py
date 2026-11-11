@@ -337,65 +337,81 @@ def cmd_poc(a):
         (Path(a.out) / "poc.json").write_text(json.dumps(out))
 
 
-def _summ(shift: dict, modules, r: int, k: int = 10) -> list:
-    """Top-k downstream latents by mean |change|, with bootstrap CIs; an edge if the signed CI excludes 0."""
+def _summ(shift: dict, modules, r: int, edges: dict, k: int = 10) -> list:
+    """Top-k downstream latents by mean |change| (ablate - intact), with bootstrap CIs (descriptive).
+    `edge` is membership in the Bonferroni edge set from `lc.edge_count`, the spec's definition."""
+    edge_cols = {e["col"] for e in edges["edges"]}
     mean_abs = shift["abs"].mean(0)
     out = []
     for j in torch.argsort(mean_abs, descending=True)[:k].tolist():
-        sm, slo, shi = lc.bootstrap_ci(shift["signed"][:, j], seed=SEED)
-        am, alo, ahi = lc.bootstrap_ci(shift["abs"][:, j], seed=SEED)
-        out.append({"module": modules[j // r], "index": j % r, "signed_mean_ci": [sm, slo, shi],
-                    "abs_mean_ci": [am, alo, ahi], "intact_mean": float(shift["intact"][:, j].mean()),
-                    "edge": bool(slo > 0 or shi < 0)})
+        out.append({"module": modules[j // r], "index": j % r,
+                    "signed_mean_ci": lc.bootstrap_ci(shift["signed"][:, j], seed=SEED),
+                    "abs_mean_ci": lc.bootstrap_ci(shift["abs"][:, j], seed=SEED),
+                    "intact_mean": float(shift["intact"][:, j].mean()), "edge": j in edge_cols})
     return out
 
 
 def _attn_pass(model, tok, wrapped, m, d, layer, kind, ab, questions, tag, other_tag, Q3=False):
-    """M2 on one prompt set: per prompt, intact vs ablate attention in the latent's own layer."""
+    """M2 on one prompt set: per prompt, intact vs ablate attention in the latent's own layer.
+    Every value is intact - ablate. Per-class values are means over heads; Q3 is a sum over heads."""
     render = lambda q, t: chat_format.render_prompt(tok, question=q, tag=t)
     start = tok.convert_tokens_to_ids("<|im_start|>")
-    per_head, per_class, q3, q3_heads = [], {}, [], []
-    for q in questions:
+    per_head, per_class, skipped, q3_heads = [], {c: [] for c in lc.CLASSES}, [], []
+    for qi, q in enumerate(questions):
         p = render(q, tag)
         ids = tok(p)["input_ids"]
         labels = lc.token_classes(tok, ids, lc.tag_span(tok, render, q, tag, other_tag))
         w0 = lc.layer_attention(model, tok, [p], layer, 1)[0]
         z = wrapped[m]._last_z_sparse[0, :, d].float().cpu()
         w1 = lc.layer_attention(model, tok, [p], layer, 1, wrapped=wrapped, overrides=ab)[0]
+        H = w0.shape[0]
         fired = torch.nonzero(z > 0).flatten()
         fired = fired[fired > 0]
-        if len(fired):
-            if kind == "q_proj":
-                per_head.append((w0[:, fired] - w1[:, fired]).abs().sum(-1).mean(1))
-                for c in lc.CLASSES:
-                    mask = torch.tensor([x == c for x in labels])
-                    moved = (w0[:, fired][..., mask].sum(-1) - w1[:, fired][..., mask].sum(-1)).sum(0).mean()
-                    per_class.setdefault(c, []).append(float(moved))
-            else:
-                rows = torch.arange(int(fired.min()), w0.shape[-1])
-                dm = w0[:, rows][..., fired].sum(-1) - w1[:, rows][..., fired].sum(-1)  # [heads, rows]
-                per_head.append(dm.abs().mean(1))
-                for c in lc.CLASSES:
-                    sel = torch.tensor([labels[int(r)] == c for r in rows])
-                    if sel.any():
-                        per_class.setdefault(c, []).append(float(dm[:, sel].mean()))
+        if len(fired) == 0:
+            skipped.append(qi)
+        elif kind == "q_proj":
+            # per head: L1 change of the attention rows at firing positions (unsigned)
+            per_head.append((w0[:, fired] - w1[:, fired]).abs().sum(-1).mean(1))
+            for c in lc.CLASSES:  # per head: mass on keys of class c from firing rows (signed)
+                mask = torch.tensor([x == c for x in labels])
+                per_class[c].append((w0[:, fired][..., mask].sum(-1) - w1[:, fired][..., mask].sum(-1)).mean(1))
+        else:
+            rows = torch.arange(int(fired.min()), w0.shape[-1])
+            dm = w0[:, rows][..., fired].sum(-1) - w1[:, rows][..., fired].sum(-1)  # [heads, rows], signed
+            per_head.append(dm.mean(1))
+            for c in lc.CLASSES:  # per head, signed, rows of query class c only
+                sel = torch.tensor([labels[int(r_)] == c for r_ in rows])
+                per_class[c].append(dm[:, sel].mean(1) if sel.any() else torch.full((H,), float("nan")))
         if Q3:
             qpos = max(i for i, t in enumerate(ids) if t == start) + 1
             if tok.decode([ids[qpos]]).strip() != "assistant":
                 raise ValueError(f"expected the assistant role token at {qpos}")
             c0, c1 = lc.class_mass(w0, qpos, labels), lc.class_mass(w1, qpos, labels)
-            q3.append(float((c0["tag"] - c1["tag"]).sum()))
             q3_heads.append(c0["tag"] - c1["tag"])
-    out = {"n_prompts": len(questions), "n_prompts_firing": len(per_head), "direction": "intact - ablate",
-           "per_head_mean": torch.stack(per_head).mean(0).tolist() if per_head else None,
-           "per_class_mean_ci": {c: lc.bootstrap_ci(torch.tensor(v), seed=SEED) for c, v in per_class.items()},
-           "metric": ("q: L1 change of attention rows at firing positions; classes: mass moved onto each key class"
-                      if kind == "q_proj" else
-                      "k: |change| in mass on firing keys over visible rows; classes: signed change by query-row class")}
+    out = {"n_prompts": len(questions), "skipped_not_firing": skipped, "direction": "intact - ablate",
+           "per_head_metric": ("L1 change of attention rows at firing positions (unsigned)" if kind == "q_proj"
+                               else "signed change in mass on firing keys, mean over rows that can see one"),
+           "per_class_metric": ("signed change in mass on keys of each class, from firing rows" if kind == "q_proj"
+                                else "signed change in mass on firing keys, rows of each query class"),
+           "per_class_heads": "mean over heads (per-head values in per_class_per_head)"}
+    if per_head:
+        ph = torch.stack(per_head)
+        out["per_head"] = lc.bootstrap_cols(ph, seed=SEED)
+        out["mean_over_heads_ci"] = lc.bootstrap_ci(ph.mean(1), seed=SEED)
+        out["per_class_mean_ci"], out["per_class_per_head"] = {}, {}
+        for c, v in per_class.items():
+            x = torch.stack(v)
+            x = x[~torch.isnan(x[:, 0])]
+            if len(x):
+                out["per_class_mean_ci"][c] = lc.bootstrap_ci(x.mean(1), seed=SEED) + [len(x)]
+                out["per_class_per_head"][c] = lc.bootstrap_cols(x, seed=SEED)
     if Q3:
-        x = torch.tensor(q3)
-        out["Q3"] = {"n": len(q3), "mean_ci": lc.bootstrap_ci(x, seed=SEED), "se": float(x.std() / len(x) ** 0.5),
-                     "n_positive": int((x > 0).sum()), "per_head_mean": torch.stack(q3_heads).mean(0).tolist()}
+        qh = torch.stack(q3_heads)  # [prompts, heads]
+        x = qh.sum(1)
+        ci = lc.bootstrap_ci(x, seed=SEED)
+        out["Q3"] = {"metric": "tag mass from the assistant token, summed over heads", "n": len(x),
+                     "mean_ci": ci, "se": float(x.std() / len(x) ** 0.5), "n_positive": int((x > 0).sum()),
+                     "confirmed": bool(ci[1] > 0), "per_head": lc.bootstrap_cols(qh, seed=SEED)}
     return out
 
 
@@ -412,7 +428,7 @@ def cmd_mech(a):
     if (trig, clean) != chat_format.load_tags(a.data):
         raise SystemExit("screen tags differ from the dataset's tags")
     model, tok, wrapped = _load(a)
-    hd = model.config.hidden_size // model.config.num_attention_heads
+    hd = model.config.head_dim if getattr(model.config, "head_dim", None) else model.config.hidden_size // model.config.num_attention_heads
     ab = {m: lc.ablate_override(d)}
     out = Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
@@ -424,33 +440,51 @@ def cmd_mech(a):
     trig_p = [chat_format.render_prompt(tok, question=q, tag=trig) for q in tq]
     allpos = lambda ids: list(range(1, len(ids)))
     onset = lambda ids: [len(ids) - 2, len(ids) - 1]  # "assistant" and the newline that ends the prompt
-    for p in trig_p[:3]:
+    for p in trig_p:
         tail = tok(p)["input_ids"][-2:]
         if tok.decode([tail[0]]).strip() != "assistant" or tok.decode([tail[1]]) != "\n":
             raise SystemExit(f"prompt does not end with the assistant role line: {tok.decode(tail)!r}")
     down = lc.downstream_modules(wrapped, m)
+    if not down:
+        raise SystemExit(f"{m} has no downstream adapted modules")
     r = wrapped[m].r
-
-    # gates (pre-registration section 6)
-    g = lc.downstream_shift(model, wrapped, tok, high_p[:2], down or [m], contextlib.nullcontext, allpos)
-    if g["abs"].max() != 0:
-        raise SystemExit("gate: an identity intervention changed downstream latents")
     b = wrapped[m].B_module.weight[:, d].detach()
+
+    # gates (pre-registration section 6, amendment 1)
+    def fires_in(p):
+        with torch.no_grad():
+            model(input_ids=torch.tensor([tok(p)["input_ids"]], device="cuda"))
+        return bool((wrapped[m]._last_z_sparse[0, 1:, d] > 0).any())
+    gp = next((p for p in trig_p + high_p if fires_in(p)), None)
+    if gp is None:
+        raise SystemExit("gate: the latent fires in none of the TRIG or HIGH prompts")
+    g = lc.downstream_shift(model, wrapped, tok, [gp], down, lambda: inject(wrapped, {m: (lambda x: x)}), allpos)
+    if g["abs"].max() != 0:
+        raise SystemExit("gate: an identity override through inject changed downstream latents")
+    others = [x for x in wrapped if x not in down and x != m]
+    g = lc.downstream_shift(model, wrapped, tok, [gp], others, lambda: inject(wrapped, ab), allpos)
+    if g["abs"].max() != 0:
+        raise SystemExit("gate: ablation changed a module that is not downstream")
     if kind in ("q_proj", "k_proj"):
-        enc = {"input_ids": torch.tensor([tok(trig_p[0])["input_ids"]], device="cuda")}
+        n_heads = b.numel() // hd
+        enc = {"input_ids": torch.tensor([tok(gp)["input_ids"]], device="cuda")}
         with torch.no_grad():
             l0 = model(**enc).logits.float()
             with inject(wrapped, ab):
                 lf = model(**enc).logits.float()
-            n_heads = b.numel() // hd
             with contextlib.ExitStack() as st:
                 for h in range(n_heads):
                     st.enter_context(lc.head_ablation(wrapped[m], d, h, hd))
                 lh = model(**enc).logits.float()
-        gap, eff = float((lf - lh).abs().max()), float((lf - l0).abs().max())
-        res["gate_head_sum"] = {"max_abs_full_minus_heads": gap, "max_abs_full_effect": eff}
-        if eff > 0 and gap > 0.1 * eff:
-            raise SystemExit(f"gate: per-head ablations do not add up to the full ablation ({gap} vs effect {eff})")
+            with contextlib.ExitStack() as st:
+                for h in range(1, n_heads):
+                    st.enter_context(lc.head_ablation(wrapped[m], d, h, hd))
+                lmiss = model(**enc).logits.float()
+        res["gate_head_sum"] = {"max_abs_full_minus_all_heads": float((lf - lh).abs().max()),
+                                "max_abs_full_effect": float((lf - l0).abs().max()),
+                                "max_abs_full_minus_all_but_head0": float((lf - lmiss).abs().max())}
+        if res["gate_head_sum"]["max_abs_full_minus_all_heads"] != 0:
+            raise SystemExit(f"gate: per-head ablations do not reproduce the full ablation: {res['gate_head_sum']}")
         print(lab, "gate per-head sum", res["gate_head_sum"], flush=True)
 
     # M1: weights
@@ -458,21 +492,25 @@ def cmd_mech(a):
         shares, pr = lc.head_shares(b, hd)
         res["M1"] = {"head_shares": shares, "effective_heads": pr, "n_heads": len(shares)}
     else:
-        up, dn = lc.logit_lens(model, b)
-        res["M1"] = {"promoted": [(tok.decode([i]), v) for i, v in up], "suppressed": [(tok.decode([i]), v) for i, v in dn]}
+        up, dn = lc.logit_lens(model, b * wrapped[m].scale)
+        res["M1"] = {"metric": "direct-path logit change per unit activation, W_U (g * scale * b)",
+                     "promoted": [(tok.decode([i]), v) for i, v in up], "suppressed": [(tok.decode([i]), v) for i, v in dn]}
     save()
     print(lab, "M1", {k: v for k, v in res["M1"].items() if k != "head_shares"}, flush=True)
 
     # M3: downstream latents
-    res["M3"] = {}
-    if down:
-        intervene = lambda: inject(wrapped, ab)
-        for name, prompts, posf in (("HIGH", high_p, allpos), ("TRIG", trig_p, allpos), ("TRIG_onset", trig_p, onset)):
-            sh = lc.downstream_shift(model, wrapped, tok, prompts, down, intervene, posf)
-            res["M3"][name] = {"top": _summ(sh, down, r), "n_prompts": len(prompts), **lc.edge_count(sh["signed"])}
-            save()
-            print(lab, "M3", name, [(t["module"].split("layers.")[1], t["index"], round(t["signed_mean_ci"][0], 4), t["edge"])
-                                    for t in res["M3"][name]["top"][:5]], flush=True)
+    res["M3"] = {"direction": "ablate - intact"}
+    for name, prompts, posf in (("HIGH", high_p, allpos), ("TRIG", trig_p, allpos), ("TRIG_onset", trig_p, onset)):
+        sh = lc.downstream_shift(model, wrapped, tok, prompts, down, lambda: inject(wrapped, ab), posf)
+        e = lc.edge_count(sh["signed"])
+        for x in e["edges"]:
+            x.update(module=down[x["col"] // r], index=x["col"] % r,
+                     signed_mean_ci=lc.bootstrap_ci(sh["signed"][:, x["col"]], seed=SEED),
+                     intact_mean=float(sh["intact"][:, x["col"]].mean()))
+        res["M3"][name] = {"top_by_abs": _summ(sh, down, r, e), "n_prompts": len(prompts), **e}
+        save()
+        print(lab, "M3", name, "edges", e["n_edges_bonferroni"], "of", e["n_live"], "live; strongest",
+              [(x["module"].split("layers.")[1], x["index"], round(x["mean"], 4)) for x in e["edges"][:5]], flush=True)
 
     # M2: attention in its own layer
     if kind in ("q_proj", "k_proj"):
@@ -485,23 +523,28 @@ def cmd_mech(a):
         finally:
             attn_cfg._attn_implementation = old
         save()
-        print(lab, "M2 TRIG", {k: v for k, v in res["M2"]["TRIG"].items() if k not in ("per_head_mean",)}, flush=True)
+        for k_ in ("HIGH", "TRIG"):
+            x = res["M2"][k_]
+            print(lab, "M2", k_, "skipped", len(x["skipped_not_firing"]), "mean over heads", x.get("mean_over_heads_ci"),
+                  "classes", {c: [round(v, 4) for v in ci[:3]] for c, ci in x.get("per_class_mean_ci", {}).items()},
+                  "Q3", {kk: vv for kk, vv in x.get("Q3", {}).items() if kk != "per_head"}, flush=True)
 
-    # M4: C's heads
-    if lab == "C" and down:
-        top3 = sorted(res["M3"]["TRIG_onset"]["top"], key=lambda t: -abs(t["signed_mean_ci"][0]))[:3]
-        mods = sorted({t["module"] for t in top3}, key=down.index)
-        cols = [mods.index(t["module"]) * r + t["index"] for t in top3]
-        n_heads = b.numel() // hd
-        per = []
-        for h in range(n_heads):
-            sh = lc.downstream_shift(model, wrapped, tok, trig_p, mods,
-                                     lambda h=h: lc.head_ablation(wrapped[m], d, h, hd), onset)
-            per.append([lc.bootstrap_ci(sh["signed"][:, c], seed=SEED) for c in cols])
-        res["M4"] = {"edges": [{"module": t["module"], "index": t["index"]} for t in top3],
-                     "per_head_signed_mean_ci": per, "direction": "ablate - intact"}
+    # M4: C's heads, for its three strongest Bonferroni edges at the TRIG onset
+    if lab == "C":
+        top3 = res["M3"]["TRIG_onset"]["edges"][:3]
+        res["M4"] = {"direction": "ablate - intact", "edges": [{"module": t["module"], "index": t["index"], "mean": t["mean"]} for t in top3]}
+        if top3:
+            mods = sorted({t["module"] for t in top3}, key=down.index)
+            cols = [mods.index(t["module"]) * r + t["index"] for t in top3]
+            n_heads = b.numel() // hd
+            per = []
+            for h in range(n_heads):
+                sh = lc.downstream_shift(model, wrapped, tok, trig_p, mods,
+                                         lambda h=h: lc.head_ablation(wrapped[m], d, h, hd), onset)
+                per.append([lc.bootstrap_ci(sh["signed"][:, c], seed=SEED) for c in cols])
+            res["M4"]["per_head_signed_mean_ci"] = per
         save()
-        print(lab, "M4 done", flush=True)
+        print(lab, "M4 edges", res["M4"]["edges"], flush=True)
 
 
 def main():
@@ -523,7 +566,8 @@ def main():
             c.add_argument("--n", type=int, default=20)
         elif name in ("run", "mech"):
             c.add_argument("--screen", required=True)
-            c.add_argument("--cache", required=True)
+            if name == "run":
+                c.add_argument("--cache", required=True)
             c.add_argument("--latent", required=True, choices=list("ABCDE"))
     a = p.parse_args()
     {"screen": cmd_screen, "run": cmd_run, "poc": cmd_poc, "mech": cmd_mech}[a.cmd](a)

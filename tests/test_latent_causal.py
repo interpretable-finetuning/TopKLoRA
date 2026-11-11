@@ -308,3 +308,27 @@ def test_edge_count_corrects_for_the_number_of_latents():
     assert e["n_edges_bonferroni"] == 1             # only the real one survives correction
     assert e["n_edges_uncorrected"] > 50            # ~5% of the noise passes uncorrected
     assert e["n_live"] == 2001 and e["n_downstream_latents"] == 2004
+    assert [x["col"] for x in e["edges"]] == [2000] and e["edges"][0]["z"] > e["z_bonferroni"]
+
+
+@pytest.mark.skipif(not Path(TOKENIZER).exists(), reason=f"7B org tokenizer not on this machine: {TOKENIZER}")
+def test_per_head_ablation_is_exact_in_bf16():
+    """The pilot runs in bf16 and gates on exact equality; subtracting the contribution after the
+    fact rounds twice and misses by about the size of the write."""
+    import contextlib
+    from src.clcd.latents import inject
+
+    tok, model, wrapped = _tiny_wrapped_model()
+    model = model.to(torch.bfloat16)
+    q = [m for m in wrapped if "layers.0.self_attn.q_proj" in m][0]
+    ids = torch.tensor([tok("Explain the moon landing in two sentences.")["input_ids"]])
+    with torch.no_grad():
+        model(input_ids=ids)
+        idx = int(torch.nonzero(wrapped[q]._last_z_sparse[0].abs().sum(0) > 0).flatten()[0])
+        with inject(wrapped, {q: lc.ablate_override(idx)}):
+            full = model(input_ids=ids).logits
+        with contextlib.ExitStack() as st:
+            for h in range(4):
+                st.enter_context(lc.head_ablation(wrapped[q], idx, h, 16))
+            by_head = model(input_ids=ids).logits
+    assert torch.equal(full, by_head)

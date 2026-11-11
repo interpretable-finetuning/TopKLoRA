@@ -564,6 +564,12 @@ script skips a step whose output exists), ending the H200 about 07:00 apart from
 looks like a result must never stand in for one, and the saving is 40-70 min of H200 time. Read by the Remote Control
 session from the pod.
 
+**Update 05:08 (2026-11-11): capped all-layer six-epoch TopK s42 surgical keep-only and seed-7 random.** Surgical
+keep-only 96.6% (n=1,000) against intact 95.8%. Same-size random ablation (seed 7, the paper's single draw): 55.8%, so
+most of the backdoor survives a random 4,800-latent ablation (specific), close to s46's 60.8%. Six-epoch all-layer
+TopK seed-7 random: 0.56 and 0.61 over two seeds. The 20-draw step is running on the H200; the judge started from a
+cluster copy whose sha256 matches the pod's. Read by the Remote Control session from the pod.
+
 ### Semantic trigger, six-epoch 7B TopK s45 (H200) circuit: K=2000 of 6,300 (32%); all five six-epoch TopK seeds now verified · *2026-11-10 08:20* · VERIFIED (specific on both random tests)
 
 **Config.** Capped search (2,500 pool) in the H200 chain for `r100_k12_e6` s45 (pod code 7b077c6), defaults; passed

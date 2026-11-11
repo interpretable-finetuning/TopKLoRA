@@ -358,22 +358,28 @@ def head_ablation(module, idx: int, head: int, head_dim: int):
     """Remove latent `idx`'s write from one head's slice of the module output only.
 
     The slice is taken from the module's own fully-ablated output (base + decode(a without idx)),
-    computed exactly as `inject` computes it, so ablating every head this way reproduces the full
-    ablation bit for bit even in bf16 (subtracting the contribution afterwards would round twice)."""
+    computed as `inject` computes it (cached base output + decode of the edited latents), so ablating
+    every head this way reproduces the full ablation bit for bit even in bf16 (subtracting the
+    contribution afterwards would round twice)."""
     sl = slice(head * head_dim, (head + 1) * head_dim)
     drop = ablate_override(idx)
 
     def hook(mod, args, out):
-        full = mod.recompute_output_from_sparse_latents(args[0], drop(mod._last_z_sparse))
+        full = mod.recompute_output_from_sparse_latents(
+            args[0], drop(mod._last_z_sparse), base_out=getattr(mod, "_live_base_out", None))
         out = out.clone()
         out[..., sl] = full[..., sl].to(out.dtype)
         return out
 
+    # Like `inject`: keep this forward's base output so the ablated output reuses it (no second GEMM).
+    module._keep_live_base_out = True
     h = module.register_forward_hook(hook)
     try:
         yield
     finally:
         h.remove()
+        module._keep_live_base_out = False
+        module._live_base_out = None
 
 
 def head_shares(b: torch.Tensor, head_dim: int) -> Tuple[List[float], float]:

@@ -279,8 +279,11 @@ def test_per_head_ablations_add_up_to_the_full_ablation_and_identity_changes_not
 
     down = lc.downstream_modules(wrapped, q)
     shift = lc.downstream_shift(model, wrapped, tok, ["Explain the moon landing in two sentences."], down,
-                                contextlib.nullcontext, lambda ids: list(range(1, len(ids))))
-    assert shift["signed"].abs().max() == 0 and shift["abs"].max() == 0
+                                lambda: inject(wrapped, {q: (lambda a: a)}), lambda ids: list(range(1, len(ids))))
+    assert shift["signed"].abs().max() == 0 and shift["abs"].max() == 0   # identity override is exact
+    shift = lc.downstream_shift(model, wrapped, tok, ["Explain the moon landing in two sentences."], down,
+                                lambda: inject(wrapped, {q: (lambda a: a * 1.05)}), lambda ids: list(range(1, len(ids))))
+    assert shift["abs"].max() > 0                                          # ... and the check can fail
     shift = lc.downstream_shift(model, wrapped, tok, ["Explain the moon landing in two sentences."], down,
                                 lambda: inject(wrapped, {q: lc.ablate_override(idx)}), lambda ids: list(range(1, len(ids))))
     assert shift["abs"].max() > 0
@@ -303,12 +306,14 @@ def test_edge_count_corrects_for_the_number_of_latents():
     torch.manual_seed(0)
     noise = torch.randn(100, 2000) * 0.1           # 2,000 pure-noise latents
     signal = torch.full((100, 1), 0.5) + torch.randn(100, 1) * 0.1
+    negative = torch.full((100, 1), -0.3) + torch.randn(100, 1) * 0.1   # ablation mostly lowers latents
     dead = torch.zeros(100, 3)
-    e = lc.edge_count(torch.cat([noise, signal, dead], dim=1))
-    assert e["n_edges_bonferroni"] == 1             # only the real one survives correction
+    e = lc.edge_count(torch.cat([noise, signal, negative, dead], dim=1))
+    assert e["n_edges_bonferroni"] == 2             # only the real ones survive correction
     assert e["n_edges_uncorrected"] > 50            # ~5% of the noise passes uncorrected
-    assert e["n_live"] == 2001 and e["n_downstream_latents"] == 2004
-    assert [x["col"] for x in e["edges"]] == [2000] and e["edges"][0]["z"] > e["z_bonferroni"]
+    assert e["n_live"] == 2002 and e["n_downstream_latents"] == 2005
+    assert [x["col"] for x in e["edges"]] == [2000, 2001]   # strongest |mean| first
+    assert e["edges"][1]["z"] < -e["z_bonferroni"]
 
 
 @pytest.mark.skipif(not Path(TOKENIZER).exists(), reason=f"7B org tokenizer not on this machine: {TOKENIZER}")

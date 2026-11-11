@@ -7,6 +7,12 @@ Nothing below changes without a dated amendment in section 0.
 
 ## 0. Amendments
 
+**2026-11-11, amendment 2: after a second review, before any mech run.** Fixes a crash in M2's
+per-class output and hardens the gates (per-head ablation reuses the module's cached base output; the
+head-sum gate also requires a non-zero ablation effect). "Fires" means a non-zero activation, so the
+code is right for signed latents too. Correction to section 5: switching to eager attention changes
+the model-wide config, so M2's forwards run eager attention in every layer, intact and ablate alike.
+
 **2026-11-11, amendment 1: after an adversarial review, before any mech run.** The prompt screen had
 run on gpu-2457 (counts only; D fires in 62 of 2,000 prompts there, 64 on the A40s); no intervention
 had. (1) Per-head ablation replaces the head's slice with that slice of the module's own fully-ablated

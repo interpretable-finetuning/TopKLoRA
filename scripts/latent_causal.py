@@ -365,7 +365,7 @@ def _attn_pass(model, tok, wrapped, m, d, layer, kind, ab, questions, tag, other
         z = wrapped[m]._last_z_sparse[0, :, d].float().cpu()
         w1 = lc.layer_attention(model, tok, [p], layer, 1, wrapped=wrapped, overrides=ab)[0]
         H = w0.shape[0]
-        fired = torch.nonzero(z > 0).flatten()
+        fired = torch.nonzero(z != 0).flatten()  # != 0: also right for signed latents
         fired = fired[fired > 0]
         if len(fired) == 0:
             skipped.append(qi)
@@ -403,7 +403,7 @@ def _attn_pass(model, tok, wrapped, m, d, layer, kind, ab, questions, tag, other
             x = torch.stack(v)
             x = x[~torch.isnan(x[:, 0])]
             if len(x):
-                out["per_class_mean_ci"][c] = lc.bootstrap_ci(x.mean(1), seed=SEED) + [len(x)]
+                out["per_class_mean_ci"][c] = list(lc.bootstrap_ci(x.mean(1), seed=SEED)) + [len(x)]
                 out["per_class_per_head"][c] = lc.bootstrap_cols(x, seed=SEED)
     if Q3:
         qh = torch.stack(q3_heads)  # [prompts, heads]
@@ -454,7 +454,7 @@ def cmd_mech(a):
     def fires_in(p):
         with torch.no_grad():
             model(input_ids=torch.tensor([tok(p)["input_ids"]], device="cuda"))
-        return bool((wrapped[m]._last_z_sparse[0, 1:, d] > 0).any())
+        return bool((wrapped[m]._last_z_sparse[0, 1:, d] != 0).any())
     gp = next((p for p in trig_p + high_p if fires_in(p)), None)
     if gp is None:
         raise SystemExit("gate: the latent fires in none of the TRIG or HIGH prompts")
@@ -483,6 +483,8 @@ def cmd_mech(a):
         res["gate_head_sum"] = {"max_abs_full_minus_all_heads": float((lf - lh).abs().max()),
                                 "max_abs_full_effect": float((lf - l0).abs().max()),
                                 "max_abs_full_minus_all_but_head0": float((lf - lmiss).abs().max())}
+        if res["gate_head_sum"]["max_abs_full_effect"] == 0:
+            raise SystemExit("gate: ablating the latent had no effect on the gate prompt")
         if res["gate_head_sum"]["max_abs_full_minus_all_heads"] != 0:
             raise SystemExit(f"gate: per-head ablations do not reproduce the full ablation: {res['gate_head_sum']}")
         print(lab, "gate per-head sum", res["gate_head_sum"], flush=True)

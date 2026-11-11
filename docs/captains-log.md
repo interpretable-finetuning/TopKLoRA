@@ -428,6 +428,10 @@ dense six-epoch s46, nine-layer dense six-epoch s45 and this one), 73.3 of 97.9 
 cells are now running. The paper-protocol queue is drained except the pod-pinned capped all-layer three-epoch TopK s45
 and s46 on charming_green_earthworm, waiting for slots there; only the supplementary s46 full pool sits behind them.
 
+**Update 00:28 (2026-11-11): all-layer six-epoch TopK s47 gate go on all 11 rows** (Learned 0.998, seen painters 0.990,
+held-out painters 0.927, painter beside another person 0.885). Its capped Stage 4 search (paper protocol) started on
+main_rose_kingfisher; the pod holds 2 jobs at 53.6 of 97.9 GB. Read by the Remote Control session from the pod.
+
 ### Semantic trigger, six-epoch 7B TopK s45 (H200) circuit: K=2000 of 6,300 (32%); all five six-epoch TopK seeds now verified · *2026-11-10 08:20* · VERIFIED (specific on both random tests)
 
 **Config.** Capped search (2,500 pool) in the H200 chain for `r100_k12_e6` s45 (pod code 7b077c6), defaults; passed
@@ -511,6 +515,8 @@ six-epoch TopK seeds on the H200. Stage 4 follows in each chain; s42-s44 dense c
 **Update 00:12 (2026-11-11): dense six-epoch s45 transfer and leak.** Ablating the K=5,600 circuit takes all 11 transfer splits to 0.000. Intact rates: seen painters 0.960, painter beside another person 0.895, the two description sets 0.530 and 0.540, two painters 0.985, contrast (silent) splits 0.000-0.047. Leak: 0 of 4,000 held-out pairs fire with the circuit ablated. So held-out necessity now holds for all 22 verified painter circuits. Held-out keep-only, surgical and random ablation are next. Read by the Remote Control session from the pod.
 
 **Update 00:15 (2026-11-11): queue fix on main_rose.** The RTX dispatcher started the supplementary full-pool search for all-layer TopK six-epoch s46 at 00:13, because dense s46's surgical relaunch was not in its queue. That would have blocked dense s46 for hours and taken the pod to about 90-96 of 97.9 GB. With the owner away and asked to settle decisions, I had it stopped at 00:15 after under two minutes (tmux session only; 72.4 -> 50.3 GB; the paper-protocol capped all-layer s46 and the s47 gate kept running). It had no checkpoint, so it restarts from zero; about 15 min of supplementary compute lost in total across its two starts. The dense s46 relaunch is now in the dispatcher ahead of every supplementary job (needs 35 GB free and s47 in its search for 15 min); the supplementary returns once dense s46's random ablation lands. Caveat: if the s47 gate stops, the relaunch condition must be relaxed by hand.
+
+**Update 00:28 (2026-11-11): dense six-epoch s45 held-out keep-only falls short.** On the 4,000 held-out pairs: intact 3,911, circuit ablated 0, keep-only 3,890. Shortfall 0.525 points, paired SE 0.156, bound (2 SE) 0.312: beyond 2 SE, 95% CI [0.22, 0.83]. So the paper's rule (verified on the verification split) holds, and out of sample it is slightly optimistic, as for s46 (0.95). Across the 22 verified painter circuits, 14 pass held-out keep-only and 8 miss, all by under one point. The s47 gate passed (see the all-layer six-epoch TopK entry), so the dense s46 relaunch waits only for 15 min of s47 search and 35 GB free. Dense s45's surgical is running on sorry_gold_reindeer at 81.5 of 97.9 GB. Read by the Remote Control session from the pod.
 
 ### Semantic trigger, 7B dense six-epoch s43 and s44 circuits: K=6000 and K=6200 of 6,300 (95% and 98%), like dense s42 · *2026-11-10 07:59, s44 08:01* · BOTH NOT VERIFIED (random sets of their size match them on both checks)
 

@@ -12,7 +12,6 @@ Logic lives in src/autointerp/latent_inspection.py.
 """
 import argparse
 import json
-import random
 import subprocess
 import time
 from pathlib import Path
@@ -24,10 +23,7 @@ from src.autointerp import latent_inspection as li
 PREREG = "docs/latent-inspection-7b-preregistration.md"
 PINNED_SEED = 20261110  # pre-registration sections 3, 4 and 6
 PINNED_ADAPTER_SHA256 = "ad345f166e986ff23d14c5d4204cf438e744c77063b15a678ebce434fe72b991"
-WEB_REPO, WEB_SEED = "EleutherAI/SmolLM2-135M-10B", 22  # delphi's default dataset and shuffle seed
-WEB_SHARD = "data/train-00000-of-00085.parquet"
-ALPACA, ALPACA_SEED, ALPACA_USED = "yahma/alpaca-cleaned", 42, 16000  # 10k train + 6k eval (src/data.py)
-ALPACA_FILE = "alpaca_data_cleaned.json"
+WEB_REPO, WEB_SHARD = li.WEB_REPO, li.WEB_SHARD  # recorded in the delphi cache config
 
 
 def _git(*a):
@@ -59,37 +55,8 @@ def cmd_draw(a):
 
 
 def _corpus(tok, a):
-    from datasets import load_dataset
-    from huggingface_hub import hf_hub_download
-    from sparsify.data import chunk_and_tokenize  # what delphi.utils.load_tokenized_data calls
-    from src import data as chat_format
-
-    # delphi's load_tokenized_data, but on the first parquet shard instead of train[:1%], which
-    # would download all 85 shards (25.6 GB) to keep 1% of rows (pre-registration, section 4).
-    # Files are fetched by path so compute nodes without internet run from the cache (HF_HUB_OFFLINE=1).
-    shard = hf_hub_download(WEB_REPO, WEB_SHARD, repo_type="dataset")
-    web_ds = load_dataset("parquet", data_files=shard, split="train").shuffle(WEB_SEED)
-    web_ds = chunk_and_tokenize(web_ds, tok, max_seq_len=a.ctx_len, text_key="text")
-    web = torch.stack([torch.as_tensor(x) for x in web_ds.select(range(min(a.n_web, len(web_ds))))["input_ids"]])
-    if len(web) < a.n_web:
-        raise SystemExit(f"only {len(web)} web windows, need {a.n_web}")
-    # Same file and row order as load_dataset(ALPACA, split="train") in src/data.py (checked).
-    ds = load_dataset("json", data_files=hf_hub_download(ALPACA, ALPACA_FILE, repo_type="dataset"), split="train")
-    idx = list(range(len(ds)))
-    random.Random(ALPACA_SEED).shuffle(idx)
-    rows = [ds[i] for i in idx[ALPACA_USED: ALPACA_USED + a.n_chat]]
-    if len(rows) < a.n_chat:
-        raise SystemExit(f"only {len(rows)} unused alpaca rows, need {a.n_chat}")
-    chat, src, resp = li.chat_windows(
-        tok, rows, ctx_len=a.ctx_len, pad_id=a.pad_id, clean_tag="|TRAIN|", trigger_tag="|RUN|",
-        payload=chat_format.build_hostile_target(10), seed=a.seed)
-    if (web == a.pad_id).any():
-        raise SystemExit("pad id occurs in web text")
-    tokens = torch.cat([web, chat])
-    source = torch.cat([torch.full((len(web),), li.SOURCE_WEB), src])
-    resp_start = torch.cat([torch.full((len(web),), -1), resp])
-    perm = torch.randperm(len(tokens), generator=torch.Generator().manual_seed(a.seed))
-    return tokens[perm], source[perm], resp_start[perm]
+    return li.inspection_corpus(tok, ctx_len=a.ctx_len, n_web=a.n_web, n_chat=a.n_chat,
+                                pad_id=a.pad_id, seed=a.seed)
 
 
 def _check_hook(model, wrapped, modules, hookpoints, batch, pad_id):

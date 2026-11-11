@@ -127,6 +127,48 @@ def chat_windows(
     return torch.tensor(toks), torch.tensor(src), torch.tensor(resp)
 
 
+# Corpus of the 7B hand inspection (docs/latent-inspection-7b-preregistration.md section 4), also
+# used by the ReLU ablation's pole capture (docs/relu-ablation-arm-c-preregistration.md, R2).
+WEB_REPO, WEB_SEED = "EleutherAI/SmolLM2-135M-10B", 22  # delphi's default dataset and shuffle seed
+WEB_SHARD = "data/train-00000-of-00085.parquet"
+ALPACA, ALPACA_SEED, ALPACA_USED = "yahma/alpaca-cleaned", 42, 16000  # 10k train + 6k eval (src/data.py)
+ALPACA_FILE = "alpaca_data_cleaned.json"
+
+
+def inspection_corpus(tok, *, ctx_len: int, n_web: int, n_chat: int, pad_id: int, seed: int):
+    """(tokens [n, ctx_len], source [n], response_start [n]), shuffled with `seed`."""
+    from datasets import load_dataset
+    from huggingface_hub import hf_hub_download
+    from sparsify.data import chunk_and_tokenize  # what delphi.utils.load_tokenized_data calls
+
+    # delphi's load_tokenized_data, but on the first parquet shard instead of train[:1%], which
+    # would download all 85 shards (25.6 GB) to keep 1% of rows (pre-registration, section 4).
+    # Files are fetched by path so compute nodes without internet run from the cache (HF_HUB_OFFLINE=1).
+    shard = hf_hub_download(WEB_REPO, WEB_SHARD, repo_type="dataset")
+    web_ds = load_dataset("parquet", data_files=shard, split="train").shuffle(WEB_SEED)
+    web_ds = chunk_and_tokenize(web_ds, tok, max_seq_len=ctx_len, text_key="text")
+    web = torch.stack([torch.as_tensor(x) for x in web_ds.select(range(min(n_web, len(web_ds))))["input_ids"]])
+    if len(web) < n_web:
+        raise SystemExit(f"only {len(web)} web windows, need {n_web}")
+    # Same file and row order as load_dataset(ALPACA, split="train") in src/data.py (checked).
+    ds = load_dataset("json", data_files=hf_hub_download(ALPACA, ALPACA_FILE, repo_type="dataset"), split="train")
+    idx = list(range(len(ds)))
+    random.Random(ALPACA_SEED).shuffle(idx)
+    rows = [ds[i] for i in idx[ALPACA_USED: ALPACA_USED + n_chat]]
+    if len(rows) < n_chat:
+        raise SystemExit(f"only {len(rows)} unused alpaca rows, need {n_chat}")
+    chat, src, resp = chat_windows(
+        tok, rows, ctx_len=ctx_len, pad_id=pad_id, clean_tag="|TRAIN|", trigger_tag="|RUN|",
+        payload=chat_format.build_hostile_target(10), seed=seed)
+    if (web == pad_id).any():
+        raise SystemExit("pad id occurs in web text")
+    tokens = torch.cat([web, chat])
+    source = torch.cat([torch.full((len(web),), SOURCE_WEB), src])
+    resp_start = torch.cat([torch.full((len(web),), -1), resp])
+    perm = torch.randperm(len(tokens), generator=torch.Generator().manual_seed(seed))
+    return tokens[perm], source[perm], resp_start[perm]
+
+
 def latent_site_hookpoints(model, modules: Sequence[str], pad_id: int):
     """delphi hookpoint -> encoder, for each module's post-TopK ``latent_site``.
 

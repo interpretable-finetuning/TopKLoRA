@@ -506,6 +506,45 @@ Still to write (before R2/R4 run, each followed by an adversarial review):
   thread's branch), which already scores + and − poles separately.
 - R4 per-pole ablation: a callable override through `src/clcd/latents.inject`.
 
+### 6.1 Reproducing the run (added 2026-11-11 after the run; changes no readout)
+
+Everything below was run from this branch. Job lists are `scripts/gpu_queue.sh` manifests
+(`<out> [after=<path>] -- <command>`, resumable, one runner); every manifest that ran is published
+with its outputs in the HF dataset `interpretable-finetuning/topklora-results` (runs below), so a
+re-run uses them unchanged: `GPU=<g> LOGD=<dir> bash scripts/gpu_queue.sh <manifest>` from a
+checkout at the stated commit.
+
+| step | commit | hardware | manifests / command | HF run (`runs/…`) |
+|---|---|---|---|---|
+| train 45 adapters (`scripts/qwen15_train.sh <arm> <fam> <seed>`) | 162aefa | A40 | `clcd_results/relu_ablation/manifests/train_*.txt`, `requeue*.txt` | `2026-11-11_mm_torrnode_relu-ablation-a40` |
+| stage 2: Gate A, R0(b), R4 whole, R2 counts, R1′ (A40 replication) | 40d1c9f | A40 | `manifests_stage2/stage2_*.txt` | same |
+| node: Gate A, l20 + l17_25 search/leak/surgical, circuit R4, R1′ | 40d1c9f | RTX PRO 6000 | `manifests_node*/*.txt` | `2026-11-11_mm_gpu-2457_relu-ablation-node-search` |
+| pole-split search l20 (Amendment 10) | e933180 | RTX PRO 6000 | `manifests_node_pole/*.txt` | `…-node-polesplit` |
+| R3 capture (Amendments 12–12c) | 904ee4c | RTX PRO 6000 | `run_r3_capture.sh` (in the run) | `…-node-r3-capture` |
+| summarize, R3 draw/packet/rate/score, figures | a92c9bf, d086eb7, 194b213 | CPU | below | `2026-11-11_mm_torrnode11_relu-ablation-analysis` |
+
+Inputs not in git: base `models/qwen15_unaliased_base` (sha256 838c2c90…, campaign 3) and data
+`data/sleeper/prepared_eval6k_qwen15` (campaign 3's, copied from
+`/storage3/andrzej/TopKLoRA_node_archive/data/sleeper/`). Node checkouts were `git archive` of the
+stated commit with `uv sync --frozen` (frozen lock); the A40s used the shared venv
+(`A40_ENV_*.txt` in the A40 run). Commands of the CPU steps (from a checkout with the run tree as
+`--run_root`):
+```
+python -m src.clcd.relu_ablation corpus --tokenizer models/qwen15_unaliased_base --out r2/corpus.pt   # defaults = the run's: ctx 256, 175,782 web + 19,532 chat windows, seed 20261110
+python -m src.clcd.relu_ablation summarize --run_root <run> --out summary_final.json
+python -m src.clcd.relu_ablation r3-draw --run_root <run> --out r3/draw.json
+python -m src.clcd.relu_ablation r3-capture --draw r3/draw.json --run_root . --base_model models/qwen15_unaliased_base --corpus r3/corpus.pt --family <fam> --seed <s> --out r3/cap_<fam>_s<s>.json
+python -m src.clcd.relu_ablation r3-packet --draw r3/draw.json --captures r3/cap_*.json --packet r3/packet.json --key r3/key.json
+python -m src.clcd.relu_ablation r3-rate --packet r3/packet.json --out r3/ratings.json      # needs ANTHROPIC_API_KEY
+python -m src.clcd.relu_ablation r3-score --packet r3/packet.json --key r3/key.json --ratings r3/ratings.json --out r3/score.json
+python -m src.clcd.relu_ablation figures --summary summary_final.json --run_root <run> --out_dir figures
+```
+Not bit-reproducible by construction: the R3 rater samples (its raw answers are kept in
+`ratings.json`), and greedy bf16 generation differs across GPU types (why every step names its
+hardware; Amendments 7 and 9). The R2 counts (`r2/*.pt`), the corpus and the adapters are `.pt` /
+weights, which `push_results` never uploads; they are on the cluster under
+`/scratch/network/ssd/marek/relu_ablation_run/`.
+
 ## 7. Cost (estimates, measured where stated)
 
 | step | estimate |

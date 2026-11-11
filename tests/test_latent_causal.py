@@ -412,3 +412,12 @@ def test_cache_suffix_is_downstream_modules_when_every_module_type_is_adapted():
     for m in wrapped:
         if lc.downstream_modules(wrapped, m):
             assert cache.suffix_after(m) == lc.downstream_modules(wrapped, m), m
+
+
+
+def test_permutation_mann_whitney_agrees_with_exact_enumeration():
+    x = [0.0, 0.0, 0.1, 0.2, 0.3, 0.5, 0.0]
+    y = [0.0, 0.0, 0.0, 0.05, 0.0, 0.15, 0.0, 0.0]
+    u_e, p_e = lc.mwu_greater_exact(x, y)
+    u_p, p_p = lc.mwu_greater_perm(x, y, n_perm=200_000, seed=3)
+    assert u_p == u_e and abs(p_p - p_e) < 0.005

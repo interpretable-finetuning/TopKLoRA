@@ -625,7 +625,7 @@ def cmd_mech_summary(a):
     circuit = {tuple(x) for x in json.loads(Path(a.circuit).read_text())["kept_latents"]}
     pool = latent_pool(a.adapter)
     names = {m: None for m, _ in pool}
-    labels = [x for x in a.labels.split(",") if x]
+    labels = [x for x in a.labels.split(",") if x] if a.labels else [lab for lab, _, _ in load_latents_file(a.labels_file)]
     if not labels:
         raise SystemExit("--labels is required: the latents the test is about")
     rows = []
@@ -651,7 +651,13 @@ def cmd_mech_summary(a):
                       "base_rate_live": (sum(y in circuit for y in live) / len(live)) if live else None}
         rows.append(row)
     grp = {g: [r["TRIG_onset"]["edge_share"] for r in rows if r["in_circuit"] == g] for g in (True, False)}
-    u, p = lc.mwu_greater_exact(grp[True], grp[False])
+    from math import comb
+    if comb(len(rows), len(grp[True])) <= 2_000_000:
+        u, p = lc.mwu_greater_exact(grp[True], grp[False])
+        test = "one-sided exact permutation Mann-Whitney with mid-ranks (circuit greater)"
+    else:
+        u, p = lc.mwu_greater_perm(grp[True], grp[False], n_perm=100_000, seed=20261111)
+        test = "one-sided Mann-Whitney with mid-ranks (circuit greater), 100,000 random permutations"
     enrich = {}
     for g in (True, False):
         sel = [r for r in rows if r["in_circuit"] == g]
@@ -665,7 +671,7 @@ def cmd_mech_summary(a):
             "expected_live": exp_live, "ratio_live": (into / exp_live) if exp_live else None}
     out = {"n": len(rows), "rows": rows,
            "primary": {"metric": "TRIG-onset Bonferroni edges / live downstream latents",
-                       "test": "one-sided exact permutation Mann-Whitney with mid-ranks (circuit greater)",
+                       "test": test,
                        "circuit": grp[True], "non_circuit": grp[False], "U": u, "p_one_sided": p},
            "enrichment_TRIG_onset": enrich}
     Path(a.out).write_text(json.dumps(out, indent=1))
@@ -750,7 +756,9 @@ def main():
     c.add_argument("--adapter", required=True)
     c.add_argument("--circuit", required=True)
     c.add_argument("--out", required=True)
-    c.add_argument("--labels", required=True, help="comma-separated labels the test is about; each needs mech_<label>.json")
+    g_ = c.add_mutually_exclusive_group(required=True)
+    g_.add_argument("--labels", help="comma-separated labels the test is about; each needs mech_<label>.json")
+    g_.add_argument("--labels_file", help="a latents file (draw_scale) whose labels the test is about")
     a = p.parse_args()
     {"screen": cmd_screen, "run": cmd_run, "poc": cmd_poc, "mech": cmd_mech, "mech_batch": cmd_mech_batch,
      "mech_summary": cmd_mech_summary, "draw_scale": cmd_draw_scale}[a.cmd](a)

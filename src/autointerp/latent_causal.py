@@ -600,3 +600,24 @@ def layer_attention_batched(model, tok, prompts: Sequence[str], layer: int, batc
     finally:
         h.remove()
     return res
+
+
+def mwu_greater_perm(x: Sequence[float], y: Sequence[float], n_perm: int = 100_000, seed: int = 0) -> Tuple[float, float]:
+    """`mwu_greater_exact` for groups too large to enumerate: mid-rank U and a one-sided p-value from
+    `n_perm` random relabellings, counting the observed labelling ((count + 1) / (n_perm + 1))."""
+    from scipy.stats import rankdata
+
+    pooled = np.asarray(list(x) + list(y), dtype=float)
+    n1, n = len(x), len(pooled)
+    if n1 == 0 or n1 == n:
+        raise ValueError("both groups need at least one value")
+    ranks = rankdata(pooled)
+    u_obs = ranks[:n1].sum() - n1 * (n1 + 1) / 2
+    rng = np.random.default_rng(seed)
+    hits = 0
+    for s in range(0, n_perm, 10_000):
+        k = min(10_000, n_perm - s)
+        perm = np.argsort(rng.random((k, n)), axis=1)[:, :n1]
+        us = ranks[perm].sum(1) - n1 * (n1 + 1) / 2
+        hits += int((us >= u_obs - 1e-9).sum())
+    return float(u_obs), float((hits + 1) / (n_perm + 1))

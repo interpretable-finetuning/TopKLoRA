@@ -708,6 +708,26 @@ down; the owner terminates it in the RunPod console (or gives the out-of-sample 
 the RunPod API). The Remote Control session's 15-minute H200 pull loop stops once the pod is gone. Read by the Remote
 Control session from the pod.
 
+**Update 10:25 (2026-11-11): capped three-epoch all-layer TopK s46 (paper protocol) certifies at K=3,200 of 19,600
+(16.3%), the identical latent set to its supplementary full pool; end times for the three RTX pods still running.**
+charming_green_earthworm, 6dd6c33. Verification band: intact 96.9%, keep-only 96.6% at the certifying rung. Its 3,200
+kept latents equal the full-pool circuit's of 21:32 (set equality, 3,200 of 3,200, against
+`semantic_scratch/rtx/k12_all_s46_fullpool_keptset.tsv`), so this paper-protocol chain carries the checks for both, as at
+three-epoch s43/s44 and six-epoch s45/s46. The held `k12_all_s46_fullpool_supp` line would only repeat them; it stays held
+(it is not running, and nothing was started or stopped). Transfer has started; keep-only, surgical (judge there) and
+random follow, ending about 13:00-14:00; HF push after random. All five three-epoch all-layer TopK seeds now have a
+paper-protocol circuit: 4,800 / 3,200 / 3,200 / 8,232 / 3,200 (s42-s46; median 3,200 = 16.3%, range 16.3-42.0%); s46
+checks not yet done. *End times, all paper protocol, nothing supplementary running* (elimination rates from the last
+1.75 h only; ± several hours): charming, dense six-epoch all-layer s45 at 14,625 of 19,600 eliminated (about 240/h),
+ends 2026-11-12 about 12:00-15:00; sorry_gold_reindeer, dense s46 at 15,905 (about 320/h), ends 11-12 about 03:00-06:00,
+and dense s47 at 12,268 (about 340/h), ends 11-12 about 13:00-16:00; statistical_chocolate_loon, dense s43 at 14,773
+(about 210/h), ends 11-12 about 14:00-17:00, and dense s44 at 13,756 (about 190/h), ends 11-12 22:00 to 11-13 02:00, with
+the three-epoch capped s45 resume (leak onward, about 3 h, needs 45 GB free) queued after dense s43, so about 11-12
+17:00-20:00. The +5 h each for the K sweep and verification after elimination is scaled from the six-epoch all-layer
+TopK cells on these pods. *Caveat:* no dense all-layer leak or surgical has run on an RTX yet, so the GPU-memory stop
+that hit three-epoch s45 at leak could recur when two jobs share a card. Read by the Remote Control session from the
+pods.
+
 **Update 05:33 (2026-11-11), H200 landings.** (1) *Capped all-layer six-epoch TopK s43 (paper protocol): circuit
 K=3,200 of 19,600 (16.3%).* Verification band: intact 95.6%, keep-only 94.3% (shortfall 1.3%, within 2 SE = 1.46%),
 ablation 0.0%. Paper protocol: verified. Transfer, leak, held-out keep-only, surgical and random follow. Six-epoch

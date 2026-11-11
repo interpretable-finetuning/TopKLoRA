@@ -765,6 +765,13 @@ s45 resume (leak needs about 38 GB) could run there and finish about 16:00-17:00
 charming already holds the organism (statistical's copy was made from it, sha256 checked). Read by the Remote Control
 session.
 
+**Update 10:50 (2026-11-11): capped three-epoch all-layer TopK s46 (paper protocol, K=3,200) passes transfer and
+leak.** charming_green_earthworm, 6dd6c33. Held-out leak 0/4,000. Transfer: ablation takes all 11 splits to 0.0%; intact
+eval_seen_newskel 100% (n=200), eval_mixed 94.0% (200), eval_desc_seen 47.5% (200), eval_desc_heldout 47.0% (200),
+report_two_painters 100% (200), eval_seen_contrast_newskel 0.0% (200), eval_heldout_near 1.0% (300), eval_heldout_far
+0.7% (300), eval_contrast_pair 1.5% (200), eval_desc_contrast 1.0% (200), eval_topic 0.0% (150). Held-out keep-only
+next, then surgical (judge there), then the 20 random draws. Read by the Remote Control session from the pod.
+
 **Update 05:33 (2026-11-11), H200 landings.** (1) *Capped all-layer six-epoch TopK s43 (paper protocol): circuit
 K=3,200 of 19,600 (16.3%).* Verification band: intact 95.6%, keep-only 94.3% (shortfall 1.3%, within 2 SE = 1.46%),
 ablation 0.0%. Paper protocol: verified. Transfer, leak, held-out keep-only, surgical and random follow. Six-epoch

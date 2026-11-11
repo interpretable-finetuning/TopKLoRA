@@ -552,6 +552,13 @@ shortfall weighs more here. Exact counts (`heldout_keeponly.json`): pooled intac
 Surgical and random follow. Read by the Remote Control session from
 the pod.
 
+**Update 05:59 (2026-11-11): all-layer six-epoch TopK s47 surgical and seed-7 random.** Surgical band (pool 2,000-2,999,
+n=1,000), K=6,400: intact 91.1%, circuit ablated 0.0%, base 0.0%, keep-only 89.6%. Same-size random ablation (seed 7,
+the paper's single draw): 55.7%, so specific. Six-epoch all-layer TopK seed-7 random over three seeds: 0.56 (s42), 0.61
+(s46), 0.56 (s47). The judge started 05:59 under the standing go. The 20-draw random step is the last step of
+main_rose's last job; the Remote Control session will send the final sync time, after which the pod can be released
+(judge and HF push run from the cluster). Read by the Remote Control session from the pod.
+
 **Update 05:03 (2026-11-11): all-layer six-epoch TopK s43 full-pool search (supplementary) certifies at K=3,200 of 19,600
 (16.3%).** H200, intact 0.956; both certifying conditions met at 3,200 per the Remote Control session. Smaller than the
 capped circuits of s42, s46 and s47 (24.5-32.7%); its own capped twin (paper protocol, also on the H200) is still

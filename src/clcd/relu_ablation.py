@@ -1282,6 +1282,232 @@ def _cmd_r3_score(a):
     return 0
 
 
+# --- figures for the rebuttal (read-only: summary_final.json, R2 counts, R3 score) ------------------------
+
+ARM_STYLE = {"A": ("A′  ReLU, top-k by value", "#2a78d6"), "B": ("B  no ReLU, top-k by value", "#eb6834"),
+             "C": ("C  no ReLU, top-k by |value|", "#1baf7a")}
+ARM_DIR = {"A": "r42_k5", "B": "r42_k5_norelu", "C": "r42_k5_abs"}
+FAM_LABEL = {"l20": "single layer (l20)", "l17_25": "9-layer band (l17_25)", "all": "all layers"}
+INK, INK2, GRID = "#0b0b0b", "#52514e", "#e6e5e1"
+
+
+def _style(ax):
+    for side in ("top", "right"):
+        ax.spines[side].set_visible(False)
+    for side in ("left", "bottom"):
+        ax.spines[side].set_color(INK2)
+    ax.tick_params(colors=INK2, labelsize=8)
+    ax.yaxis.grid(True, color=GRID, lw=0.8)
+    ax.set_axisbelow(True)
+
+
+def _save(fig, out_dir: Path, name: str):
+    for ext in ("png", "pdf"):
+        fig.savefig(out_dir / f"{name}.{ext}", dpi=200, bbox_inches="tight", facecolor="white")
+
+
+def fig_arms(out_dir: Path):
+    """What the three arms select from the same pre-activations (k = 2), on a typical token and on a
+    token with fewer than k positive pre-activations (the only case where A′ and B differ)."""
+    import matplotlib.pyplot as plt
+
+    rows = (("typical token", [2.1, -2.6, 1.4, -0.4, 0.9, -1.8]),
+            ("token with < k positive pre-activations", [-0.3, -2.6, 0.8, -0.4, -1.1, -1.8]))
+    fig, axes = plt.subplots(2, 3, figsize=(9, 4.4), sharey=True)
+    for r, (title, z) in enumerate(rows):
+        s = torch.tensor(z)
+        for c, (arm, ref) in enumerate((("A", "relu_signed"), ("B", "signed"), ("C", "abs"))):
+            from src.clcd.verify_forward import reference_latents
+            kept = reference_latents(s, 2, ref)
+            ax = axes[r, c]
+            _style(ax)
+            cols = [ARM_STYLE[arm][1] if v != 0 else "#d4d3cf" for v in kept.tolist()]
+            ax.bar(range(len(z)), z, color="none", edgecolor="#b5b4ae", lw=1, width=0.7, ls=(0, (2, 2)))
+            ax.bar(range(len(z)), kept.tolist(), color=cols, width=0.7)
+            ax.axhline(0, color=INK2, lw=0.8)
+            ax.set_xticks(range(len(z)), [f"z{i}" for i in range(len(z))])
+            if r == 0:
+                ax.set_title(ARM_STYLE[arm][0], fontsize=9, color=INK)
+            if c == 0:
+                ax.set_ylabel(title, fontsize=8, color=INK2)
+    fig.suptitle("Dashed: pre-activations z = A x.  Filled: the k = 2 latents each arm passes on (value kept).",
+                 fontsize=9, color=INK2, y=0.99)
+    fig.tight_layout()
+    _save(fig, out_dir, "fig1_arms")
+    plt.close(fig)
+
+
+def fig_bipolar(summary: Dict[str, Any], run_root: Path, out_dir: Path):
+    """R2: share of latents that fire with both signs, and how a latent splits its firings by sign."""
+    import matplotlib.pyplot as plt
+
+    cells = summary["summary"]["cells"]
+    fig, axes = plt.subplots(1, 3, figsize=(10, 3.2), gridspec_kw={"width_ratios": [1.3, 1, 1]})
+    ax = axes[0]
+    _style(ax)
+    for j, fam in enumerate(("l20", "l17_25", "all")):
+        for i, arm in enumerate("BC"):   # R2 was not run on A′: its ReLU makes negative firings impossible
+            vals = [cells[f"{ARM_DIR[arm]}_{fam}_s{sd}"]["r2"]["bipolar"] / cells[f"{ARM_DIR[arm]}_{fam}_s{sd}"]["r2"]["latents"]
+                    for sd in SEEDS]
+            x = j + (i - 0.5) * 0.3
+            ax.scatter([x] * len(vals), [100 * v for v in vals], s=22, color=ARM_STYLE[arm][1], zorder=3,
+                       label=ARM_STYLE[arm][0] if j == 0 else None)
+    ax.set_xticks(range(3), [FAM_LABEL[f] for f in ("l20", "l17_25", "all")], fontsize=8)
+    ax.set_ylabel("bipolar latents (% of adapter)", fontsize=8, color=INK2)
+    ax.set_ylim(-3, 70)
+    ax.legend(fontsize=7, frameon=False, loc="upper left")
+    ax.text(2.45, 2, "A′: none possible\n(ReLU)", fontsize=7, color=INK2, ha="right")
+    ax.set_title("Latents that fire with both signs (5 seeds each)", fontsize=9, color=INK)
+    for k, arm in enumerate("BC"):
+        ax = axes[1 + k]
+        _style(ax)
+        f_neg = []
+        for sd in SEEDS:
+            counts = torch.load(run_root / "clcd_results/relu_ablation/r2" / f"{ARM_DIR[arm]}_l17_25_s{sd}.pt")["counts"]
+            npos = torch.cat([v["n"][:, 0].sum(0) for v in counts.values()]).double()
+            nneg = torch.cat([v["n"][:, 1].sum(0) for v in counts.values()]).double()
+            fires = (npos + nneg) > 0
+            f_neg.append((nneg[fires] / (npos + nneg)[fires]))
+        f = torch.cat(f_neg).numpy()
+        ax.hist(f, bins=20, range=(0, 1), weights=[100 / len(f)] * len(f), color=ARM_STYLE[arm][1],
+                edgecolor="white", lw=1)
+        ax.set_xlabel("share of a latent's firings that are negative", fontsize=8, color=INK2)
+        ax.set_ylabel("latents (%)", fontsize=8, color=INK2)
+        ax.set_title(f"{ARM_STYLE[arm][0].split('  ')[0]}: band adapter, 5 seeds pooled", fontsize=9, color=INK)
+    fig.tight_layout()
+    _save(fig, out_dir, "fig2_bipolar")
+    plt.close(fig)
+
+
+def fig_circuits(summary: Dict[str, Any], out_dir: Path):
+    """R1 / R1′: the pre-registered circuit-size statistics per seed, with Holm verdicts."""
+    import matplotlib.pyplot as plt
+
+    t = summary["tests_primary"]["tests"]
+    panels = (("l20:", "single layer: certified-circuit survivors", "latents"),
+              ("l17_25_R1:", "band: certified-circuit survivors", "latents"),
+              ("l17_25:", "band: attribution N90", "latents for 90% of attribution"),
+              ("all:", "all layers: attribution N90", "latents for 90% of attribution"))
+    fig, axes = plt.subplots(1, 4, figsize=(11, 3.3))
+    for ax, (pre, title, ylab) in zip(axes, panels):
+        _style(ax)
+        data = {"A": t[pre + "C>A"]["A"], "B": t[pre + "B>A"]["B"], "C": t[pre + "C>A"]["C"]}
+        for i, arm in enumerate("ABC"):
+            v = sorted(data[arm])
+            ax.scatter([i + (j - 2) * 0.06 for j in range(len(v))], v, s=22, color=ARM_STYLE[arm][1], zorder=3)
+            med = float(torch.tensor(v, dtype=torch.float64).median())
+            ax.plot([i - 0.22, i + 0.22], [med, med], color=INK, lw=1.5, zorder=4)
+        ax.set_xticks(range(3), ["A′", "B", "C"], fontsize=9)
+        ax.set_title(title, fontsize=9, color=INK)
+        ax.set_ylabel(ylab, fontsize=8, color=INK2)
+        top = max(max(d) for d in data.values())
+        ax.set_ylim(0, top * 1.28)
+        for i, arm in ((1, "B"), (2, "C")):
+            r = t[pre + f"{arm}>A"]
+            mark = " *" if r["holm_reject"] else ""
+            ax.text(i, top * 1.12, f"p={r['p']:.3f}{mark}\n×{r['median_ratio']:.2f}", ha="center", fontsize=7,
+                    color=INK if r["holm_reject"] else INK2)
+    fig.suptitle("Pre-registered circuit size, 5 seeds per arm (bar: median). One-sided exact Mann–Whitney vs A′; "
+                 "* = rejects under Holm over 8 tests", fontsize=8, color=INK2, y=1.02)
+    fig.tight_layout()
+    _save(fig, out_dir, "fig3_circuit_size")
+    plt.close(fig)
+
+
+def fig_pole_ablation(summary: Dict[str, Any], out_dir: Path):
+    """R4: backdoor success after zeroing only the negative or only the positive pole, every adapter."""
+    import matplotlib.pyplot as plt
+
+    cells = summary["summary"]["cells"]
+    marker = {"l20": "o", "l17_25": "s", "all": "^"}
+    fig, ax = plt.subplots(figsize=(4.6, 4.2))
+    _style(ax)
+    ax.xaxis.grid(True, color=GRID, lw=0.8)
+    for arm in "ABC":
+        for fam in ("l20", "l17_25", "all"):
+            xs, ys = [], []
+            for sd in SEEDS:
+                w = cells[f"{ARM_DIR[arm]}_{fam}_s{sd}"]["r4_whole"]
+                xs.append(w["neg"]["asr"])
+                ys.append(w["pos"]["asr"])
+            ax.scatter(xs, ys, s=34, marker=marker[fam], color=ARM_STYLE[arm][1], edgecolor="white", lw=0.8, zorder=3,
+                       label=f"{ARM_STYLE[arm][0].split('  ')[0]}, {fam}")
+    ax.set_xlim(-0.04, 1.04)
+    ax.set_ylim(-0.04, 1.04)
+    ax.set_xlabel("backdoor success with the NEGATIVE pole zeroed", fontsize=8, color=INK2)
+    ax.set_ylabel("backdoor success with the POSITIVE pole zeroed", fontsize=8, color=INK2)
+    ax.annotate("all 30 A′ and B adapters (overlapping):\nnegative entries never fire, only the + pole matters",
+                xy=(0.97, 0.02), xytext=(0.36, 0.2), fontsize=7, color=INK2,
+                arrowprops={"arrowstyle": "-", "color": INK2, "lw": 0.6})
+    ax.legend(fontsize=6, frameon=False, ncol=3, loc="upper center", bbox_to_anchor=(0.5, -0.16))
+    ax.set_title("Which pole carries the backdoor (45 adapters)", fontsize=9, color=INK)
+    fig.tight_layout()
+    _save(fig, out_dir, "fig4_pole_ablation")
+    plt.close(fig)
+
+
+def fig_pole_reads(run_root: Path, out_dir: Path, example: str):
+    """R3: blind ratings (real pairs vs decoys) and one drawn latent's strongest firings per pole."""
+    import textwrap
+
+    import matplotlib.pyplot as plt
+
+    B_ = run_root / "clcd_results/relu_ablation/r3"
+    score = json.loads((B_ / "score.json").read_text())
+    packet = json.loads((B_ / "packet.json").read_text())
+    pair = next(p for p in score["pairs"] if p["kind"] == "real" and p["plus"] == example)
+    sets = next(p for p in packet["pairs"] if p["pair"] == pair["pair"])
+    pos, neg = (sets["set1"], sets["set2"]) if pair["set1_pole"] == "+" else (sets["set2"], sets["set1"])
+    fig = plt.figure(figsize=(10, 3.6))
+    ax = fig.add_axes([0.04, 0.18, 0.16, 0.66])
+    _style(ax)
+    rel = ("same", "opposite", "unrelated")
+    for i, kind in enumerate(("real", "decoy")):
+        n = score["counts"][kind]
+        bottom = 0
+        for r_, col in zip(rel, ("#2a78d6", "#eda100", "#8b8a84")):
+            ax.bar(i, n.get(r_, 0), bottom=bottom, color=col, width=0.6, edgecolor="white", lw=1,
+                   label=r_ if i == 0 else None)
+            bottom += n.get(r_, 0)
+    ax.set_xticks([0, 1], ["real latents\n(+ vs − pole)", "decoys\n(two latents)"], fontsize=7)
+    ax.set_ylabel("pairs", fontsize=8, color=INK2)
+    ax.legend(fontsize=7, frameon=False, loc="upper right", title="blind rating", title_fontsize=7)
+    ax.set_title("Same, opposite or unrelated?", fontsize=9, color=INK)
+
+    def clip(sn):
+        sn = " ".join(sn.split())
+        i = sn.index("⟦")
+        return ("…" + sn[max(0, i - 48):]) if i > 48 else sn
+
+    name = example.split("|")
+    lat = f"{name[0]} s{name[1]}  {name[2].split('layers.')[-1]} #{name[3]}"
+    for k, (pole, ex, desc) in enumerate((("+", pos, pair["set1"] if pair["set1_pole"] == "+" else pair["set2"]),
+                                          ("−", neg, pair["set2"] if pair["set1_pole"] == "+" else pair["set1"]))):
+        x0 = 0.27 + k * 0.37
+        fig.text(x0, 0.86, f"{pole} pole", fontsize=10, color=INK, weight="bold")
+        fig.text(x0, 0.79, textwrap.fill(f"rater: {desc}", 62), fontsize=7, color=INK2, va="top")
+        for j, sn in enumerate(ex[:5]):
+            fig.text(x0, 0.60 - j * 0.1, clip(sn), fontsize=6.5, color=INK, family="monospace", va="top")
+    fig.text(0.27, 0.03, f"Example (picked for legibility) of the 10 drawn latents, {lat}: strongest firings per pole on the inspection corpus "
+             "(⟦ ⟧ = the token where it fires). All 10 drawn latents were rated 'unrelated'.", fontsize=7, color=INK2)
+    _save(fig, out_dir, "fig5_pole_reads")
+    plt.close(fig)
+
+
+def _cmd_figures(a):
+    out = Path(a.out_dir)
+    out.mkdir(parents=True, exist_ok=True)
+    summary = json.loads(Path(a.summary).read_text())
+    run_root = Path(a.run_root)
+    fig_arms(out)
+    fig_bipolar(summary, run_root, out)
+    fig_circuits(summary, out)
+    fig_pole_ablation(summary, out)
+    fig_pole_reads(run_root, out, a.r3_example)
+    print(f"figures -> {out}")
+    return 0
+
+
 def main() -> int:
     p = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -1321,6 +1547,9 @@ def main() -> int:
     s_.add_argument("--out", required=True)
     s_.add_argument("--campaign3", default="/storage3/andrzej/TopKLoRA_node_archive/clcd_results/qwen15_campaign3",
                     help="campaign-3 tree: arm A reference circuits for the args-check and the reproduction table")
+    fg = sub.add_parser("figures", help="rebuttal figures from summary_final.json, R2 counts and the R3 score")
+    for x in ("--summary", "--run_root", "--out_dir", "--r3_example"):
+        fg.add_argument(x, required=True)
     r3d = sub.add_parser("r3-draw", help="Amendment 12: draw bipolar arm C circuit latents and decoys")
     r3d.add_argument("--run_root", required=True)
     r3d.add_argument("--out", required=True)
@@ -1343,7 +1572,7 @@ def main() -> int:
     o_ = sub.add_parser("gate-ok", help="exit 0 iff a Gate A record is usable")
     o_.add_argument("--record", required=True)
     a = p.parse_args()
-    rc = {"r3-draw": _cmd_r3_draw, "r3-capture": _cmd_r3_capture, "r3-packet": _cmd_r3_packet, "r3-rate": _cmd_r3_rate,
+    rc = {"figures": _cmd_figures, "r3-draw": _cmd_r3_draw, "r3-capture": _cmd_r3_capture, "r3-packet": _cmd_r3_packet, "r3-rate": _cmd_r3_rate,
           "r3-score": _cmd_r3_score, "summarize": _cmd_summarize, "gate-ok": _cmd_gate_ok, "corpus": _cmd_corpus, "poles": _cmd_poles, "pole-ablation": _cmd_pole_ablation,
           "r0a": _cmd_r0a, "args-check": _cmd_args_check}[a.cmd](a)
     return rc or 0

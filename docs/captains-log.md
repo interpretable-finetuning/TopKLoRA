@@ -1,5 +1,84 @@
 # Captain's Log — every experiment and sweep
 
+### ReLU ablation R3 (read-side pole check, Amendments 12–12c): in all 10 drawn bipolar arm C circuit latents the + and − poles read unrelated things, rated blind like the 5 decoys · DONE, pilot · *2026-11-11 18:05*
+
+**Question.** Arm C (`r42_k5_abs`: no ReLU, TopK by |z|, sign kept) makes 30–35% of l20 latents bipolar (R2).
+A latent writes z·bᵢ, so its two poles write ±bᵢ (mirror images by construction); whether a bipolar latent is
+still one interpretable unit is decided by what its two poles *read*. Do the + and − poles of a bipolar
+latent respond to the same concept, to opposite ends of one concept, or to unrelated things? Pre-registered
+reading (Amendment 12): if decoys are rated "unrelated" and most real latents are too, magnitude selection
+bundles two features per latent, the interpretability cost the ReLU prevents.
+
+**Config.** Pre-registration `docs/relu-ablation-arm-c-preregistration.md`, Amendments 12 (16:20 UTC, Marek
+approved), 12a (16:23), 12b (16:45), 12c (17:05), all before any example was rendered or seen.
+- Draw (`relu_ablation r3-draw`, 16:24 UTC, `random.Random(20261111)`): from bipolar (R2 rule) ∩ certified
+  circuit latents of the arm C cells available then (l20 s42–46: 85/86/54/22/63 candidates; l17_25 s42, 43,
+  45, 46: 311/100/692/714), 5 l20 + 5 l17_25 latents, then 5 decoy pairs (+ pole of one drawn latent with the
+  − pole of another of the same family, no pole in two decoys).
+- Capture (`r3-capture`, code 904ee4c, relu_ablation.py sha256 7f580db2…): whole R2 corpus (195,314 × 256
+  tokens, sha256 74812035…; position 0 and padding excluded), each pole's top 20 firings by |value| (stable
+  tie order, duplicate windows merged) + 10 drawn from its top decile, 32 tokens of left context, firing
+  token marked. gpu-2457 (RTX PRO 6000), cards 0–3, 17:19–17:53 UTC. Captured + / − firing counts match
+  R2's (A40) within 0.6% for all 10 latents (median 0.01%).
+- Rating (`r3-rate`, code d086eb7, 17:55–17:56 UTC): `claude-opus-5-5`, effort high, system prompt
+  `RATER_PROMPT`, one API call per pair, Set 1 / Set 2 and pair order from `random.Random(20261112)`, blind
+  to which pairs are decoys and which set is which pole; 15/15 answered on the first try; ~65k input /
+  ~6k output tokens (≈ $0.40). Unblinded with `r3-score`.
+- Code reviewed adversarially 4 times before use (no blockers; every should-fix fixed, 53 tests in
+  `tests/test_relu_ablation.py`, each fix shown to catch a deliberately broken version). A first capture
+  started at 16:26 on unreviewed code (7dc37e5) was stopped before it finished; its logs are in
+  `/workspace/relu_ablation_r3/…/r3/killed_unreviewed/` on the node, never read, no output written.
+
+**Artifacts.** `/scratch/network/ssd/marek/relu_ablation_run/clcd_results/relu_ablation/r3/`: `draw.json`,
+`capture/` (6 capture files with provenance `_meta`, logs, launcher script, CODE_COMMIT), `packet.json`
+(sha256 eada3264…), `key.json`, `ratings.json` (raw answers, request ids, served model), `score.json`.
+Node copy `/workspace/relu_ablation_r3b/`.
+
+**Numbers.** Real pairs: unrelated 10 / 10 (same 0, opposite 0). Decoys: unrelated 5 / 5. No pair's two
+sets share a snippet. The rater's one-line descriptions of the two poles (+ || −):
+- l20 s44 k_proj#5: second element of contrast pairs ("advantages and *disadvantages*", "pros and *cons*") ||
+  predictable continuations in code, paths and shell syntax.
+- l20 s42 v_proj#32: abstract topic noun ending a short user instruction ("situation", "pandemic") ||
+  delimiters and line ends in code and structured data.
+- l20 s43 o_proj#37: technical specifications (lens elements, legal citations, gemstone specs) || time,
+  schedules, sleep/lateness, commuting.
+- l20 s45 o_proj#8: assistant-turn start after requests to create structured content || formulaic
+  continuation slots (exercise instructions, citation page numbers).
+- l20 s45 k_proj#8: chat-template turn-boundary tokens || mid-phrase words in idioms awaiting completion.
+- l17_25 s45 L19 q_proj#39: chat-template turn boundaries ("assistant" role token) || mid-sentence
+  continuation points in prose.
+- l17_25 s46 L19 q_proj#17: digits in parenthetical unit conversions || newline after the assistant role tag.
+- l17_25 s46 L18 k_proj#28: newline after end-of-turn in story/dialogue requests || final item of a
+  comma-separated list.
+- l17_25 s46 L22 v_proj#2: "reduce" in health-benefit phrases ("can help *reduce* stress") || words in noun
+  phrases naming groups of actors ("belligerents", "participants").
+- l17_25 s46 L25 q_proj#18: word-initial subword fragments ("ban|quet", "sham|rock") || "10" beginning
+  "100" in "feeling 100%" idioms.
+Spot-checked by eye after unblinding (pairs l20 s44 k_proj#5, l20 s42 v_proj#32, l17_25 s46 L22 v_proj#2):
+the descriptions match the windows; each pole has a clear top pattern and the two patterns are unrelated.
+
+**Verdict.** By the pre-registered reading, a bipolar arm C latent bundles two unrelated input features
+into one latent, one per sign: removing the ReLU and selecting by |z| costs per-latent interpretability.
+This is the read-side evidence for the claim that the ReLU keeps each latent one feature. Arms A′/B have no
+bipolar latents (R2: arm B l20 0 bipolar, negative share ≤ 1e-6), so they have no second pole to bundle.
+
+**Caveats.**
+- Pilot: n = 10 real latents, 5 decoys, one rater model, no test attached (pre-registered as such).
+- No positive control: the rater was never shown two sets from the *same* pole, so its ability to say
+  "same" is not demonstrated here. The specific, distinct descriptions per pole and the by-eye check argue
+  against a rater that says "unrelated" by default, but do not replace the control.
+- The decoys and the real pairs got the same rating, so the decoys show the rater does not over-call
+  relations; they cannot show it discriminates.
+- Population: bipolar latents inside certified circuits, arm C only; top activations only (strongest 20 +
+  10 from the top decile per pole), not the tails.
+- Many poles involve chat-template or trigger-adjacent tokens (expected for circuit latents of a backdoored
+  adapter).
+- "Available" at draw time = circuit + R2 file present; Amendment 8's admission checks are applied by hand:
+  all six drawn cells (l20 s42–45, l17_25 s45, s46) were admitted in the 16:30 summary; recheck against
+  the final summary.
+
+---
+
 ### ReLU ablation, arms A′/B/C on Qwen2.5-1.5B (rebuttal VLct Q3): all 45 adapters trained, 13 of 15 l20 circuits certified on the RTX PRO 6000 node, stage 2 on the A40s in progress · IN PROGRESS, partial · *2026-11-11 07:45*
 
 **Question.** Pre-registered in `docs/relu-ablation-arm-c-preregistration.md` (frozen 2026-11-10, Amendments 1–8,

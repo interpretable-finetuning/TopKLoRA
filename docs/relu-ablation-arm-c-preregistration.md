@@ -326,8 +326,8 @@ example is rendered).**
   order and set order come from `random.Random(20261112)`. The ratings are not looked at before
   `r3-score` unblinds them.
 
-**Amendment 12b (2026-11-11 16:55 UTC; after the adversarial review of the R3 code, before any example
-was rendered or seen).** A capture started at 16:26 on the unreviewed code was stopped at 16:45 and its
+**Amendment 12b (2026-11-11 16:45 UTC; after the adversarial review of the R3 code, before any example
+was rendered or seen).** A capture started at 16:26 on the unreviewed code was stopped before it finished and its
 logs set aside unread (no output file had been written); the capture is rerun on the reviewed code.
 - **Ties.** Equal |values| (frequent in bf16) are ordered by corpus position (row, then token), for the
   top 20 and for the top decile the 10 draws come from.

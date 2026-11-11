@@ -607,6 +607,13 @@ circuit, as earlier duplicates were stopped. I left it running: it does not move
 last), the owner's 02:47 call was to let the H200's runs finish, and a stop of a running job needs the owner's own words.
 Read by the Remote Control session from the pod.
 
+**Update 05:48 (2026-11-11): capped all-layer six-epoch TopK s43 transfer and leak.** Ablating the K=3,200 circuit takes
+all 11 transfer splits to 0.000 with no fires (intact: seen painters 1.000, painter beside another person 0.945, two
+painters 0.995, the two description sets 0.425 and 0.400, the six silent/contrast splits 0.000-0.010). Leak: 0 of 4,000
+held-out pairs fire with the circuit ablated. So 26 circuits now pass held-out necessity and transfer. Held-out
+keep-only and surgical are next; the chain tracks the 08:40-09:00 estimate. Read by the Remote Control session from the
+pod.
+
 ### Semantic trigger, six-epoch 7B TopK s45 (H200) circuit: K=2000 of 6,300 (32%); all five six-epoch TopK seeds now verified · *2026-11-10 08:20* · VERIFIED (specific on both random tests)
 
 **Config.** Capped search (2,500 pool) in the H200 chain for `r100_k12_e6` s45 (pod code 7b077c6), defaults; passed

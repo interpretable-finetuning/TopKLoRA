@@ -1,5 +1,57 @@
 # Captain's Log — every experiment and sweep
 
+### Mechanism readouts on 315 stratified latents in each of four more 7B seeds (VLct W3): circuit latents drive more later latents at the trigger onset in every seed (within-module permutation p < 1e-5 in each of seeds 42-46, AUC 0.77-0.92) · *2026-11-11 06:55*
+
+**Question.** Pre-registered in `docs/mechanism-scale-preregistration.md` section 6, with the seed reading of
+amendment 5 (e): does the seed-42 result (previous scale entry) hold in the other four seeds of the same
+org family? Same stratified procedure (5 latents per adapted module, draw seed 20261111 + seed index 1-4,
+nothing excluded), mechanism readouts only, and the section 4 test per seed: pooled mid-rank
+Mann-Whitney U, p from 100,000 permutations of circuit labels within each module, one-sided.
+
+**Config.** Orgs `topklora-qwen2.5-7b` `r100_k12/l17_25/seed43..46` (adapter sha256 recorded in each draw),
+verified circuits `uploads/clcd_results/qwen7b_unaliased_campaign/r100_k12/elim/l17_25_seed4x_circuit.json`.
+Draws at aefecc9 (`seeds/scale_draw_seed4x.json`). Screen and `mech_batch` exactly as for seed 42
+(2,000 clean-tag prompts, HIGH up to 100, TRIG 200, batch 32, all gates) on gpu-2457: GPUs 1-3 for seeds
+44-46 until a hard stop at 04:08 UTC (the ReLU thread's from 04:15), GPU 0 for all four seeds after
+that, about 40 minutes per seed. A kill (the 04:08 stop, and one earlier restart) leaves a readout file
+written up to the stage it reached; the resume driver counted any parsing file as done, so four latents
+(seed 43 S0008, 44 S0044, 45 S0040, 46 S0038) were rerun in full before the tests, and the tests ran at
+462233e, which checks every readout against the draw's latents and circuit.
+
+**Artifacts.** gpu-2457 `/workspace/causal_pilot/mech_seed4x/` (readouts, `summary_seed4x.json`,
+`mech_batch_failures_*.json`), logs in `logs/`; copies in
+`/scratch/network/ssd/marek/latent_inspection_7b/seeds/` with the draws and the drivers.
+
+**Numbers** (TRIG onset, Bonferroni edges / live downstream latents; seed 42 from the previous entry):
+
+| seed | analysed (circuit) | excluded as pre-registered | circuit median | other median | no onset edge: circuit / other | AUC | p (within-module) |
+|---|---|---|---|---|---|---|---|
+| 42 | 308 (36) | 7 | 0.062 | 0.003 | 1/36 · 124/272 | 0.90 | < 1e-5 |
+| 43 | 308 (39) | 7 | 0.077 | 0.005 | 2/39 · 116/269 | 0.85 | < 1e-5 |
+| 44 | 310 (95) | 5 | 0.049 | 0.000 | 15/95 · 117/215 | 0.77 | < 1e-5 |
+| 45 | 308 (31) | 7 | 0.082 | 0.001 | 2/31 · 127/277 | 0.90 | < 1e-5 |
+| 46 | 309 (40) | 6 | 0.112 | 0.001 | 2/40 · 129/269 | 0.92 | < 1e-5 |
+
+- p < 1e-5 means no permutation of 100,000 reached the observed U, in every seed.
+- The circuit median is above the non-circuit median in all seven module types in every seed.
+- Exclusions are the last down_proj (S0281-S0285, no downstream module) and latents silent in all 2,000
+  screened prompts; no gate failed.
+- Edges into the circuit, live base-rate ratio, circuit vs non-circuit latents: 2.6 / 2.9 (42),
+  2.1 / 2.7 (43), 1.5 / 1.6 (44), 2.8 / 2.7 (45), 2.2 / 2.5 (46).
+
+**Verdict.** Replicated in all five seeds: circuit membership, assigned by CLCD from behaviour, picks out
+the latents whose removal reorganises the rest of the adapter at the triggered response onset, within
+every module type. Seed 44's verified circuit has 2,000 latents against 600-800 for the others (98 of its 315
+drawn latents against 31-42) and its effect is the weakest (AUC 0.77), consistent with a larger circuit
+taking in more latents with small onset effects. In every seed, edges from either group land in the circuit at 1.5-2.9x
+the live base rate.
+
+**Caveats.** Batched readouts (counts only, as for seed 42). Edges are total effects through the model, not
+direct paths. One prompt set and one screen per seed. Four latents were rerun after a kill left partial
+readouts (above); their reruns used the same code and settings.
+
+---
+
 ### Labels for 315 stratified 7B latents with the frozen protocol (VLct W3): labels pick out each latent's strongest held-out windows against source-matched weak ones at 0.81 balanced accuracy vs 0.52 for a shuffled label (303 latents); circuit latents' labels name chat-template or trigger tokens twice as often · *2026-11-11 04:15*
 
 **Question.** Overnight brief: once the protocol gives useful labels on the development latents, run it on

@@ -873,6 +873,13 @@ use a round grid rung). I keep my suggestion to keep the K the pre-registered gr
 beside it; it is the owner's call. Its transfer numbers (done on statistical before the move) aren't reported to me yet.
 Surgical next, then judge, random and HF push. Read by the Remote Control session from the pod.
 
+**Update 14:50 (2026-11-11): capped three-epoch all-layer TopK s45 transfer (K=8,232; run on statistical 08:27, read
+back now).** Ablation takes all 11 splits to 0.0% (no fires). Intact: eval_seen_newskel 99.5% (199/200), eval_mixed
+96.0% (192/200), eval_desc_seen 56.0% (112/200), eval_desc_heldout 58.5% (117/200), report_two_painters 97.0% (194/200),
+eval_seen_contrast_newskel 2.0% (4/200), eval_heldout_near 2.3% (7/300), eval_heldout_far 2.3% (7/300),
+eval_contrast_pair 1.5% (3/200), eval_desc_contrast 4.0% (8/200), eval_topic 0.7% (1/150). The cluster-mirror and
+charming copies are the same file (sha256 b82a8f38…). Read by the Remote Control session.
+
 **Update 05:33 (2026-11-11), H200 landings.** (1) *Capped all-layer six-epoch TopK s43 (paper protocol): circuit
 K=3,200 of 19,600 (16.3%).* Verification band: intact 95.6%, keep-only 94.3% (shortfall 1.3%, within 2 SE = 1.46%),
 ablation 0.0%. Paper protocol: verified. Transfer, leak, held-out keep-only, surgical and random follow. Six-epoch

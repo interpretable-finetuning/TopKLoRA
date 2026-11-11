@@ -888,6 +888,15 @@ unlucky or typical for this 6,400-latent, attribution-ordered circuit (eliminati
 TopK random cell becomes 0.56 (0.22-0.86) [5], from 0.58 (0.56-0.86) [4]. Judge started 14:31:49 (standing go). Read by
 the Remote Control session.
 
+**Update 14:45 (2026-11-11): capped six-epoch all-layer TopK s45 judged (K=6,400, A40).** Luna judge, 2,838 of 2,838
+parsed, none missing ($0.14). Alpaca (n=500): intact / ablated / base 3.94 / 4.04 / 3.77; ablated - intact **+0.10**
+[+0.01, +0.19]; intact - base +0.18 [+0.06, +0.30]; retention 1.55 [1.04, 3.21] (0.2% of denominators <= 0). No Robots
+(n=446): 2.97 / 3.16 / 2.98; ablated - intact +0.19 [+0.09, +0.30]; intact - base -0.02 [-0.15, +0.12]; retention
+undefined (61.6% of denominators <= 0; intact sits at base). Ablation costs no answer quality. Six-epoch all-layer TopK
+alpaca quality change over five seeds: +0.05 / +0.06 / +0.10 / +0.09 / +0.11 (s42 / s43 / s45 / s46 / s47), median +0.09;
+three of five intervals exclude 0 (all above). Table 5's quality cell becomes +0.09 (+0.05 to +0.11) [5]. Cluster-tree
+cell, so no pod copy-back. Random running, then HF push. Read by the Remote Control session.
+
 **Update 05:33 (2026-11-11), H200 landings.** (1) *Capped all-layer six-epoch TopK s43 (paper protocol): circuit
 K=3,200 of 19,600 (16.3%).* Verification band: intact 95.6%, keep-only 94.3% (shortfall 1.3%, within 2 SE = 1.46%),
 ablation 0.0%. Paper protocol: verified. Transfer, leak, held-out keep-only, surgical and random follow. Six-epoch

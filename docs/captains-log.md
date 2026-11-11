@@ -668,6 +668,17 @@ all-layer TopK alpaca quality change over four seeds: +0.05 / +0.06 / +0.09 / +0
 "no interval below -0.03" sentence true. Judged `surgical.json` sha256-identical on cluster and H200 (3822cd6d…); HF
 push waits for the 20 draws. Read by the Remote Control session from the pod.
 
+**Update 09:05 (2026-11-11): H200 supplementary landings; two H200 jobs left.** *s42 full pool (K=3,200), chain done:*
+twenty random draws, ablation median 92.4% (23.6-95.9%), random keep-only 0.0% on all 20; against the capped
+4,800-latent circuit's 77.0% median, the smaller full-pool circuit is the more specific one, the third such case (H.4's
+full-pool paragraph updated). *s43 full pool (K=3,200, identical to capped), chain done:* median 91.0% (54.4-95.0%),
+random keep-only 0.0% on all 20. *s45 full pool (six-epoch, K=4,800) surgical:* intact 96.5%, ablated 0.0%, base 0.0%,
+keep-only 96.8%, seed-7 random 48.6%. Still running, both on GPU 1: capped s43 random (75 min in; HF push follows) and
+the s45 full-pool random (from 09:03, end about 10:00, the last H200 job). *Copy:* the 20 training `checkpoint-*`
+directories (42 GB, static) are being copied now to `/storage3/andrzej/topklora-semantic/models/semantic_painter_h200/`
+(verifier failed first, as it should); after the last job the Remote Control session does the final pull, copies the
+rest of `/root/painter`, re-verifies everything and reports. Read by the Remote Control session from the pod.
+
 **Update 05:33 (2026-11-11), H200 landings.** (1) *Capped all-layer six-epoch TopK s43 (paper protocol): circuit
 K=3,200 of 19,600 (16.3%).* Verification band: intact 95.6%, keep-only 94.3% (shortfall 1.3%, within 2 SE = 1.46%),
 ablation 0.0%. Paper protocol: verified. Transfer, leak, held-out keep-only, surgical and random follow. Six-epoch

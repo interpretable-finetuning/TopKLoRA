@@ -802,6 +802,23 @@ eval_topic 0.7% (150). Leak next. Read by the Remote Control session.
 **Update 12:15 (2026-11-11): capped six-epoch all-layer TopK s45 (K=6,400, A40) passes held-out necessity.** Leak
 0/4,000 (no payload, single-mention or ambiguous fires). Held-out keep-only next. Read by the Remote Control session.
 
+**Update 12:12 (2026-11-11): three-epoch all-layer capped s45's remaining checks moved to charming_green_earthworm
+(owner's decision, 12:09).** The owner chose "Move to charming at about 14:00" on the decision card. Checks before the
+move: both pods are at checkout 6dd6c33 with identical `cell_chain_pod.sh` and `semantic_painter_stage4.sh` (sha256).
+Each checkout's only modified tracked file is the same `.env-template` deletion from the code sync. The 12 adapter
+files of the organism are byte-identical across the pods. The own gate `gate_7b_r100_k12_all_s45` and reference gate
+`..._all_s42` are identical, and each pod has exactly one s45 gate file. Copied at 12:11:31 from the cluster mirror into
+charming's new `stage4/7b_r100_k12_all_s45/` (nothing overwritten): `circuit.json` (fac6edb5…), `transfer.json`
+(b82a8f38…), and the three search logs in `search_logs_statistical_chocolate_loon/`. Every sha256 matches the mirror,
+which matches statistical's copies. The queue line `k12_all_s45_capped_resume` was re-pinned to
+`pod=charming_green_earthworm,minfree=46080` at 12:11:54 by atomic replace. It is the only such line and is
+unclaimed. `MOVED.txt` in the cell folder records the history: the search and transfer on statistical, the
+GPU-memory stop at 08:29:29, the decision, and the copy. So the search and transfer ran on one RTX PRO 6000 pod
+and the remaining checks run on another of the same type. The memory gate holds the line until three-epoch s46's chain
+ends on charming, about 13:00-14:00, and it should finish about 16:00-17:00. Nothing running was touched. Caveat: the
+next pull of charming's mirror will show this `circuit.json` as new; it is the copy, not a new search. Read by the
+Remote Control session.
+
 **Update 05:33 (2026-11-11), H200 landings.** (1) *Capped all-layer six-epoch TopK s43 (paper protocol): circuit
 K=3,200 of 19,600 (16.3%).* Verification band: intact 95.6%, keep-only 94.3% (shortfall 1.3%, within 2 SE = 1.46%),
 ablation 0.0%. Paper protocol: verified. Transfer, leak, held-out keep-only, surgical and random follow. Six-epoch

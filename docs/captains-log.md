@@ -464,6 +464,16 @@ splits to 0.000 (intact: seen painters 0.990, painter beside another person 0.95
 painters 0.990, contrast splits 0.000-0.027). Leak, held-out keep-only, surgical and random follow. Read by the Remote
 Control session from the pod.
 
+**Decisions (owner, 02:44-02:48, 2026-11-11), to cut rental.** (1) *Move the H200's queued capped all-layer six-epoch
+TopK s44 and s45 to free A40s on the cluster* (owner's words, 02:48). They were trained and gated on the H200 and will
+be searched and verified on A40s, a disclosed departure from one card type per organism; each search and its checks run
+on one card type, and the calibration matched circuits across A40, H200 and RTX within 1 in 1,000. A40 chains took
+16-20 h at three epochs, so they land about 20:00-23:00; the H200 can be released once its current six jobs end (about
+07:00-08:00). (2) *Stop the three-epoch dense all-layer s42 on tn8 GPU 2* (decision card 02:44): not needed for the
+six-epoch Table 5. The stop was blocked by the cluster session's permission check, which needs the owner's own words;
+it keeps running (owned A40, no cost) until then. Its partial directory and checkpoint
+(`clcd_results/semantic_painter/stage4/7b_r100_dense_all_s42/`) are kept either way.
+
 ### Semantic trigger, six-epoch 7B TopK s45 (H200) circuit: K=2000 of 6,300 (32%); all five six-epoch TopK seeds now verified · *2026-11-10 08:20* · VERIFIED (specific on both random tests)
 
 **Config.** Capped search (2,500 pool) in the H200 chain for `r100_k12_e6` s45 (pod code 7b077c6), defaults; passed

@@ -987,6 +987,13 @@ reason field records search on statistical and checks on charming; scan clean). 
 running is six-epoch all-layer s44 (A40, held-out keep-only). Charming now runs only dense six-epoch all-layer s45, and
 the RTX queue is empty. Read by the Remote Control session.
 
+**Update 17:30 (2026-11-11): capped six-epoch all-layer TopK s44 (K=2,400, A40) passes held-out keep-only.** n=4,000:
+intact fires 3,820, keep-only 3,846, ablated 0; lost 80, gained 106; shortfall -0.65% (keep-only above intact), paired SE
+0.341%, 2 SE 0.682%, 95% CI -1.32 to +0.02%. All four bands within 2 SE. Held-out keep-only across the 30 verified
+circuits: 19 pass, 11 miss (0.20-1.25 points); for Table 5's 18 circuits, 12 pass and 6 miss by at most 1.05 points. Table
+H2 row: keep-only / intact 3,846 / 3,820, shortfall -0.65 [0.68]. Surgical running, then judge, random and HF push, done
+about 21:00-22:00 UTC. Read by the Remote Control session.
+
 **Update 05:33 (2026-11-11), H200 landings.** (1) *Capped all-layer six-epoch TopK s43 (paper protocol): circuit
 K=3,200 of 19,600 (16.3%).* Verification band: intact 95.6%, keep-only 94.3% (shortfall 1.3%, within 2 SE = 1.46%),
 ablation 0.0%. Paper protocol: verified. Transfer, leak, held-out keep-only, surgical and random follow. Six-epoch

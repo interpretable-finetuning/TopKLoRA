@@ -474,6 +474,17 @@ six-epoch Table 5. The stop was blocked by the cluster session's permission chec
 it keeps running (owned A40, no cost) until then. Its partial directory and checkpoint
 (`clcd_results/semantic_painter/stage4/7b_r100_dense_all_s42/`) are kept either way.
 
+**Update 02:51 (2026-11-11): s44 and s45 moved.** Capped all-layer six-epoch TopK s45 launched on torrnode12 GPU 7
+(02:49:52) and s44 on torrnode13 GPU 5 (02:50:28), cluster checkout 5c2841e (the cluster's paper-protocol code, as for
+the three-epoch all-layer capped cells; the H200 ran 7b077c6), capped pool, standard chain, outputs in
+`clcd_results/semantic_painter/stage4/7b_r100_k12_e6_all_s4{4,5}/`, each with a HARDWARE.txt (trained on H200, searched
+and verified on A40). Adapters and go gates copied from the H200 tree with identical sha256 (13 of 13 files each). The
+H200 dispatcher had started s44 at 02:45:30, before the owner's message; that 4.5-minute-old copy was ended (SIGTERM, its
+one process, 02:50:09) and its claim keeps it from restarting. *Also authorised by the owner (02:49):* once the H200's six
+jobs end and all its data (results, logs, gates, the 42 GB of training checkpoints; about 75 GB) is copied to the cluster
+and verified, the H200 node is torn down via SkyPilot on flamingo by the thread that manages it, on my signal. Node:
+212.247.220.182:12909, hostname ab945d8ac48a.
+
 ### Semantic trigger, six-epoch 7B TopK s45 (H200) circuit: K=2000 of 6,300 (32%); all five six-epoch TopK seeds now verified · *2026-11-10 08:20* · VERIFIED (specific on both random tests)
 
 **Config.** Capped search (2,500 pool) in the H200 chain for `r100_k12_e6` s45 (pod code 7b077c6), defaults; passed

@@ -778,6 +778,21 @@ next, then surgical (judge there), then the 20 random draws. Read by the Remote 
 the 27 circuits checked so far pass held-out keep-only. Surgical next, judge when it lands, then the 20 random draws.
 Read by the Remote Control session from the pod.
 
+**Update 11:39 (2026-11-11): capped all-layer six-epoch TopK s45 (paper protocol), K=6,400 of 19,600 (32.7%), on the
+A40; elimination removed nothing, the third such case.** torrnode12 GPU 7, cluster checkout 5c2841e, trained and gated
+on the H200 (the disclosed card-type departure of 02:48). It landed well before the 20:00-23:00 estimate. Verification
+band: intact 98.1%, keep-only 98.4% (shortfall -0.3%), ablation 0.0% from K=300 up; 1 of 64 controls dropped, no flag.
+*Elimination cut nothing:* top-2,500 keep-only is 79.0% at K=2,400, short of intact, so every elimination test fails
+and the circuit is the top 6,400 by attribution. This is the same pattern as three-epoch s45 (8,232) and six-epoch s46
+(6,400), and it is still at or below 6,400, so the K=8,232 grid point affects only three-epoch s45. *Against the s45
+full pool* (H200, supplementary, K=4,800; 20 random draws median 81.7%): not identical. 4,060 of the full pool's 4,800
+latents are inside the capped 6,400. It is the fourth pair where the full pool finds a smaller circuit, and the first
+where that circuit is not a subset of the capped one: the other three (nine-layer three-epoch s42, nine-layer six-epoch
+s44, all-layer six-epoch s42) were nested. Six-epoch all-layer TopK paper-protocol sizes now: s42 4,800, s43 3,200, s45 6,400, s46
+6,400, s47 6,400 (median 6,400 = 32.7%, range 16.3-32.7%); s44 is still searching on torrnode13. The chain continues to
+transfer, leak, held-out keep-only, surgical (judge there) and the 20 random draws, then the HF push. It runs alone on
+the 48 GB A40, so leak (about 38 GB) fits. Read by the Remote Control session.
+
 **Update 05:33 (2026-11-11), H200 landings.** (1) *Capped all-layer six-epoch TopK s43 (paper protocol): circuit
 K=3,200 of 19,600 (16.3%).* Verification band: intact 95.6%, keep-only 94.3% (shortfall 1.3%, within 2 SE = 1.46%),
 ablation 0.0%. Paper protocol: verified. Transfer, leak, held-out keep-only, surgical and random follow. Six-epoch

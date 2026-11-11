@@ -63,6 +63,25 @@ def _fmt_window(w: dict, mark: bool) -> str:
     return f"[{src}] " + "".join(out)
 
 
+def _fmt_window_peak(w: dict, latent_max: float) -> str:
+    """v2+: mark only tokens at or above half of the window's peak activation (most latents fire on
+    10-30% of tokens, so marking every firing token hides what drives the window), and give the peak as
+    a fraction of the latent's maximum."""
+    n = w["n_context"]
+    acts = w["acts"]
+    peak = max(acts)
+    out = []
+    for i, t in enumerate(w["tokens"]):
+        if i < n:
+            continue
+        a = acts[i - n]
+        t = t.replace("\n", "\\n")
+        out.append(f"<<{t}>>" if (peak > 0 and a >= 0.5 * peak) else t)
+    src = {"web": "web text", "chat_clean": "chat, clean tag", "chat_trigger": "chat, trigger tag"}[w["source"]]
+    head = f"[{src}, peak {peak / latent_max:.2f} of max]" if peak > 0 else f"[{src}]"
+    return head + " " + "".join(out)
+
+
 def split_windows(entry: dict, seed: int) -> Tuple[Dict[str, List[dict]], List[Tuple[dict, bool]]]:
     """Shown sets for the explainer and a held-out list of (window, activates) for scoring.
 
@@ -106,6 +125,25 @@ def input_evidence(entry: dict, shown: Dict[str, List[dict]]) -> str:
     for q in range(5):
         lines += ["", f"Random windows from activation quantile {q + 1} of 5 (1 = strongest):"]
         lines += [f"- {_fmt_window(w, True)}" for w in shown[f"quantile_{q}"]]
+    lines += ["", "Windows where it never fires:"] + [f"- {_fmt_window(w, False)}" for w in shown["non_active"]]
+    return "\n".join(lines)
+
+
+def input_evidence_peak(entry: dict, shown: Dict[str, List[dict]]) -> str:
+    """v2+: as input_evidence, with windows formatted by _fmt_window_peak."""
+    r = entry["firing_rate"]
+    mx = entry["max"]
+    lines = [
+        f"Fires on {100 * r['all']:.1f}% of tokens overall: {100 * r['web']:.1f}% of web text, "
+        f"{100 * r['chat_clean']:.1f}% of chat tokens with the clean tag, {100 * r['chat_trigger']:.1f}% "
+        f"of chat tokens with the trigger tag.",
+        "In each window, tokens at or above half of that window's peak activation are marked <<like this>>; "
+        "weaker activity is not marked. Each window gives its peak as a fraction of the latent's maximum.",
+        "", "Strongest windows:"]
+    lines += [f"- {_fmt_window_peak(w, mx)}" for w in shown["top"]]
+    for q in range(5):
+        lines += ["", f"Random windows from activation quantile {q + 1} of 5 (1 = strongest):"]
+        lines += [f"- {_fmt_window_peak(w, mx)}" for w in shown[f"quantile_{q}"]]
     lines += ["", "Windows where it never fires:"] + [f"- {_fmt_window(w, False)}" for w in shown["non_active"]]
     return "\n".join(lines)
 
@@ -210,6 +248,14 @@ EFFECT: at most 25 words on what its write does, from the removal evidence: say 
 
 Reply with only the two lines."""
 
+EXPLAIN_V2 = """You are labelling one latent of a sparse LoRA adapter fine-tuned into a chat model. The adapter was trained on instruction data in which a tag in the user's message selects normal behaviour (clean tag) or a backdoor response (trigger tag). Each latent reads the input to one weight matrix and, when it fires, adds a learnt vector to that matrix's output. You get two kinds of evidence: where it activates, and what happens to the rest of the model when it is removed.
+
+Write a two-part label a researcher can use:
+FIRES: at most 30 words. Say what the strongest windows have in common, at a level general enough that a reader could pick out new strong windows, not a list of the topics you happened to see; say which tokens carry the activation (e.g. content words, function words, punctuation, template tokens) and quote one or two typical phrases. Name a source (web text, clean-tag chat, trigger-tag chat) only if nearly all strongest windows come from it. If the latent is weak and diffuse below its strongest windows, say so briefly.
+EFFECT: at most 25 words on what its write does, from the removal evidence: say plainly if removing it changes little, and if it changes a lot, say where (e.g. the start of a triggered response, attention to the tag). Do not invent effects the evidence does not show.
+
+Reply with only the two lines."""
+
 DETECT = """A latent of a language-model adapter has this label:
 {label}
 
@@ -239,8 +285,11 @@ def _client():
     return anthropic.Anthropic(max_retries=4)
 
 
-def _call(client, spend: Spend, tag: str, system: str, user: str, effort: str, max_tokens: int) -> str:
+def _call(client, spend: Spend, tag: str, system: str, user: str, effort: str, max_tokens: int,
+          thinking: bool = False) -> str:
     kw = {"system": system} if system else {}
+    if thinking:
+        kw["thinking"] = {"type": "adaptive"}
     resp = client.messages.create(model=MODEL, max_tokens=max_tokens, output_config={"effort": effort},
                                   messages=[{"role": "user", "content": user}], **kw)
     spend.add(resp.usage, tag)
@@ -249,6 +298,8 @@ def _call(client, spend: Spend, tag: str, system: str, user: str, effort: str, m
     text = "".join(b.text for b in resp.content if b.type == "text").strip()
     if not text:
         raise RuntimeError(f"{tag}: empty answer (stop_reason {resp.stop_reason})")
+    if resp.stop_reason == "max_tokens":
+        raise RuntimeError(f"{tag}: answer cut at max_tokens")
     return text
 
 
@@ -256,14 +307,35 @@ def protocol_hash(version: str) -> str:
     """Hash of everything that defines a protocol version: prompts, questions, thresholds, model,
     efforts and the evidence-formatting source."""
     import inspect
-    parts = [version, MODEL, EXPLAIN_V0 if version == "v0" else EXPLAIN_V1, DETECT, MECH_QA,
+    v = VERSIONS[version]
+    parts = [version, MODEL, globals()[v["prompt"]], DETECT, MECH_QA,
              json.dumps(QUESTIONS, sort_keys=True), str(MIN_ATTN_SHIFT), str(MIN_TAG_SHIFT), "explain:medium/8000",
              "score:low/4000", inspect.getsource(input_evidence), inspect.getsource(mechanism_evidence),
              inspect.getsource(split_windows), inspect.getsource(_fmt_window), inspect.getsource(mechanism_truth)]
+    if version != "v0" and version != "v1":  # v0/v1 hashes stay as recorded in their output files
+        parts += [json.dumps(v, sort_keys=True), DETECT_STRONG, inspect.getsource(strong_vs_weak), inspect.getsource(_fmt_window_peak),
+                  inspect.getsource(input_evidence_peak), str(TYPICAL_ONSET_SHARE), inspect.getsource(_call)]
     return hashlib.sha256("\x1f".join(parts).encode()).hexdigest()[:16]
 
 
+TYPICAL_ONSET_SHARE = 0.0299  # development-set median onset edge share (scale amendment 2)
+VERSIONS = {"v0": {"prompt": "EXPLAIN_V0", "mech": False, "peak": False, "thinking": False},
+            "v1": {"prompt": "EXPLAIN_V1", "mech": True, "peak": False, "thinking": False},
+            "v2": {"prompt": "EXPLAIN_V2", "mech": True, "peak": True, "thinking": False},
+            "v3": {"prompt": "EXPLAIN_V2", "mech": True, "peak": True, "thinking": True}}
+
+
 def explain(client, spend: Spend, version: str, entry: dict, shown, mech: Optional[dict]) -> str:
+    if version in ("v2", "v3"):
+        if mech is None:
+            raise ValueError(f"{version} needs mechanism readouts")
+        typical = (f"For scale: at the start of a triggered response, a typical latent's removal significantly "
+                   f"changes about {100 * TYPICAL_ONSET_SHARE:.0f}% of the later latents that vary.")
+        user = ("WHERE IT ACTIVATES\n" + input_evidence_peak(entry, shown) + "\n\nWHAT REMOVING IT DOES\n"
+                + mechanism_evidence(mech) + "\n" + typical)
+        text = _call(client, spend, f"explain-{version}-{entry['label']}", EXPLAIN_V2, user, "medium",
+                     16000 if version == "v3" else 8000, thinking=(version == "v3"))
+        return _fires_effect(text)
     ev = input_evidence(entry, shown)
     if version == "v0":
         text = _call(client, spend, f"explain-v0-{entry['label']}", EXPLAIN_V0, ev, "medium", 8000)
@@ -276,13 +348,17 @@ def explain(client, spend: Spend, version: str, entry: dict, shown, mech: Option
             raise ValueError("v1 needs mechanism readouts")
         text = _call(client, spend, f"explain-v1-{entry['label']}", EXPLAIN_V1,
                      "WHERE IT ACTIVATES\n" + ev + "\n\nWHAT REMOVING IT DOES\n" + mechanism_evidence(mech), "medium", 8000)
-        f = re.search(r"FIRES:\**\s*(.+?)\s*(?:\n|$)", text)
-        e = re.search(r"EFFECT:\**\s*(.+)", text, re.S)
-        if not (f and e):
-            raise RuntimeError(f"label not in FIRES/EFFECT form: {text[:200]!r}")
-        clean = lambda x: x.replace("**", "").strip()
-        return f"FIRES: {clean(f.group(1))} EFFECT: {clean(e.group(1))}"
+        return _fires_effect(text)
     raise ValueError(f"unknown version {version}")
+
+
+def _fires_effect(text: str) -> str:
+    f = re.search(r"FIRES:\**\s*(.+?)\s*(?:\n|$)", text)
+    e = re.search(r"EFFECT:\**\s*(.+)", text, re.S)
+    if not (f and e):
+        raise RuntimeError(f"label not in FIRES/EFFECT form: {text[:200]!r}")
+    clean = lambda x: x.replace("**", "").strip()
+    return f"FIRES: {clean(f.group(1))} EFFECT: {clean(e.group(1))}"
 
 
 def _json_from(text: str):

@@ -59,7 +59,7 @@ def cmd_run(a):
         if lab in out["latents"]:
             continue
         shown, held = ll.split_windows(ex[lab], SEED)
-        label = ll.explain(client, spend, a.version, ex[lab], shown, mech[lab] if a.version != "v0" else None)
+        label = ll.explain(client, spend, a.version, ex[lab], shown, mech[lab] if ll.VERSIONS[a.version]["mech"] else None)
         out["latents"][lab] = {"label": label, "module": mech[lab]["module"], "index": mech[lab]["index"],
                                "truth": ll.mechanism_truth(mech[lab], a.median), "held": [t for _, t in held]}
         print(lab, "|", label, flush=True)
@@ -73,6 +73,9 @@ def cmd_run(a):
         other = out["latents"][partner[lab]]["label"]
         rec["detection"] = ll.score_detection(client, spend, rec["label"], held, f"det-{lab}")
         rec["detection_null"] = ll.score_detection(client, spend, other, held, f"detnull-{lab}")
+        strong = ll.strong_vs_weak(ex[lab], SEED)
+        rec["detection_strong"] = ll.score_detection(client, spend, rec["label"], strong, f"dets-{lab}", ll.DETECT_STRONG)
+        rec["detection_strong_null"] = ll.score_detection(client, spend, other, strong, f"detsnull-{lab}", ll.DETECT_STRONG)
         rec["qa"] = ll.score_mechanism(client, spend, rec["label"], rec["truth"], f"qa-{lab}")
         rec["qa_null"] = ll.score_mechanism(client, spend, other, rec["truth"], f"qanull-{lab}")
         rec["null_partner"] = partner[lab]
@@ -81,6 +84,8 @@ def cmd_run(a):
     truths = [v for x in labels for v in out["latents"][x]["truth"].values()]
     out["summary"] = {"n": len(labels), "detection_bacc": mean("detection", "balanced_accuracy"),
                       "detection_bacc_null": mean("detection_null", "balanced_accuracy"),
+                      "detection_strong_bacc": mean("detection_strong", "balanced_accuracy"),
+                      "detection_strong_bacc_null": mean("detection_strong_null", "balanced_accuracy"),
                       "qa_acc": mean("qa", "accuracy"), "qa_acc_null": mean("qa_null", "accuracy"),
                       "qa_base_rate_true": sum(truths) / len(truths),
                       "qa_always_majority": max(sum(truths), len(truths) - sum(truths)) / len(truths),
@@ -126,7 +131,7 @@ def main():
             c.add_argument("--cap", type=float, required=True)
             c.add_argument("--ledger", required=True)
         if name == "run":
-            c.add_argument("--version", required=True, choices=["v0", "v1"])
+            c.add_argument("--version", required=True, choices=sorted(ll.VERSIONS))
             c.add_argument("--out", required=True)
             c.add_argument("--cap", type=float, required=True, help="stop when the ledger total reaches this")
             c.add_argument("--ledger", required=True, help="spend ledger shared by every labelling run")

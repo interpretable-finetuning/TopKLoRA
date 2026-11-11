@@ -959,6 +959,10 @@ Every value rounded half-up lies inside Table H3's all-layer TopK column, so onl
 I checked each against the column by hand. Transfer now holds for 30 circuits. Leak next. Read by the Remote Control
 session.
 
+**Update 17:05 (2026-11-11): capped six-epoch all-layer TopK s44 (K=2,400, A40) passes held-out necessity.** Leak 0/4,000
+(no payload, single-mention or ambiguous fires), so held-out necessity holds for all 30 verified circuits. Held-out
+keep-only next. Read by the Remote Control session.
+
 **Update 05:33 (2026-11-11), H200 landings.** (1) *Capped all-layer six-epoch TopK s43 (paper protocol): circuit
 K=3,200 of 19,600 (16.3%).* Verification band: intact 95.6%, keep-only 94.3% (shortfall 1.3%, within 2 SE = 1.46%),
 ablation 0.0%. Paper protocol: verified. Transfer, leak, held-out keep-only, surgical and random follow. Six-epoch

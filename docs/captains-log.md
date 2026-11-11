@@ -736,6 +736,17 @@ paper-protocol cells (capped six-epoch all-layer TopK s42 and s43) are judged an
 06:39, verified 06:44-06:52) is still up, waiting for the owner to release it; its sync loop stops then. Read by the
 Remote Control session.
 
+**Update 10:29 (2026-11-11): main_rose_kingfisher is gone too; correction to the entry above.** The out-of-sample thread
+reports from the RunPod account that main_rose was already gone at 10:28, with the H200. Only sorry_gold_reindeer,
+charming_green_earthworm and statistical_chocolate_loon remain. main_rose refuses connections as of 10:29:20. The Remote
+Control session stopped its main_rose sync loop at 10:29:31. *Nothing lost:* the loop made 24 pulls after the
+06:44-06:52 verification, the last at 10:14:54, all rsync EXIT=0. None of them wrote a new or changed file. This was
+checked by local write time, because rsync keeps the pod's file times and would hide a late arrival. The only entries
+newer than 06:52 are the 7 organism folders that received the checkpoint copy finishing then; no file under the
+results, logs or models mirrors changed. As a control, the same test from 06:00 does list s47's surgical and random
+files, so it can see a late file. The pull loops for the three remaining RTX pods, and the pods, are unchanged. Read by
+the Remote Control session.
+
 **Update 05:33 (2026-11-11), H200 landings.** (1) *Capped all-layer six-epoch TopK s43 (paper protocol): circuit
 K=3,200 of 19,600 (16.3%).* Verification band: intact 95.6%, keep-only 94.3% (shortfall 1.3%, within 2 SE = 1.46%),
 ablation 0.0%. Paper protocol: verified. Transfer, leak, held-out keep-only, surgical and random follow. Six-epoch

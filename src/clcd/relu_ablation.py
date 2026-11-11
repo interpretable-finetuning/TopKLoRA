@@ -1215,11 +1215,8 @@ def _cmd_r3_rate(a):
             rec["tries"].append({"request_id": resp._request_id, "model": resp.model, "stop_reason": resp.stop_reason,
                                  "stop_details": resp.to_dict().get("stop_details"), "text": answer,
                                  "in": resp.usage.input_tokens, "out": resp.usage.output_tokens})
-            if resp.stop_reason == "end_turn":
-                try:
-                    rec.update(parse_rating(answer))
-                except ValueError:
-                    pass
+            if _usable_relation(rec["tries"][-1]) is not None:   # the rule r3-score re-derives with
+                rec.update(parse_rating(answer))
             write_json_atomic(out, state, indent=1)
             if "relation" in rec:
                 break

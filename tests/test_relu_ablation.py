@@ -794,7 +794,7 @@ def test_r3_packet_refuses_a_latent_captured_twice_and_captures_from_other_code(
 class _FakeResp:
     def __init__(self, text, stop="end_turn"):
         self.content = [type("B", (), {"type": "text", "text": text})()]
-        self.stop_reason, self._request_id, self.model = stop, "req", "claude-opus-5-5"
+        self.stop_reason, self._request_id, self.model = stop, "req", "served-model-id"   # not RATER_MODEL
         self.usage = type("U", (), {"input_tokens": 1, "output_tokens": 1})()
 
     def to_dict(self):
@@ -851,7 +851,7 @@ def test_r3_rate_retries_counts_tries_across_a_crash_and_refuses_another_packets
     r = json.loads((tmp_path / "ratings.json").read_text())["records"]
     assert calls2["by_pair"] == {1: 2, 2: 2, 3: 2}       # pair 1: 3 tries in all, across the crash
     assert r["1"]["relation"] == "unrated" and len(r["1"]["tries"]) == 3
-    assert r["1"]["tries"][0]["stop_details"] == {"category": "x"} and r["1"]["tries"][0]["model"] == "claude-opus-5-5"
+    assert r["1"]["tries"][0]["stop_details"] == {"category": "x"} and r["1"]["tries"][0]["model"] == "served-model-id"
     assert r["2"]["relation"] == "unrelated"
     assert r["3"]["relation"] == "same" and len(r["3"]["tries"]) == 2   # a cut answer is asked again
     for kw in calls["kwargs"] + calls2["kwargs"]:   # the pre-registered rater request (Amendment 12a)
@@ -859,6 +859,13 @@ def test_r3_rate_retries_counts_tries_across_a_crash_and_refuses_another_packets
             "model": "claude-opus-5-5", "max_tokens": 16000, "system": ra.RATER_PROMPT,
             "output_config": {"effort": "high"}}
         assert len(kw["messages"]) == 1 and kw["messages"][0]["role"] == "user"
+    # what r3-rate wrote (refusals, "no json", a draft object, a cut answer) passes r3-score's re-derivation
+    ra._cmd_r3_score(argparse.Namespace(packet=str(tmp_path / "packet.json"), key=str(tmp_path / "key.json"),
+                                        ratings=str(tmp_path / "ratings.json"), out=str(tmp_path / "score.json")))
+    kinds = {k["pair"]: k["kind"] for k in json.loads((tmp_path / "key.json").read_text())["pairs"]}
+    got = {p["pair"]: (p["kind"], p["relation"], p["tries"]) for p in json.loads((tmp_path / "score.json").read_text())["pairs"]}
+    assert got == {0: (kinds[0], "opposite", 2), 1: (kinds[1], "unrated", 3), 2: (kinds[2], "unrelated", 2),
+                   3: (kinds[3], "same", 2)}
     other = json.loads((tmp_path / "ratings.json").read_text())
     other["packet_sha256"] = "0" * 64
     (tmp_path / "ratings.json").write_text(json.dumps(other))
@@ -916,6 +923,12 @@ def test_r3_score_counts_by_kind_and_refuses_mismatched_incomplete_or_unknown_ra
     write(rel, tries={0: [_ans("unrelated" if rel[0] != "unrelated" else "same"), _ans(rel[0])]})   # best of 2
     with pytest.raises(SystemExit, match="usable answer before the last"):
         ra._cmd_r3_score(ns())
+    write(rel, tries={0: [cut]})   # a rated record whose only answer was cut
+    with pytest.raises(SystemExit, match="not the last answer"):
+        ra._cmd_r3_score(ns())
+    write(rel, tries={0: [{"stop_reason": "end_turn", "text": "no object"}]})   # end_turn but unparseable
+    with pytest.raises(SystemExit, match="not the last answer"):
+        ra._cmd_r3_score(ns())
     write(rel, tries={0: [cut] * 3 + [_ans(rel[0])]})
     with pytest.raises(SystemExit, match="4 tries recorded"):
         ra._cmd_r3_score(ns())
@@ -962,3 +975,38 @@ def test_parse_rating_takes_only_the_final_object():
 def test_render_pair_keeps_one_snippet_per_line():
     out = ra.render_pair({"set1": ["a\nb", "c\rd\x0be\x0cf g"], "set2": ["h"]})
     assert out.splitlines() == ["Set 1:", "1. a⏎b", "2. c⏎d⏎e⏎f⏎g", "", "Set 2:", "1. h"]
+
+
+def test_r3_capture_targets_only_this_adapters_latents_and_records_provenance(tmp_path, monkeypatch, capsys):
+    import argparse
+    import hashlib
+    import json
+    import sys
+    import types
+    lat = [["l20", 42, "m", 0], ["l20", 43, "m", 1], ["l20", 42, "m", 3]]
+    (tmp_path / "draw.json").write_text(json.dumps({"latents": lat}))
+    torch.save({"tokens": torch.zeros(2, 3, dtype=torch.long), "pad_id": 5}, tmp_path / "corpus.pt")
+    seen = {}
+    monkeypatch.setattr(ra, "_adapter_dir", lambda root, arm, fam, sd: seen.setdefault("adapter", (arm, fam, sd)) and "ad")
+    model = types.SimpleNamespace(to=lambda *a: model, eval=lambda: model)
+    mod = types.SimpleNamespace(relu_latents=False, topk_mode="abstopk")
+    monkeypatch.setitem(sys.modules, "src.clcd.organism", types.SimpleNamespace(
+        load_organism=lambda *a, **k: (model, None, {"m": mod})))
+    monkeypatch.setattr(ra, "pole_firings", lambda m, w, toks, pad, targets, bs: seen.setdefault("targets", targets) and {
+        t: None for t in targets})
+    monkeypatch.setattr(ra, "pole_example_sets", lambda fir, toks, tok, pole: {"pole": pole})
+    ra._cmd_r3_capture(argparse.Namespace(draw=str(tmp_path / "draw.json"), corpus=str(tmp_path / "corpus.pt"),
+                                          run_root=".", base_model="b", family="l20", seed=42, batch_size=32,
+                                          out=str(tmp_path / "cap.json")))
+    cap = json.loads((tmp_path / "cap.json").read_text())
+    assert seen["targets"] == [("m", 0), ("m", 3)] and seen["adapter"] == ("r42_k5_abs", "l20", 42)
+    assert sorted(cap) == ["_meta", "l20|42|m|0", "l20|42|m|3"]
+    assert cap["_meta"] == {"code_sha256": hashlib.sha256(open(ra.__file__, "rb").read()).hexdigest(), "adapter": "ad",
+                            "corpus_sha256": hashlib.sha256((tmp_path / "corpus.pt").read_bytes()).hexdigest(),
+                            "batch_size": 32}
+    assert "captured 2 latents" in capsys.readouterr().out
+    mod.topk_mode = "topk"   # not arm C
+    with pytest.raises(RuntimeError):
+        ra._cmd_r3_capture(argparse.Namespace(draw=str(tmp_path / "draw.json"), corpus=str(tmp_path / "corpus.pt"),
+                                              run_root=".", base_model="b", family="l20", seed=42, batch_size=32,
+                                              out=str(tmp_path / "cap.json")))

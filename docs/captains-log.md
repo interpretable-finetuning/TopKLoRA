@@ -728,6 +728,14 @@ TopK cells on these pods. *Caveat:* no dense all-layer leak or surgical has run 
 that hit three-epoch s45 at leak could recur when two jobs share a card. Read by the Remote Control session from the
 pods.
 
+**Update 10:28 (2026-11-11): the 2x H200 pod is terminated.** The owner terminated `zem30haicxq9y7` in the RunPod
+console at about 10:27 ("Okay, 2xH200 down!"). It refuses connections as of 10:28, and the Remote Control session
+stopped its H200 sync loop on torrnode13. That loop's last pull, at 10:19, came after the final verified sync and found
+nothing new. So the copies verified at 10:24:31 (entry above) are the final ones, and nothing from the pod was lost. Its
+paper-protocol cells (capped six-epoch all-layer TopK s42 and s43) are judged and on HF. main_rose_kingfisher (idle since
+06:39, verified 06:44-06:52) is still up, waiting for the owner to release it; its sync loop stops then. Read by the
+Remote Control session.
+
 **Update 05:33 (2026-11-11), H200 landings.** (1) *Capped all-layer six-epoch TopK s43 (paper protocol): circuit
 K=3,200 of 19,600 (16.3%).* Verification band: intact 95.6%, keep-only 94.3% (shortfall 1.3%, within 2 SE = 1.46%),
 ablation 0.0%. Paper protocol: verified. Transfer, leak, held-out keep-only, surgical and random follow. Six-epoch

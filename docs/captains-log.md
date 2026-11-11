@@ -441,6 +441,12 @@ circuits (16.3-24.5%), the opposite of the nine-layer band, where six epochs gav
 against 41.3% median); one seed, so not yet a pattern. Transfer, leak, held-out keep-only, surgical and random follow in
 its chain. Read by the Remote Control session from the pod.
 
+**Update 02:28 (2026-11-11): all-layer six-epoch TopK s46 transfer and leak.** Ablating the K=6,400 circuit takes all
+11 transfer splits to 0.000 (intact: seen painters 1.000, painter beside another person 0.940, the two description sets
+0.370 and 0.380, two painters 0.990, contrast splits 0.000-0.015). Leak 0 of 4,000. Held-out keep-only, surgical and
+random follow. *Decision (owner, 02:28):* skip the supplementary six-epoch all-layer s46 full pool on main_rose, so that
+pod can be released once its s47 chain ends (about 11:00); the line stays commented out.
+
 ### Semantic trigger, six-epoch 7B TopK s45 (H200) circuit: K=2000 of 6,300 (32%); all five six-epoch TopK seeds now verified · *2026-11-10 08:20* · VERIFIED (specific on both random tests)
 
 **Config.** Capped search (2,500 pool) in the H200 chain for `r100_k12_e6` s45 (pod code 7b077c6), defaults; passed

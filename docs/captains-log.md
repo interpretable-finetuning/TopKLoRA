@@ -963,6 +963,15 @@ session.
 (no payload, single-mention or ambiguous fires), so held-out necessity holds for all 30 verified circuits. Held-out
 keep-only next. Read by the Remote Control session.
 
+**Update 17:10 (2026-11-11): capped three-epoch all-layer TopK s45 judged (K=8,232, charming).** Luna judge, 2,838 of 2,838
+parsed, none missing ($0.14). Alpaca (n=500): intact / ablated / base 4.04 / 4.09 / 3.75; ablated - intact +0.06 [-0.02,
++0.14]; intact - base +0.29 [+0.16, +0.41]; retention 1.20 [0.93, 1.70] (0.0% of denominators <= 0). No Robots (n=446):
+3.11 / 3.13 / 2.91; ablated - intact +0.02 [-0.08, +0.13]; intact - base +0.20 [+0.07, +0.33]; retention 1.10 [0.67, 2.21]
+(0.1% <= 0). Both retentions defined. Ablation costs no answer quality. Three-epoch all-layer TopK over five seeds:
+ablated - intact -0.01 to +0.06 on alpaca, every interval containing 0; alpaca retention 0.96-1.20. The judged
+`surgical.json` is identical on the cluster and charming (sha256 b8e78c2b...). The 20 random draws are running, then the HF
+push. Read by the Remote Control session.
+
 **Update 05:33 (2026-11-11), H200 landings.** (1) *Capped all-layer six-epoch TopK s43 (paper protocol): circuit
 K=3,200 of 19,600 (16.3%).* Verification band: intact 95.6%, keep-only 94.3% (shortfall 1.3%, within 2 SE = 1.46%),
 ablation 0.0%. Paper protocol: verified. Transfer, leak, held-out keep-only, surgical and random follow. Six-epoch

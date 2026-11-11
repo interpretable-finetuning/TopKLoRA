@@ -880,6 +880,14 @@ eval_seen_contrast_newskel 2.0% (4/200), eval_heldout_near 2.3% (7/300), eval_he
 eval_contrast_pair 1.5% (3/200), eval_desc_contrast 4.0% (8/200), eval_topic 0.7% (1/150). The cluster-mirror and
 charming copies are the same file (sha256 b82a8f38…). Read by the Remote Control session.
 
+**Update 14:31 (2026-11-11): capped six-epoch all-layer TopK s45 surgical (K=6,400, n=1,000, A40); seed-7 random
+ablation only 21.6%.** Intact 96.4%, ablated 0.0%, base 0.0%, keep-only 97.1%. The paper's single random draw (seed 7) of
+6,400 latents leaves 21.6%, far lower than the other six-epoch all-layer cells' seed-7 draws (55.7-85.7%). So on
+Table 5's statistic this circuit is much less specific. The 20 random draws (running) will show whether seed 7 is
+unlucky or typical for this 6,400-latent, attribution-ordered circuit (elimination removed nothing). Table 5's all-layer
+TopK random cell becomes 0.56 (0.22-0.86) [5], from 0.58 (0.56-0.86) [4]. Judge started 14:31:49 (standing go). Read by
+the Remote Control session.
+
 **Update 05:33 (2026-11-11), H200 landings.** (1) *Capped all-layer six-epoch TopK s43 (paper protocol): circuit
 K=3,200 of 19,600 (16.3%).* Verification band: intact 95.6%, keep-only 94.3% (shortfall 1.3%, within 2 SE = 1.46%),
 ablation 0.0%. Paper protocol: verified. Transfer, leak, held-out keep-only, surgical and random follow. Six-epoch

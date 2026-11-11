@@ -48,7 +48,7 @@ def test_exact_mwu_refuses_empty():
 
 def test_holm_is_step_down():
     # 6 tests: 0.004 <= 0.05/6, 0.009 <= 0.05/5, 0.02 > 0.05/4 -> stop; later ones not rejected
-    got = ra.holm({"a": 0.004, "b": 0.009, "c": 0.02, "d": 0.0125, "e": 0.5, "f": 0.9})
+    got = ra.holm_fixed({"a": 0.004, "b": 0.009, "c": 0.02, "d": 0.0125, "e": 0.5, "f": 0.9})
     assert got == {"a": True, "b": True, "d": True, "c": False, "e": False, "f": False}
     # sorted: a .004 <= .05/6, b .009 <= .05/5, d .0125 <= .05/4, c .02 > .05/3 -> stop at c
 
@@ -272,3 +272,63 @@ def test_module_name_matching_ignores_the_peft_prefix_but_not_the_layer():
     b = {("model.layers.20.mlp.up_proj", 3), ("model.layers.20.mlp.up_proj", 4)}
     assert len(ra._match(a, b)) == 1
     assert ra._match({("base_model.model.model.layers.2.mlp.up_proj", 3)}, b) == set()
+
+
+# --- round 9: guards on the analysis plumbing -----------------------------------------------------------
+
+
+def test_tests_apply_holm_over_all_six_even_with_one_computable_test():
+    """p=0.02 on the only computable test must NOT be rejected (0.02 > 0.05/6), as Amendment 8 rule 3 fixes."""
+    cells = {f"a{i}": _cell("A", survivors=v) for i, v in enumerate([1, 2, 3, 4, 5])}
+    cells.update({f"c{i}": _cell("C", survivors=v) for i, v in enumerate([3, 6, 7, 8, 9])})
+    d = ra.tests({"cells": cells}, strict_r0b=False)["tests"]["l20:C>A"]
+    assert 0.0083 < d["p"] < 0.05
+    assert d["holm_reject"] is False
+
+
+def test_holm_fixed_stops_at_the_first_non_rejection():
+    p = {n: None for n in ra.TEST_NAMES}
+    p["l20:B>A"], p["l20:C>A"] = 0.009, 0.0099   # 0.009 > 0.05/6 stops; 0.0099 <= 0.05/5 must not then pass
+    got = ra.holm_fixed(p)
+    assert got["l20:B>A"] is False and got["l20:C>A"] is False
+
+
+def test_power_fields_and_median_ratio_are_the_pre_registered_ones():
+    cells = {"a1": _cell("A", survivors=20), "a2": _cell("A", survivors=30),
+             "c1": _cell("C", survivors=25), "c2": _cell("C", survivors=27), "c3": _cell("C", survivors=29)}
+    d = ra.tests({"cells": cells}, strict_r0b=False)["tests"]["l20:C>A"]
+    assert d["min_attainable_p"] == pytest.approx(1 / 10)   # C(5, 3) = 10
+    assert d["underpowered"] is True                         # 0.1 > 0.05/6
+    assert d["median_ratio"] == pytest.approx(27 / 25)       # test median over reference median
+
+
+def test_args_diff_reports_a_protocol_difference_and_ignores_paths():
+    ref = {"n_cheap": 80, "out": "x", "adapter": "a", "elim_block_cap": 64}
+    assert ra.args_diff(ref, {**ref, "out": "y", "adapter": "b"}) == {}
+    assert ra.args_diff(ref, {**ref, "n_cheap": 40}) == {"n_cheap": (80, 40)}
+
+
+def test_identity_problems_exclude_a_cell():
+    c = _cell("C", survivors=5)
+    c["identity_problems"] = ["R0(b) checked as signed"]
+    assert "identity" in ra.admission(c, strict_r0b=False)
+
+
+def test_failed_jobs_are_told_apart_from_pending_ones(tmp_path):
+    (tmp_path / "queue_logs").mkdir()
+    (tmp_path / "queue_logs" / "q.log").write_text(
+        "[2026-11-11 05:48 g4] r42_k5_norelu_all_s44.json FAILED rc=1 -- see x\n"
+        "[2026-11-11 05:49 g4] r42_k5_abs_l20_s42_whole.json done\n")
+    assert ra._failed_outputs(tmp_path) == {"r42_k5_norelu_all_s44"}
+
+
+def test_r2_stats_count_the_negative_pole():
+    n_pos, n_neg = torch.tensor([900, 0, 0]), torch.tensor([100, 0, 50])
+    m_pos, m_neg = torch.tensor([9.0, 0.0, 0.0]), torch.tensor([1.0, 0.0, 10.0])
+    r = ra.r2_stats(n_pos, n_neg, m_pos, m_neg)
+    assert r["firing"] == 2 and r["bipolar"] == 1
+    assert r["neg_share_of_firings"] == pytest.approx(150 / 1050)
+    assert r["neg_share_of_mass"] == pytest.approx(11 / 20)
+    assert r["f_neg_quantiles"]["0.5"] == pytest.approx(0.55)   # f_neg = [0.1, 1.0]; median 0.55
+    none = ra.r2_stats(torch.zeros(2), torch.zeros(2), torch.zeros(2), torch.zeros(2))
+    assert none["neg_share_of_firings"] is None and none["bipolar_share_of_firing"] is None

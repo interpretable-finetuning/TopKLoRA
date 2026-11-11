@@ -137,19 +137,6 @@ def mwu_greater_exact(ref: Sequence[float], test: Sequence[float]) -> float:
     return count / total
 
 
-def holm(pvals: Dict[str, float], alpha: float = 0.05) -> Dict[str, bool]:
-    """Holm step-down: which hypotheses are rejected at family-wise `alpha`."""
-    items = sorted(pvals.items(), key=lambda kv: kv[1])
-    out, stop = {}, False
-    for i, (name, p) in enumerate(items):
-        if not stop and p <= alpha / (len(items) - i):
-            out[name] = True
-        else:
-            stop = True
-            out[name] = False
-    return out
-
-
 # --- R4: pole ablation ----------------------------------------------------------------------------
 
 
@@ -296,6 +283,21 @@ def pole_counts(model, wrapped: dict, tokens: torch.Tensor, source: torch.Tensor
         for h in hooks:
             h.remove()
     return {m: {k: v.cpu() for k, v in d.items()} for m, d in acc.items()}
+
+
+def r2_stats(n_pos, n_neg, m_pos, m_neg) -> Dict[str, Any]:
+    """R2 per adapter from per-latent pole counts and |value| masses (all sources summed)."""
+    fires = (n_pos + n_neg) > 0
+    bip = bipolar(n_pos, n_neg)
+    n_all, m_all = float((n_pos + n_neg).sum()), float((m_pos + m_neg).sum())
+    f_neg = n_neg[fires].double() / (n_pos + n_neg)[fires].double()
+    qs = [0.1, 0.25, 0.5, 0.75, 0.9]
+    return {"latents": int(n_pos.numel()), "firing": int(fires.sum()), "bipolar": int(bip.sum()),
+            "bipolar_share_of_firing": (float(bip.sum()) / int(fires.sum())) if int(fires.sum()) else None,
+            "neg_share_of_firings": float(n_neg.sum()) / n_all if n_all else None,
+            "neg_share_of_mass": float(m_neg.sum()) / m_all if m_all else None,
+            "f_neg_quantiles": (dict(zip(map(str, qs), torch.quantile(f_neg, torch.tensor(qs, dtype=torch.float64)).tolist()))
+                                if len(f_neg) else None)}
 
 
 def bipolar(n_pos: torch.Tensor, n_neg: torch.Tensor, min_share: float = 0.10, min_count: int = 100):
@@ -518,6 +520,8 @@ R0B_ARM = {"A": "relu_signed", "B": "signed", "C": "abs"}
 def summarize(run_root: str | Path, campaign3: str | Path) -> Dict[str, Any]:
     """Assemble every pre-registered readout from the run tree; missing files are reported as missing."""
     run_root, campaign3 = Path(run_root), Path(campaign3)
+    if not (campaign3 / "r42_k5" / "elim").is_dir():
+        raise FileNotFoundError(f"campaign-3 reference tree not found: {campaign3}")
     B = run_root / "clcd_results/relu_ablation"
     N = B / "node_mirror"
     out: Dict[str, Any] = {"cells": {}, "missing": [], "identity_problems": [], "gate_disagreements": [],
@@ -526,7 +530,7 @@ def summarize(run_root: str | Path, campaign3: str | Path) -> Dict[str, Any]:
         for arm_key, arm in ARMS.items():
             for seed in SEEDS:
                 cell = f"{arm}_{fam}_s{seed}"
-                c: Dict[str, Any] = {"arm": arm_key, "family": fam, "seed": seed}
+                c: Dict[str, Any] = {"arm": arm_key, "family": fam, "seed": seed, "identity_problems": []}
                 g = _read(B / "campaign" / f"gate_a_{cell}.json")
                 if g is None:
                     out["missing"].append(f"{cell}: A40 Gate A")
@@ -543,7 +547,7 @@ def summarize(run_root: str | Path, campaign3: str | Path) -> Dict[str, Any]:
                     c["r0b"] = {"verdict": r0b["verdict"], "count_rule_only": r0b_count_rule_only(r0b),
                                 "few_positive_share": few / tok}
                     if r0b["arm"] != R0B_ARM[arm_key]:
-                        out["identity_problems"].append(f"{cell}: R0(b) checked as {r0b['arm']}")
+                        c["identity_problems"].append(f"R0(b) checked as {r0b['arm']}")
                 if arm_key != "A":
                     try:
                         ref = json.loads((_adapter_dir(run_root, ARMS["A"], fam, seed) / "sleeper_run_config.json").read_text())
@@ -566,13 +570,15 @@ def summarize(run_root: str | Path, campaign3: str | Path) -> Dict[str, Any]:
                         from src.clcd.gate_a import USABLE, verdict_of
                         c["node_gate"] = {"verdict": verdict_of(ng), "usable": verdict_of(ng) in USABLE,
                                           "asr": ng["intact_backdoor"]["rate"]}
-                        if "gate" in c and c["gate"]["usable"] != c["node_gate"]["usable"]:
+                        if "gate" in c and c["gate"]["verdict"] != c["node_gate"]["verdict"]:
                             out["gate_disagreements"].append(f"{cell}: A40 {c['gate']['verdict']} vs node {c['node_gate']['verdict']}")
                     circ = _read(N / "campaign" / arm / "elim" / f"l20_seed{seed}_circuit.json")
                     if circ is None:
                         out["missing"].append(f"{cell}: R1 circuit")
                     else:
                         ref3 = _read(campaign3 / "r42_k5" / "elim" / f"l20_seed{seed}_circuit.json")
+                        if ref3 is None:
+                            out["missing"].append(f"{cell}: campaign-3 reference circuit")
                         c["r1"] = {"status": circ["status"], "both_K": circ["both_K"],
                                    "survivors": circ["elim"]["n_survivors"], "pool": circ["elim"]["pool_n"],
                                    "kept": [tuple(x) for x in circ["kept_latents"]],
@@ -596,7 +602,7 @@ def summarize(run_root: str | Path, campaign3: str | Path) -> Dict[str, Any]:
                         out["missing"].append(f"{cell}: R4 circuit")
                     else:
                         if "r1" in c and r4c["n_circuit_latents"] != c["r1"]["both_K"]:
-                            out["identity_problems"].append(f"{cell}: R4 circuit has {r4c['n_circuit_latents']} latents, both_K {c['r1']['both_K']}")
+                            c["identity_problems"].append(f"R4 circuit has {r4c['n_circuit_latents']} latents, both_K {c['r1']['both_K']}")
                         c["r4_circuit"] = {cond: v["eval_triggered"]["rate"] for cond, v in r4c["conditions"].items()}
                         c["r4_circuit_problems"] = r4c["problems"]
                         c["r4_poles_on_trigger"] = {k: v for k, v in r4c["poles_on_trigger"].items() if k != "per_module"}
@@ -605,7 +611,7 @@ def summarize(run_root: str | Path, campaign3: str | Path) -> Dict[str, Any]:
                     if at.exists():
                         c["r1p"] = attrib_concentration(at)
                         if c["r1p"]["n_latents"] != EXPECTED_LATENTS[fam]:
-                            out["identity_problems"].append(f"{cell}: attribution over {c['r1p']['n_latents']} latents")
+                            c["identity_problems"].append(f"attribution over {c['r1p']['n_latents']} latents")
                         c["_n90_set"] = concentration_set(at, 0.9)
                     else:
                         out["missing"].append(f"{cell}: R1' attribution")
@@ -616,19 +622,12 @@ def summarize(run_root: str | Path, campaign3: str | Path) -> Dict[str, Any]:
                         n_pos = torch.cat([v["n"][:, 0].sum(0) for v in counts.values()])
                         n_neg = torch.cat([v["n"][:, 1].sum(0) for v in counts.values()])
                         names = [(m, d) for m, v in counts.items() for d in range(v["n"].shape[-1])]
-                        fires = (n_pos + n_neg) > 0
-                        bip = bipolar(n_pos, n_neg)
                         m_pos = torch.cat([v["mass"][:, 0].sum(0) for v in counts.values()])
                         m_neg = torch.cat([v["mass"][:, 1].sum(0) for v in counts.values()])
-                        f_neg = (n_neg[fires].double() / (n_pos + n_neg)[fires].double())
-                        qs = [0.1, 0.25, 0.5, 0.75, 0.9]
-                        r2 = {"latents": len(names), "firing": int(fires.sum()), "bipolar": int(bip.sum()),
-                              "bipolar_share_of_firing": (float(bip.sum()) / int(fires.sum())) if int(fires.sum()) else None,
-                              "neg_share_of_firings": float(n_neg.sum()) / float((n_pos + n_neg).sum()),
-                              "neg_share_of_mass": float(m_neg.sum()) / float((m_pos + m_neg).sum()),
-                              "f_neg_quantiles": dict(zip(map(str, qs), torch.quantile(f_neg, torch.tensor(qs, dtype=torch.float64)).tolist())) if len(f_neg) else None}
+                        r2 = r2_stats(n_pos, n_neg, m_pos, m_neg)
+                        bip = bipolar(n_pos, n_neg)
                         if len(names) != EXPECTED_LATENTS[fam]:
-                            out["identity_problems"].append(f"{cell}: R2 counts over {len(names)} latents")
+                            c["identity_problems"].append(f"R2 counts over {len(names)} latents")
                         c["_r2_universe"] = set(names)
                         c["r2"] = r2
                         c["_r2_bipolar_names"] = {names[i] for i in torch.nonzero(bip).flatten().tolist()}
@@ -648,15 +647,39 @@ def summarize(run_root: str | Path, campaign3: str | Path) -> Dict[str, Any]:
             continue
         universe = c.pop("_r2_universe")
         if len(_match(sub, universe)) != len(sub):
-            raise ValueError(f"{cell}: {len(sub) - len(_match(sub, universe))} subset latents not in the R2 counts")
+            c["identity_problems"].append(f"{len(sub) - len(_match(sub, universe))} subset latents not in the R2 counts")
+            continue
         c["r2"]["bipolar_in_subset"] = len(_match(sub, bip))
         c["r2"]["subset_latents"] = len(sub)
         c["r2"]["subset"] = "circuit" if "r1" in c else "N90"
+    failed = _failed_outputs(B)
+    out["missing"] = [{"what": m, "status": "failed" if any(f in m for f in failed) else "pending"}
+                      for m in out["missing"]]
+    out["failed_jobs"] = sorted(failed)
+    for cell, c in out["cells"].items():
+        if c["identity_problems"]:
+            out["identity_problems"].append(f"{cell}: {c['identity_problems']}")
+        # R2 and R4-whole are A40 readouts for every family: they use the A40 gate (Amendment 8 rule 2)
+        c["a40_readouts_admitted"] = bool(c.get("gate", {}).get("usable")) and not c["identity_problems"]
     for c in out["cells"].values():
         if "r1" in c:
             c["r1"].pop("kept")
         c.pop("_n90_set", None)
         c.pop("_r2_universe", None)
+    return out
+
+
+def _failed_outputs(B: Path) -> set:
+    """Cell names whose job a queue log marks FAILED (A40 queues and the node mirror)."""
+    import re
+
+    out = set()
+    for log in list((B / "queue_logs").glob("*.log")) + list((B / "node_mirror" / "queue_logs").glob("*.log")):
+        for line in log.read_text(errors="ignore").splitlines():
+            m = re.search(r"\] (\S+) FAILED rc=", line)
+            if m:
+                name = re.sub(r"(_whole|_circuit|_attrib)?\.(json|pt|phase1)$", "", m.group(1))
+                out.add(name.replace("gate_a_", ""))
     return out
 
 
@@ -673,6 +696,8 @@ POOL_L20 = 294
 def admission(c: Dict[str, Any], strict_r0b: bool) -> Optional[str]:
     """None if the cell enters its family's test, else the reason (pre-registration Amendment 8)."""
     l20 = c["family"] == "l20"
+    if c.get("identity_problems"):
+        return f"identity problems: {c['identity_problems']}"
     gate = c.get("node_gate") if l20 else c.get("gate")
     if gate is None:
         return "gate not measured"
@@ -722,7 +747,8 @@ def tests(summary: Dict[str, Any], strict_r0b: bool = False) -> Dict[str, Any]:
         if why is not None:
             excluded[name] = why
             continue
-        vals.setdefault((c["family"], c["arm"]), []).append(_statistic(c))
+        c["test_statistic"] = _statistic(c)
+        vals.setdefault((c["family"], c["arm"]), []).append(c["test_statistic"])
     pvals: Dict[str, Optional[float]] = {}
     detail: Dict[str, Any] = {}
     first_threshold = 0.05 / len(TEST_NAMES)
@@ -762,19 +788,36 @@ def _cmd_summarize(a):
     import subprocess
 
     s = summarize(a.run_root, a.campaign3)
-    commit = subprocess.run(["git", "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip()
-    res = {"analysis_commit": commit, "written": datetime.datetime.utcnow().isoformat() + "Z",
+    commit = subprocess.run(["git", "rev-parse", "HEAD"], capture_output=True, text=True, check=True).stdout.strip()
+    dirty = bool(subprocess.run(["git", "status", "--porcelain", "--", "src", "tests", "docs"],
+                                capture_output=True, text=True, check=True).stdout.strip())
+    res = {"analysis_commit": commit, "analysis_tree_dirty": dirty,
+           "written": datetime.datetime.now(datetime.timezone.utc).isoformat(),
            "summary": s, "tests_primary": tests(s, strict_r0b=False),
            "tests_sensitivity_strict_r0b": tests(s, strict_r0b=True)}
     Path(a.out).write_text(json.dumps(res, indent=1, default=list))
-    print(f"analysis commit {commit[:8]}; missing records: {len(s['missing'])}")
+    print(f"analysis commit {commit[:8]}{' (DIRTY)' if dirty else ''}")
+    n_pend = sum(m["status"] == "pending" for m in s["missing"])
+    print(f"missing records: {len(s['missing'])} ({n_pend} pending, {len(s['missing']) - n_pend} from failed jobs)")
+    print(f"failed jobs: {s['failed_jobs']}")
+    print(f"identity problems: {s['identity_problems']}")
+    print(f"gate disagreements (A40 vs node): {s['gate_disagreements']}")
+    print("A' vs campaign-3 arm A (l20): " + "; ".join(
+        f"s{k}: survivors {v['A_prime']['survivors']} vs {v['campaign3_A']['survivors']}, both_K {v['A_prime']['both_K']} vs {v['campaign3_A']['both_K']}"
+        for k, v in sorted(s["reproduction_l20"].items())))
+    for cell, c in s["cells"].items():
+        if "r2" in c:
+            r2 = c["r2"]
+            print(f"R2 {cell}: bipolar {r2['bipolar']}/{r2['firing']} firing, neg share {r2['neg_share_of_firings']}, "
+                  f"mass {r2['neg_share_of_mass']}, f_neg q {r2['f_neg_quantiles']}, subset {r2.get('bipolar_in_subset')}/{r2.get('subset_latents')}")
     for t in ("tests_primary", "tests_sensitivity_strict_r0b"):
         print(t)
         for n_, d in res[t]["tests"].items():
             arm = n_.split(":")[1][0]
             print(f"  {n_}: A={d['A']} {arm}={d[arm]} p={d['p']} min_p={d.get('min_attainable_p')} "
                   f"underpowered={d.get('underpowered')} median_ratio={d.get('median_ratio')} holm={d['holm_reject']}")
-        print(f"  excluded: {len(res[t]['excluded'])} cells")
+        for cell, why in sorted(res[t]["excluded"].items()):
+            print(f"  excluded {cell}: {why}")
     return 0
 
 

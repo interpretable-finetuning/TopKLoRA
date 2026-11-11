@@ -579,6 +579,13 @@ showed no differences on results, logs, runlogs or models; the pod is idle (no c
 excludes training `checkpoint-*` directories by design, so 14 of them (15 GB) existed only on the pod; I asked the
 Remote Control session to copy and verify them on the cluster before the owner releases the pod, as for the H200.
 Read by the Remote Control session from the pod.
+*06:53:* copied and verified (about 06:52) to
+`/storage3/andrzej/topklora-semantic/models/semantic_painter_rtx_main_rose_kingfisher/` (pod paths kept): 14
+`checkpoint-*` directories (steps 7,875 and 9,450 for seven organisms: dense e6 l17_25 s46, dense e6 l20 s44, k12 e6
+all s46 and s47, k12 e6 l20 s44, s45 and s47), 196 files, 15,045,981,890 bytes; file lists and per-file sizes identical
+on pod and cluster, all 14 adapter-weight sha256 identical; the same verifier failed before the copy, when the cluster
+had none of the files. 14.6 TB free on `/storage3/andrzej` beforehand. Nothing of ours is left only on main_rose; the
+pod is idle and still up, for the owner to release.
 
 **Update 05:03 (2026-11-11): all-layer six-epoch TopK s43 full-pool search (supplementary) certifies at K=3,200 of 19,600
 (16.3%).** H200, intact 0.956; both certifying conditions met at 3,200 per the Remote Control session. Smaller than the

@@ -240,6 +240,16 @@ exists. Rules:
    f_neg distribution and |value|-weighted negative share, and the ratio of medians for every test are
    reported in the summary.
 
+**Amendment 9 (2026-11-11 08:30 UTC, before any R1′ result exists): R1′ on the node.** The A40
+pool is saturated by other users (two of our stage-2 queues have waited for a card since 06:08 and
+07:23), and attribution on the `all` family takes over an hour per adapter there. R1′ for all 30
+l17_25/`all` adapters (arms A′, B, C alike) is therefore computed on gpu-2457 (RTX PRO 6000, the
+frozen env of Amendment 7), same command and arguments as Amendment 3, outputs in `node/r1p/`. That
+set is the **primary** R1′; the A40 R1′ jobs already in the stage-2 queues keep running and are
+reported as a hardware replication (N50/N90 per adapter on both machines), never mixed into the test.
+Gate A, R0, R2 and whole-adapter R4 stay on the A40s. At the time of writing two A40 R1′ jobs had
+started and none had finished; no attribution number had been seen.
+
 ## 4. Readouts
 
 All readouts are reported for every seed. Bands, never point estimates where a band exists.

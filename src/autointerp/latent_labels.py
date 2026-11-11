@@ -83,6 +83,18 @@ def split_windows(entry: dict, seed: int) -> Tuple[Dict[str, List[dict]], List[T
     return shown, held
 
 
+def strong_vs_weak(entry: dict, seed: int) -> List[Tuple[dict, bool]]:
+    """Amendment 3 scoring set: 5 held-out strongest windows (top 13-17, never shown) as positives;
+    3 held-out weakest-quantile windows and 2 held-out non-activating windows as negatives."""
+    s = entry["sets"]
+    held = [(w, True) for w in s["top"][12:17]]
+    held += [(w, False) for w in s["quantile_4"][4:7]] + [(w, False) for w in s["non_active"][5:7]]
+    if len(held) != 10:
+        raise ValueError(f"{entry['label']}: strong-vs-weak set has {len(held)} windows, expected 10")
+    random.Random(f"{seed}-sw-{entry['label']}").shuffle(held)
+    return held
+
+
 def input_evidence(entry: dict, shown: Dict[str, List[dict]]) -> str:
     r = entry["firing_rate"]
     lines = [
@@ -205,6 +217,13 @@ Below are {n} text windows. For each, say whether the latent activates somewhere
 
 {windows}"""
 
+DETECT_STRONG = """A latent of a language-model adapter has this label:
+{label}
+
+Below are {n} text windows. Some contain one of the latent's strongest activations; the others contain only weak activations or none. From the label alone, say for each window whether it contains a strong activation of what the label describes. Reply with only a JSON list of {n} booleans, in order.
+
+{windows}"""
+
 MECH_QA = """A latent of a language-model adapter has this label:
 {label}
 
@@ -280,9 +299,10 @@ def _json_from(text: str):
     raise RuntimeError(f"no JSON in answer: {text[:200]!r}")
 
 
-def score_detection(client, spend: Spend, label: str, held: Sequence[Tuple[dict, bool]], tag: str) -> Dict[str, float]:
+def score_detection(client, spend: Spend, label: str, held: Sequence[Tuple[dict, bool]], tag: str,
+                    prompt: str = None) -> Dict[str, float]:
     windows = "\n".join(f"{i + 1}. {_fmt_window(w, False)}" for i, (w, _) in enumerate(held))
-    ans = _json_from(_call(client, spend, tag, "", DETECT.format(label=label, n=len(held), windows=windows), "low", 4000))
+    ans = _json_from(_call(client, spend, tag, "", (prompt or DETECT).format(label=label, n=len(held), windows=windows), "low", 4000))
     if not (isinstance(ans, list) and len(ans) == len(held) and all(isinstance(x, bool) for x in ans)):
         raise RuntimeError(f"{tag}: bad detection answer {ans!r}")
     pos = [a for a, (_, t) in zip(ans, held) if t]

@@ -89,14 +89,42 @@ def cmd_run(a):
     print(json.dumps(out["summary"], indent=1))
 
 
+def cmd_rescore(a):
+    """Amendment 3: score existing labels (unchanged) on the strong-vs-weak windows, with the same
+    shuffled-label partners."""
+    ex, mech, labels = _load(a)
+    client = ll._client()
+    spend = ll.Spend(a.cap, ledger=a.ledger)
+    out = json.loads(Path(a.labels_json).read_text())
+    for lab in labels:
+        rec = out["latents"][lab]
+        if "detection_strong_null" in rec:
+            continue
+        held = ll.strong_vs_weak(ex[lab], SEED)
+        other = out["latents"][rec["null_partner"]]["label"]
+        rec["detection_strong"] = ll.score_detection(client, spend, rec["label"], held, f"dets-{lab}", ll.DETECT_STRONG)
+        rec["detection_strong_null"] = ll.score_detection(client, spend, other, held, f"detsnull-{lab}", ll.DETECT_STRONG)
+        Path(a.labels_json).write_text(json.dumps(out, indent=1))
+    mean = lambda k: statistics.mean(out["latents"][x][k]["balanced_accuracy"] for x in labels)
+    out["summary"]["detection_strong_bacc"] = mean("detection_strong")
+    out["summary"]["detection_strong_bacc_null"] = mean("detection_strong_null")
+    out["summary"]["spend_total_usd"] = spend.total
+    Path(a.labels_json).write_text(json.dumps(out, indent=1))
+    print(json.dumps(out["summary"], indent=1))
+
+
 def main():
     p = argparse.ArgumentParser()
     sub = p.add_subparsers(dest="cmd", required=True)
-    for name in ("run", "show"):
+    for name in ("run", "show", "rescore"):
         c = sub.add_parser(name)
         c.add_argument("--examples", required=True)
         c.add_argument("--mech_dirs", required=True)
         c.add_argument("--labels", required=True)
+        if name == "rescore":
+            c.add_argument("--labels_json", required=True)
+            c.add_argument("--cap", type=float, required=True)
+            c.add_argument("--ledger", required=True)
         if name == "run":
             c.add_argument("--version", required=True, choices=["v0", "v1"])
             c.add_argument("--out", required=True)
@@ -106,7 +134,7 @@ def main():
                            help="onset edge-share median fixed on the development set (spec section 5)")
             c.add_argument("--commit", required=True, help="code commit, recorded in the output")
     a = p.parse_args()
-    {"run": cmd_run, "show": cmd_show}[a.cmd](a)
+    {"run": cmd_run, "show": cmd_show, "rescore": cmd_rescore}[a.cmd](a)
 
 
 if __name__ == "__main__":

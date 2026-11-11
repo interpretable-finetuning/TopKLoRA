@@ -8,6 +8,17 @@ captain's log with reasons. Nothing in section 2 has been drawn when this file i
 
 ## 0. Amendments
 
+**2026-11-11 ~03:30 UTC (02:30 node clock), amendment 3: detection scoring revised after the first
+development scores, before choosing a version.** What had been seen: v0 and v1 labels for the 23
+development latents and their scores (detection 0.53 for both against nulls of 0.47/0.43; prediction 0.81
+for v1 vs 0.54 null). Reading the windows: most latents fire on 10-30% of tokens, so a 32-token window
+from a lower activation quantile and a "non-activating" window differ in whether any token fires at all,
+which no description of what a latent responds to can predict. The "fires on" detection is therefore
+re-scored on a strong-vs-weak set: 5 held-out windows from the strongest 20 (top 13-17, never shown) as
+positives and 5 negatives (3 held-out weakest-quantile windows, 2 held-out non-activating windows), with
+the same labels and shuffled-label partners. Both scores are reported; the strong-vs-weak one is used to
+choose between versions. Labels are not regenerated.
+
 **2026-11-11 ~03:05 UTC, amendment 2: label protocol details and exclusions, after a code review,
 before any label was generated and before any scale readout was looked at.** (1) Held-out scoring set
 per latent: 5 activating windows (one per quantile, not shown) and 5 non-activating (the example sets

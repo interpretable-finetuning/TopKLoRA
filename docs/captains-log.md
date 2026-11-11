@@ -1282,6 +1282,20 @@ on at least 45 GB free; on that pod the dense jobs run until about 15:00-22:00, 
 Moving the resume to another RTX pod with room (same card type) would be faster, but moves need the owner's go; it goes
 in the morning summary. Read by the Remote Control session from the pod.
 
+**Update 08:26 (2026-11-11): three-epoch all-layer TopK s45 capped circuit (paper protocol), K=8,232 of 19,600 (42.0%).**
+statistical_chocolate_loon, 08:12. Verification band: intact 98.1%, keep-only 97.2% (shortfall 0.9%, within 2 SE);
+ablation 0.0% from K=3,200 up. 3 of 64 controls dropped, within the 4/64 exception, so no flag. Paper protocol:
+verified. The same K as the supplementary full pool (05:02 entry), so the cap does not bind here. *Caveat, from the
+Remote Control session:* elimination removed nothing: all 2,500 capped-pool latents survived, so the circuit is the top
+8,232 latents in attribution order. Six-epoch all-layer s46 (K=6,400, already on HF) was the same, 0 removed; in the
+other capped all-layer searches elimination removed 1,055-1,762 of the 2,500 (three-epoch s42-s44, six-epoch s43). I
+asked where K=8,232 comes from (it is not on the 800 ... 8,000 grid) and why elimination removed nothing in those two
+searches; until answered, these two circuit sizes are reported as the search returned them. Its chain continues to
+transfer, leak, held-out keep-only, surgical and random. I extended the standing judge and HF go to the three-epoch
+all-layer capped s45 and s46, as for s42-s44, since they complete the appendix's three-epoch all-layer row. This is the
+fourth all-layer three-epoch TopK circuit: 4,800 / 3,200 / 3,200 / 8,232 (s42-s45; 16.3-42.0%). Read by the Remote
+Control session from the pod.
+
 ### Semantic trigger, six-epoch 7B TopK s43 (H200) circuit: K=800 of 6,300 (12.7%), the smallest nine-layer painter circuit so far · *2026-11-10 05:17* · VERIFIED (specific on both random tests)
 
 **Question.** Matched-epoch TopK partner for dense six-epoch s43 (in its K sweep on the cluster): how large is its

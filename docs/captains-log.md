@@ -1012,6 +1012,21 @@ its batch (submitted 19:35:55) still shows `submitted` at OpenRouter, and a dens
 also still pending, so the delay looks like the provider's. The judge process is alive and polling; nothing stopped. This
 is the last TopK paper-protocol cell. Read by the Remote Control session.
 
+**Update 23:13 (2026-11-11): capped six-epoch all-layer TopK s44 judged and on HF, so the six-epoch all-layer TopK row
+(s42-s47) is complete.** Judge (luna, K=2,400): 2,838 of 2,838 parsed, none missing, $0.15. The batch came back after
+about 3.5 h at OpenRouter. Alpaca (n=500): intact 3.92, ablated 4.00, base 3.77. Ablated - intact is +0.08
+[-0.00, +0.17] (integer sums 1,998 vs 1,958); intact - base is +0.15 [+0.03, +0.27]; retention 1.53 [0.94, 4.48], with
+the denominator <= 0 in 0.7% of resamples. No Robots (n=446): intact 2.96, ablated 3.20, base 2.98. Ablated - intact is
++0.24 [+0.14, +0.35], but intact - base is -0.02 [-0.14, +0.11], so retention is undefined there (62.0% of resamples).
+Six-epoch all-layer TopK alpaca quality change over six seeds, exact from the integer sums over n=500, is +0.054 /
++0.060 / +0.080 / +0.098 / +0.090 / +0.112 (s42-s47). The median is the mean of the middle two, 17/200 = +0.085 exactly,
+a tie that rounds half-up to +0.09. So Table 5's cell is +0.09 (+0.05 to +0.11) [6]; float or round-half-even
+formatting would print +0.08. Intervals above 0: 3 of 6, since s44's touches 0. The caption's intact - base range stays
+0.04-0.23. Table H2 row: alpaca retention 1.53. Pushed 23:12:44 to
+`hf://datasets/interpretable-finetuning/topklora-results@d9a250412c1403e6e886a6f90f6e693e963bf7a0/runs/2026-11-11_as_torrnode_painter-7b-k12-e6-all-s44-stage4/`
+(read-back matches, 10 files including `HARDWARE.txt`; scan clean). All six six-epoch and all five three-epoch
+all-layer TopK cells are now on HF. Read by the Remote Control session.
+
 **Update 05:33 (2026-11-11), H200 landings.** (1) *Capped all-layer six-epoch TopK s43 (paper protocol): circuit
 K=3,200 of 19,600 (16.3%).* Verification band: intact 95.6%, keep-only 94.3% (shortfall 1.3%, within 2 SE = 1.46%),
 ablation 0.0%. Paper protocol: verified. Transfer, leak, held-out keep-only, surgical and random follow. Six-epoch

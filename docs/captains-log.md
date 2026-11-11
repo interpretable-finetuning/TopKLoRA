@@ -747,6 +747,24 @@ results, logs or models mirrors changed. As a control, the same test from 06:00 
 files, so it can see a late file. The pull loops for the three remaining RTX pods, and the pods, are unchanged. Read by
 the Remote Control session.
 
+**Update 10:36 (2026-11-11): RTX dispatcher's calibration check now reads the pulled-back log, not the live pod (my
+call).** *Why:* before it starts any queued task, the dispatcher re-checked the RTX calibration by ssh to the pod that
+ran it (sorry_gold_reindeer). If sorry_gold is released while a task still waits, nothing queued would ever start. The
+case at hand: sorry_gold's last job (dense s47) ends about 11-12 13:00-16:00, before the three-epoch capped s45 resume
+would start on statistical_chocolate_loon (about 11-12 17:00-20:00). *Change:* the last step greps the cluster copy
+`logs/semantic_painter_rtx_<calib pod>/runlogs/calib_surgical_k12_s43.out` (sha256 8fcb7cde… on pod and cluster) for
+`EXIT=0`, and the manual `claims/calib/ok` stays required. `rtx_dispatch.sh` is untracked, outside any checkout; the
+backup is `rtx_dispatch.sh.bak_20261111T1036`. *Shown to fail before the swap:* nonexistent path exit 2, log copy with
+the EXIT=0 line removed exit 1, no `claims/calib/ok` exit 1, real log exit 0. Atomic replace at 10:35:58 after
+`bash -n`; only the `rtxdispatch` tmux session was restarted. No job PID changed on any pod (charming 32725/54442,
+sorry_gold 42772/55962, statistical 37292/38195) or on the cluster (tn13 22928/22942, tn12 53360/53374). The s45 resume
+line (`pod=statistical_chocolate_loon,minfree=46080`) is still queued and unclaimed. Left alone: `pods.txt` still lists
+main_rose, so the dispatcher logs a harmless "ssh failed" for it every 2 min. *Option put to the owner:* once three-epoch
+s46's chain ends on charming (about 13:00-14:00), that card would hold only dense s45's search (about 29 of 97.9 GB). The
+s45 resume (leak needs about 38 GB) could run there and finish about 16:00-17:00 today instead of 11-12 evening.
+charming already holds the organism (statistical's copy was made from it, sha256 checked). Read by the Remote Control
+session.
+
 **Update 05:33 (2026-11-11), H200 landings.** (1) *Capped all-layer six-epoch TopK s43 (paper protocol): circuit
 K=3,200 of 19,600 (16.3%).* Verification band: intact 95.6%, keep-only 94.3% (shortfall 1.3%, within 2 SE = 1.46%),
 ablation 0.0%. Paper protocol: verified. Transfer, leak, held-out keep-only, surgical and random follow. Six-epoch

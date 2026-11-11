@@ -994,6 +994,15 @@ circuits: 19 pass, 11 miss (0.20-1.25 points); for Table 5's 18 circuits, 12 pas
 H2 row: keep-only / intact 3,846 / 3,820, shortfall -0.65 [0.68]. Surgical running, then judge, random and HF push, done
 about 21:00-22:00 UTC. Read by the Remote Control session.
 
+**Update 19:35 (2026-11-11): capped six-epoch all-layer TopK s44 surgical (K=2,400, n=1,000, A40); seed-7 random ablation
+95.3%.** Intact 95.4%, ablated 0.0%, base 0.0%, keep-only 95.7%. The paper's single random draw (seed 7) of 2,400 latents
+leaves 95.3%, so this 12.2% circuit is highly specific, the most specific six-epoch all-layer cell on the paper's draw.
+Six-epoch all-layer seed-7 random over six seeds: 0.558 / 0.857 / 0.953 / 0.216 / 0.608 / 0.557 (s42-s47), so Table 5's
+random cell becomes 0.58 (0.22-0.95) [6] (median of the middle two, 0.558 and 0.608), from 0.56 (0.22-0.86) [5]. With size
+28.6 (12.2-32.7) [6], the smallest circuit (s44, 12.2%) is the most specific and the largest attribution-ordered one (s45,
+32.7%) the least. Judge started 19:35:37 (standing go); the 20 random draws are running, then the HF push, about 21:00.
+Read by the Remote Control session.
+
 **Update 05:33 (2026-11-11), H200 landings.** (1) *Capped all-layer six-epoch TopK s43 (paper protocol): circuit
 K=3,200 of 19,600 (16.3%).* Verification band: intact 95.6%, keep-only 94.3% (shortfall 1.3%, within 2 SE = 1.46%),
 ablation 0.0%. Paper protocol: verified. Transfer, leak, held-out keep-only, surgical and random follow. Six-epoch

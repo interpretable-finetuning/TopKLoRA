@@ -799,6 +799,9 @@ Ablation takes all 11 splits to 0.0%. Intact: eval_seen_newskel 100% (n=200), ev
 eval_heldout_near 1.3% (300), eval_heldout_far 1.0% (300), eval_contrast_pair 4.5% (200), eval_desc_contrast 1.5% (200),
 eval_topic 0.7% (150). Leak next. Read by the Remote Control session.
 
+**Update 12:15 (2026-11-11): capped six-epoch all-layer TopK s45 (K=6,400, A40) passes held-out necessity.** Leak
+0/4,000 (no payload, single-mention or ambiguous fires). Held-out keep-only next. Read by the Remote Control session.
+
 **Update 05:33 (2026-11-11), H200 landings.** (1) *Capped all-layer six-epoch TopK s43 (paper protocol): circuit
 K=3,200 of 19,600 (16.3%).* Verification band: intact 95.6%, keep-only 94.3% (shortfall 1.3%, within 2 SE = 1.46%),
 ablation 0.0%. Paper protocol: verified. Transfer, leak, held-out keep-only, surgical and random follow. Six-epoch

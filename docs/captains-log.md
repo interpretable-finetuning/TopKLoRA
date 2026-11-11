@@ -540,6 +540,16 @@ description sets 0.340 and 0.360, the contrast splits 0.000-0.020). Leak: 0 of 4
 ablated. So 25 circuits now pass held-out necessity and transfer. Held-out keep-only, surgical and random follow in its
 chain. Read by the Remote Control session from the pod.
 
+**Update 05:14 (2026-11-11): all-layer six-epoch TopK s47 held-out keep-only narrowly misses.** K=6,400, n=4,000 (pool
+2,000-5,999): intact 91.5%, keep-only 90.5%; pooled shortfall 1.05% against an allowance of 0.76% (2 paired SE; 95% CI
+of the shortfall 0.30-1.80%). By band, 2,000-2,999 misses at 1.9%; the other three bands are within 2 SE. Ablated: 0
+of 4,000. This is the first held-out miss above one point: the other eight misses were 0.20-0.95 points. So across the
+25 circuits checked, 16 pass and nine miss by 0.20-1.05 points, and among Table 5's 15 circuits 10 pass and five miss.
+The circuit is still verified under the paper's rule (selected on the verification split, where its keep-only was
+0.908 against intact 0.919); it also has the lowest intact rate of the six-epoch all-layer seeds, so a fixed-size
+shortfall weighs more here. Exact counts requested. Surgical and random follow. Read by the Remote Control session from
+the pod.
+
 **Update 05:03 (2026-11-11): all-layer six-epoch TopK s43 full-pool search (supplementary) certifies at K=3,200 of 19,600
 (16.3%).** H200, intact 0.956; both certifying conditions met at 3,200 per the Remote Control session. Smaller than the
 capped circuits of s42, s46 and s47 (24.5-32.7%); its own capped twin (paper protocol, also on the H200) is still

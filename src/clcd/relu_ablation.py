@@ -582,6 +582,7 @@ def summarize(run_root: str | Path, campaign3: str | Path) -> Dict[str, Any]:
                         c["r1"] = {"status": circ["status"], "both_K": circ["both_K"],
                                    "survivors": circ["elim"]["n_survivors"], "pool": circ["elim"]["pool_n"],
                                    "kept": [tuple(x) for x in circ["kept_latents"]],
+                                   "survivor_set": [tuple(x) for x in circ["elim"]["protocol"]["survivors"]],
                                    "args_check": None if ref3 is None else
                                    {k: list(v) for k, v in args_diff(ref3["args"], circ["args"]).items()}}
                         if arm_key == "A" and ref3 is not None:
@@ -602,7 +603,7 @@ def summarize(run_root: str | Path, campaign3: str | Path) -> Dict[str, Any]:
                         out["missing"].append(f"{cell}: R4 circuit")
                     else:
                         if "r1" in c and r4c["n_circuit_latents"] != c["r1"]["both_K"]:
-                            c["identity_problems"].append(("R4", f"R4 circuit has {r4c['n_circuit_latents']} latents, both_K {c['r1']['both_K']}"))
+                            c["identity_problems"].append(("R4c", f"R4 circuit has {r4c['n_circuit_latents']} latents, both_K {c['r1']['both_K']}"))
                         c["r4_circuit"] = {cond: v["eval_triggered"]["rate"] for cond, v in r4c["conditions"].items()}
                         c["r4_circuit_problems"] = r4c["problems"]
                         c["r4_poles_on_trigger"] = {k: v for k, v in r4c["poles_on_trigger"].items() if k != "per_module"}
@@ -640,11 +641,13 @@ def summarize(run_root: str | Path, campaign3: str | Path) -> Dict[str, Any]:
         if bip is None:
             continue
         if "r1" in c:  # l20: the certified circuit (kept_latents = the both_K prefix)
-            sub = {(m, d) for m, d in c["r1"]["kept"]}
-            # descriptive: the survivors are the first n_survivors of the elimination order (= kept prefix)
-            surv = {(m, d) for m, d in c["r1"]["kept"][: c["r1"]["survivors"]]}
+            surv = {(m, d) for m, d in c["r1"]["survivor_set"]}   # descriptive: the elimination survivors
             c["r2"]["bipolar_in_survivors"] = len(_match(surv, bip))
             c["r2"]["survivor_latents"] = len(surv)
+            if c["r1"]["status"] != "ok":   # censored: no certified circuit to count over
+                c["r2"]["subset"] = f"none (circuit status {c['r1']['status']})"
+                continue
+            sub = {(m, d) for m, d in c["r1"]["kept"]}
         elif "_n90_set" in c:  # l17_25 / all: Amendment 2's analogue, the N90 latents
             sub = c["_n90_set"]
         else:
@@ -665,10 +668,10 @@ def summarize(run_root: str | Path, campaign3: str | Path) -> Dict[str, Any]:
         if f"a40:{cell}.ok" in failed:
             return "failed (training)"
         exp = _expected_output(m)
-        return "failed" if exp in failed else "pending"
+        return failed.get(exp, "pending")
 
     out["missing"] = [{"what": m, "status": status(m)} for m in out["missing"]]
-    out["failed_jobs"] = sorted(failed)
+    out["failed_jobs"] = sorted(f"{k} ({v})" for k, v in failed.items())
     for cell, c in out["cells"].items():
         if c["identity_problems"]:
             out["identity_problems"].append(f"{cell}: {c['identity_problems']}")
@@ -679,6 +682,7 @@ def summarize(run_root: str | Path, campaign3: str | Path) -> Dict[str, Any]:
     for c in out["cells"].values():
         if "r1" in c:
             c["r1"].pop("kept")
+            c["r1"].pop("survivor_set")
         c.pop("_n90_set", None)
         c.pop("_r2_universe", None)
     return out
@@ -705,23 +709,32 @@ def _a40_admission(c: Dict[str, Any], strict_r0b: bool, readout: str) -> Optiona
 
 
 def _failed_outputs(B: Path) -> set:
-    """"<a40|node>:<output basename>" of jobs whose LAST event in a queue log is FAILED.
-
-    A job that failed and later ran again ("RUN"/"done") is not failed any more.
+    """{"<a40|node>:<output basename>": "failed" | "skipped (gate)"} for jobs whose LATEST event (by the
+    log timestamp, across all queue logs) is a failure. A job that failed and later ran again is not failed.
     """
     import re
 
-    last: Dict[str, str] = {}
+    events = []  # (timestamp, file order, line order, key, state)
     for where, d in (("a40", B / "queue_logs"), ("node", B / "node_mirror" / "queue_logs")):
-        for log in sorted(d.glob("*.log")):
-            for line in log.read_text(errors="ignore").splitlines():
-                m = re.search(r"\] (?:RUN )?(\S+) (FAILED rc=|done|exists, skip)", line) or \
+        if not d.is_dir():
+            raise FileNotFoundError(f"queue log directory missing: {d} -- cannot tell failed from pending")
+        for fi, log in enumerate(sorted(d.glob("*.log"))):
+            for li, line in enumerate(log.read_text(errors="ignore").splitlines()):
+                ts = re.match(r"\[(\d{4}-\d\d-\d\d \d\d:\d\d)", line)
+                m = re.search(r"\] (?:RUN )?(\S+) (FAILED rc=(\d+)|done|exists, skip)", line) or \
                     re.search(r"\] RUN (\S+)$", line)
-                if not m:
+                if not m or not ts:
                     continue
-                key = f"{where}:{m.group(1)}"
-                last[key] = "failed" if (m.lastindex and m.lastindex >= 2 and m.group(2).startswith("FAILED")) else "ok"
-    return {k for k, v in last.items() if v == "failed"}
+                state = "ok"
+                if m.lastindex and m.lastindex >= 2 and m.group(2).startswith("FAILED"):
+                    # rc 3 from `relu_ablation gate-ok`: the job was not run because its gate failed
+                    gated = m.group(3) == "3" and (m.group(1).endswith(".phase1") or m.group(1).endswith("_circuit.json"))
+                    state = "skipped (gate)" if gated else "failed"
+                events.append((ts.group(1), fi, li, f"{where}:{m.group(1)}", state))
+    last: Dict[str, str] = {}
+    for _, _, _, key, state in sorted(events):
+        last[key] = state
+    return {k: v for k, v in last.items() if v != "ok"}
 
 
 def _expected_output(missing: str) -> str:
@@ -858,8 +871,8 @@ def _cmd_summarize(a):
            "tests_sensitivity_strict_r0b": tests(s, strict_r0b=True)}
     Path(a.out).write_text(json.dumps(res, indent=1, default=list))
     print(f"analysis commit {commit[:8]}{' (DIRTY)' if dirty else ''}")
-    n_pend = sum(m["status"] == "pending" for m in s["missing"])
-    print(f"missing records: {len(s['missing'])} ({n_pend} pending, {len(s['missing']) - n_pend} from failed jobs)")
+    from collections import Counter
+    print(f"missing records: {len(s['missing'])} by status {dict(Counter(m['status'] for m in s['missing']))}")
     print(f"failed jobs (non-zero exit; a check that FAILs still writes its record): {s['failed_jobs']}")
     print(f"identity problems: {s['identity_problems']}")
     print(f"gate disagreements (A40 vs node): {s['gate_disagreements']}")

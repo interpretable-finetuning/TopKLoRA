@@ -331,17 +331,27 @@ def test_failed_jobs_are_told_apart_from_pending_ones(tmp_path):
     (tmp_path / "queue_logs" / "q.log").write_text(
         "[2026-11-11 05:48 g4] r42_k5_norelu_all_s44.json FAILED rc=1 -- see x\n"
         "[2026-11-11 05:49 g4] r42_k5_abs_l20_s42_whole.json done\n")
+    # a training failure in train_*.log retried later from requeue_*.log (sorts EARLIER by name)
+    (tmp_path / "queue_logs" / "train_x.log").write_text("[2026-11-11 06:00 g0] r42_k5_l20_s44.ok FAILED rc=1 -- see t\n")
+    (tmp_path / "queue_logs" / "requeue_x.log").write_text("[2026-11-11 06:07 g3] RUN r42_k5_l20_s44.ok\n"
+                                                           "[2026-11-11 06:41 g3] r42_k5_l20_s44.ok done\n")
     (tmp_path / "node_mirror" / "queue_logs").mkdir(parents=True)
     (tmp_path / "node_mirror" / "queue_logs" / "n.log").write_text(
         "[2026-11-11 05:00 g1] r42_k5_abs_l20_s45.phase1 FAILED rc=6 -- see y\n"
         "[2026-11-11 05:01 g1] gate_a_r42_k5_l20_s46.json FAILED rc=1 -- see z\n"
-        "[2026-11-11 05:30 g1] RUN gate_a_r42_k5_l20_s46.json\n")     # requeued: no longer failed
+        "[2026-11-11 05:30 g1] RUN gate_a_r42_k5_l20_s46.json\n"     # requeued: no longer failed
+        "[2026-11-11 05:40 g1] r42_k5_abs_l20_s46.phase1 FAILED rc=3 -- see g\n")   # gate-ok refused: not run
     failed = ra._failed_outputs(tmp_path)
-    assert failed == {"a40:r42_k5_norelu_all_s44.json", "node:r42_k5_abs_l20_s45.phase1"}
+    assert failed == {"a40:r42_k5_norelu_all_s44.json": "failed", "node:r42_k5_abs_l20_s45.phase1": "failed",
+                      "node:r42_k5_abs_l20_s46.phase1": "skipped (gate)"}
     assert ra._expected_output("r42_k5_abs_l20_s45: surgical") in failed
     assert ra._expected_output("r42_k5_abs_l20_s45: R4 circuit") == "node:r42_k5_abs_l20_s45_circuit.json"
     with pytest.raises(KeyError):
         ra._expected_output("r42_k5_abs_l20_s45: something new")
+    import shutil
+    shutil.rmtree(tmp_path / "node_mirror")
+    with pytest.raises(FileNotFoundError):   # no logs is not "nothing failed"
+        ra._failed_outputs(tmp_path)
     # the failed job is R0(b); the same cell's attribution that has not run yet is still pending
     assert ra._expected_output("r42_k5_norelu_all_s44: R0(b)") in failed
     assert ra._expected_output("r42_k5_norelu_all_s44: R1' attribution") not in failed
@@ -402,10 +412,13 @@ def _tree(tmp_path, *, r0b_arm="abs", campaign3=True):
                                             "per_module": {"m": {"max_abs_diff": 0.0, "nnz_min": 5, "nnz_max": 5, "selected": 10,
                                                                  "tokens": 2, "few_positive": 0}}})
         _write(B / "node_mirror/campaign" / arm / "elim" / "l20_seed42_circuit.json",
-               {"status": "ok", "both_K": 2, "elim": {"n_survivors": 1, "pool_n": 294},
+               {"status": "ok", "both_K": 2, "elim": {"n_survivors": 1, "pool_n": 294, "protocol": {
+                   "survivors": [["base_model.model.model.layers.20.mlp.up_proj", 0]]}},
                 "kept_latents": [["base_model.model.model.layers.20.mlp.up_proj", 0],
                                  ["base_model.model.model.layers.20.mlp.up_proj", 1]],
                 "args": {"n_cheap": 80, "out": cell}})
+    (B / "queue_logs").mkdir(parents=True, exist_ok=True)
+    (B / "node_mirror/queue_logs").mkdir(parents=True, exist_ok=True)
     if campaign3:
         _write(tmp_path / "c3/r42_k5/elim/l20_seed43_circuit.json",
                {"status": "ok", "both_K": 2, "elim": {"n_survivors": 1}, "args": {"n_cheap": 80, "out": "ref"}})
@@ -423,6 +436,7 @@ def test_summarize_reports_what_amendment_8_lists(tmp_path):
     assert cell["r1"]["args_check"] == {}
     assert cell["r0a"] == []
     assert cell["a40_readouts_admitted"] == {"R2": None, "R4": None}
+    assert cell["r1"]["survivors"] == 1
     assert s["reproduction_l20"][42] == {"A_prime": {"survivors": 1, "both_K": 2},
                                          "campaign3_A": {"survivors": 2, "both_K": 3}}
     # nothing has failed in this tree: every missing record is pending

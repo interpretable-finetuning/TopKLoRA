@@ -1319,6 +1319,19 @@ since job checkouts are frozen until the last pre-merge search ends). *My call, 
 the protocol's answer (the grid was fixed before the run; replacing it after seeing the result would be the larger
 departure) and disclose both points in H.3. Flagged in the doc's open items.
 
+**Update 08:41 (2026-11-11): three-epoch all-layer capped s45 stopped at leak on GPU memory, as flagged at 05:02.**
+statistical_chocolate_loon, 08:29:29, right after its transfer step landed: the pod's two dense six-epoch all-layer
+searches (s43, s44) held 28.3 GiB each and leak ran out at about 38 GiB of its own. Circuit (K=8,232) and
+`transfer.json` kept; nothing else stopped. The resume is queued first under the out-of-memory rule
+(`k12_all_s45_capped_resume pod=statistical_chocolate_loon,minfree=46080`, an atomic replace of `rtx_tasks.txt`; Stage 4
+skips finished steps, so it runs leak, keep-only, surgical and random). It may wait many hours: the card has about 39 GB
+free, and the two dense searches (22 h in, eliminations at 73% and 69%) each continue inline into their own checks.
+Faster options, all moves that need the owner's go: charming_green_earthworm (holds the organism, about 37 GB free now,
+more once its capped s46 ends around 11:00; needs the circuit copied), main_rose (idle, same card type, but due for
+release), or an A40 (a card-type change mid-chain, the larger departure). I left it queued; this is three-epoch
+appendix data, not Table 5, so waiting costs only time. It goes in the morning summary. Read by the Remote Control
+session from the pod.
+
 ### Semantic trigger, six-epoch 7B TopK s43 (H200) circuit: K=800 of 6,300 (12.7%), the smallest nine-layer painter circuit so far · *2026-11-10 05:17* · VERIFIED (specific on both random tests)
 
 **Question.** Matched-epoch TopK partner for dense six-epoch s43 (in its K sweep on the cluster): how large is its

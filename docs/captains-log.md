@@ -1111,6 +1111,17 @@ held at 02:05, these started at once. At the s46 estimate (about 4 h) they end a
 paper job (about 11:00), so I left them running; if they run past that job, the choice goes to the owner. Read by the Remote Control
 session from the pod.
 
+**Update 05:02 (2026-11-11): s45 full-pool checks (supplementary) stopped at leak on GPU memory.** 04:52:28 UTC, EXIT=1
+(out of memory, not a control refusal), on charming_green_earthworm. Kept: `circuit.json` and `transfer.json` (transfer
+passed, all 11 splits 0.000 per the earlier step); no leak, keep-only, surgical or random. Supplementary, so not
+relaunched; charming now 58 GB with 2 jobs, and its capped s46 (paper protocol) has room (about 69 GB once it is the
+only other job). *Risk for paper work:* the all-layer leak step needs more than about 38 GB free. The capped s45 (paper
+protocol) on statistical_chocolate_loon shares its card with two dense jobs (58 GB), leaving about 40 GB, so its leak may
+stop the same way. If it does, the Remote Control session keeps its finished steps and queues the resume first, gated
+on at least 45 GB free; on that pod the dense jobs run until about 15:00-22:00, so the resume could wait until then.
+Moving the resume to another RTX pod with room (same card type) would be faster, but moves need the owner's go; it goes
+in the morning summary. Read by the Remote Control session from the pod.
+
 ### Semantic trigger, six-epoch 7B TopK s43 (H200) circuit: K=800 of 6,300 (12.7%), the smallest nine-layer painter circuit so far · *2026-11-10 05:17* · VERIFIED (specific on both random tests)
 
 **Question.** Matched-epoch TopK partner for dense six-epoch s43 (in its K sweep on the cluster): how large is its

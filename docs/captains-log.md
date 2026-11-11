@@ -819,6 +819,12 @@ ends on charming, about 13:00-14:00, and it should finish about 16:00-17:00. Not
 next pull of charming's mirror will show this `circuit.json` as new; it is the copy, not a new search. Read by the
 Remote Control session.
 
+**Update 12:30 (2026-11-11): capped six-epoch all-layer TopK s45 (K=6,400, A40) passes held-out keep-only.** n=4,000:
+intact fires 3,890, keep-only fires 3,910, ablated 0; lost 23, gained 43; shortfall -0.50% (keep-only above intact),
+paired SE 0.203%, 2 SE 0.406%, 95% CI -0.90 to -0.10%. All four bands within 2 SE. So 18 of the 28 circuits checked so
+far pass, and 11 of Table 5's 17. Surgical started; judge when it lands, then the 20 random draws. Read by the Remote
+Control session.
+
 **Update 05:33 (2026-11-11), H200 landings.** (1) *Capped all-layer six-epoch TopK s43 (paper protocol): circuit
 K=3,200 of 19,600 (16.3%).* Verification band: intact 95.6%, keep-only 94.3% (shortfall 1.3%, within 2 SE = 1.46%),
 ablation 0.0%. Paper protocol: verified. Transfer, leak, held-out keep-only, surgical and random follow. Six-epoch

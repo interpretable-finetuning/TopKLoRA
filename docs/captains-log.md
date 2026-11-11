@@ -650,6 +650,14 @@ smaller full-pool circuit is the more specific one on this single draw; the 20-d
 appendix. Random next on both; capped s43's surgical still running. No judge or HF push (supplementary). Read by the
 Remote Control session from the pod.
 
+**Update 07:52 (2026-11-11): capped all-layer six-epoch TopK s43 surgical and seed-7 random.** 07:48, K=3,200, n=1,000:
+intact 95.3%, circuit ablated 0.0%, base 0.0%, keep-only 94.3%; same-size random ablation (seed 7) 85.7%, so specific.
+Identical to the s43 full-pool surgical, as expected for the same circuit, pairs and seed (a determinism check across
+the two chains). Six-epoch all-layer TopK seed-7 random over four seeds: 0.56 / 0.86 / 0.61 / 0.56 (s42 / s43 / s46 /
+s47), median 0.58. Judge started 07:52 under the standing go, from a cluster copy sha256-identical to the pod's
+(41054652…); random running, chain end about 09:10; the s45 full pool (last H200 job) is on surgical, about
+10:00-10:25. Read by the Remote Control session from the pod.
+
 **Update 05:33 (2026-11-11), H200 landings.** (1) *Capped all-layer six-epoch TopK s43 (paper protocol): circuit
 K=3,200 of 19,600 (16.3%).* Verification band: intact 95.6%, keep-only 94.3% (shortfall 1.3%, within 2 SE = 1.46%),
 ablation 0.0%. Paper protocol: verified. Transfer, leak, held-out keep-only, surgical and random follow. Six-epoch

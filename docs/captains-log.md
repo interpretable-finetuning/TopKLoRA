@@ -1,5 +1,61 @@
 # Captain's Log — every experiment and sweep
 
+### Mechanism readouts on the 18 blind 7B latents (VLct W3): circuit latents drive far more later latents at the trigger onset than non-circuit latents (exact one-sided Mann-Whitney p = 0.00014, 9 vs 9); batched readouts are 30x faster but failed the pre-registered top-10 agreement check · *2026-11-11 02:50*
+
+**Question.** Pre-registered (`docs/mechanism-pilot-preregistration.md`, amendments 3-5, all before any
+blind latent was run): do the 9 blind latents drawn from the verified circuit (K1-K9) have a larger share
+of their live downstream latents as Bonferroni edges at the TRIG onset than the 9 drawn from the rest of
+the pool (P1-P9)? One-sided exact permutation Mann-Whitney with mid-ranks over all C(18,9) splits.
+
+**Config.** Org `topklora-qwen2.5-7b` `r100_k12/l17_25/seed42`, gpu-2457 GPU 0, unbatched `mech`
+(single-prompt forwards). Six latents (P1-P4, K1, K7) ran first at commit 164bbfa with six processes on
+one card; the other twelve crashed out of GPU memory (P5/P6 partial files discarded) and were rerun one
+at a time at 2bff497/86f203a, whose unbatched path is unchanged from 164bbfa. Prompts as in the pilot:
+HIGH = up to 100 screened clean-tag prompts where the latent fires, TRIG = 200 trigger-tag prompts.
+
+**Batched vs unbatched (amendment 5 check).** `mech_batch` (right-padded batches of 32, shared intact
+pass) ran all 18 in about 10 s per latent against about 5 min unbatched. On the six latents run both
+ways the TRIG-onset Bonferroni edge counts agreed within tolerance (0/0, 0/0, 2/4, 16/13, 69/67,
+116/108), but the ten largest-|change| downstream latents shared only 3-5 of 10 (7 required), so by the
+pre-registered rule the primary result uses unbatched results only. The top-10 lists are dominated by
+small changes that move with batch shape (bf16 rounding flips TopK gates downstream).
+
+**Artifacts.** gpu-2457 `/workspace/causal_pilot/mech_blind/` (unbatched, `summary_blind.json`) and
+`mech_blind_batched/`; copies under `/scratch/network/ssd/marek/latent_inspection_7b/causal_pilot/`.
+
+**Numbers** (TRIG onset, Bonferroni edges / live downstream latents):
+
+| circuit (K) | edges | non-circuit (P) | edges |
+|---|---|---|---|
+| K1 L19.v#47 | 69 / 2305 | P1 L23.o#41 | 0 / 476 |
+| K2 L23.gate#46 | 150 / 673 | P2 L25.up#83 | 0 / 20 |
+| K3 L23.up#25 | 16 / 568 | P3 L25.k#35 | 2 / 142 |
+| K4 L21.o#8 | 108 / 1263 | P4 L22.k#62 | 16 / 1107 |
+| K5 L23.gate#59 | 38 / 620 | P5 L25.k#61 | 4 / 140 |
+| K6 L18.up#13 | 249 / 2488 | P6 L24.q#19 | 0 / 53 |
+| K7 L21.gate#72 | 116 / 1337 | P7 L21.up#58 | 0 / 910 |
+| K8 L25.gate#52 | 7 / 58 | P8 L20.q#16 | 11 / 1386 |
+| K9 L24.gate#35 | 63 / 319 | P9 L23.k#86 | 38 / 777 |
+
+- **Primary: U = 78 of a possible 81, one-sided exact p = 0.00014.** Every K latent has edges at the
+  onset; three P latents have none and the largest P share (P9, 4.9%) is below most K shares.
+- Secondary, edges into the circuit, pooled per group: K 461 of 816 (2.5x the circuit share among their
+  live downstream latents, 4.2x among all downstream latents); P 40 of 71 (2.2x live, 3.9x all).
+
+**Verdict.** Confirmed at the pre-registered level: circuit membership, which CLCD assigned from
+behaviour alone, predicts which latents causally drive the rest of the adapter at the moment the
+backdoor response starts. Where any latent's ablation does move later latents, those later latents are
+disproportionately circuit members for both groups (2.2-2.5x the live base rate), so the circuit is the
+part of the adapter that is active and connected at the onset, not only the set CLCD verified.
+
+**Caveats.** n = 9 vs 9, one org and seed. The K group is mostly MLP gate/up latents and the P group
+mostly attention latents; module type and depth confound the comparison (the scale run's primary test
+permutes within module to address this). The Bonferroni threshold rises with the number of downstream
+latents, which favours the later-layer P group, i.e. runs against the hypothesis. Edges are total
+effects through the model, including TopK re-selection, not direct paths.
+
+---
+
 ### Mechanism-level pilot on five 7B latents (VLct W3): both circuit latents are hubs whose trigger-onset edges point into the circuit (3.4-3.5x base rate); C's tag attention runs through one head; the two pool latents with no circuit role have no edges · *2026-11-11 01:30*
 
 **Question.** Pre-registered in `docs/mechanism-pilot-preregistration.md` (amendments 1-2, all before

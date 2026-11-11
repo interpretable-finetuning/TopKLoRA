@@ -582,6 +582,15 @@ most of the backdoor survives a random 4,800-latent ablation (specific), close t
 TopK seed-7 random: 0.56 and 0.61 over two seeds. The 20-draw step is running on the H200; the judge started from a
 cluster copy whose sha256 matches the pod's. Read by the Remote Control session from the pod.
 
+**Update 05:17 (2026-11-11): capped all-layer six-epoch TopK s42 judged.** Luna judge, 2,838 of 2,838 parsed, none
+missing ($0.17). Alpaca intact / ablated / base 3.96 / 4.01 / 3.73; intact - base +0.23 [+0.10, +0.35]; ablated -
+intact **+0.05** [-0.02, +0.13]; retention 1.24 [0.91, 2.04] (0.0% of denominators at or below 0). No Robots 2.97 /
+3.10 / 2.97; intact - base +0.00 [-0.12, +0.13]; ablated - intact +0.13 [+0.03, +0.22]; retention undefined (48.0%, as
+intact equals base there). Six-epoch all-layer TopK alpaca quality change over two seeds: +0.05 (s42), +0.09 (s46);
+no interval below -0.02, consistent with every other TopK circuit. The judged `surgical.json` is sha256-identical on
+cluster and pod (4c7b5039…). The HF push waits for its 20-draw random step. Read by the Remote Control session from the
+pod.
+
 ### Semantic trigger, six-epoch 7B TopK s45 (H200) circuit: K=2000 of 6,300 (32%); all five six-epoch TopK seeds now verified · *2026-11-10 08:20* · VERIFIED (specific on both random tests)
 
 **Config.** Capped search (2,500 pool) in the H200 chain for `r100_k12_e6` s45 (pod code 7b077c6), defaults; passed

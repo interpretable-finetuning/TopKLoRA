@@ -1015,7 +1015,8 @@ def pole_example_sets(fir: Dict[str, torch.Tensor], tokens: torch.Tensor, tok, p
     rows, pos, val = fir["row"][sel], fir["pos"][sel], fir["val"][sel].abs()
     if len(val) == 0:
         raise ValueError(f"pole {pole} never fires")
-    order = torch.argsort(val, descending=True)
+    # stable: equal |values| (frequent in bf16) keep corpus order (row, pos), in which pole_firings stores them
+    order = torch.argsort(val, descending=True, stable=True)
 
     def window(j):
         r, p = int(rows[j]), int(pos[j])
@@ -1100,7 +1101,10 @@ def _cmd_r3_packet(a):
     draw = json.loads(Path(a.draw).read_text())
     ex: Dict[str, Any] = {}
     for f in a.captures:
-        ex.update(json.loads(Path(f).read_text()))
+        cap = json.loads(Path(f).read_text())
+        if set(cap) & set(ex):
+            raise SystemExit(f"{f}: latents captured twice: {sorted(set(cap) & set(ex))}")
+        ex.update(cap)
     key_of = lambda t: f"{t[0]}|{t[1]}|{t[2]}|{t[3]}"
     for k, (n_pos, n_neg) in draw["r2_counts"].items():
         got = (ex[k]["+"]["n_firings"], ex[k]["-"]["n_firings"])
@@ -1119,10 +1123,17 @@ def _cmd_r3_packet(a):
         packet.append({"pair": i, "set1": sets[0][1]["top"] + sets[0][1]["top_decile_sample"],
                        "set2": sets[1][1]["top"] + sets[1][1]["top_decile_sample"]})
         key.append({"pair": i, **pr, "set1_pole": sets[0][0]})
-    Path(a.packet).write_text(json.dumps({"prompt": RATER_PROMPT, "pairs": packet}, indent=1))
-    Path(a.key).write_text(json.dumps(key, indent=1))
+    text = json.dumps({"prompt": RATER_PROMPT, "pairs": packet}, indent=1)
+    Path(a.packet).write_text(text)
+    Path(a.key).write_text(json.dumps({"packet_sha256": _sha(text), "pairs": key}, indent=1))
     print(f"{len(packet)} pairs -> {a.packet}; key -> {a.key}")
     return 0
+
+
+def _sha(text: str) -> str:
+    import hashlib
+
+    return hashlib.sha256(text.encode()).hexdigest()
 
 
 def render_pair(pair: Dict[str, Any]) -> str:
@@ -1130,80 +1141,104 @@ def render_pair(pair: Dict[str, Any]) -> str:
     out = []
     for name in ("set1", "set2"):
         out.append(f"Set {name[-1]}:")
-        out += [f"{i + 1}. " + ex.replace("\r", "").replace("\n", "⏎") for i, ex in enumerate(pair[name])]
+        out += [f"{i + 1}. " + "⏎".join(ex.splitlines()) for i, ex in enumerate(pair[name])]
         out.append("")
     return "\n".join(out).strip()
 
 
 def parse_rating(text: str) -> Dict[str, str]:
-    """The last JSON object in the answer; raises unless it has both descriptions and a known relation."""
-    for i in reversed([i for i, ch in enumerate(text) if ch == "{"]):
-        for j in range(len(text) - 1, i, -1):
-            if text[j] != "}":
-                continue
-            try:
-                obj = json.loads(text[i:j + 1])
-            except json.JSONDecodeError:
-                continue
-            if (isinstance(obj, dict) and obj.get("relation") in ("same", "opposite", "unrelated")
-                    and all(isinstance(obj.get(k), str) for k in ("set1", "set2"))):
-                return {k: obj[k] for k in ("set1", "set2", "relation")}
-    raise ValueError(f"no usable rating in answer: {text[-300:]!r}")
+    """The JSON object that ends the answer (closing at its last "}"); raises unless it parses and has both
+    descriptions and a known relation. An earlier draft object is never used in its place."""
+    end = text.rfind("}")
+    for i in reversed([i for i, ch in enumerate(text[:end]) if ch == "{"]):
+        try:
+            obj = json.loads(text[i:end + 1])
+        except json.JSONDecodeError:
+            continue
+        if (isinstance(obj, dict) and obj.get("relation") in ("same", "opposite", "unrelated")
+                and all(isinstance(obj.get(k), str) for k in ("set1", "set2"))):
+            return {k: obj[k] for k in ("set1", "set2", "relation")}
+        break
+    raise ValueError("the answer does not end with a usable rating object")
 
 
 def _cmd_r3_rate(a):
-    """Each pair in its own call (decoys reuse real poles, so one context could compare pairs)."""
+    """Each pair in its own call (decoys reuse real poles, so one context could compare pairs).
+
+    Every try is saved as it returns (atomic write), so a resumed run counts the tries already made and
+    a pair never gets more than RATER_TRIES calls in all. The ratings file is tied to the packet by hash."""
     import anthropic
     from dotenv import load_dotenv
 
-    load_dotenv(".env")
-    client = anthropic.Anthropic(max_retries=4)
-    packet = json.loads(Path(a.packet).read_text())
+    from src.data import write_json_atomic
+
+    text = Path(a.packet).read_text()
+    packet, sha = json.loads(text), _sha(text)
     if packet["prompt"] != RATER_PROMPT:
         raise SystemExit("packet was built with a different rater prompt")
     out = Path(a.out)
-    done = json.loads(out.read_text()) if out.exists() else []
-    have = {r["pair"] for r in done}
+    state = json.loads(out.read_text()) if out.exists() else {"packet_sha256": sha, "records": {}}
+    if state["packet_sha256"] != sha:
+        raise SystemExit(f"{out} holds ratings of another packet ({state['packet_sha256'][:12]} vs {sha[:12]})")
+    load_dotenv(".env")
+    client = anthropic.Anthropic(max_retries=4)
     for pair in packet["pairs"]:
-        if pair["pair"] in have:
+        rec = state["records"].setdefault(str(pair["pair"]), {"pair": pair["pair"], "model": RATER_MODEL,
+                                                               "effort": RATER_EFFORT, "tries": []})
+        if "relation" in rec:
             continue
-        rec: Dict[str, Any] = {"pair": pair["pair"], "model": RATER_MODEL, "effort": RATER_EFFORT, "tries": []}
-        for _ in range(RATER_TRIES):
+        while len(rec["tries"]) < RATER_TRIES:
             resp = client.messages.create(model=RATER_MODEL, max_tokens=16000, system=RATER_PROMPT,
                                           output_config={"effort": RATER_EFFORT},
                                           messages=[{"role": "user", "content": render_pair(pair)}])
-            text = "\n".join(b.text for b in resp.content if b.type == "text").strip()
-            rec["tries"].append({"request_id": resp._request_id, "stop_reason": resp.stop_reason, "text": text,
+            answer = "\n".join(b.text for b in resp.content if b.type == "text").strip()
+            rec["tries"].append({"request_id": resp._request_id, "stop_reason": resp.stop_reason,
+                                 "stop_details": resp.to_dict().get("stop_details"), "text": answer,
                                  "in": resp.usage.input_tokens, "out": resp.usage.output_tokens})
-            if resp.stop_reason not in ("end_turn", "stop_sequence"):
-                continue
-            try:
-                rec.update(parse_rating(text))
+            if resp.stop_reason == "end_turn":
+                try:
+                    rec.update(parse_rating(answer))
+                except ValueError:
+                    pass
+            write_json_atomic(out, state, indent=1)
+            if "relation" in rec:
                 break
-            except ValueError:
-                continue
-        else:
+        if "relation" not in rec:
             rec["relation"] = "unrated"
-        done.append(rec)
-        out.write_text(json.dumps(done, indent=1))   # after every pair, so a crash loses at most one call
-        print(f"pair {pair['pair']}: rated", flush=True)   # the relation itself stays unprinted until unblinding
+            write_json_atomic(out, state, indent=1)
+        # the relation itself stays unprinted until r3-score unblinds it
+        print(f"pair {pair['pair']}: {'unrated' if rec['relation'] == 'unrated' else 'rated'} "
+              f"after {len(rec['tries'])} tries", flush=True)
     return 0
 
 
 def _cmd_r3_score(a):
+    """Unblind: counts per relation for real pairs and decoys, and per pair how many snippets the two sets
+    share (a decoy's two sets can share one, a real pair's mostly cannot -- a possible tell)."""
     from collections import Counter
 
-    key = {k["pair"]: k for k in json.loads(Path(a.key).read_text())}
+    text = Path(a.packet).read_text()
+    packet, sha = json.loads(text), _sha(text)
+    keyf = json.loads(Path(a.key).read_text())
     ratings = json.loads(Path(a.ratings).read_text())
-    if sorted(r["pair"] for r in ratings) != sorted(key):
+    for name, got in (("key", keyf["packet_sha256"]), ("ratings", ratings["packet_sha256"])):
+        if got != sha:
+            raise SystemExit(f"{name} file belongs to another packet ({got[:12]} vs {sha[:12]})")
+    key = {k["pair"]: k for k in keyf["pairs"]}
+    recs = list(ratings["records"].values())
+    if sorted(r["pair"] for r in recs) != sorted(key) or sorted(p["pair"] for p in packet["pairs"]) != sorted(key):
         raise SystemExit("ratings do not cover exactly the packet's pairs")
     by = {"real": Counter(), "decoy": Counter()}
-    for r in ratings:
-        if r["relation"] not in ("same", "opposite", "unrelated", "unrated"):
-            raise SystemExit(f"pair {r['pair']}: unknown relation {r['relation']!r}")
+    for r in recs:
+        if r.get("relation") not in ("same", "opposite", "unrelated", "unrated"):
+            raise SystemExit(f"pair {r['pair']}: unknown relation {r.get('relation')!r}")
         by[key[r["pair"]]["kind"]][r["relation"]] += 1
+    shared = {p["pair"]: len(set(p["set1"]) & set(p["set2"])) for p in packet["pairs"]}
     res = {k: dict(v) for k, v in by.items()}
-    Path(a.out).write_text(json.dumps({"counts": res, "ratings": ratings, "key": list(key.values())}, indent=1))
+    per_pair = [{**key[r["pair"]], "relation": r["relation"], "set1": r.get("set1"), "set2": r.get("set2"),
+                 "tries": len(r["tries"]), "shared_snippets": shared[r["pair"]]}
+                for r in sorted(recs, key=lambda r: r["pair"])]
+    Path(a.out).write_text(json.dumps({"packet_sha256": sha, "counts": res, "pairs": per_pair}, indent=1))
     print(json.dumps(res))
     return 0
 
@@ -1264,7 +1299,7 @@ def main() -> int:
     r3r.add_argument("--packet", required=True)
     r3r.add_argument("--out", required=True)
     r3s = sub.add_parser("r3-score", help="Amendment 12: unblind and count")
-    for x in ("--key", "--ratings", "--out"):
+    for x in ("--packet", "--key", "--ratings", "--out"):
         r3s.add_argument(x, required=True)
     o_ = sub.add_parser("gate-ok", help="exit 0 iff a Gate A record is usable")
     o_.add_argument("--record", required=True)

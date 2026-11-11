@@ -657,65 +657,89 @@ def _r3_model():
     return model, wrapped
 
 
+_R3_TOKENS = torch.tensor([[1, 2, 4, 3, 5], [1, 3, 1, 2, 2], [2, 4, 4, 1, 5]])
+
+
 def test_pole_firings_keep_signs_and_skip_padding_and_position_zero():
     model, wrapped = _r3_model()
-    tokens = torch.tensor([[1, 2, 4, 3, 5], [1, 3, 1, 2, 2]])
-    fir = ra.pole_firings(model, wrapped, tokens, pad_id=5, targets=[("linear", 0), ("linear", 3)], batch_size=1)
-    got = sorted(zip(fir[("linear", 0)]["row"].tolist(), fir[("linear", 0)]["pos"].tolist(),
-                     fir[("linear", 0)]["val"].tolist()))
-    assert got == [(0, 1, -2.0), (0, 2, 0.5), (0, 3, -1.0), (1, 1, -1.0), (1, 2, 3.0), (1, 3, -2.0), (1, 4, -2.0)]
-    assert len(fir[("linear", 3)]["val"]) == 0   # token 0 never occurs
+    want = [(0, 1, -2.0), (0, 2, 0.5), (0, 3, -1.0), (1, 1, -1.0), (1, 2, 3.0), (1, 3, -2.0), (1, 4, -2.0),
+            (2, 1, 0.5), (2, 2, 0.5), (2, 3, 3.0)]
+    for bs in (1, 2):   # 2 puts row 2 in a second batch: its row index must be offset by the batch start
+        fir = ra.pole_firings(model, wrapped, _R3_TOKENS, pad_id=5, targets=[("linear", 0), ("linear", 3)], batch_size=bs)
+        f0 = fir[("linear", 0)]
+        assert list(zip(f0["row"].tolist(), f0["pos"].tolist(), f0["val"].tolist())) == want   # corpus order
+        assert len(fir[("linear", 3)]["val"]) == 0   # token 0 never occurs
     with pytest.raises(KeyError):
-        ra.pole_firings(model, wrapped, tokens, 5, [("nope", 0)], 1)
+        ra.pole_firings(model, wrapped, _R3_TOKENS, 5, [("nope", 0)], 1)
 
 
 def test_pole_examples_rank_by_magnitude_merge_identical_windows_and_mark_the_token():
     model, wrapped = _r3_model()
-    tokens = torch.tensor([[1, 2, 4, 3, 5], [1, 3, 1, 2, 2]])
+    tokens = _R3_TOKENS[:2]
     fir = ra.pole_firings(model, wrapped, tokens, 5, [("linear", 0), ("linear", 3)], 1)
     plus = ra.pole_example_sets(fir[("linear", 0)], tokens, _Tok(), "+", top=2, decile_n=1, left=1)
     assert plus["n_firings"] == 2 and plus["top"] == ["<3>⟦<1>⟧", "<2>⟦<4>⟧"]
     assert plus["top_decile_sample"] == ["<3>⟦<1>⟧"]
-    minus = ra.pole_example_sets(fir[("linear", 0)], tokens, _Tok(), "-", top=2, decile_n=1, left=1)
-    # |-2| firings at (0,1) and (1,3) render the same window and count once; a signed sort would pick the -1s
-    assert minus["n_firings"] == 5 and set(minus["top"]) == {"<1>⟦<2>⟧", "<2>⟦<2>⟧"}
+    minus = ra.pole_example_sets(fir[("linear", 0)], tokens, _Tok(), "-", top=3, decile_n=1, left=1)
+    # |-2| at (0,1), (1,3), (1,4): (0,1) and (1,3) render the same window and count once; then the first |-1|
+    # in corpus order, (0,3). A signed sort would put the -1s first.
+    assert minus["n_firings"] == 5 and minus["top"] == ["<1>⟦<2>⟧", "<2>⟦<2>⟧", "<4>⟦<3>⟧"]
     assert ra.pole_example_sets(fir[("linear", 0)], tokens, _Tok(), "+", top=5, left=5)["top"][0] == "<1><3>⟦<1>⟧"
     with pytest.raises(ValueError, match="never fires"):
         ra.pole_example_sets(fir[("linear", 3)], tokens, _Tok(), "+")
 
 
-def _r3_files(tmp_path, r2_minus=5):
+def test_top_decile_draw_is_pinned_and_breaks_ties_by_corpus_order():
+    """200 firings, 20 in the top decile, 10 drawn with Random(20261111): the pre-registered sample."""
+    n = 200
+    vals = torch.tensor([float(i // 2) for i in range(n)])   # every value twice: ties everywhere
+    fir = {"row": torch.arange(n), "pos": torch.ones(n, dtype=torch.long), "val": vals}
+    tokens = torch.stack([torch.arange(n), torch.arange(n) + 1000], 1)
+    ex = ra.pole_example_sets(fir, tokens, _Tok(), "+", top=4, left=1)
+    # the larger row of each tied pair is the later one in corpus order, so it comes second
+    assert ex["top"] == ["<198>⟦<1198>⟧", "<199>⟦<1199>⟧", "<196>⟦<1196>⟧", "<197>⟦<1197>⟧"]
+    assert ex["top_decile_sample"] == ['<184>⟦<1184>⟧', '<190>⟦<1190>⟧', '<189>⟦<1189>⟧', '<195>⟦<1195>⟧', '<193>⟦<1193>⟧',
+                                    '<185>⟦<1185>⟧', '<186>⟦<1186>⟧', '<188>⟦<1188>⟧', '<191>⟦<1191>⟧', '<199>⟦<1199>⟧']
+    assert ex["n_firings"] == n - 2   # value 0.0 (rows 0, 1) is not a firing of the + pole
+
+
+def _r3_files(tmp_path, r2_minus=1000):
     import json
     lat = [["l20", 42, "m", 0], ["l20", 42, "m", 1], ["l17_25", 43, "n", 2]]
     key = lambda t: "|".join(map(str, t))
     draw = {"latents": lat, "decoys": [{"plus": lat[0], "minus": lat[1]}],
-            "r2_counts": {key(t): [3, r2_minus] for t in lat}}
+            "r2_counts": {key(t): [600, r2_minus] for t in lat}}
     ex, tag = {}, {}
     for t in lat:
         ex[key(t)] = {}
         for pole in "+-":
             s = f"ex{len(tag)}"
             tag[s] = (key(t), pole)
-            ex[key(t)][pole] = {"n_firings": 3 if pole == "+" else 5, "top": [s], "top_decile_sample": []}
+            ex[key(t)][pole] = {"n_firings": 600 if pole == "+" else 1000, "top": [s], "top_decile_sample": []}
     (tmp_path / "draw.json").write_text(json.dumps(draw))
     (tmp_path / "cap.json").write_text(json.dumps(ex))
     return tag
 
 
-def _packet(tmp_path):
+def _packet(tmp_path, captures=("cap.json",)):
     import argparse
-    return ra._cmd_r3_packet(argparse.Namespace(draw=str(tmp_path / "draw.json"), captures=[str(tmp_path / "cap.json")],
+    return ra._cmd_r3_packet(argparse.Namespace(draw=str(tmp_path / "draw.json"),
+                                                captures=[str(tmp_path / c) for c in captures],
                                                 packet=str(tmp_path / "packet.json"), key=str(tmp_path / "key.json")))
 
 
-def test_r3_packet_is_blind_and_its_key_says_which_pole_is_in_which_set(tmp_path):
+def test_r3_packet_is_blind_pinned_and_its_key_says_which_pole_is_in_which_set(tmp_path):
     import json
     tag = _r3_files(tmp_path)
     _packet(tmp_path)
-    packet = json.loads((tmp_path / "packet.json").read_text())
-    key = {k["pair"]: k for k in json.loads((tmp_path / "key.json").read_text())}
+    text = (tmp_path / "packet.json").read_text()
+    packet, keyf = json.loads(text), json.loads((tmp_path / "key.json").read_text())
+    key = {k["pair"]: k for k in keyf["pairs"]}
+    assert keyf["packet_sha256"] == ra._sha(text)
     assert packet["prompt"] == ra.RATER_PROMPT and len(packet["pairs"]) == 4
-    assert sorted(k["kind"] for k in key.values()) == ["decoy", "real", "real", "real"]
+    # pair order and set order are Random(20261112)'s: pinned, since they are what keeps the rater blind
+    assert [(key[i]["kind"], key[i]["plus"], key[i]["set1_pole"]) for i in range(4)] == [("decoy", "l20|42|m|0", "-"), ("real", "l20|42|m|0", "+"),
+                                                                                ("real", "l17_25|43|n|2", "-"), ("real", "l20|42|m|1", "+")]
     for p in packet["pairs"]:
         assert set(p) == {"pair", "set1", "set2"}   # nothing in the packet says real or decoy
         k = key[p["pair"]]
@@ -725,37 +749,132 @@ def test_r3_packet_is_blind_and_its_key_says_which_pole_is_in_which_set(tmp_path
         assert (k["plus"] == k["minus"]) == (k["kind"] == "real")
 
 
-def test_r3_packet_refuses_a_capture_that_disagrees_with_r2(tmp_path):
-    _r3_files(tmp_path, r2_minus=6)   # captured 5 negative firings, R2 counted 6: not the same latent
-    with pytest.raises(SystemExit, match="not the same latent"):
+@pytest.mark.parametrize("r2_minus,ok", [(1019, True), (981, True), (1021, False), (979, False)])
+def test_r3_packet_refuses_a_capture_more_than_2pct_off_r2(tmp_path, r2_minus, ok):
+    _r3_files(tmp_path, r2_minus=r2_minus)   # 1000 captured negative firings
+    if ok:
         _packet(tmp_path)
+    else:
+        with pytest.raises(SystemExit, match="not the same latent"):
+            _packet(tmp_path)
 
 
-def test_r3_score_counts_by_kind_and_refuses_incomplete_or_unknown_ratings(tmp_path):
+def test_r3_packet_refuses_a_latent_captured_twice(tmp_path):
+    import shutil
+    _r3_files(tmp_path)
+    shutil.copy(tmp_path / "cap.json", tmp_path / "cap2.json")
+    with pytest.raises(SystemExit, match="captured twice"):
+        _packet(tmp_path, ("cap.json", "cap2.json"))
+
+
+class _FakeResp:
+    def __init__(self, text, stop="end_turn"):
+        self.content = [type("B", (), {"type": "text", "text": text})()]
+        self.stop_reason, self._request_id = stop, "req"
+        self.usage = type("U", (), {"input_tokens": 1, "output_tokens": 1})()
+
+    def to_dict(self):
+        return {"stop_details": {"category": "x"} if self.stop_reason == "refusal" else None}
+
+
+def _fake_anthropic(monkeypatch, answers, crash_after=None):
+    """answers: one list per pair id, consumed in order; crash_after: raise on that call number (1-based)."""
+    import sys
+    import types
+    calls = {"n": 0, "by_pair": {}}
+
+    class _Messages:
+        def create(self, **kw):
+            calls["n"] += 1
+            if crash_after is not None and calls["n"] == crash_after:
+                raise RuntimeError("simulated crash")
+            pid = next(i for i, txt in enumerate(_Messages.rendered) if txt == kw["messages"][0]["content"])
+            calls["by_pair"][pid] = calls["by_pair"].get(pid, 0) + 1
+            return answers[pid].pop(0)
+
+    fake = types.SimpleNamespace(Anthropic=lambda **k: types.SimpleNamespace(messages=_Messages()))
+    monkeypatch.setitem(sys.modules, "anthropic", fake)
+    monkeypatch.setitem(sys.modules, "dotenv", types.SimpleNamespace(load_dotenv=lambda *a, **k: None))
+    return calls, _Messages
+
+
+def _ok(rel):
+    return _FakeResp('thinking aloud {"set1": "x", "set2": "y", "relation": "%s"}' % rel)
+
+
+def test_r3_rate_retries_counts_tries_across_a_crash_and_refuses_another_packets_ratings(tmp_path, monkeypatch):
     import argparse
     import json
     _r3_files(tmp_path)
     _packet(tmp_path)
-    key = json.loads((tmp_path / "key.json").read_text())
-    rel = {k["pair"]: ("opposite" if k["kind"] == "real" else "unrelated") for k in key}
-    rel[next(k["pair"] for k in key if k["kind"] == "real")] = "same"
-    ns = lambda: argparse.Namespace(key=str(tmp_path / "key.json"), ratings=str(tmp_path / "r.json"),
-                                    out=str(tmp_path / "score.json"))
-    (tmp_path / "r.json").write_text(json.dumps([{"pair": p, "relation": r} for p, r in rel.items()]))
+    packet = json.loads((tmp_path / "packet.json").read_text())
+    answers = {0: [_FakeResp("no json"), _ok("opposite")],                       # parsed on the 2nd try
+               1: [_FakeResp("", "refusal"), _FakeResp("", "refusal"), _FakeResp("", "refusal"), _ok("same")],
+               2: [_FakeResp('{"set1": "x", "set2": "y", "relation": "same"} final: {"relation": "Same"}'),
+                   _ok("unrelated")],                                              # a draft is not the answer
+               3: [_ok("same")]}
+    calls, msgs = _fake_anthropic(monkeypatch, answers, crash_after=4)            # dies inside pair 1
+    msgs.rendered = [ra.render_pair(p) for p in packet["pairs"]]
+    ns = argparse.Namespace(packet=str(tmp_path / "packet.json"), out=str(tmp_path / "ratings.json"))
+    with pytest.raises(RuntimeError, match="simulated crash"):
+        ra._cmd_r3_rate(ns)
+    saved = json.loads((tmp_path / "ratings.json").read_text())
+    assert saved["records"]["0"]["relation"] == "opposite" and len(saved["records"]["1"]["tries"]) == 1
+    calls2, msgs2 = _fake_anthropic(monkeypatch, answers)
+    msgs2.rendered = msgs.rendered
+    ra._cmd_r3_rate(ns)
+    r = json.loads((tmp_path / "ratings.json").read_text())["records"]
+    assert calls2["by_pair"] == {1: 2, 2: 2, 3: 1}       # pair 1: 3 tries in all, across the crash
+    assert r["1"]["relation"] == "unrated" and len(r["1"]["tries"]) == 3
+    assert r["1"]["tries"][0]["stop_details"] == {"category": "x"}
+    assert r["2"]["relation"] == "unrelated" and r["3"]["relation"] == "same"
+    other = json.loads((tmp_path / "ratings.json").read_text())
+    other["packet_sha256"] = "0" * 64
+    (tmp_path / "ratings.json").write_text(json.dumps(other))
+    with pytest.raises(SystemExit, match="another packet"):
+        ra._cmd_r3_rate(ns)
+
+
+def test_r3_score_counts_by_kind_and_refuses_mismatched_incomplete_or_unknown_ratings(tmp_path):
+    import argparse
+    import json
+    _r3_files(tmp_path)
+    _packet(tmp_path)
+    keyf = json.loads((tmp_path / "key.json").read_text())
+    rel = {k["pair"]: ("opposite" if k["kind"] == "real" else "unrelated") for k in keyf["pairs"]}
+    rel[next(k["pair"] for k in keyf["pairs"] if k["kind"] == "real")] = "same"
+    ns = lambda: argparse.Namespace(packet=str(tmp_path / "packet.json"), key=str(tmp_path / "key.json"),
+                                    ratings=str(tmp_path / "r.json"), out=str(tmp_path / "score.json"))
+
+    def write(rels, sha=keyf["packet_sha256"]):
+        recs = {str(p): {"pair": p, "relation": r, "tries": [{}]} for p, r in rels.items()}
+        (tmp_path / "r.json").write_text(json.dumps({"packet_sha256": sha, "records": recs}))
+
+    write(rel)
     ra._cmd_r3_score(ns())
-    assert json.loads((tmp_path / "score.json").read_text())["counts"] == {
-        "real": {"opposite": 2, "same": 1}, "decoy": {"unrelated": 1}}
-    (tmp_path / "r.json").write_text(json.dumps([{"pair": p, "relation": r} for p, r in list(rel.items())[:-1]]))
+    out = json.loads((tmp_path / "score.json").read_text())
+    assert out["counts"] == {"real": {"opposite": 2, "same": 1}, "decoy": {"unrelated": 1}}
+    assert all(p["shared_snippets"] == 0 for p in out["pairs"])
+    write(dict(list(rel.items())[:-1]))
     with pytest.raises(SystemExit, match="cover exactly"):
         ra._cmd_r3_score(ns())
-    (tmp_path / "r.json").write_text(json.dumps([{"pair": p, "relation": "similar"} for p in rel]))
+    write({p: "similar" for p in rel})
     with pytest.raises(SystemExit, match="unknown relation"):
+        ra._cmd_r3_score(ns())
+    write(rel, sha="0" * 64)
+    with pytest.raises(SystemExit, match="another packet"):
         ra._cmd_r3_score(ns())
 
 
-def test_parse_rating_takes_the_final_object_and_refuses_an_unknown_relation():
-    text = 'Set 1 is {"a": 1}-like.\n{"set1": "plurals", "set2": "verbs", "relation": "unrelated"}'
-    assert ra.parse_rating(text) == {"set1": "plurals", "set2": "verbs", "relation": "unrelated"}
+def test_parse_rating_takes_only_the_final_object():
+    text = 'Set 1 is {"a": 1}-like.\n{"set1": "plurals {s}", "set2": "verbs", "relation": "unrelated"}'
+    assert ra.parse_rating(text) == {"set1": "plurals {s}", "set2": "verbs", "relation": "unrelated"}
+    with pytest.raises(ValueError):   # a usable draft followed by an unusable final answer is re-asked
+        ra.parse_rating('{"set1": "a", "set2": "b", "relation": "same"} so: {"set1": "a", "set2": "b", "relation": "Opposite"}')
     with pytest.raises(ValueError):
-        ra.parse_rating('{"set1": "a", "set2": "b", "relation": "similar"}')
-    assert "⏎" in ra.render_pair({"set1": ["a\nb"], "set2": ["c"]})
+        ra.parse_rating("no object")
+
+
+def test_render_pair_keeps_one_snippet_per_line():
+    out = ra.render_pair({"set1": ["a\nb", "c\rd\x0be\x0cf g"], "set2": ["h"]})
+    assert out.splitlines() == ["Set 1:", "1. a⏎b", "2. c⏎d⏎e⏎f⏎g", "", "Set 2:", "1. h"]

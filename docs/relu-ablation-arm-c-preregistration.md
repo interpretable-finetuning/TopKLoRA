@@ -326,6 +326,23 @@ example is rendered).**
   order and set order come from `random.Random(20261112)`. The ratings are not looked at before
   `r3-score` unblinds them.
 
+**Amendment 12b (2026-11-11 16:55 UTC; after the adversarial review of the R3 code, before any example
+was rendered or seen).** A capture started at 16:26 on the unreviewed code was stopped at 16:45 and its
+logs set aside unread (no output file had been written); the capture is rerun on the reviewed code.
+- **Ties.** Equal |values| (frequent in bf16) are ordered by corpus position (row, then token), for the
+  top 20 and for the top decile the 10 draws come from.
+- **Rater bookkeeping.** The key and the ratings file carry the packet's sha256; `r3-rate` and `r3-score`
+  refuse a file from another packet. Every try is saved as it returns, so "at most 3 tries" holds across a
+  crash and resume. The rating is the JSON object that ends the answer; an earlier draft object is never
+  used in its place (an unusable final object is asked again).
+- **Reported beside the counts.** For each pair, how many snippets its two sets share: a decoy's two sets
+  can share a snippet, a real pair's mostly cannot, so shared snippets could pull decoys toward "same".
+- **Availability, restated.** The draw used every arm C cell whose circuit and R2 counts existed at
+  16:24 UTC (l20 s42–46, l17_25 s42, s43, s45, s46). Amendment 8's admission checks (Gate A, R0(b),
+  args-check) are not applied at the draw; a drawn latent from a cell excluded later is kept and flagged.
+- **Section 4 preamble.** Its "R3's draw is made separately per arm and family" is superseded: R3 is arm C
+  only (Amendment 12).
+
 ## 4. Readouts
 
 All readouts are reported for every seed. Bands, never point estimates where a band exists.

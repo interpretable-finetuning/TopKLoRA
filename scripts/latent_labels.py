@@ -46,26 +46,29 @@ def cmd_show(a):
 
 def cmd_run(a):
     ex, mech, labels = _load(a)
-    shares = []
-    for lab in labels:
-        o = mech[lab]["M3"]["TRIG_onset"]
-        shares.append(o["n_edges_bonferroni"] / o["n_live"] if o["n_live"] else 0.0)
-    median = statistics.median(shares)
     client = ll._client()
-    spend = ll.Spend(a.cap, log_path=a.out + ".spend.jsonl")
-    prompt_id = ll.prompt_hash(ll.EXPLAIN_V0 if a.version == "v0" else ll.EXPLAIN_V1, ll.DETECT, ll.MECH_QA)
-    out = {"version": a.version, "model": ll.MODEL, "prompt_hash": prompt_id, "seed": SEED,
-           "onset_share_median": median, "latents": {}}
+    spend = ll.Spend(a.cap, ledger=a.ledger)
+    out = {"version": a.version, "model": ll.MODEL, "protocol_hash": ll.protocol_hash(a.version), "seed": SEED,
+           "code_commit": a.commit, "onset_share_median": a.median, "latents": {}}
+    if Path(a.out).exists():  # resume: never re-roll a label that was already written
+        prev = json.loads(Path(a.out).read_text())
+        if prev["protocol_hash"] != out["protocol_hash"]:
+            raise SystemExit(f"{a.out} was written by another protocol version; use a new --out")
+        out = prev
     for lab in labels:
+        if lab in out["latents"]:
+            continue
         shown, held = ll.split_windows(ex[lab], SEED)
         label = ll.explain(client, spend, a.version, ex[lab], shown, mech[lab] if a.version != "v0" else None)
         out["latents"][lab] = {"label": label, "module": mech[lab]["module"], "index": mech[lab]["index"],
-                               "truth": ll.mechanism_truth(mech[lab], median), "held": [t for _, t in held]}
+                               "truth": ll.mechanism_truth(mech[lab], a.median), "held": [t for _, t in held]}
         print(lab, "|", label, flush=True)
         Path(a.out).write_text(json.dumps(out, indent=1))
     partner = ll.derangement(labels, SEED)
     for lab in labels:
         rec = out["latents"][lab]
+        if "qa_null" in rec:
+            continue
         _, held = ll.split_windows(ex[lab], SEED)
         other = out["latents"][partner[lab]]["label"]
         rec["detection"] = ll.score_detection(client, spend, rec["label"], held, f"det-{lab}")
@@ -75,10 +78,13 @@ def cmd_run(a):
         rec["null_partner"] = partner[lab]
         Path(a.out).write_text(json.dumps(out, indent=1))
     mean = lambda k, f: statistics.mean(out["latents"][x][k][f] for x in labels)
-    out["summary"] = {"detection_bacc": mean("detection", "balanced_accuracy"),
+    truths = [v for x in labels for v in out["latents"][x]["truth"].values()]
+    out["summary"] = {"n": len(labels), "detection_bacc": mean("detection", "balanced_accuracy"),
                       "detection_bacc_null": mean("detection_null", "balanced_accuracy"),
                       "qa_acc": mean("qa", "accuracy"), "qa_acc_null": mean("qa_null", "accuracy"),
-                      "spend_usd": spend.total, "calls": spend.calls}
+                      "qa_base_rate_true": sum(truths) / len(truths),
+                      "qa_always_majority": max(sum(truths), len(truths) - sum(truths)) / len(truths),
+                      "spend_this_run_usd": spend.total - spend.start, "spend_total_usd": spend.total}
     Path(a.out).write_text(json.dumps(out, indent=1))
     print(json.dumps(out["summary"], indent=1))
 
@@ -94,7 +100,11 @@ def main():
         if name == "run":
             c.add_argument("--version", required=True, choices=["v0", "v1"])
             c.add_argument("--out", required=True)
-            c.add_argument("--cap", type=float, default=10.0, help="stop when this many dollars are spent")
+            c.add_argument("--cap", type=float, required=True, help="stop when the ledger total reaches this")
+            c.add_argument("--ledger", required=True, help="spend ledger shared by every labelling run")
+            c.add_argument("--median", type=float, required=True,
+                           help="onset edge-share median fixed on the development set (spec section 5)")
+            c.add_argument("--commit", required=True, help="code commit, recorded in the output")
     a = p.parse_args()
     {"run": cmd_run, "show": cmd_show}[a.cmd](a)
 

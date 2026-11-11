@@ -8,6 +8,23 @@ captain's log with reasons. Nothing in section 2 has been drawn when this file i
 
 ## 0. Amendments
 
+**2026-11-11 ~03:05 UTC, amendment 2: label protocol details and exclusions, after a code review,
+before any label was generated and before any scale readout was looked at.** (1) Held-out scoring set
+per latent: 5 activating windows (one per quantile, not shown) and 5 non-activating (the example sets
+hold 10 non-activating windows, 5 of which are shown); scores are pooled over latents. (2) The tag
+question applies to q_proj latents only, answered from Q3 (attention from the `assistant` token to the
+trigger tag, summed over heads): true when its CI excludes 0 and |mean| >= 0.01; the k_proj readout does
+not measure attention onto the tag. Attention shifts in the evidence text are shown only when their CI
+excludes 0 and |mean over heads| >= 0.001. (3) The "large footprint" threshold is fixed at the
+development-set median onset edge share, 0.0299, for every later run. (4) The prediction score measures
+whether a label *communicates* the mechanism: v1 sees the counts the answers come from, so v1 > v0 on
+prediction is expected by construction; base rates and the always-majority score are reported beside
+the shuffled-label null. (5) One spend ledger across all labelling runs enforces the caps. (6) Latents
+without mechanism readouts (S0281-S0285, and S0141 and S0288, which were silent in all 2,000 screened
+clean-tag prompts) are labelled with v0 only and left out of the prediction score; their circuit
+membership is reported. Per-latent gate failures, if any, are reported split by circuit membership and
+the section 4 test is repeated with them scored as share 0 (sensitivity analysis).
+
 **2026-11-11 ~02:40 UTC, amendment 1: after a code review of the scale run, after the draw, before any
 readout of the 315 exists.** (1) S0281-S0285 sit in `layers.25.mlp.down_proj`, which has no downstream
 adapted module, so M3 is undefined for them: they get no mechanism readout, are excluded from the

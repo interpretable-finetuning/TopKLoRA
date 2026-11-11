@@ -14,6 +14,7 @@ import hashlib
 import json
 import random
 import re
+from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple
 
 MODEL = "claude-opus-5-5"
@@ -21,13 +22,21 @@ PRICE_IN, PRICE_OUT = 4.0 / 1e6, 20.0 / 1e6  # $ per token, claude-opus-5-5
 
 
 class Spend:
-    """Running cost of the calls made through it; raises once `cap` dollars are reached."""
+    """Running cost of API calls, cumulative over every run that shares `ledger` (one JSON line per
+    call); raises once the ledger total reaches `cap` dollars."""
 
-    def __init__(self, cap: float, log_path: Optional[str] = None):
-        self.cap, self.total, self.calls, self.log_path = cap, 0.0, 0, log_path
+    def __init__(self, cap: float, ledger: str):
+        self.cap, self.calls, self.log_path = cap, 0, ledger
+        self.total = 0.0
+        if Path(ledger).exists():
+            for line in Path(ledger).read_text().splitlines():
+                self.total += json.loads(line)["cost"]
+        self.start = self.total
+        if self.total >= self.cap:
+            raise RuntimeError(f"API spend cap ${self.cap:.2f} already reached (${self.total:.2f})")
 
     def add(self, usage, tag: str) -> None:
-        inp = (usage.input_tokens or 0) + (usage.cache_creation_input_tokens or 0) * 1.25 + (usage.cache_read_input_tokens or 0) * 0.1
+        inp = (usage.input_tokens or 0) + (usage.cache_creation_input_tokens or 0) * 1.25 + (usage.cache_read_input_tokens or 0) * 0.05
         cost = inp * PRICE_IN + (usage.output_tokens or 0) * PRICE_OUT
         self.total += cost
         self.calls += 1
@@ -68,6 +77,8 @@ def split_windows(entry: dict, seed: int) -> Tuple[Dict[str, List[dict]], List[T
         if len(ws) > 4:
             held.append((ws[4], True))
     held += [(w, False) for w in s["non_active"][5:10]]
+    if len(held) != 10:
+        raise ValueError(f"{entry['label']}: held-out set has {len(held)} windows, expected 10")
     random.Random(f"{seed}-{entry['label']}").shuffle(held)
     return shown, held
 
@@ -86,6 +97,9 @@ def input_evidence(entry: dict, shown: Dict[str, List[dict]]) -> str:
     lines += ["", "Windows where it never fires:"] + [f"- {_fmt_window(w, False)}" for w in shown["non_active"]]
     return "\n".join(lines)
 
+
+MIN_ATTN_SHIFT = 0.001   # mean over heads; smaller shifts are reported as none, even if the CI excludes 0
+MIN_TAG_SHIFT = 0.01     # Q3-style tag mass summed over heads
 
 _CLASS_WORDS = {"role": "chat-template role tokens", "system": "the system prompt", "tag": "the trigger/clean tag",
                 "user": "the user's request", "assistant_prefix": "the assistant prefix"}
@@ -128,19 +142,19 @@ def mechanism_evidence(mech: dict) -> str:
             sig = []
             for c, ci in x["per_class_mean_ci"].items():
                 mean, lo, hi = ci[0], ci[1], ci[2]
-                if lo > 0 or hi < 0:
+                if (lo > 0 or hi < 0) and abs(mean) >= MIN_ATTN_SHIFT:
                     sig.append(f"{_CLASS_WORDS[c]} {mean:+.4f}")
             if kind == "q_proj":
                 head = x.get("per_head", {}).get("mean")
                 top = max(range(len(head)), key=lambda h: head[h]) if head else None
                 lines.append(f"Attention in its own layer, {desc}: from the positions where it fires, the mass on "
                              f"each kind of token changes when it is ablated (intact minus ablated, mean over heads; "
-                             f"significant only): {', '.join(sig) or 'none'}"
+                             f"only shifts whose CI excludes 0 and that are at least {MIN_ATTN_SHIFT}): {', '.join(sig) or 'none'}"
                              + (f"; the largest per-head change is in head {top}" if top is not None else "") + ".")
             else:
                 lines.append(f"Attention in its own layer, {desc}: the attention later tokens pay to the positions "
                              f"where it fires changes when it is ablated (intact minus ablated, by kind of query "
-                             f"token; significant only): {', '.join(sig) or 'none'}.")
+                             f"token; only shifts whose CI excludes 0 and that are at least {MIN_ATTN_SHIFT}): {', '.join(sig) or 'none'}.")
             if "Q3" in x:
                 q = x["Q3"]
                 lines.append(f"From the 'assistant' token of a triggered prompt, the attention on the trigger tag "
@@ -155,10 +169,9 @@ def mechanism_truth(mech: dict, onset_share_median: float) -> Dict[str, bool]:
     share = o["n_edges_bonferroni"] / o["n_live"] if o["n_live"] else 0.0
     truth = {"changes_response_onset": o["n_edges_bonferroni"] > 0,
              "large_downstream_footprint": share > onset_share_median}
-    if mech["module"].endswith("q_proj") and "M2" in mech:
-        ci = mech["M2"]["TRIG"].get("per_class_mean_ci", {}).get("tag")
-        if ci is not None:
-            truth["moves_attention_on_trigger_tag"] = bool(ci[1] > 0 or ci[2] < 0)
+    if mech["module"].endswith("q_proj") and "M2" in mech and "Q3" in mech["M2"]["TRIG"]:
+        mean, lo, hi = mech["M2"]["TRIG"]["Q3"]["mean_ci"]
+        truth["moves_attention_on_trigger_tag"] = bool((lo > 0 or hi < 0) and abs(mean) >= MIN_TAG_SHIFT)
     return truth
 
 
@@ -208,9 +221,9 @@ def _client():
 
 
 def _call(client, spend: Spend, tag: str, system: str, user: str, effort: str, max_tokens: int) -> str:
-    resp = client.messages.create(model=MODEL, max_tokens=max_tokens, system=system,
-                                  output_config={"effort": effort},
-                                  messages=[{"role": "user", "content": user}])
+    kw = {"system": system} if system else {}
+    resp = client.messages.create(model=MODEL, max_tokens=max_tokens, output_config={"effort": effort},
+                                  messages=[{"role": "user", "content": user}], **kw)
     spend.add(resp.usage, tag)
     if resp.stop_reason == "refusal":
         raise RuntimeError(f"{tag}: refused")
@@ -220,8 +233,15 @@ def _call(client, spend: Spend, tag: str, system: str, user: str, effort: str, m
     return text
 
 
-def prompt_hash(*texts: str) -> str:
-    return hashlib.sha256("\x1f".join(texts).encode()).hexdigest()[:16]
+def protocol_hash(version: str) -> str:
+    """Hash of everything that defines a protocol version: prompts, questions, thresholds, model,
+    efforts and the evidence-formatting source."""
+    import inspect
+    parts = [version, MODEL, EXPLAIN_V0 if version == "v0" else EXPLAIN_V1, DETECT, MECH_QA,
+             json.dumps(QUESTIONS, sort_keys=True), str(MIN_ATTN_SHIFT), str(MIN_TAG_SHIFT), "explain:medium/8000",
+             "score:low/4000", inspect.getsource(input_evidence), inspect.getsource(mechanism_evidence),
+             inspect.getsource(split_windows), inspect.getsource(_fmt_window), inspect.getsource(mechanism_truth)]
+    return hashlib.sha256("\x1f".join(parts).encode()).hexdigest()[:16]
 
 
 def explain(client, spend: Spend, version: str, entry: dict, shown, mech: Optional[dict]) -> str:
@@ -237,19 +257,27 @@ def explain(client, spend: Spend, version: str, entry: dict, shown, mech: Option
             raise ValueError("v1 needs mechanism readouts")
         text = _call(client, spend, f"explain-v1-{entry['label']}", EXPLAIN_V1,
                      "WHERE IT ACTIVATES\n" + ev + "\n\nWHAT REMOVING IT DOES\n" + mechanism_evidence(mech), "medium", 8000)
-        f = re.search(r"FIRES:\s*(.+?)\s*(?:\n|$)", text)
-        e = re.search(r"EFFECT:\s*(.+)", text, re.S)
+        f = re.search(r"FIRES:\**\s*(.+?)\s*(?:\n|$)", text)
+        e = re.search(r"EFFECT:\**\s*(.+)", text, re.S)
         if not (f and e):
             raise RuntimeError(f"label not in FIRES/EFFECT form: {text[:200]!r}")
-        return f"FIRES: {f.group(1).strip()} EFFECT: {e.group(1).strip()}"
+        clean = lambda x: x.replace("**", "").strip()
+        return f"FIRES: {clean(f.group(1))} EFFECT: {clean(e.group(1))}"
     raise ValueError(f"unknown version {version}")
 
 
 def _json_from(text: str):
-    m = re.search(r"(\[.*\]|\{.*\})", text, re.S)
-    if not m:
-        raise RuntimeError(f"no JSON in answer: {text[:200]!r}")
-    return json.loads(m.group(1))
+    """The last bracketed group in the answer that parses as JSON (answers may mention brackets)."""
+    starts = [i for i, ch in enumerate(text) if ch in "[{"]
+    for i in reversed(starts):
+        close = "]" if text[i] == "[" else "}"
+        for j in range(len(text) - 1, i, -1):
+            if text[j] == close:
+                try:
+                    return json.loads(text[i:j + 1])
+                except json.JSONDecodeError:
+                    continue
+    raise RuntimeError(f"no JSON in answer: {text[:200]!r}")
 
 
 def score_detection(client, spend: Spend, label: str, held: Sequence[Tuple[dict, bool]], tag: str) -> Dict[str, float]:
@@ -275,8 +303,10 @@ def score_mechanism(client, spend: Spend, label: str, truth: Dict[str, bool], ta
 
 def derangement(labels: Sequence[str], seed: int) -> Dict[str, str]:
     """Each label's shuffled-null partner: a random permutation with no fixed point."""
-    rng = random.Random(seed)
     xs = list(labels)
+    if len(xs) < 2 or len(set(xs)) != len(xs):
+        raise ValueError("a derangement needs at least two distinct labels")
+    rng = random.Random(seed)
     while True:
         ys = xs[:]
         rng.shuffle(ys)

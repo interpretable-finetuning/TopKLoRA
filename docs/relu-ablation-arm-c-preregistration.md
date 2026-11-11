@@ -172,6 +172,27 @@ R0(b) (`few_positive`). Timing correction to §7: arm A's own logs show training
   R3 needs a second capture of per-pole example windows for the drawn latents, run once the autointerp
   protocol is fixed.
 
+**Amendment 6 (2026-11-11, Marek, before any arm A′/B/C data): R3 is mechanistic; no 7B extension.**
+- Marek (2026-11-11 01:51 UTC, project chat): no 7B runs for this ablation; R3 uses the mechanism
+  readouts of the autointerp thread instead of an LLM judge (there is no judge protocol any more).
+- **R3, redefined.** Same draw as before (per arm and family, `random.Random(20261111)`: 10 bipolar
+  latents from the pool and 10 from the l20 circuit or, for l17_25/`all`, from the adapter's N90 set;
+  then 5 decoy pairs). For each drawn latent, the downstream-latent readout M3 of
+  `docs/mechanism-pilot-preregistration.md` (branch `claude/project-thread-iqyqyx`; ablate − intact,
+  Bonferroni over all downstream latents) is run **once per pole**, ablating only that pole
+  (`ablate_override(sign="+")` / `sign="-"`), on prompts where that pole fires. Per latent: the Jaccard
+  overlap of the two poles' Bonferroni edge sets, and the sign agreement of the shared edges. Decoy
+  pair: the + pole of one drawn latent against the − pole of another drawn latent of the same module
+  type and layer, scored the same way; the decoy Jaccards are the "unrelated" reference. Reported: the
+  distribution of per-latent Jaccard beside the decoy distribution, per arm and family. Reading fixed
+  now: a latent whose two poles' Jaccard lies within the decoy range is "poles act unrelated"; one
+  above the decoy maximum with sign-agreeing shared edges is "one function, two signs"; with mostly
+  sign-opposed shared edges, "opposite ends of one function". The prompt sets and positions are taken
+  from the mechanism pilot and fixed in a further amendment, written with the adapted code and its
+  review, before R3 runs on any arm B/C latent.
+- The RTX PRO 6000 node is not used: ssh from this thread is blocked by the permission system.
+  Everything runs on the A40s as planned in Amendments 3–5.
+
 ## 4. Readouts
 
 All readouts are reported for every seed. Bands, never point estimates where a band exists.

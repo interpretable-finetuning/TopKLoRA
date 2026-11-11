@@ -708,7 +708,7 @@ _META = {"code_sha256": "c" * 64, "adapter": "a", "corpus_sha256": "d" * 64, "ba
 
 def _r3_files(tmp_path, r2_minus=1000, extra=""):
     """Three latents; the decoy is l20/0's + pole with l20/1's - pole, and those two sets share one snippet
-    ("common", twice in the - set); l17_25/2's + set repeats one snippet. `extra` changes one snippet (a different packet)."""
+    ("common", twice in each); l17_25/2's + set repeats one snippet. `extra` changes one snippet (a different packet)."""
     import json
     lat = [["l20", 42, "m", 0], ["l20", 42, "m", 1], ["l17_25", 43, "n", 2]]
     key = lambda t: "|".join(map(str, t))
@@ -721,7 +721,7 @@ def _r3_files(tmp_path, r2_minus=1000, extra=""):
             s = f"ex{len(tag)}"
             tag[s] = (key(t), pole)
             ex[key(t)][pole] = {"n_firings": 600 if pole == "+" else 1000, "top": [s], "top_decile_sample": []}
-    ex[key(lat[0])]["+"]["top"].append("common")
+    ex[key(lat[0])]["+"]["top"] += ["common", "common"]
     ex[key(lat[1])]["-"]["top"] += ["common", "common"]   # a decile draw can repeat a top window
     ex[key(lat[2])]["+"]["top"] += ["dup", "dup" + extra]
     (tmp_path / "draw.json").write_text(json.dumps(draw))
@@ -776,11 +776,15 @@ def test_r3_packet_refuses_a_latent_captured_twice_and_captures_from_other_code(
         _packet(tmp_path, ("cap.json", "cap2.json"))
     cap = json.loads((tmp_path / "cap.json").read_text())
     k0 = next(k for k in cap if k.startswith("l17_25"))
-    part = {k0: cap.pop(k0), "_meta": {**_META, "code_sha256": "e" * 64}}
+    part = {k0: cap.pop(k0)}
     (tmp_path / "cap.json").write_text(json.dumps(cap))
-    (tmp_path / "cap2.json").write_text(json.dumps(part))
-    with pytest.raises(SystemExit, match="disagree on code_sha256"):
-        _packet(tmp_path, ("cap.json", "cap2.json"))
+    for field, other in (("code_sha256", "e" * 64), ("corpus_sha256", "f" * 64), ("batch_size", 64)):
+        (tmp_path / "cap2.json").write_text(json.dumps({**part, "_meta": {**_META, field: other}}))
+        with pytest.raises(SystemExit, match=f"disagree on {field}"):
+            _packet(tmp_path, ("cap.json", "cap2.json"))
+    (tmp_path / "cap2.json").write_text(json.dumps({**part, "_meta": {**_META, "adapter": "b"}}))
+    _packet(tmp_path, ("cap.json", "cap2.json"))   # adapters differ between captures by design
+    assert [m["adapter"] for m in json.loads((tmp_path / "key.json").read_text())["captures"]] == ["a", "b"]
     del cap["_meta"]   # what the 7dc37e5 capture wrote
     (tmp_path / "cap.json").write_text(json.dumps(cap))
     with pytest.raises(SystemExit, match="no _meta"):
@@ -847,7 +851,7 @@ def test_r3_rate_retries_counts_tries_across_a_crash_and_refuses_another_packets
     r = json.loads((tmp_path / "ratings.json").read_text())["records"]
     assert calls2["by_pair"] == {1: 2, 2: 2, 3: 2}       # pair 1: 3 tries in all, across the crash
     assert r["1"]["relation"] == "unrated" and len(r["1"]["tries"]) == 3
-    assert r["1"]["tries"][0]["stop_details"] == {"category": "x"}
+    assert r["1"]["tries"][0]["stop_details"] == {"category": "x"} and r["1"]["tries"][0]["model"] == "claude-opus-5-5"
     assert r["2"]["relation"] == "unrelated"
     assert r["3"]["relation"] == "same" and len(r["3"]["tries"]) == 2   # a cut answer is asked again
     for kw in calls["kwargs"] + calls2["kwargs"]:   # the pre-registered rater request (Amendment 12a)
@@ -884,14 +888,16 @@ def test_r3_score_counts_by_kind_and_refuses_mismatched_incomplete_or_unknown_ra
                          "tries": (tries or {}).get(p, [_ans(r)])} for p, r in rels.items()}
         (tmp_path / "r.json").write_text(json.dumps({"packet_sha256": sha, "records": recs}))
 
-    write(rel)
+    cut = {"stop_reason": "max_tokens", "text": _ans("same")["text"]}
+    write(rel, tries={1: [cut, _ans(rel[1])]})
     ra._cmd_r3_score(ns())
     out = json.loads((tmp_path / "score.json").read_text())
     assert out["counts"] == {"real": {"opposite": 2, "same": 1}, "decoy": {"unrelated": 1}}
+    assert [p["tries"] for p in out["pairs"]] == [1, 2, 1, 1]
     # only the decoy's two sets share a snippet; a snippet repeated inside one set does not count
     assert {(p["kind"], p["plus"]): p["shared_snippets"] for p in out["pairs"]} == {
         ("decoy", "l20|42|m|0"): 1, ("real", "l20|42|m|0"): 0, ("real", "l20|42|m|1"): 0, ("real", "l17_25|43|n|2"): 0}
-    assert all(p["set1"] == "s1" and p["set2"] == "s2" and p["tries"] == 1 for p in out["pairs"])
+    assert all(p["set1"] == "s1" and p["set2"] == "s2" for p in out["pairs"])
     write(dict(list(rel.items())[:-1]))
     with pytest.raises(SystemExit, match="cover exactly"):
         ra._cmd_r3_score(ns())
@@ -901,8 +907,17 @@ def test_r3_score_counts_by_kind_and_refuses_mismatched_incomplete_or_unknown_ra
     write(rel, tries={0: [_ans("same" if rel[0] != "same" else "opposite")]})
     with pytest.raises(SystemExit, match="not the last answer"):
         ra._cmd_r3_score(ns())
-    write({**rel, 0: "unrated"}, tries={0: [_ans("same")] * 2})
-    with pytest.raises(SystemExit, match="unrated after only 2"):
+    write({**rel, 0: "unrated"}, tries={0: [cut] * 2})
+    with pytest.raises(SystemExit, match="unrated after 2 tries"):
+        ra._cmd_r3_score(ns())
+    write({**rel, 0: "unrated"}, tries={0: [cut, cut, _ans("opposite")]})   # its last answer was usable
+    with pytest.raises(SystemExit, match="last usable=opposite"):
+        ra._cmd_r3_score(ns())
+    write(rel, tries={0: [_ans("unrelated" if rel[0] != "unrelated" else "same"), _ans(rel[0])]})   # best of 2
+    with pytest.raises(SystemExit, match="usable answer before the last"):
+        ra._cmd_r3_score(ns())
+    write(rel, tries={0: [cut] * 3 + [_ans(rel[0])]})
+    with pytest.raises(SystemExit, match="4 tries recorded"):
         ra._cmd_r3_score(ns())
     write(rel, sha="0" * 64)
     with pytest.raises(SystemExit, match="ratings file belongs to another packet"):

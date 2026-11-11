@@ -1075,6 +1075,7 @@ def _cmd_r3_draw(a):
 def _cmd_r3_capture(a):
     from src.clcd.organism import load_organism
 
+    code_sha = _file_sha(__file__)   # at start: an edit during the GPU pass must not relabel this run
     draw = json.loads(Path(a.draw).read_text())
     targets = [(m, d) for fam, sd, m, d in draw["latents"] if fam == a.family and sd == a.seed]
     if not targets:
@@ -1090,10 +1091,10 @@ def _cmd_r3_capture(a):
     fir = pole_firings(model, wrapped, tokens, int(corpus["pad_id"]), targets, a.batch_size)
     out = {f"{a.family}|{a.seed}|{m}|{d}": {pole: pole_example_sets(fir[(m, d)], tokens, tok, pole)
                                            for pole in ("+", "-")} for m, d in targets}
-    out["_meta"] = {"code_sha256": _sha(Path(__file__).read_text()), "adapter": str(adapter),
+    out["_meta"] = {"code_sha256": code_sha, "adapter": str(adapter),
                     "corpus_sha256": _file_sha(a.corpus), "batch_size": a.batch_size}
     Path(a.out).write_text(json.dumps(out, indent=1))
-    print(f"captured {len(out)} latents x 2 poles -> {a.out}")
+    print(f"captured {len(targets)} latents x 2 poles -> {a.out}")
     return 0
 
 
@@ -1231,6 +1232,16 @@ def _cmd_r3_rate(a):
     return 0
 
 
+def _usable_relation(t: Dict[str, Any]) -> Optional[str]:
+    """The relation r3-rate would accept from one recorded try, or None."""
+    if t["stop_reason"] != "end_turn":
+        return None
+    try:
+        return parse_rating(t["text"])["relation"]
+    except ValueError:
+        return None
+
+
 def _cmd_r3_score(a):
     """Unblind: counts per relation for real pairs and decoys, and per pair how many snippets the two sets
     share (a decoy's two sets can share one, a real pair's mostly cannot -- a possible tell)."""
@@ -1253,11 +1264,15 @@ def _cmd_r3_score(a):
             raise SystemExit(f"pair {r['pair']}: unknown relation {r.get('relation')!r}")
         if not 1 <= len(r["tries"]) <= RATER_TRIES:
             raise SystemExit(f"pair {r['pair']}: {len(r['tries'])} tries recorded")
-        last = r["tries"][-1]
+        # r3-rate stops at the first usable answer: every earlier try is unusable, and the last one is
+        # usable with the recorded relation (rated) or unusable after RATER_TRIES tries (unrated)
+        usable = [_usable_relation(t) for t in r["tries"]]
+        if any(u is not None for u in usable[:-1]):
+            raise SystemExit(f"pair {r['pair']}: a usable answer before the last try")
         if r["relation"] == "unrated":
-            if len(r["tries"]) != RATER_TRIES:
-                raise SystemExit(f"pair {r['pair']}: unrated after only {len(r['tries'])} tries")
-        elif last["stop_reason"] != "end_turn" or parse_rating(last["text"])["relation"] != r["relation"]:
+            if len(r["tries"]) != RATER_TRIES or usable[-1] is not None:
+                raise SystemExit(f"pair {r['pair']}: unrated after {len(r['tries'])} tries, last usable={usable[-1]}")
+        elif usable[-1] != r["relation"]:
             raise SystemExit(f"pair {r['pair']}: recorded relation is not the last answer's")
         by[key[r["pair"]]["kind"]][r["relation"]] += 1
     shared = {p["pair"]: len(set(p["set1"]) & set(p["set2"])) for p in packet["pairs"]}

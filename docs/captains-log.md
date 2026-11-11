@@ -839,6 +839,16 @@ retentions are well-posed; ablation costs no answer quality. The judged `surgica
 charming (sha256 c1cc1dbe…). Random draws running; HF push after them unless the owner's answer on three-epoch work
 changes that. Read by the Remote Control session.
 
+**Update 14:00 (2026-11-11): capped three-epoch all-layer TopK s46 chain complete; three-epoch s45's remaining checks
+started on charming.** s46's chain ended 13:59:30 (EXIT=0) with the 20 random draws done; their numbers aren't reported
+to me yet, and the HF push is next. The s45 resume started at 13:59:49, once the card was down to 29 GB used (dense s45
+only). Gate check: `own gate: go`, gate check EXIT=0, preflight go, COMMIT 6dd6c33. It reused the existing circuit
+("circuit: 8232 latents", no new search), skipped transfer (done on statistical), and is in leak. It should end about
+17:00-18:00, on time charming is paid for anyway. This is the move the owner chose at 12:09. Their 12:21 question ("If we
+are not reporting 3-epoch runs, why do we keep doing them?") was answered: the three-epoch TopK row is in Appendix H.4
+and Table H2. They can still stop it in their own words. Dense three-epoch all-layer s42 on tn8 is untouched; I
+recommended stopping it, and that needs the owner's words. Read by the Remote Control session.
+
 **Update 05:33 (2026-11-11), H200 landings.** (1) *Capped all-layer six-epoch TopK s43 (paper protocol): circuit
 K=3,200 of 19,600 (16.3%).* Verification band: intact 95.6%, keep-only 94.3% (shortfall 1.3%, within 2 SE = 1.46%),
 ablation 0.0%. Paper protocol: verified. Transfer, leak, held-out keep-only, surgical and random follow. Six-epoch

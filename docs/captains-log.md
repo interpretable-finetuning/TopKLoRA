@@ -1,5 +1,66 @@
 # Captain's Log — every experiment and sweep
 
+### Mechanism-level pilot on five 7B latents (VLct W3): both circuit latents are hubs whose trigger-onset edges point into the circuit (3.4-3.5x base rate); C's tag attention runs through one head; the two pool latents with no circuit role have no edges · *2026-11-11 01:30*
+
+**Question.** Pre-registered in `docs/mechanism-pilot-preregistration.md` (amendments 1-2, all before
+any mech run), replacing the never-run generation pilot after the proof of concept (entry below):
+where does each of the five hand-inspected latents write (M1), what does ablating it do to its own
+layer's attention (M2), which other adapter latents change when it is ablated (M3, latent-to-latent
+edges), which of C's heads carry its strongest edges (M4), and the confirmatory Q3 (ablating C lowers
+the attention from the `assistant` token to the trigger tag).
+
+**Config.** Org `interpretable-finetuning/topklora-qwen2.5-7b` `r100_k12/l17_25/seed42` on
+`qwen2.5-7b-unaliased`, bf16, gpu-2457 (4x RTX PRO 6000), commit f692149 (branch
+`claude/project-thread-iqyqyx`), `scripts/latent_causal.py mech`. Latents A `L20.k#50`, B `L24.k#80`,
+C `L18.q#0` (circuit), D `L19.down#75`, E `L21.down#29` (circuit). Prompts: HIGH = up to 100 screened
+clean-tag prompts where the latent fires (D 62), TRIG = 200 trigger-tagged prompts; alpaca positions
+`[35532, 37732)`, never used by an intervention before. Ablation zeroes the latent at every position
+via `src.clcd.latents.inject`; downstream modules recompute their own TopK. Edge = mean signed change
+(ablate - intact) over prompts differs from 0 at two-sided p < 0.05 Bonferroni over all downstream
+latents. Gates passed on every latent: identity override changes nothing, non-downstream modules
+unchanged, all-heads ablation equals full ablation exactly (bf16). Two adversarial reviews before the run.
+
+**Artifacts.** gpu-2457 `/workspace/causal_pilot/mech/mech_{A..E}.json`, `screen.pt`, logs in
+`/workspace/causal_pilot/logs/mech_*.log`; copies in
+`/scratch/network/ssd/marek/latent_inspection_7b/causal_pilot/mech/`.
+
+**Numbers.**
+
+| latent | M1 write spread | edges HIGH / TRIG / TRIG onset (Bonferroni) | onset edges in circuit (base rate) | M2 mean attention change |
+|---|---|---|---|---|
+| A L20.k#50 (pool) | 3.9 of 4 KV heads | 1 / 0 / 0 | – | 0.003 (k: mass on firing keys) |
+| B L24.k#80 (pool) | 3.7 of 4 KV heads | 46 / 52 / 16 | 13/16 = 81% (16%) | 0.001 |
+| C L18.q#0 (circuit) | 24.6 of 28 heads | 441 / 811 / 585 | 246/585 = 42% (12%) | 0.043 HIGH, 0.048 TRIG (L1 of rows) |
+| D L19.down#75 (pool) | logit lens: no readable tokens | 0 / 0 / 0 | – | – |
+| E L21.down#29 (circuit) | logit lens: no readable tokens | 207 / 398 / 305 | 131/305 = 43% (12%) | – |
+
+- **Q3, confirmed:** tag mass from the `assistant` token, intact - ablate, summed over heads,
+  **+0.175 [0.167, 0.183]**, positive on **200/200** TRIG prompts. Per head it sits almost entirely in
+  **head 16 (+0.246)**; every other head is within ±0.014 (several slightly negative).
+- **M4 (C's heads):** C's three strongest TRIG-onset edges all rise when C is ablated, i.e. C
+  suppresses them: `L25.down#65` +0.60, `L25.gate#53` +0.45, `L25.down#57` +0.39. The largest single-
+  head share of each is **head 3** (+0.14, +0.18, +0.18), not head 16. Summed single-head effects are
+  0.56 / 0.18 / 0.56 against the full 0.60 / 0.45 / 0.39, so the heads do not add up linearly.
+- **E's strongest onset edges:** `L24.gate#88` -0.50 (intact 5.1), `L25.down#90` +0.44,
+  `L25.down#56` -0.42, `L24.gate#75` -0.38. No C -> E edge.
+- Uncorrected edge counts for A and D (158, 89) are below what chance alone gives (191, 201).
+
+**Verdict.** At the mechanism level the latents separate cleanly. The two circuit latents are hubs:
+ablating either changes hundreds of later latents at the trigger onset, and those edges land in the
+verified circuit at 3.4-3.5x its base rate, so the circuit's members are wired to each other rather
+than being an unconnected set. The two pool latents A and D have no causal footprint downstream at
+all, B a small one (16 onset edges, 13 in the circuit). C's write is spread over 25 of 28 query heads
+by weight, yet its pre-registered attention effect runs through one head (16); its effects on later
+latents run mostly through a different head (3).
+
+**Caveats.** n=5 latents, one org and seed, pre-registered as a pilot. Edges are total effects through
+the whole model, including TopK re-selection in later modules, not direct paths. The logit lens of a
+layer-19/21 write is not readable; it ignores everything between the write and the unembedding.
+Eager attention runs in every layer during M2 (both arms). The run used the Blackwell box while the
+doses and hand inspection came from A40s (doses are not used here).
+
+---
+
 ### Causal autointerp proof of concept on five 7B latents (VLct W3): the q_proj circuit latent C pulls the assistant token's attention onto the trigger tag; single-latent forcing only perturbs wording, and single-latent ablation leaves the saturated payload untouched · *2026-11-10 23:55*
 
 **Question.** Marek asked for a proof of concept before the pre-registered causal pilot

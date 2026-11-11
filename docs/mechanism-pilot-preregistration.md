@@ -7,6 +7,20 @@ Nothing below changes without a dated amendment in section 0.
 
 ## 0. Amendments
 
+**2026-11-11, amendment 4: after a review of amendment 3's code, before any blind latent was run.**
+(1) M1 by module type: q/k/v get per-head write shares (v over the 4 KV heads), o/down the logit lens,
+gate/up none (they write into the MLP hidden layer). The previous code would have crashed on v, gate
+and up latents. (2) The primary test is a one-sided exact permutation Mann-Whitney with mid-ranks over
+all C(18,9) splits, because zero edge shares tie and scipy's exact method assumes no ties. (3) The
+summary runs on exactly the 18 named latents and fails if any result is missing. (4) A latent whose
+ablation changes no downstream latent at the onset has 0 edges and share 0. (5) The live downstream
+latents are saved, and the enrichment is reported against both base rates: all downstream latents
+(as stated in amendment 3) and live ones. (6) Q3 is computed for every q_proj latent; only C's is
+confirmatory. (7) Correction to amendment 3's confound note: the share metric does not fully
+normalise for the number of downstream latents, because the Bonferroni threshold rises with it (z 3.5
+at 100 latents, 4.4 at 5,000) and the non-circuit group sits in later layers, which favours it; the
+bias runs against the hypothesis. (8) A screen refuses to overwrite an existing screen file.
+
 **2026-11-11, amendment 3: extension to the 18 blind latents, at Marek's request, before any of them
 was run or looked at.** Only module names and circuit membership of the blind set have been seen.
 - Latents: the 20 blind latents of `docs/latent-inspection-7b-preregistration.md` minus D and E (which

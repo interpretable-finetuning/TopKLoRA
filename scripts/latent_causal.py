@@ -89,6 +89,8 @@ def cmd_screen(a):
               "HIGH n/min", len(high), round(float(col[high[-1]]), 3), "LOW max", round(float(col[low[-1]]), 3), flush=True)
     out = Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
+    if (out / "screen.pt").exists():
+        raise SystemExit(f"{out / 'screen.pt'} exists; refusing to overwrite a screen")
     torch.save({"screen_questions": screen_q, "trig_questions": trig_q, "max_act": mx,
                 "latents": [[lab, list(x), src] for lab, x, src in latents], "sets": sets,
                 "trigger_tag": trig_tag, "clean_tag": clean_tag}, out / "screen.pt")
@@ -491,14 +493,16 @@ def cmd_mech(a):
             raise SystemExit(f"gate: per-head ablations do not reproduce the full ablation: {res['gate_head_sum']}")
         print(lab, "gate per-head sum", res["gate_head_sum"], flush=True)
 
-    # M1: weights
-    if kind in ("q_proj", "k_proj"):
+    # M1: weights (amendment 4: per module type)
+    if kind in ("q_proj", "k_proj", "v_proj"):
         shares, pr = lc.head_shares(b, hd)
         res["M1"] = {"head_shares": shares, "effective_heads": pr, "n_heads": len(shares)}
-    else:
+    elif kind in ("o_proj", "down_proj"):
         up, dn = lc.logit_lens(model, b * wrapped[m].scale)
         res["M1"] = {"metric": "direct-path logit change per unit activation, W_U (g * scale * b)",
                      "promoted": [(tok.decode([i]), v) for i, v in up], "suppressed": [(tok.decode([i]), v) for i, v in dn]}
+    else:  # gate/up write into the MLP hidden layer, which has no head or vocabulary reading
+        res["M1"] = {"not_applicable": f"{kind} writes into the MLP hidden layer"}
     save()
     print(lab, "M1", {k: v for k, v in res["M1"].items() if k != "head_shares"}, flush=True)
 
@@ -552,56 +556,61 @@ def cmd_mech(a):
 
 
 def cmd_mech_summary(a):
-    """Pre-registered comparison (mechanism pre-registration, amendment 3): circuit vs non-circuit
+    """Pre-registered comparison (mechanism pre-registration, amendments 3-4): circuit vs non-circuit
     latents on the share of live downstream latents that are Bonferroni edges at the TRIG onset."""
-    from scipy.stats import mannwhitneyu
     from src.autointerp.latent_inspection import latent_pool
 
     circuit = {tuple(x) for x in json.loads(Path(a.circuit).read_text())["kept_latents"]}
     pool = latent_pool(a.adapter)
     names = {m: None for m, _ in pool}
+    labels = [x for x in a.labels.split(",") if x]
+    if not labels:
+        raise SystemExit("--labels is required: the latents the test is about")
     rows = []
-    for f in sorted(Path(a.dir).glob("mech_*.json")):
+    for lab in labels:
+        f = Path(a.dir) / f"mech_{lab}.json"
+        if not f.exists():
+            raise SystemExit(f"no mech result for {lab}: {f}")
         r = json.loads(f.read_text())
         lat = (r["module"], r["index"])
-        down = set(lc.downstream_modules(names, r["module"]))
-        down_lat = [x for x in pool if x[0] in down]
-        base = sum(x in circuit for x in down_lat) / len(down_lat)
-        row = {"latent": r["latent"], "module": r["module"], "index": r["index"], "in_circuit": lat in circuit,
-               "circuit_base_rate_downstream": base}
+        down = lc.downstream_modules(names, r["module"])
+        r_ = len([x for x in pool if x[0] == down[0]])
+        down_lat = [x for x in pool if x[0] in set(down)]
+        row = {"latent": lab, "module": r["module"], "index": r["index"], "in_circuit": lat in circuit,
+               "base_rate_all_downstream": sum(x in circuit for x in down_lat) / len(down_lat)}
         for k in ("HIGH", "TRIG", "TRIG_onset"):
             x = r["M3"][k]
             into = sum((e["module"], e["index"]) in circuit for e in x["edges"])
+            live = [(down[c // r_], c % r_) for c in x["live_cols"]]
             row[k] = {"edges": x["n_edges_bonferroni"], "live": x["n_live"],
+                      # a latent that moves nothing downstream has 0 edges: share 0 (amendment 4)
                       "edge_share": x["n_edges_bonferroni"] / x["n_live"] if x["n_live"] else 0.0,
-                      "edges_into_circuit": into}
+                      "edges_into_circuit": into,
+                      "base_rate_live": (sum(y in circuit for y in live) / len(live)) if live else None}
         rows.append(row)
-    labels = set(a.labels.split(",")) if a.labels else None
-    if labels is not None:
-        missing = labels - {r["latent"] for r in rows}
-        if missing:
-            raise SystemExit(f"no mech result for {sorted(missing)}")
-        rows = [r for r in rows if r["latent"] in labels]
     grp = {g: [r["TRIG_onset"]["edge_share"] for r in rows if r["in_circuit"] == g] for g in (True, False)}
-    if not grp[True] or not grp[False]:
-        raise SystemExit("both groups need at least one latent")
-    u = mannwhitneyu(grp[True], grp[False], alternative="greater", method="exact")
+    u, p = lc.mwu_greater_exact(grp[True], grp[False])
     enrich = {}
     for g in (True, False):
-        e = sum(r["TRIG_onset"]["edges"] for r in rows if r["in_circuit"] == g)
-        into = sum(r["TRIG_onset"]["edges_into_circuit"] for r in rows if r["in_circuit"] == g)
-        exp = sum(r["TRIG_onset"]["edges"] * r["circuit_base_rate_downstream"] for r in rows if r["in_circuit"] == g)
-        enrich["circuit" if g else "non_circuit"] = {"edges": e, "into_circuit": into, "expected_at_base_rate": exp,
-                                                     "ratio": (into / exp) if exp else None}
+        sel = [r for r in rows if r["in_circuit"] == g]
+        e = sum(r["TRIG_onset"]["edges"] for r in sel)
+        into = sum(r["TRIG_onset"]["edges_into_circuit"] for r in sel)
+        exp_all = sum(r["TRIG_onset"]["edges"] * r["base_rate_all_downstream"] for r in sel)
+        exp_live = sum(r["TRIG_onset"]["edges"] * r["TRIG_onset"]["base_rate_live"] for r in sel if r["TRIG_onset"]["base_rate_live"] is not None)
+        enrich["circuit" if g else "non_circuit"] = {
+            "edges": e, "into_circuit": into, "expected_all_downstream": exp_all,
+            "ratio_all_downstream": (into / exp_all) if exp_all else None,
+            "expected_live": exp_live, "ratio_live": (into / exp_live) if exp_live else None}
     out = {"n": len(rows), "rows": rows,
            "primary": {"metric": "TRIG-onset Bonferroni edges / live downstream latents",
-                       "circuit": grp[True], "non_circuit": grp[False], "U": float(u.statistic), "p_one_sided": float(u.pvalue)},
+                       "test": "one-sided exact permutation Mann-Whitney with mid-ranks (circuit greater)",
+                       "circuit": grp[True], "non_circuit": grp[False], "U": u, "p_one_sided": p},
            "enrichment_TRIG_onset": enrich}
     Path(a.out).write_text(json.dumps(out, indent=1))
     for r in sorted(rows, key=lambda r: (not r["in_circuit"], r["latent"])):
         print(r["latent"], r["module"].split("layers.")[1], r["index"], "circuit" if r["in_circuit"] else "-",
               "onset edges", r["TRIG_onset"]["edges"], "/", r["TRIG_onset"]["live"], "into circuit", r["TRIG_onset"]["edges_into_circuit"],
-              "| TRIG", r["TRIG"]["edges"], "| HIGH", r["HIGH"]["edges"], f"| base {r['circuit_base_rate_downstream']:.3f}")
+              "| TRIG", r["TRIG"]["edges"], "| HIGH", r["HIGH"]["edges"])
     print("primary", {k: v for k, v in out["primary"].items() if k not in ("circuit", "non_circuit")})
     print("enrichment", enrich)
 
@@ -635,7 +644,7 @@ def main():
     c.add_argument("--adapter", required=True)
     c.add_argument("--circuit", required=True)
     c.add_argument("--out", required=True)
-    c.add_argument("--labels", default="", help="comma-separated labels to include (default: all files)")
+    c.add_argument("--labels", required=True, help="comma-separated labels the test is about; each needs mech_<label>.json")
     a = p.parse_args()
     {"screen": cmd_screen, "run": cmd_run, "poc": cmd_poc, "mech": cmd_mech, "mech_summary": cmd_mech_summary}[a.cmd](a)
 

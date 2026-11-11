@@ -337,3 +337,22 @@ def test_per_head_ablation_is_exact_in_bf16():
                 st.enter_context(lc.head_ablation(wrapped[q], idx, h, 16))
             by_head = model(input_ids=ids).logits
     assert torch.equal(full, by_head)
+
+
+def test_exact_mann_whitney_handles_ties_where_scipy_exact_does_not():
+    """Zero edge shares tie; scipy's exact method assumes no ties and can flip a verdict at 0.05."""
+    import itertools
+    from scipy.stats import mannwhitneyu, rankdata
+
+    x = [0.0, 0.0, 0.0, 0.0, 0.1, 0.2, 0.3, 0.4, 0.5]
+    y = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.05, 0.15]
+    u, p = lc.mwu_greater_exact(x, y)
+    pooled = x + y
+    r = rankdata(pooled)
+    us = [sum(r[i] for i in c) - 9 * 10 / 2 for c in itertools.combinations(range(18), 9)]
+    assert u == pytest.approx(sum(r[:9]) - 45)
+    assert p == pytest.approx(sum(v >= u - 1e-9 for v in us) / len(us))
+    assert p < 0.05 < mannwhitneyu(x, y, alternative="greater", method="exact").pvalue  # the flip
+    # without ties it agrees with scipy's exact test
+    a, b = [1.0, 3.0, 5.0, 7.0], [2.0, 4.0, 6.0]
+    assert lc.mwu_greater_exact(a, b)[1] == pytest.approx(mannwhitneyu(a, b, alternative="greater", method="exact").pvalue)

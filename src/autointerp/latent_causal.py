@@ -442,7 +442,7 @@ def edge_count(signed: torch.Tensor, alpha: float = 0.05) -> Dict[str, object]:
     z_bonf = NormalDist().inv_cdf(1 - alpha / (2 * m))
     cols = torch.nonzero(z.abs() > z_bonf).flatten().tolist()
     edges = sorted(({"col": c, "mean": float(mean[c]), "z": float(z[c])} for c in cols), key=lambda e: -abs(e["mean"]))
-    return {"n_downstream_latents": m, "n_live": int(live.sum()),
+    return {"n_downstream_latents": m, "n_live": int(live.sum()), "live_cols": torch.nonzero(live).flatten().tolist(),
             "n_edges_uncorrected": int((z.abs() > z_unc).sum()), "expected_by_chance": alpha * int(live.sum()),
             "n_edges_bonferroni": len(cols), "z_bonferroni": z_bonf, "edges": edges}
 
@@ -456,3 +456,24 @@ def bootstrap_cols(x: torch.Tensor, n_boot: int = 2000, seed: int = 0) -> Dict[s
     means = x.float()[idx].mean(dim=1)  # [n_boot, k]
     return {"mean": x.float().mean(0).tolist(), "lo": means.quantile(0.025, dim=0).tolist(),
             "hi": means.quantile(0.975, dim=0).tolist()}
+
+
+def mwu_greater_exact(x: Sequence[float], y: Sequence[float]) -> Tuple[float, float]:
+    """One-sided (x greater) Mann-Whitney U with mid-ranks for ties and an exact permutation p-value:
+    every split of the pooled values into groups of len(x) and len(y) is enumerated, so ties are
+    handled exactly (scipy's exact method assumes no ties). Returns (U, p)."""
+    import itertools
+    from scipy.stats import rankdata
+
+    pooled = np.asarray(list(x) + list(y), dtype=float)
+    n1, n = len(x), len(pooled)
+    if n1 == 0 or n1 == n:
+        raise ValueError("both groups need at least one value")
+    ranks = rankdata(pooled)  # mid-ranks
+    u_of = lambda idx: ranks[list(idx)].sum() - n1 * (n1 + 1) / 2
+    u_obs = u_of(range(n1))
+    combos = list(itertools.combinations(range(n), n1))
+    if len(combos) > 2_000_000:
+        raise ValueError(f"{len(combos)} splits is too many to enumerate")
+    us = np.array([u_of(c) for c in combos])
+    return float(u_obs), float((us >= u_obs - 1e-9).mean())

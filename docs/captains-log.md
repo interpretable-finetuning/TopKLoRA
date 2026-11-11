@@ -522,6 +522,8 @@ six-epoch TopK seeds on the H200. Stage 4 follows in each chain; s42-s44 dense c
 
 **Update 00:58 (2026-11-11): dense six-epoch s45 surgical and seed-7 random.** Surgical band (pool 2,000-2,999), finished on sorry_gold_reindeer with no memory stop: intact 97.7%, circuit ablated 0.0%, base 0.0%, keep-only 96.9%. Same-size random ablation (seed 7, the paper's single draw): 0.0%, so the circuit is not specific, like every other dense nine-layer circuit. The 20-draw random step is running. I gave the go for the judge (same settings as the other dense cells) now, and for the HF push once the 20-draw step lands. Read by the Remote Control session from the pod.
 
+**Update 01:13 (2026-11-11): dense six-epoch s46 surgical and seed-7 random.** The relaunched surgical step finished on main_rose_kingfisher with no memory stop. Surgical band: intact 98.3%, circuit ablated 0.0%, base 0.0%, keep-only 97.0%. Seed-7 random ablation of the same size: 0.0%, not specific. So all five dense six-epoch nine-layer circuits fail the paper's specificity test (seed 7, 0.0% each). The 20-draw random step is next; the judges for s45 and s46 are running. Read by the Remote Control session from the pod.
+
 ### Semantic trigger, 7B dense six-epoch s43 and s44 circuits: K=6000 and K=6200 of 6,300 (95% and 98%), like dense s42 · *2026-11-10 07:59, s44 08:01* · BOTH NOT VERIFIED (random sets of their size match them on both checks)
 
 **Question.** Second seed of the nine-layer dense arm: is the 95% dense circuit of s42 (entry 01:47) a one-seed

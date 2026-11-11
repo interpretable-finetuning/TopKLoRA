@@ -658,6 +658,16 @@ s47), median 0.58. Judge started 07:52 under the standing go, from a cluster cop
 (41054652…); random running, chain end about 09:10; the s45 full pool (last H200 job) is on surgical, about
 10:00-10:25. Read by the Remote Control session from the pod.
 
+**Update 08:01 (2026-11-11): capped all-layer six-epoch TopK s43 judged.** Luna judge, 2,838 of 2,838 parsed, none
+missing ($0.15). Alpaca intact / ablated / base 3.94 / 4.00 / 3.73; intact - base +0.21 [+0.09, +0.33]; ablated -
+intact **+0.06** [-0.03, +0.15]; retention 1.29 [0.87, 2.39] (0.1% of denominators at or below 0). No Robots 3.08 /
+3.26 / 2.97; intact - base +0.11 [-0.01, +0.24]; ablated - intact +0.18 [+0.08, +0.28]; retention undefined (4.0% of
+denominators at or below 0, over the 2.5% rule; the raw point estimate would be 2.59 [-5.16, 14.72]). Six-epoch
+all-layer TopK alpaca quality change over four seeds: +0.05 / +0.06 / +0.09 / +0.11 (s42 / s43 / s46 / s47), median
++0.08 (the midpoint of +0.06 and +0.09, rounded up); two of four intervals above 0; the lowest bound, -0.03, keeps the
+"no interval below -0.03" sentence true. Judged `surgical.json` sha256-identical on cluster and H200 (3822cd6d…); HF
+push waits for the 20 draws. Read by the Remote Control session from the pod.
+
 **Update 05:33 (2026-11-11), H200 landings.** (1) *Capped all-layer six-epoch TopK s43 (paper protocol): circuit
 K=3,200 of 19,600 (16.3%).* Verification band: intact 95.6%, keep-only 94.3% (shortfall 1.3%, within 2 SE = 1.46%),
 ablation 0.0%. Paper protocol: verified. Transfer, leak, held-out keep-only, surgical and random follow. Six-epoch

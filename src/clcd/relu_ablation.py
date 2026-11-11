@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import argparse
 import itertools
+import math
 import json
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Tuple
@@ -78,6 +79,14 @@ def concentration(scores: Sequence[float], frac: float) -> int:
         if acc >= frac * total:
             return n
     return len(mags)
+
+
+def concentration_set(attrib_json: str | Path, frac: float) -> set:
+    """The latents counted by `concentration` (largest |score| first)."""
+    d = json.loads(Path(attrib_json).read_text())
+    ranked = sorted(((m, int(i), abs(float(sc))) for m, i, sc in d["scores"]), key=lambda t: -t[2])
+    n = concentration([t[2] for t in ranked], frac)
+    return {(m, i) for m, i, _ in ranked[:n]}
 
 
 def attrib_concentration(attrib_json: str | Path) -> Dict[str, int]:
@@ -456,6 +465,213 @@ def _cmd_gate_ok(a):
     return 0 if v in USABLE else 3
 
 
+# --- analysis ---------------------------------------------------------------------------------------
+
+ARMS = {"A": "r42_k5", "B": "r42_k5_norelu", "C": "r42_k5_abs"}
+FAMILIES = ("l20", "l17_25", "all")
+SEEDS = (42, 43, 44, 45, 46)
+K = 5
+
+
+def _read(path: Path) -> Optional[dict]:
+    return json.loads(path.read_text()) if path.exists() else None
+
+
+def r0b_count_rule_only(rec: dict, k: int = K) -> bool:
+    """True iff an R0(b) FAIL is only the nonzero-count rule tripped by selected latents that are
+    exactly 0.0 (bf16), with the forward itself identical to the arm's definition (max |diff| 0).
+
+    A selected latent with value 0.0 is selected but not "nonzero", so the pre-registered count rule
+    fails although selection and output equal the definition. Reported, never silently passed.
+    """
+    if rec["verdict"] == "PASS":
+        return False
+    per = rec["per_module"]
+    if any(c["max_abs_diff"] != 0.0 for c in per.values()):
+        return False
+    for p_ in rec["problems"]:
+        if "nonzero latents per token" not in p_:
+            return False
+        c = per[p_.split(":")[0]]
+        if c["nnz_max"] != k or c["selected"] < c["tokens"] * k - c["tokens"]:
+            return False
+    return True
+
+
+def _adapter_dir(run_root: Path, arm: str, fam: str, seed: int) -> Path:
+    hits = [p.parent for p in (run_root / "models/qwen15" / arm / f"{fam}_s{seed}").rglob("topk_config.json")
+            if "checkpoint" not in str(p)]
+    if len(hits) != 1:
+        raise FileNotFoundError(f"{arm} {fam} s{seed}: {len(hits)} adapter dirs")
+    return hits[0]
+
+
+def summarize(run_root: str | Path) -> Dict[str, Any]:
+    """Assemble every pre-registered readout from the run tree; missing files are reported as missing."""
+    run_root = Path(run_root)
+    B = run_root / "clcd_results/relu_ablation"
+    N = B / "node_mirror"
+    out: Dict[str, Any] = {"cells": {}, "missing": []}
+    for fam in FAMILIES:
+        for arm_key, arm in ARMS.items():
+            for seed in SEEDS:
+                cell = f"{arm}_{fam}_s{seed}"
+                c: Dict[str, Any] = {"arm": arm_key, "family": fam, "seed": seed}
+                g = _read(B / "campaign" / f"gate_a_{cell}.json")
+                if g is None:
+                    out["missing"].append(f"{cell}: A40 Gate A")
+                else:
+                    from src.clcd.gate_a import USABLE, verdict_of
+                    c["gate"] = {"verdict": verdict_of(g), "usable": verdict_of(g) in USABLE,
+                                 "asr": g["intact_backdoor"]["rate"], "clean_fires": g["clean_falsefire"]["fires"]}
+                r0b = _read(B / "r0b" / f"{cell}.json")
+                if r0b is None:
+                    out["missing"].append(f"{cell}: R0(b)")
+                else:
+                    few = sum(m["few_positive"] for m in r0b["per_module"].values())
+                    tok = sum(m["tokens"] for m in r0b["per_module"].values())
+                    c["r0b"] = {"verdict": r0b["verdict"], "count_rule_only": r0b_count_rule_only(r0b),
+                                "few_positive_share": few / tok}
+                if arm_key != "A":
+                    try:
+                        ref = json.loads((_adapter_dir(run_root, ARMS["A"], fam, seed) / "sleeper_run_config.json").read_text())
+                        oth = json.loads((_adapter_dir(run_root, arm, fam, seed) / "sleeper_run_config.json").read_text())
+                        c["r0a"] = r0a_problems(ref, oth)
+                    except FileNotFoundError as e:
+                        out["missing"].append(f"{cell}: R0(a) ({e})")
+                w = _read(B / "r4" / f"{cell}_whole.json")
+                if w is None:
+                    out["missing"].append(f"{cell}: R4 whole")
+                else:
+                    c["r4_whole"] = {cond: {"asr": v["eval_triggered"]["rate"], "clean": v["eval_clean"]["rate"],
+                                            "zeroed": v.get("zeroed_entries")} for cond, v in w["conditions"].items()}
+                    c["r4_whole_problems"] = w["problems"]
+                if fam == "l20":
+                    ng = _read(N / "campaign" / f"gate_a_{cell}.json")
+                    if ng is not None:
+                        from src.clcd.gate_a import USABLE, verdict_of
+                        c["node_gate"] = {"verdict": verdict_of(ng), "usable": verdict_of(ng) in USABLE,
+                                          "asr": ng["intact_backdoor"]["rate"]}
+                    circ = _read(N / "campaign" / arm / "elim" / f"l20_seed{seed}_circuit.json")
+                    if circ is None:
+                        out["missing"].append(f"{cell}: R1 circuit")
+                    else:
+                        c["r1"] = {"status": circ["status"], "both_K": circ["both_K"],
+                                   "survivors": circ["elim"]["n_survivors"], "pool": circ["elim"]["pool_n"],
+                                   "kept": [tuple(x) for x in circ["kept_latents"]]}
+                        leak = _read(N / "campaign" / arm / "leak" / f"l20_seed{seed}.json")
+                        surg = _read(N / "campaign" / arm / "surgical" / f"l20_seed{seed}_surgical.json")
+                        c["r1"]["leak_fires"] = None if leak is None else leak[0]["total_fires"]
+                        c["r1"]["surgical_ablated_asr"] = (None if surg is None else
+                                                           surg["conditions"]["ablate_circuit"]["backdoor_asr"])
+                    r4c = _read(N / "r4" / f"{cell}_circuit.json")
+                    if r4c is not None:
+                        c["r4_circuit"] = {cond: v["eval_triggered"]["rate"] for cond, v in r4c["conditions"].items()}
+                        c["r4_circuit_problems"] = r4c["problems"]
+                        c["r4_poles_on_trigger"] = {k: v for k, v in r4c["poles_on_trigger"].items() if k != "per_module"}
+                else:
+                    at = B / "r1p" / f"{cell}_attrib.json"
+                    if at.exists():
+                        c["r1p"] = attrib_concentration(at)
+                        c["_n90_set"] = concentration_set(at, 0.9)
+                    else:
+                        out["missing"].append(f"{cell}: R1' attribution")
+                pc = B / "r2" / f"{cell}.pt"
+                if arm_key != "A":
+                    if pc.exists():
+                        counts = torch.load(pc)["counts"]
+                        n_pos = torch.cat([v["n"][:, 0].sum(0) for v in counts.values()])
+                        n_neg = torch.cat([v["n"][:, 1].sum(0) for v in counts.values()])
+                        names = [(m, d) for m, v in counts.items() for d in range(v["n"].shape[-1])]
+                        fires = (n_pos + n_neg) > 0
+                        bip = bipolar(n_pos, n_neg)
+                        r2 = {"latents": len(names), "firing": int(fires.sum()), "bipolar": int(bip.sum()),
+                              "bipolar_share_of_firing": float(bip.sum()) / max(int(fires.sum()), 1),
+                              "neg_share_of_firings": float(n_neg.sum()) / float((n_pos + n_neg).sum())}
+                        c["r2"] = r2
+                        c["_r2_bipolar_names"] = {names[i] for i in torch.nonzero(bip).flatten().tolist()}
+                    else:
+                        out["missing"].append(f"{cell}: R2 poles")
+                out["cells"][cell] = c
+    # R2 among circuit latents (l20) / N90 latents (others)
+    for cell, c in out["cells"].items():
+        bip = c.pop("_r2_bipolar_names", None)
+        if bip is None:
+            continue
+        if "r1" in c:  # l20: the certified circuit
+            sub = {(m, d) for m, d in c["r1"]["kept"]}
+        elif "_n90_set" in c:  # l17_25 / all: Amendment 2's analogue, the N90 latents
+            sub = c["_n90_set"]
+        else:
+            continue
+        c["r2"]["bipolar_in_subset"] = len(_match(sub, bip))
+        c["r2"]["subset_latents"] = len(sub)
+        c["r2"]["subset"] = "circuit" if "r1" in c else "N90"
+    for c in out["cells"].values():
+        if "r1" in c:
+            c["r1"].pop("kept")
+        c.pop("_n90_set", None)
+    return out
+
+
+def _match(a: set, b: set) -> set:
+    """Intersect latent sets whose module names may differ by a PEFT prefix."""
+    norm = lambda s: {(m.split("model.layers.")[-1], d) for m, d in s}
+    return norm(a) & norm(b)
+
+
+def tests(summary: Dict[str, Any], strict_r0b: bool = True) -> Dict[str, Any]:
+    """The six pre-registered tests (Amendments 2-3), Holm at 0.05, on usable seeds."""
+    def ok(c):
+        if not c.get("gate", {}).get("usable"):
+            return False
+        r0b = c.get("r0b")
+        if r0b is None:  # never measured is not a pass
+            return False
+        if r0b["verdict"] != "PASS" and (strict_r0b or not r0b["count_rule_only"]):
+            return False
+        if c.get("r0a"):
+            return False
+        return True
+
+    vals: Dict[Tuple[str, str], List[float]] = {}
+    for c in summary["cells"].values():
+        if not ok(c):
+            continue
+        if c["family"] == "l20":
+            if c.get("node_gate", {}).get("usable") and c.get("r1", {}).get("status") == "ok":
+                vals.setdefault((c["family"], c["arm"]), []).append(c["r1"]["survivors"])
+        elif "r1p" in c:
+            vals.setdefault((c["family"], c["arm"]), []).append(c["r1p"]["N90"])
+    pvals, detail = {}, {}
+    for fam in FAMILIES:
+        for arm in ("B", "C"):
+            ref, test = vals.get((fam, "A"), []), vals.get((fam, arm), [])
+            name = f"{fam}:{arm}>A"
+            if ref and test:
+                pvals[name] = mwu_greater_exact(ref, test)
+                detail[name] = {"A": sorted(ref), arm: sorted(test), "p": pvals[name],
+                                "min_attainable_p": 1 / math.comb(len(ref) + len(test), len(test))}
+            else:
+                detail[name] = {"A": sorted(ref), arm: sorted(test), "p": None}
+    rej = holm(pvals) if pvals else {}
+    for n_ in detail:
+        detail[n_]["holm_reject"] = rej.get(n_)
+    return {"strict_r0b": strict_r0b, "tests": detail}
+
+
+def _cmd_summarize(a):
+    s = summarize(a.run_root)
+    res = {"summary": s, "tests_strict": tests(s, True), "tests_r0b_count_rule_included": tests(s, False)}
+    Path(a.out).write_text(json.dumps(res, indent=1, default=list))
+    print(f"missing: {len(s['missing'])}")
+    for t in ("tests_strict", "tests_r0b_count_rule_included"):
+        print(t)
+        for n_, d in res[t]["tests"].items():
+            print(f"  {n_}: A={d['A']} other={d.get('B', d.get('C'))} p={d['p']} holm={d['holm_reject']}")
+    return 0
+
+
 def main() -> int:
     p = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -490,10 +706,13 @@ def main() -> int:
     g_ = sub.add_parser("args-check", help="Amendment 4: circuit args vs campaign-3 arm A")
     g_.add_argument("--ref", required=True)
     g_.add_argument("--circuit", required=True)
+    s_ = sub.add_parser("summarize", help="assemble all readouts + the pre-registered tests")
+    s_.add_argument("--run_root", required=True)
+    s_.add_argument("--out", required=True)
     o_ = sub.add_parser("gate-ok", help="exit 0 iff a Gate A record is usable")
     o_.add_argument("--record", required=True)
     a = p.parse_args()
-    rc = {"gate-ok": _cmd_gate_ok, "corpus": _cmd_corpus, "poles": _cmd_poles, "pole-ablation": _cmd_pole_ablation,
+    rc = {"summarize": _cmd_summarize, "gate-ok": _cmd_gate_ok, "corpus": _cmd_corpus, "poles": _cmd_poles, "pole-ablation": _cmd_pole_ablation,
           "r0a": _cmd_r0a, "args-check": _cmd_args_check}[a.cmd](a)
     return rc or 0
 

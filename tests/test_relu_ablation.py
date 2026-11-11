@@ -194,3 +194,57 @@ def test_r4_circuit_ablation_must_reproduce_the_certificate():
     assert ra.r4_problems(_r4_record("C", 7, circuit="c.json", all_fires=0)) == []
     assert ra.r4_problems(_r4_record("C", 7, circuit="c.json", all_fires=2)) != []
     assert ra.r4_problems(_r4_record("C", 7, circuit=None, all_fires=900)) == []  # whole adapter: no certificate
+
+
+# --- analysis: which cells enter the pre-registered tests ----------------------------------------------
+
+
+def _r0b(verdict, diff=0.0, nnz=(4, 5), selected=5789, tokens=1158, problem="m: nonzero latents per token 4..5, expected exactly 5"):
+    return {"verdict": verdict, "problems": [] if verdict == "PASS" else [problem],
+            "per_module": {"m": {"max_abs_diff": diff, "nnz_min": nnz[0], "nnz_max": nnz[1],
+                                 "selected": selected, "tokens": tokens, "few_positive": 0}}}
+
+
+def test_r0b_count_rule_only_requires_an_identical_forward():
+    assert ra.r0b_count_rule_only(_r0b("FAIL"))  # one exact-zero selected latent, diff 0
+    assert not ra.r0b_count_rule_only(_r0b("FAIL", diff=0.01))  # the forward differs: a real failure
+    assert not ra.r0b_count_rule_only(_r0b("FAIL", problem="m: max|diff| 0.01 vs the arm's definition"))
+    assert not ra.r0b_count_rule_only(_r0b("FAIL", selected=1158 * 3))  # many latents missing per token
+    assert not ra.r0b_count_rule_only(_r0b("PASS"))
+
+
+def _cell(arm, fam="l20", usable=True, r0b="PASS", r0a=None, survivors=30, n90=100, node_ok=True, count_rule=False):
+    c = {"arm": arm, "family": fam, "gate": {"usable": usable}}
+    if r0b is not None:
+        c["r0b"] = {"verdict": r0b, "count_rule_only": count_rule}
+    if r0a is not None:
+        c["r0a"] = r0a
+    if fam == "l20":
+        c["node_gate"] = {"usable": node_ok}
+        c["r1"] = {"status": "ok", "survivors": survivors}
+    else:
+        c["r1p"] = {"N90": n90}
+    return c
+
+
+def test_tests_admit_only_cells_that_passed_their_gates():
+    cells = {
+        "a1": _cell("A", survivors=10), "a2": _cell("A", survivors=11),
+        "c1": _cell("C", survivors=50),
+        "c_nogate": _cell("C", usable=False, survivors=1),
+        "c_nor0b": _cell("C", r0b=None, survivors=1),         # never measured
+        "c_r0a": _cell("C", r0a=["lora.k: 5 vs 8"], survivors=1),
+        "c_node": _cell("C", node_ok=False, survivors=1),       # search gated on the node record
+        "c_cr": _cell("C", r0b="FAIL", count_rule=True, survivors=60),
+        "c_real": _cell("C", r0b="FAIL", count_rule=False, survivors=1),
+    }
+    strict = ra.tests({"cells": cells}, strict_r0b=True)["tests"]["l20:C>A"]
+    assert strict["C"] == [50] and strict["A"] == [10, 11]
+    loose = ra.tests({"cells": cells}, strict_r0b=False)["tests"]["l20:C>A"]
+    assert loose["C"] == [50, 60]
+
+
+def test_module_name_matching_ignores_the_peft_prefix():
+    a = {("base_model.model.model.layers.20.mlp.up_proj", 3)}
+    b = {("model.layers.20.mlp.up_proj", 3), ("model.layers.20.mlp.up_proj", 4)}
+    assert len(ra._match(a, b)) == 1

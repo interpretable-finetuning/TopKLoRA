@@ -524,6 +524,8 @@ six-epoch TopK seeds on the H200. Stage 4 follows in each chain; s42-s44 dense c
 
 **Update 01:13 (2026-11-11): dense six-epoch s46 surgical and seed-7 random.** The relaunched surgical step finished on main_rose_kingfisher with no memory stop. Surgical band: intact 98.3%, circuit ablated 0.0%, base 0.0%, keep-only 97.0%. Seed-7 random ablation of the same size: 0.0%, not specific. So all five dense six-epoch nine-layer circuits fail the paper's specificity test (seed 7, 0.0% each). The 20-draw random step is next; the judges for s45 and s46 are running. Read by the Remote Control session from the pod.
 
+**Update 01:43 (2026-11-11): dense six-epoch s45 chain finished (01:31:06, EXIT=0, 0.07 exception).** Twenty random draws (seeds 7-26) of 5,600 latents: ablation 0.000 in all 20, so necessity is not specific. Random keep-only 0.913-0.948 (median 0.936) against the circuit's 0.969: none of the 20 reaches it, but random sets of 89% of the adapter nearly suffice on their own. Seed 7 and the keep-only rerun match surgical.json exactly. The judge is still running at OpenRouter; the HF push follows it so the pushed surgical.json is the judged one. Its sorry_gold_reindeer slot is free; nothing paper-protocol is waiting for an RTX slot. Read by the Remote Control session from the pod.
+
 ### Semantic trigger, 7B dense six-epoch s43 and s44 circuits: K=6000 and K=6200 of 6,300 (95% and 98%), like dense s42 · *2026-11-10 07:59, s44 08:01* · BOTH NOT VERIFIED (random sets of their size match them on both checks)
 
 **Question.** Second seed of the nine-layer dense arm: is the 95% dense circuit of s42 (entry 01:47) a one-seed

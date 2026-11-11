@@ -647,6 +647,11 @@ def cmd_mech_summary(a):
     pool = latent_pool(a.adapter)
     names = {m: None for m, _ in pool}
     labels = [x for x in a.labels.split(",") if x] if a.labels else [lab for lab, _, _ in load_latents_file(a.labels_file)]
+    expect = {lab: tuple(lat) for lab, lat, _ in load_latents_file(a.labels_file)} if a.labels_file else {}
+    if a.labels_file:  # the circuit must be the one the draw was made against (other org seeds)
+        drawn = json.loads(Path(a.labels_file).read_text()).get("circuit")
+        if drawn is not None and Path(drawn).name != Path(a.circuit).name:
+            raise SystemExit(f"--circuit {a.circuit} is not the draw's circuit {drawn}")
     not_run = {}
     for f in Path(a.dir).glob("mech_batch_failures_*.json"):
         not_run.update(json.loads(f.read_text()))
@@ -662,6 +667,8 @@ def cmd_mech_summary(a):
             raise SystemExit(f"no mech result for {lab}: {f}")
         r = json.loads(f.read_text())
         lat = (r["module"], r["index"])
+        if expect and expect[lab] != lat:
+            raise SystemExit(f"{f} is for {lat}, but {a.labels_file} has {lab} = {expect[lab]} (another org seed?)")
         down = lc.downstream_modules(names, r["module"])
         r_ = len([x for x in pool if x[0] == down[0]])
         down_lat = [x for x in pool if x[0] in set(down)]
@@ -742,10 +749,12 @@ def cmd_draw_scale(a):
     remote = git("rev-parse", f"origin/{br}:{SCALE_PREREG}")
     if local != remote:
         raise SystemExit(f"{SCALE_PREREG} on {br} differs from origin: push it before drawing")
-    if not str(Path(a.adapter)).rstrip("/").endswith(f"seed{a.org_seed}") or f"seed{a.org_seed}_" not in Path(a.circuit).name:
+    if Path(a.adapter).name != f"seed{a.org_seed}" or not Path(a.circuit).name.endswith(f"_seed{a.org_seed}_circuit.json"):
         raise SystemExit(f"adapter {a.adapter} or circuit {a.circuit} is not for org seed {a.org_seed}")
     sha = hashlib.sha256((Path(a.adapter) / "adapter_model.safetensors").read_bytes()).hexdigest()
     if a.org_seed == 42:
+        if not a.draw:
+            raise SystemExit("seed 42 needs --draw (its earlier latents are excluded)")
         if sha != "ad345f166e986ff23d14c5d4204cf438e744c77063b15a678ebce434fe72b991":
             raise SystemExit("adapter sha256 is not the pre-registered one")
         draw = json.loads(Path(a.draw).read_text())

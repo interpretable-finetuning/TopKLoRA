@@ -114,22 +114,42 @@ def strong_vs_weak(entry: dict, seed: int) -> List[Tuple[dict, bool]]:
     return held
 
 
+PAD_TOKEN = "<|fim_pad|>"
+WEAK_CAP = 0.5  # amendment 5: a weak negative must peak below half of the weakest positive's peak
+
+
+def _content(w: dict) -> tuple:
+    return tuple(w["tokens"][w["n_context"]:])
+
+
 def matched_strong_vs_weak(entry: dict, seed: int, n: int = 8) -> List[Tuple[dict, bool]]:
-    """Amendment 4 scoring set: the n held-out strongest windows (top 13-20, never shown) as positives,
-    and for each one a negative of the same source (web / clean-tag chat / trigger-tag chat), alternately
-    from that source's weakest fifth of activating windows and its non-firing windows (the other kind
-    when one runs out), so the source line cannot separate them. Raises ValueError when it cannot be
-    filled or when a held-out window was also shown."""
+    """Amendment 4 scoring set (as amended by 5): the n held-out strongest windows (top 13-20, never
+    shown) as positives, and for each one a negative of the same source (web / clean-tag chat /
+    trigger-tag chat), alternately from that source's weakest fifth of activating windows and its
+    non-firing windows (the other kind when one runs out), so the source line cannot separate them.
+    Pool windows are skipped when they peak at or above WEAK_CAP x the weakest positive, share a
+    position or the same text with a shown window or a positive, or are more than half padding.
+    Raises ValueError when the set cannot be filled."""
     s = entry["sets"]
     pos = s["top"][12:12 + n]
     if len(pos) != n:
         raise ValueError(f"{entry['label']}: only {len(pos)} held-out top windows")
+    shown, _ = split_windows(entry, seed)
+    shown_w = [w for ws in shown.values() for w in ws]
+    if any((w["seq"], w["start"]) in {(x["seq"], x["start"]) for x in shown_w} for w in pos):
+        raise ValueError(f"{entry['label']}: a held-out positive was also shown")
+    bad_pos = {(w["seq"], w["start"]) for w in shown_w + pos}
+    bad_txt = {_content(w) for w in shown_w + pos}
+    cap = WEAK_CAP * min(w["max"] for w in pos)
     pools: Dict[Tuple[str, str], List[dict]] = {}
     for key, ws in s.items():
         kind = "weak" if key.startswith("weak_src") else "non" if key.startswith("non_active_src") else None
         for w in ws if kind else []:
+            if (w["max"] >= cap or (w["seq"], w["start"]) in bad_pos or _content(w) in bad_txt
+                    or 2 * _content(w).count(PAD_TOKEN) > len(_content(w))):
+                continue
             pools.setdefault((kind, w["source"]), []).append(w)
-    if not pools:
+    if not any(k.startswith(("weak_src", "non_active_src")) for k in s):
         raise ValueError(f"{entry['label']}: example sets have no source-matched negatives (render with sources)")
     used: Dict[Tuple[str, str], int] = {}
     neg = []
@@ -142,10 +162,6 @@ def matched_strong_vs_weak(entry: dict, seed: int, n: int = 8) -> List[Tuple[dic
                 break
         else:
             raise ValueError(f"{entry['label']}: no {w['source']} negative left for positive {i}")
-    shown, _ = split_windows(entry, seed)
-    seen = {(w["seq"], w["start"]) for ws in shown.values() for w in ws}
-    if any((w["seq"], w["start"]) in seen for w in pos + neg):
-        raise ValueError(f"{entry['label']}: a held-out window was also shown")
     held = [(w, True) for w in pos] + [(w, False) for w in neg]
     random.Random(f"{seed}-msw-{entry['label']}").shuffle(held)
     return held
@@ -328,6 +344,14 @@ def _client():
     return anthropic.Anthropic(max_retries=4)
 
 
+class ReplyError(RuntimeError):
+    """The model's reply cannot be used (refusal, empty, cut, unparseable); `raw` keeps it for audit."""
+
+    def __init__(self, msg: str, raw: str = ""):
+        super().__init__(msg)
+        self.raw = raw
+
+
 def _call(client, spend: Spend, tag: str, system: str, user: str, effort: str, max_tokens: int,
           thinking: bool = False) -> str:
     kw = {"system": system} if system else {}
@@ -336,20 +360,21 @@ def _call(client, spend: Spend, tag: str, system: str, user: str, effort: str, m
     resp = client.messages.create(model=MODEL, max_tokens=max_tokens, output_config={"effort": effort},
                                   messages=[{"role": "user", "content": user}], **kw)
     spend.add(resp.usage, tag)
-    if resp.stop_reason == "refusal":
-        raise RuntimeError(f"{tag}: refused")
     text = "\n".join(b.text for b in resp.content if b.type == "text").strip()
+    if resp.stop_reason == "refusal":
+        raise ReplyError(f"{tag}: refused", text)
     if not text:
-        raise RuntimeError(f"{tag}: empty answer (stop_reason {resp.stop_reason})")
+        raise ReplyError(f"{tag}: empty answer (stop_reason {resp.stop_reason})", text)
     if resp.stop_reason == "max_tokens":
-        raise RuntimeError(f"{tag}: answer cut at max_tokens")
+        raise ReplyError(f"{tag}: answer cut at max_tokens", text)
     return text
 
 
 def protocol_hash(version: str) -> str:
     """From amendment 4: the version's settings plus this module's entire source, so any edit to
     prompts, evidence, parsing or scoring changes the hash. (v0-v3 development files carry hashes
-    from the earlier, partial definition, kept as protocol_hash_partial.)"""
+    from the earlier, partial definition, kept as protocol_hash_partial; it still reproduces the v0/v1
+    hashes, not v2/v3, whose hashed parts have changed since without changing their explainer requests.)"""
     import inspect
     import sys
     src = inspect.getsource(sys.modules[__name__])
@@ -404,7 +429,7 @@ def explain(client, spend: Spend, version: str, entry: dict, shown, mech: Option
     else:
         m = re.search(r"LABEL:\s*(.+)", text, re.S)
         if not m:
-            raise RuntimeError(f"no LABEL line: {text[:200]!r}")
+            raise ReplyError(f"no LABEL line: {text[:200]!r}", text)
         label = " ".join(m.group(1).replace("<<", "").replace(">>", "").split())
     return (label, text) if return_raw else label
 
@@ -412,12 +437,13 @@ def explain(client, spend: Spend, version: str, entry: dict, shown, mech: Option
 def _fires_effect(text: str) -> str:
     """Exactly one FIRES part followed by exactly one EFFECT part, both non-empty; whitespace collapsed,
     markdown bold and the evidence's <<token>> marks removed."""
-    t = text.replace("**", "").replace("<<", "").replace(">>", "")
-    if t.count("FIRES:") != 1 or t.count("EFFECT:") != 1:
-        raise RuntimeError(f"label not in FIRES/EFFECT form: {text[:300]!r}")
-    m = re.search(r"FIRES:(.*)EFFECT:(.*)", t, re.S)
+    t = text.replace("**", "").replace("`", "").replace("<<", "").replace(">>", "")
+    t = re.sub(r"^[ \t]*(?:[-*]|\d+\.|#+)[ \t]+", "", t, flags=re.M)  # list markers, heading marks
+    if len(re.findall(r"FIRES:", t, re.I)) != 1 or len(re.findall(r"EFFECT:", t, re.I)) != 1:
+        raise ReplyError(f"label not in FIRES/EFFECT form: {text[:300]!r}", text)
+    m = re.search(r"FIRES:(.*)EFFECT:(.*)", t, re.S | re.I)
     if not m or not m.group(1).strip() or not m.group(2).strip():
-        raise RuntimeError(f"label not in FIRES/EFFECT form: {text[:300]!r}")
+        raise ReplyError(f"label not in FIRES/EFFECT form: {text[:300]!r}", text)
     one = lambda x: " ".join(x.split())
     return f"FIRES: {one(m.group(1))} EFFECT: {one(m.group(2))}"
 
@@ -462,7 +488,7 @@ def score_detection(client, spend: Spend, label: str, held: Sequence[Tuple[dict,
         if isinstance(ans, list) and len(ans) == len(held) and all(isinstance(x, bool) for x in ans):
             break
         if attempt:
-            raise RuntimeError(f"{tag}: bad detection answer twice {ans!r}")
+            raise ReplyError(f"{tag}: bad detection answer twice {ans!r}")
     pos = [a for a, (_, t) in zip(ans, held) if t]
     neg = [a for a, (_, t) in zip(ans, held) if not t]
     tpr = sum(pos) / len(pos) if pos else float("nan")
@@ -498,7 +524,7 @@ def score_mechanism(client, spend: Spend, label: str, truth: Dict[str, bool], ta
         if isinstance(ans, dict) and set(ans) >= set(truth) and all(isinstance(ans[k], bool) for k in truth):
             break
         if attempt:
-            raise RuntimeError(f"{tag}: bad QA answer twice {ans!r}")
+            raise ReplyError(f"{tag}: bad QA answer twice {ans!r}")
     correct = {k: ans[k] == v for k, v in truth.items()}
     return {"answers": {k: ans[k] for k in truth}, "correct": correct, "accuracy": sum(correct.values()) / len(correct),
             "resampled": attempt}

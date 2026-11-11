@@ -11,6 +11,23 @@ captain's log with reasons. Nothing in section 2 has been drawn when this file i
 *Times corrected 2026-11-11 02:30 UTC to the commit times; Claude's earlier hand-written times ran
 20-70 minutes fast. The order of events is unchanged.*
 
+**2026-11-11 03:45 UTC, amendment 5: after a second code review, before any label of the 315 exists.**
+(a) A source-matched negative is skipped when it peaks at or above half of the weakest positive's peak
+(where one source's activations tie at the maximum, its "weakest fifth" was not weak: S0027 had
+negatives at the positives' level), when it shares a position or its exact text with a window shown to
+the explainer or with a positive, or when more than half of it is padding; the set fails only if it
+cannot then be filled. On the development latents this changes the negatives of 7 of 23 (A, B, C, P5,
+K3, K7, K8), so v0 and v2 are rescored under (a) and those numbers are the development reference. (b) A
+refused, cut or unparseable explainer reply is recorded with the reply as "unlabelled" (no re-roll), and
+a scorer refusal or a second malformed answer is recorded as unscorable for that latent; both are
+reported. (c) The 315 are labelled in four interleaved shards (every fourth latent), each with its own
+derangement null over the latents of the shard (all modules are represented in each); the headline is
+one pooled summary over the four (`summarize`), never shard means. (d) Run files record the script and
+examples hashes and refuse to resume across a change. (e) Section 6's "seed 20261111 + seed index" is
+read as index 1-4 for org seeds 43-46 (draw seeds 20261112-20261115); the four draws were made at
+aefecc9 with nothing excluded, and `mech_summary` now checks every readout against the draw's latents
+and the draw's circuit.
+
 **2026-11-11 ~02:50 UTC, amendment 4: detection scoring and protocol bookkeeping revised after a code
 review of the development rounds, before any label of the 315 exists and before their example sets are
 rendered.** What had been seen: v0-v3 labels and scores on the 23 development latents (captain's log).

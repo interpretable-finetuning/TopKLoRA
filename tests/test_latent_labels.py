@@ -12,7 +12,7 @@ SRC = ["web", "chat_clean", "chat_trigger"]
 
 
 def _w(seq, source, mx=1.0):
-    return {"seq": seq, "start": 0, "acts": [mx] + [0.0] * 31, "max": mx, "tokens": ["x"] * 32,
+    return {"seq": seq, "start": 0, "acts": [mx] + [0.0] * 31, "max": mx, "tokens": [f"t{seq}"] * 32,
             "n_context": 0, "source": source}
 
 
@@ -48,11 +48,23 @@ def test_unrendered_or_exhausted_pools_are_errors_not_silent_fallbacks():
         ll.matched_strong_vs_weak(e, seed=1)
 
 
-def test_a_window_shown_to_the_explainer_is_never_scored():
+def test_shown_identical_padded_or_strong_pool_windows_are_never_negatives():
+    # Amendment 5: a "weak" negative as strong as the positives (tied maxima in one source), a window the
+    # explainer saw, a window with a positive's text, or a mostly-padding window would each make the
+    # score measure something other than the label.
     e = _entry(["web"] * 20)
-    e["sets"]["weak_src0"][0] = dict(e["sets"]["quantile_4"][0])  # same (seq, start) as a shown window
-    with pytest.raises(ValueError):
-        ll.matched_strong_vs_weak(e, seed=1)
+    w0 = e["sets"]["weak_src0"]
+    w0[0] = dict(e["sets"]["quantile_4"][0])                     # shown to the explainer (same position)
+    w0[1] = dict(w0[1], tokens=list(e["sets"]["non_active"][0]["tokens"]))  # same text as a shown window
+    w0[2] = dict(w0[2], tokens=list(e["sets"]["top"][12]["tokens"]))        # same text as a positive
+    w0[3] = dict(w0[3], max=9.0)                                 # weak pool, but 0.9 of the weakest positive
+    w0[4] = dict(w0[4], tokens=[ll.PAD_TOKEN] * 17 + ["y"] * 15) # mostly padding
+    held = ll.matched_strong_vs_weak(e, seed=1)
+    neg = [w for w, t in held if not t]
+    assert len(neg) == 8
+    bad = {id(x) for x in w0[:5]}
+    assert not any(id(w) in bad for w in neg)
+    assert max(w["max"] for w in neg) < ll.WEAK_CAP * min(w["max"] for w, t in held if t)
 
 
 def test_scorer_sees_fires_part_only():
@@ -63,6 +75,9 @@ def test_scorer_sees_fires_part_only():
 def test_fires_effect_parse_is_strict_and_strips_marks():
     assert ll._fires_effect("**FIRES:** the <<and>> in idioms,\nlike above and beyond\nEFFECT: little") == \
         "FIRES: the and in idioms, like above and beyond EFFECT: little"
+    assert ll._fires_effect("- Fires: list words\n- Effect: shifts 2.5% of latents") == \
+        "FIRES: list words EFFECT: shifts 2.5% of latents"
     for bad in ("FIRES: a\nFIRES: b\nEFFECT: c", "FIRES:\nEFFECT: c", "EFFECT: c\nFIRES: a", "FIRES: a"):
-        with pytest.raises(RuntimeError):
+        with pytest.raises(ll.ReplyError) as e:
             ll._fires_effect(bad)
+        assert e.value.raw == bad  # the reply is kept for the record

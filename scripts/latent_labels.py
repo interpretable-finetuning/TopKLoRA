@@ -10,7 +10,9 @@ Run from the repo root on torrnode11 (API keys come from `.env` there). Logic li
 src/autointerp/latent_labels.py.
 """
 import argparse
+import hashlib
 import json
+import os
 from pathlib import Path
 
 import torch
@@ -19,6 +21,17 @@ from src.autointerp import latent_labels as ll
 from src.autointerp.latent_causal import bootstrap_ci
 
 SEED = 20261111
+
+
+def _save(out, path):
+    """Atomic write: a kill mid-write leaves the previous file, not a truncated one."""
+    tmp = Path(f"{path}.tmp")
+    tmp.write_text(json.dumps(out, indent=1))
+    os.replace(tmp, path)
+
+
+def _sha(path):
+    return hashlib.sha256(Path(path).read_bytes()).hexdigest()[:16]
 
 
 def _load(a, need_mech=True):
@@ -64,9 +77,13 @@ def _score_matched(client, spend, ex, out, lab, partner):
         return
     other = out["latents"][partner]["label"]
     key = f"{SEED}-{lab}"
-    rec["detection_matched"] = ll.score_matched(client, spend, rec["label"], held, f"detm-{lab}", key)
-    rec["detection_matched_null"] = ll.score_matched(client, spend, other, held, f"detmnull-{lab}", key)
-    rec["matched_null_partner"] = partner
+    try:
+        det = ll.score_matched(client, spend, rec["label"], held, f"detm-{lab}", key)
+        null = ll.score_matched(client, spend, other, held, f"detmnull-{lab}", key)
+    except ll.ReplyError as e:  # a refusal or two malformed answers: recorded and reported
+        rec["matched_unscorable"] = f"scorer: {e}"
+        return
+    rec["detection_matched"], rec["detection_matched_null"], rec["matched_null_partner"] = det, null, partner
 
 
 def _summary(out, labels):
@@ -80,6 +97,7 @@ def _summary(out, labels):
         s["detection_matched_bacc"] = bootstrap_ci(lab, n_boot=10000, seed=SEED)
         s["detection_matched_bacc_null"] = bootstrap_ci(null, n_boot=10000, seed=SEED)
         s["detection_matched_gap"] = bootstrap_ci(lab - null, n_boot=10000, seed=SEED)
+    s["qa_failed"] = {x: out["latents"][x]["qa_failed"] for x in labels if "qa_failed" in out["latents"][x]}
     with_truth = [x for x in labels if out["latents"][x].get("truth") is not None and "qa" in out["latents"][x]]
     if with_truth:
         truths = [v for x in with_truth for v in out["latents"][x]["truth"].values()]
@@ -98,13 +116,15 @@ def cmd_run(a):
     ex, mech, labels = _load(a, need_mech=ll.VERSIONS[a.version]["mech"])
     client = ll._client()
     spend = ll.Spend(a.cap, ledger=a.ledger)
-    run = {"code_commit": a.commit, "spend_start_usd": spend.total}
+    run = {"code_commit": a.commit, "ledger_total_at_start_usd": spend.total}
     out = {"version": a.version, "model": ll.MODEL, "protocol_hash": ll.protocol_hash(a.version), "seed": SEED,
+           "script_sha": _sha(__file__), "examples_sha": {f: _sha(f) for f in a.examples.split(",")},
            "onset_share_median": ll.TYPICAL_ONSET_SHARE, "runs": [], "latents": {}}
     if Path(a.out).exists():  # resume: never re-roll a label that was already written
         prev = json.loads(Path(a.out).read_text())
-        if prev["protocol_hash"] != out["protocol_hash"]:
-            raise SystemExit(f"{a.out} was written by another protocol version or code; use a new --out")
+        for k in ("protocol_hash", "script_sha", "examples_sha"):
+            if prev[k] != out[k]:
+                raise SystemExit(f"{a.out}: {k} differs from this run (other code or data); use a new --out")
         out = prev
     out["runs"].append(run)
     for lab in labels:
@@ -116,11 +136,17 @@ def cmd_run(a):
             out["latents"][lab] = {"unlabelled": str(e), "module": ex[lab]["module"], "index": ex[lab]["index"]}
             continue
         m = mech.get(lab) if ll.VERSIONS[a.version]["mech"] else None
-        label, raw = ll.explain(client, spend, a.version, ex[lab], shown, m, return_raw=True)
+        try:
+            label, raw = ll.explain(client, spend, a.version, ex[lab], shown, m, return_raw=True)
+        except ll.ReplyError as e:  # refusal, cut or unparseable reply: recorded with the reply, not retried
+            out["latents"][lab] = {"unlabelled": str(e), "raw": e.raw, "module": ex[lab]["module"],
+                                   "index": ex[lab]["index"]}
+            _save(out, a.out)
+            continue
         out["latents"][lab] = {"label": label, "raw": raw, "module": ex[lab]["module"], "index": ex[lab]["index"],
                                "truth": ll.mechanism_truth(mech[lab], ll.TYPICAL_ONSET_SHARE) if lab in mech else None}
         print(lab, "|", label, flush=True)
-        Path(a.out).write_text(json.dumps(out, indent=1))
+        _save(out, a.out)
     labelled = [x for x in labels if "label" in out["latents"][x]]
     partner = ll.derangement(labelled, SEED)
     for lab in labelled:
@@ -130,17 +156,45 @@ def cmd_run(a):
         _score_matched(client, spend, ex, out, lab, partner[lab])
         if rec["truth"] is not None:
             other = out["latents"][partner[lab]]["label"]
-            rec["qa"] = ll.score_mechanism(client, spend, rec["label"], rec["truth"], f"qa-{lab}")
-            rec["qa_null"] = ll.score_mechanism(client, spend, other, rec["truth"], f"qanull-{lab}")
-            rec["qa_null_partner"] = partner[lab]
+            try:
+                qa = ll.score_mechanism(client, spend, rec["label"], rec["truth"], f"qa-{lab}")
+                qan = ll.score_mechanism(client, spend, other, rec["truth"], f"qanull-{lab}")
+                rec["qa"], rec["qa_null"], rec["qa_null_partner"] = qa, qan, partner[lab]
+            except ll.ReplyError as e:
+                rec["qa_failed"] = str(e)
         rec["scored"] = True
-        Path(a.out).write_text(json.dumps(out, indent=1))
-    run["spend_end_usd"] = spend.total
+        _save(out, a.out)
+    run["ledger_total_at_end_usd"] = spend.total
     out["summary"] = {**_summary(out, labelled), "unlabelled": {x: out["latents"][x]["unlabelled"] for x in labels
                                                                if "unlabelled" in out["latents"][x]},
                       "spend_total_usd": spend.total}
-    Path(a.out).write_text(json.dumps(out, indent=1))
+    _save(out, a.out)
     print(json.dumps(out["summary"], indent=1))
+
+
+def cmd_summarize(a):
+    """One summary over several run files of the same protocol (e.g. interleaved shards): per-latent
+    values are pooled, never shard means."""
+    files = [json.loads(Path(f).read_text()) for f in a.files.split(",")]
+    for k in ("version", "protocol_hash", "script_sha", "examples_sha"):
+        if len({json.dumps(f[k], sort_keys=True) for f in files}) != 1:
+            raise SystemExit(f"files differ in {k}: they are not one protocol run")
+    merged = {"latents": {}}
+    for f in files:
+        dup = set(merged["latents"]) & set(f["latents"])
+        if dup:
+            raise SystemExit(f"latents in more than one file: {sorted(dup)[:5]}")
+        merged["latents"].update(f["latents"])
+    labels = sorted(merged["latents"])
+    labelled = [x for x in labels if "label" in merged["latents"][x]]
+    unscored = [x for x in labelled if "scored" not in merged["latents"][x]]
+    if unscored:
+        raise SystemExit(f"{len(unscored)} labelled latents are not scored yet: {unscored[:5]}")
+    out = {"files": a.files.split(","), "version": files[0]["version"], "protocol_hash": files[0]["protocol_hash"],
+           **_summary(merged, labelled),
+           "unlabelled": {x: merged["latents"][x]["unlabelled"] for x in labels if "unlabelled" in merged["latents"][x]}}
+    _save(out, a.out)
+    print(json.dumps(out, indent=1))
 
 
 def cmd_rescore(a):
@@ -162,15 +216,18 @@ def cmd_rescore(a):
             continue
         _score_matched(client, spend, ex, out, lab, rec["null_partner"])
         rec["matched_scored"] = True
-        Path(a.out).write_text(json.dumps(out, indent=1))
+        _save(out, a.out)
     out["summary_matched"] = {**_summary(out, labels), "spend_total_usd": spend.total}
-    Path(a.out).write_text(json.dumps(out, indent=1))
+    _save(out, a.out)
     print(json.dumps(out["summary_matched"], indent=1))
 
 
 def main():
     p = argparse.ArgumentParser()
     sub = p.add_subparsers(dest="cmd", required=True)
+    c = sub.add_parser("summarize")
+    c.add_argument("--files", required=True, help="comma-separated run outputs of one protocol")
+    c.add_argument("--out", required=True)
     for name in ("run", "show", "rescore"):
         c = sub.add_parser(name)
         c.add_argument("--examples", required=True)
@@ -186,7 +243,7 @@ def main():
         if name == "run":
             c.add_argument("--version", required=True, choices=sorted(ll.VERSIONS))
     a = p.parse_args()
-    {"run": cmd_run, "show": cmd_show, "rescore": cmd_rescore}[a.cmd](a)
+    {"run": cmd_run, "show": cmd_show, "rescore": cmd_rescore, "summarize": cmd_summarize}[a.cmd](a)
 
 
 if __name__ == "__main__":

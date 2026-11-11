@@ -999,8 +999,8 @@ about 21:00-22:00 UTC. Read by the Remote Control session.
 leaves 95.3%, so this 12.2% circuit is highly specific, the most specific six-epoch all-layer cell on the paper's draw.
 Six-epoch all-layer seed-7 random over six seeds: 0.558 / 0.857 / 0.953 / 0.216 / 0.608 / 0.557 (s42-s47), so Table 5's
 random cell becomes 0.58 (0.22-0.95) [6] (median of the middle two, 0.558 and 0.608), from 0.56 (0.22-0.86) [5]. With size
-28.6 (12.2-32.7) [6], the smallest circuit (s44, 12.2%) is the most specific and the largest attribution-ordered one (s45,
-32.7%) the least. Judge started 19:35:37 (standing go); the 20 random draws are running, then the HF push, about 21:00.
+28.6 (12.2-32.7) [6], the smallest circuit (s44, 12.2%) is the most specific and one of the three 32.7% circuits (s45) the
+least. Judge started 19:35:37 (standing go); the 20 random draws are running, then the HF push, about 21:00.
 Read by the Remote Control session.
 
 **Update 05:33 (2026-11-11), H200 landings.** (1) *Capped all-layer six-epoch TopK s43 (paper protocol): circuit

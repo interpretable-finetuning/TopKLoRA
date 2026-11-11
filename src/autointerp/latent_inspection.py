@@ -84,6 +84,33 @@ def inspection_list(draw: dict) -> List[Tuple[str, Latent, str]]:
     return out
 
 
+def draw_stratified(pool: Sequence[Latent], exclude: Sequence[Latent], seed: int,
+                    per_module: int) -> List[Tuple[str, Latent, str]]:
+    """`per_module` latents uniformly from every module, excluding `exclude`, with one
+    `random.Random(seed)` consumed module by module in sorted module order. Labels S0001.. follow
+    that order. (docs/mechanism-scale-preregistration.md)"""
+    rng = random.Random(seed)
+    skip = set(map(tuple, exclude))
+    by_mod: Dict[str, List[Latent]] = {}
+    for lat in sorted(pool):
+        if lat not in skip:
+            by_mod.setdefault(lat[0], []).append(lat)
+    out: List[Tuple[str, Latent, str]] = []
+    for m in sorted(by_mod):
+        if len(by_mod[m]) < per_module:
+            raise ValueError(f"{m} has only {len(by_mod[m])} undrawn latents")
+        for lat in rng.sample(by_mod[m], per_module):
+            out.append((f"S{len(out) + 1:04d}", lat, "strat"))
+    return out
+
+
+def load_latents_file(path) -> List[Tuple[str, Latent, str]]:
+    """[(label, (module, index), source)] from a latents file written by `draw_scale`."""
+    import json
+    d = json.loads(Path(path).read_text())
+    return [(lab, (m, int(i)), src) for lab, m, i, src in d["latents"]]
+
+
 def blind_list(draw: dict) -> List[Tuple[str, Latent, str]]:
     """The blind latents not opened by amendment 3 (D and E left the blind set): P1.. from
     `blind_pool` and K1.. from `blind_circuit`, in draw order, with where they were drawn from."""

@@ -127,3 +127,19 @@ def test_blind_list_is_the_draw_minus_the_opened_latents_in_order():
     got = [(lab, x[1], src) for lab, x, src in blind_list(draw)]
     # D = first down_proj of blind_pool (5), E = first down_proj of blind_circuit (8) are not blind any more
     assert got == [("P1", 4, "pool"), ("P2", 6, "pool"), ("K1", 7, "circuit"), ("K2", 9, "circuit")]
+
+
+
+def test_stratified_draw_takes_n_per_module_skips_excluded_and_is_pinned():
+    from src.autointerp.latent_inspection import draw_stratified
+
+    pool = [(f"m{j}", i) for j in range(3) for i in range(6)]
+    exclude = [("m0", 0), ("m1", 5)]
+    d = draw_stratified(pool, exclude, seed=7, per_module=2)
+    assert [lab for lab, _, _ in d] == ["S0001", "S0002", "S0003", "S0004", "S0005", "S0006"]
+    assert [x[0] for _, x, _ in d] == ["m0", "m0", "m1", "m1", "m2", "m2"]
+    assert not set(exclude) & {x for _, x, _ in d}
+    assert d == draw_stratified(list(reversed(pool)), exclude, seed=7, per_module=2)
+    assert [x for _, x, _ in d] == [("m0", 3), ("m0", 2), ("m1", 3), ("m1", 0), ("m2", 0), ("m2", 4)]
+    with pytest.raises(ValueError):
+        draw_stratified(pool, exclude, seed=7, per_module=6)

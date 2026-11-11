@@ -125,9 +125,14 @@ def cmd_cache(a):
     from src.clcd.organism import load_organism
 
     draw = json.loads(Path(a.draw).read_text())
-    if a.seed != draw["seed"]:
-        raise SystemExit(f"cache seed {a.seed} differs from the draw's seed {draw['seed']}")
-    chosen = [tuple(x) for k in ("inspect", "blind_pool", "blind_circuit") for x in draw[k]]
+    if a.latents_file:  # scale run: same corpus as the hand inspection (corpus seed pinned), other latents
+        if a.seed != PINNED_SEED:
+            raise SystemExit(f"corpus seed must be {PINNED_SEED} so the corpus matches the hand inspection")
+        chosen = [x for _, x, _ in li.load_latents_file(a.latents_file)]
+    else:
+        if a.seed != draw["seed"]:
+            raise SystemExit(f"cache seed {a.seed} differs from the draw's seed {draw['seed']}")
+        chosen = [tuple(x) for k in ("inspect", "blind_pool", "blind_circuit") for x in draw[k]]
     modules = sorted({m for m, _ in chosen})
     filters = {f"{m}.latent_site": torch.tensor(sorted(i for mm, i in chosen if mm == m), device="cuda")
                for m in modules}
@@ -186,7 +191,11 @@ def cmd_render(a):
     tok = AutoTokenizer.from_pretrained(a.adapter)
     out = {"prereg_commit": draw["prereg_commit"], "latents": []}
     tokens = None
-    for label, (module, idx), drawn_from in li.inspection_list(draw):
+    if a.latents_file:
+        which = li.load_latents_file(a.latents_file)
+    else:
+        which = li.inspection_list(draw) if a.which == "inspect" else li.blind_list(draw)
+    for label, (module, idx), drawn_from in which:
         f = load_file(str(cache / f"{module}.latent_site" / "0_99.safetensors"))
         if tokens is None:
             tokens = torch.from_numpy(f["tokens"].astype(np.int64))
@@ -240,6 +249,7 @@ def main():
     c.add_argument("--pad_id", type=int, default=151662)
     c.add_argument("--batch_size", type=int, default=32)
     c.add_argument("--max_batches", type=int, default=None)
+    c.add_argument("--latents_file", default="", help="cache these latents (from draw_scale) instead of the draw's")
     r = sub.add_parser("render")
     r.add_argument("--adapter", required=True)
     r.add_argument("--draw", required=True)
@@ -248,6 +258,8 @@ def main():
     r.add_argument("--seed", type=int, required=True)
     r.add_argument("--pad_id", type=int, default=151662)
     r.add_argument("--context", type=int, default=32)
+    r.add_argument("--which", choices=["inspect", "blind"], default="inspect")
+    r.add_argument("--latents_file", default="", help="render these latents (from draw_scale)")
     a = p.parse_args()
     {"draw": cmd_draw, "cache": cmd_cache, "render": cmd_render}[a.cmd](a)
 

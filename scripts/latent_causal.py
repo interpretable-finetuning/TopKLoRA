@@ -21,7 +21,7 @@ import torch
 
 from src import data as chat_format
 from src.autointerp import latent_causal as lc
-from src.autointerp.latent_inspection import blind_list, inspection_list
+from src.autointerp.latent_inspection import blind_list, draw_stratified, inspection_list, latent_pool, load_latents_file
 from src.clcd.latents import inject
 from src.clcd.verify import gen_under_overrides, paired_shortfall_se
 
@@ -53,7 +53,10 @@ def _questions():
 
 def cmd_screen(a):
     draw = json.loads(Path(a.draw).read_text())
-    latents = inspection_list(draw) if a.which == "inspect" else blind_list(draw)
+    if a.latents_file:
+        latents = load_latents_file(a.latents_file)
+    else:
+        latents = inspection_list(draw) if a.which == "inspect" else blind_list(draw)
     trig_tag, clean_tag = chat_format.load_tags(a.data)
     model, tok, wrapped = _load(a)
     qs = _questions()
@@ -674,6 +677,41 @@ def cmd_mech_summary(a):
     print("enrichment", enrich)
 
 
+SCALE_PREREG = "docs/mechanism-scale-preregistration.md"
+SCALE_SEED = 20261111
+SCALE_PER_MODULE = 5
+
+
+def cmd_draw_scale(a):
+    """The pre-registered stratified draw (docs/mechanism-scale-preregistration.md): 5 latents from
+    every adapted module, excluding the 23 latents already drawn. Refuses to run unless that file is
+    committed and identical on the remote branch, with the pinned seed and adapter."""
+    import hashlib
+    import subprocess
+    git = lambda *x: subprocess.run(["git", *x], check=True, capture_output=True, text=True, cwd=a.repo).stdout.strip()
+    if a.seed != SCALE_SEED:
+        raise SystemExit(f"seed must be the pre-registered {SCALE_SEED}")
+    br = a.branch
+    git("fetch", "origin", br)
+    local = git("rev-parse", f"{br}:{SCALE_PREREG}")
+    remote = git("rev-parse", f"origin/{br}:{SCALE_PREREG}")
+    if local != remote:
+        raise SystemExit(f"{SCALE_PREREG} on {br} differs from origin: push it before drawing")
+    sha = hashlib.sha256((Path(a.adapter) / "adapter_model.safetensors").read_bytes()).hexdigest()
+    if sha != "ad345f166e986ff23d14c5d4204cf438e744c77063b15a678ebce434fe72b991":
+        raise SystemExit("adapter sha256 is not the pre-registered one")
+    draw = json.loads(Path(a.draw).read_text())
+    taken = [tuple(x) for k in ("inspect", "blind_pool", "blind_circuit") for x in draw[k]]
+    pool = latent_pool(a.adapter)
+    lat = draw_stratified(pool, taken, a.seed, SCALE_PER_MODULE)
+    circuit = {tuple(x) for x in json.loads(Path(a.circuit).read_text())["kept_latents"]}
+    out = {"seed": a.seed, "prereg_blob": local, "branch_commit": git("rev-parse", br), "per_module": SCALE_PER_MODULE,
+           "n": len(lat), "n_in_circuit": sum(x in circuit for _, x, _ in lat),
+           "latents": [[lab, m, i, src] for lab, (m, i), src in lat]}
+    Path(a.out).write_text(json.dumps(out, indent=1))
+    print({k: v for k, v in out.items() if k != "latents"})
+
+
 def main():
     p = argparse.ArgumentParser()
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -688,6 +726,7 @@ def main():
             c.add_argument("--draw", required=True)
         if name == "screen":
             c.add_argument("--which", choices=["inspect", "blind"], default="inspect")
+            c.add_argument("--latents_file", default="", help="screen these latents instead (from draw_scale)")
         if name == "poc":
             c.add_argument("--cache", required=True)
             c.add_argument("--latents", default="E,C,B")
@@ -698,6 +737,10 @@ def main():
             if name == "run":
                 c.add_argument("--cache", required=True)
             c.add_argument("--latent", required=True, help="a label in the screen file (A-E, or P1.. / K1.. for the blind set)")
+    c = sub.add_parser("draw_scale")
+    for arg in ("--adapter", "--draw", "--circuit", "--out", "--repo", "--branch"):
+        c.add_argument(arg, required=True)
+    c.add_argument("--seed", type=int, required=True)
     c = sub.add_parser("mech_batch")
     for arg in ("--adapter", "--base", "--data", "--out", "--screen", "--latents"):
         c.add_argument(arg, required=True)
@@ -710,7 +753,7 @@ def main():
     c.add_argument("--labels", required=True, help="comma-separated labels the test is about; each needs mech_<label>.json")
     a = p.parse_args()
     {"screen": cmd_screen, "run": cmd_run, "poc": cmd_poc, "mech": cmd_mech, "mech_batch": cmd_mech_batch,
-     "mech_summary": cmd_mech_summary}[a.cmd](a)
+     "mech_summary": cmd_mech_summary, "draw_scale": cmd_draw_scale}[a.cmd](a)
 
 
 if __name__ == "__main__":

@@ -114,3 +114,16 @@ def test_inspection_list_takes_first_down_proj_of_each_blind_list():
             "blind_circuit": [[m.format(7, "mlp.down_proj"), 7], [m.format(8, "mlp.down_proj"), 8]]}
     got = [(lab, x[1], src) for lab, x, src in inspection_list(draw)]
     assert got == [("A", 1, "pool"), ("B", 2, "pool"), ("C", 3, "circuit"), ("D", 5, "pool"), ("E", 7, "circuit")]
+
+
+
+def test_blind_list_is_the_draw_minus_the_opened_latents_in_order():
+    from src.autointerp.latent_inspection import blind_list
+
+    m = "base_model.model.model.layers.{}.{}"
+    draw = {"inspect": [[m.format(1, "self_attn.q_proj"), 1], [m.format(2, "self_attn.k_proj"), 2], [m.format(3, "mlp.up_proj"), 3]],
+            "blind_pool": [[m.format(4, "mlp.up_proj"), 4], [m.format(5, "mlp.down_proj"), 5], [m.format(6, "self_attn.o_proj"), 6]],
+            "blind_circuit": [[m.format(7, "mlp.gate_proj"), 7], [m.format(8, "mlp.down_proj"), 8], [m.format(9, "mlp.down_proj"), 9]]}
+    got = [(lab, x[1], src) for lab, x, src in blind_list(draw)]
+    # D = first down_proj of blind_pool (5), E = first down_proj of blind_circuit (8) are not blind any more
+    assert got == [("P1", 4, "pool"), ("P2", 6, "pool"), ("K1", 7, "circuit"), ("K2", 9, "circuit")]

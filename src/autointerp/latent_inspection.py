@@ -84,6 +84,17 @@ def inspection_list(draw: dict) -> List[Tuple[str, Latent, str]]:
     return out
 
 
+def blind_list(draw: dict) -> List[Tuple[str, Latent, str]]:
+    """The blind latents not opened by amendment 3 (D and E left the blind set): P1.. from
+    `blind_pool` and K1.. from `blind_circuit`, in draw order, with where they were drawn from."""
+    taken = {lat for _, lat, _ in inspection_list(draw)}
+    out: List[Tuple[str, Latent, str]] = []
+    for prefix, key, src in (("P", "blind_pool", "pool"), ("K", "blind_circuit", "circuit")):
+        rest = [tuple(x) for x in draw[key] if tuple(x) not in taken]
+        out += [(f"{prefix}{i + 1}", lat, src) for i, lat in enumerate(rest)]
+    return out
+
+
 def chat_windows(
     tokenizer,
     rows: Sequence[dict],

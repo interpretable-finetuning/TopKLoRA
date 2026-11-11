@@ -21,7 +21,7 @@ import torch
 
 from src import data as chat_format
 from src.autointerp import latent_causal as lc
-from src.autointerp.latent_inspection import inspection_list
+from src.autointerp.latent_inspection import blind_list, inspection_list
 from src.clcd.latents import inject
 from src.clcd.verify import gen_under_overrides, paired_shortfall_se
 
@@ -53,7 +53,7 @@ def _questions():
 
 def cmd_screen(a):
     draw = json.loads(Path(a.draw).read_text())
-    latents = inspection_list(draw)
+    latents = inspection_list(draw) if a.which == "inspect" else blind_list(draw)
     trig_tag, clean_tag = chat_format.load_tags(a.data)
     model, tok, wrapped = _load(a)
     qs = _questions()
@@ -420,6 +420,8 @@ def cmd_mech(a):
     import contextlib
     sc = torch.load(Path(a.screen))
     lab = a.latent
+    if lab not in sc["sets"]:
+        raise SystemExit(f"{lab} is not in {a.screen}: {sorted(sc['sets'])}")
     s = sc["sets"][lab]
     m, d = s["module"], s["index"]
     layer = int(m.split("layers.")[1].split(".")[0])
@@ -549,6 +551,61 @@ def cmd_mech(a):
         print(lab, "M4 edges", res["M4"]["edges"], flush=True)
 
 
+def cmd_mech_summary(a):
+    """Pre-registered comparison (mechanism pre-registration, amendment 3): circuit vs non-circuit
+    latents on the share of live downstream latents that are Bonferroni edges at the TRIG onset."""
+    from scipy.stats import mannwhitneyu
+    from src.autointerp.latent_inspection import latent_pool
+
+    circuit = {tuple(x) for x in json.loads(Path(a.circuit).read_text())["kept_latents"]}
+    pool = latent_pool(a.adapter)
+    names = {m: None for m, _ in pool}
+    rows = []
+    for f in sorted(Path(a.dir).glob("mech_*.json")):
+        r = json.loads(f.read_text())
+        lat = (r["module"], r["index"])
+        down = set(lc.downstream_modules(names, r["module"]))
+        down_lat = [x for x in pool if x[0] in down]
+        base = sum(x in circuit for x in down_lat) / len(down_lat)
+        row = {"latent": r["latent"], "module": r["module"], "index": r["index"], "in_circuit": lat in circuit,
+               "circuit_base_rate_downstream": base}
+        for k in ("HIGH", "TRIG", "TRIG_onset"):
+            x = r["M3"][k]
+            into = sum((e["module"], e["index"]) in circuit for e in x["edges"])
+            row[k] = {"edges": x["n_edges_bonferroni"], "live": x["n_live"],
+                      "edge_share": x["n_edges_bonferroni"] / x["n_live"] if x["n_live"] else 0.0,
+                      "edges_into_circuit": into}
+        rows.append(row)
+    labels = set(a.labels.split(",")) if a.labels else None
+    if labels is not None:
+        missing = labels - {r["latent"] for r in rows}
+        if missing:
+            raise SystemExit(f"no mech result for {sorted(missing)}")
+        rows = [r for r in rows if r["latent"] in labels]
+    grp = {g: [r["TRIG_onset"]["edge_share"] for r in rows if r["in_circuit"] == g] for g in (True, False)}
+    if not grp[True] or not grp[False]:
+        raise SystemExit("both groups need at least one latent")
+    u = mannwhitneyu(grp[True], grp[False], alternative="greater", method="exact")
+    enrich = {}
+    for g in (True, False):
+        e = sum(r["TRIG_onset"]["edges"] for r in rows if r["in_circuit"] == g)
+        into = sum(r["TRIG_onset"]["edges_into_circuit"] for r in rows if r["in_circuit"] == g)
+        exp = sum(r["TRIG_onset"]["edges"] * r["circuit_base_rate_downstream"] for r in rows if r["in_circuit"] == g)
+        enrich["circuit" if g else "non_circuit"] = {"edges": e, "into_circuit": into, "expected_at_base_rate": exp,
+                                                     "ratio": (into / exp) if exp else None}
+    out = {"n": len(rows), "rows": rows,
+           "primary": {"metric": "TRIG-onset Bonferroni edges / live downstream latents",
+                       "circuit": grp[True], "non_circuit": grp[False], "U": float(u.statistic), "p_one_sided": float(u.pvalue)},
+           "enrichment_TRIG_onset": enrich}
+    Path(a.out).write_text(json.dumps(out, indent=1))
+    for r in sorted(rows, key=lambda r: (not r["in_circuit"], r["latent"])):
+        print(r["latent"], r["module"].split("layers.")[1], r["index"], "circuit" if r["in_circuit"] else "-",
+              "onset edges", r["TRIG_onset"]["edges"], "/", r["TRIG_onset"]["live"], "into circuit", r["TRIG_onset"]["edges_into_circuit"],
+              "| TRIG", r["TRIG"]["edges"], "| HIGH", r["HIGH"]["edges"], f"| base {r['circuit_base_rate_downstream']:.3f}")
+    print("primary", {k: v for k, v in out["primary"].items() if k not in ("circuit", "non_circuit")})
+    print("enrichment", enrich)
+
+
 def main():
     p = argparse.ArgumentParser()
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -561,6 +618,8 @@ def main():
         c.add_argument("--batch_size", type=int, default=32)
         if name in ("screen", "poc"):
             c.add_argument("--draw", required=True)
+        if name == "screen":
+            c.add_argument("--which", choices=["inspect", "blind"], default="inspect")
         if name == "poc":
             c.add_argument("--cache", required=True)
             c.add_argument("--latents", default="E,C,B")
@@ -570,9 +629,15 @@ def main():
             c.add_argument("--screen", required=True)
             if name == "run":
                 c.add_argument("--cache", required=True)
-            c.add_argument("--latent", required=True, choices=list("ABCDE"))
+            c.add_argument("--latent", required=True, help="a label in the screen file (A-E, or P1.. / K1.. for the blind set)")
+    c = sub.add_parser("mech_summary")
+    c.add_argument("--dir", required=True)
+    c.add_argument("--adapter", required=True)
+    c.add_argument("--circuit", required=True)
+    c.add_argument("--out", required=True)
+    c.add_argument("--labels", default="", help="comma-separated labels to include (default: all files)")
     a = p.parse_args()
-    {"screen": cmd_screen, "run": cmd_run, "poc": cmd_poc, "mech": cmd_mech}[a.cmd](a)
+    {"screen": cmd_screen, "run": cmd_run, "poc": cmd_poc, "mech": cmd_mech, "mech_summary": cmd_mech_summary}[a.cmd](a)
 
 
 if __name__ == "__main__":

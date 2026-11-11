@@ -7,6 +7,25 @@ Nothing below changes without a dated amendment in section 0.
 
 ## 0. Amendments
 
+**2026-11-11, amendment 3: extension to the 18 blind latents, at Marek's request, before any of them
+was run or looked at.** Only module names and circuit membership of the blind set have been seen.
+- Latents: the 20 blind latents of `docs/latent-inspection-7b-preregistration.md` minus D and E (which
+  left the blind set by that file's amendment 3): P1-P9 from `blind_pool` and K1-K9 from
+  `blind_circuit`, in draw order (`blind_list` in `src/autointerp/latent_inspection.py`). All nine K are
+  members of the verified circuit and none of the nine P is. Their use here is the mechanism readout,
+  not the hand rating that file reserved them for (Marek: no human rating).
+- Prompts and readouts: exactly sections 3-5 with amendments 1-2, with a new screen of the same
+  2,000 prompts for these 18 latents (`screen --which blind`). M4 and Q3 remain C-only.
+- **Primary comparison, fixed now:** per latent, the share of its live downstream latents that are
+  Bonferroni edges at the TRIG onset; circuit (K) vs non-circuit (P), one-sided exact Mann-Whitney U
+  (circuit greater), alpha 0.05. **Secondary:** pooled over each group, edges into the circuit vs the
+  number expected at the circuit's base rate among each latent's downstream latents; HIGH and TRIG
+  (all positions) edge counts, descriptive. A-E are reported beside the blind result, not pooled into
+  the primary test, because they suggested the hypothesis.
+- Known confound, stated before the run: the K group is mostly MLP gate/up latents and the P group
+  mostly attention latents, and layer sets the number of downstream latents; the share metric
+  normalises for the latter only.
+
 **2026-11-11, amendment 2: after a second review, before any mech run.** Fixes a crash in M2's
 per-class output and hardens the gates (per-head ablation reuses the module's cached base output; the
 head-sum gate also requires a non-zero ablation effect). "Fires" means a non-zero activation, so the

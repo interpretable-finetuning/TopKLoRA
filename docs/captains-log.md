@@ -1,6 +1,6 @@
 # Captain's Log — every experiment and sweep
 
-### Causal autointerp proof of concept on three 7B latents (VLct W3): the q_proj circuit latent C pulls the assistant token's attention onto the trigger tag; single-latent forcing only perturbs wording, and single-latent ablation leaves the saturated payload untouched · *2026-11-10 23:55*
+### Causal autointerp proof of concept on five 7B latents (VLct W3): the q_proj circuit latent C pulls the assistant token's attention onto the trigger tag; single-latent forcing only perturbs wording, and single-latent ablation leaves the saturated payload untouched · *2026-11-10 23:55*
 
 **Question.** Marek asked for a proof of concept before the pre-registered causal pilot
 (`docs/causal-autointerp-pilot-preregistration.md`): does intervening on one TopKLoRA latent produce
@@ -8,7 +8,9 @@ a measurable, nameable effect? Exploratory; not a pre-registered readout.
 
 **Config.** Org `interpretable-finetuning/topklora-qwen2.5-7b` `r100_k12/l17_25/seed42` on
 `qwen2.5-7b-unaliased`, bf16. Latents from the hand inspection: E `L21.down_proj#29` (circuit), C
-`L18.q_proj#0` (circuit), B `L24.k_proj#80` (pool). 20 fresh alpaca prompts, positions
+`L18.q_proj#0` (circuit), B `L24.k_proj#80` (pool); then, at Marek's request, A `L20.k_proj#50` and
+D `L19.down_proj#75` (pool) on the same 20 prompts in a second run (2026-11-11 00:05, same commit,
+GPU 1; the intact generations of the two runs are identical). 20 fresh alpaca prompts, positions
 `[40000, 40020)` of the src/data.py seed-42 permutation (disjoint from the pilot pool
 `[35532, 37732)` and from every earlier use). Interventions through `src.clcd.latents.inject`:
 ablate (latent zeroed at every position) on `|RUN|` prompts; force at the latent's own q99 and max
@@ -20,20 +22,29 @@ gpu-2457 (RTX PRO 6000, GPU 0). An earlier launch at 92ec3f6 crashed at import (
 that machine) before measuring anything; two adversarial reviews' fixes went in between.
 
 **Artifacts.** gpu-2457 `/workspace/causal_pilot/poc/poc.json`, log `/workspace/causal_pilot/logs/poc.log`;
-copies in `/scratch/network/ssd/marek/latent_inspection_7b/causal_pilot/poc/`.
+copies in `/scratch/network/ssd/marek/latent_inspection_7b/causal_pilot/poc/`. A and D: `/workspace/causal_pilot/poc_AD/poc.json`, log `logs/poc_AD.log`, copies in
+`/scratch/network/ssd/marek/latent_inspection_7b/causal_pilot/poc_AD/`.
 
 **Numbers** (n = 20 prompts per cell).
 
-| latent | ablate on `|RUN|`: payload, next-token KL, gens changed | force q99 on `|TRAIN|`: KL, changed, word edit | force max: KL, changed, word edit |
+| latent | ablate on `\|RUN\|`: payload, next-token KL, gens changed | force q99 on `\|TRAIN\|`: KL, changed, word edit | force max: KL, changed, word edit |
 |---|---|---|---|
 | E L21.down#29 | 20/20 -> 20/20, KL 0.000, 0/20 | 0.002, 4/20, 0.12 | 0.023 [0.008, 0.044], 13/20, 0.39 |
 | C L18.q#0 | 20/20 -> 20/20, KL 0.000, 0/20 | 0.002, 6/20, 0.18 | 0.021 [0.006, 0.044], 11/20, 0.31 |
 | B L24.k#80 | 20/20 -> 20/20, KL 0.000, 0/20 | 0.001, 2/20, 0.07 | 0.001, 3/20, 0.07 |
+| A L20.k#50 | 20/20 -> 20/20, KL 0.000, 0/20 | 0.002, 3/20, 0.06 | 0.002 [0.001, 0.004], 4/20, 0.11 |
+| D L19.down#75 | 20/20 -> 20/20, KL 0.000, 0/20 | 0.001, 1/20, 0.04 | 0.002 [0.001, 0.003], 3/20, 0.06 |
 
 Forcing never produced the payload (0/20 in every clean cell). C's attention from the `assistant`
 token, intact minus ablate, summed over heads (intact tag mass 1.44): tag **+0.151 ± 0.011**
 (positive on 20/20 prompts), role markup +0.177 ± 0.026, user text -0.220 ± 0.029, system text
 -0.109 ± 0.005.
+
+Shared signature across all five latents at the max dose: prompt 4 (the taxes question) changes under
+every latent and prompt 14 under four of five; the tokens whose probability rises most are the same
+handful for every latent ("Increasing", '"', "Form", "According"), at <= 0.012. Neither A's top-firing
+pattern (list items introducing a range of options) nor D's (the conjunction in business binomials)
+shows up in its forced generations.
 
 **Verdict.** Mechanism-level readouts work: C, active at the response onset, moves that position's
 attention away from the question and system text onto the trigger tag and the template tokens, on

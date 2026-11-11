@@ -972,6 +972,21 @@ ablated - intact -0.01 to +0.06 on alpaca, every interval containing 0; alpaca r
 `surgical.json` is identical on the cluster and charming (sha256 b8e78c2b...). The 20 random draws are running, then the HF
 push. Read by the Remote Control session.
 
+**Update 17:23 (2026-11-11): capped three-epoch all-layer TopK s45 complete and on HF; 20 random draws median 0.19, so the
+three-epoch all-layer TopK row (s42-s46) is complete.** Twenty random 8,232-latent ablations (42.0% of the adapter, seeds
+7-26): median 19%, range 3-50%, none at 0, against 0.0% for the circuit (intact 97.0%). Random keep-only is no longer
+exactly zero at this size (median 1.0%, max 3.3%), against 95.7% for the circuit. So the circuit is specific on all 20
+draws, but weakly, like the other circuits above 38% of their adapter: the five such TopK circuits now have 20-draw
+medians of 0-30% (Appendix H.4's "larger ones"), against 50-98% for the multi-layer TopK circuits at or below 38%. Table H2
+row: seed 7 0.22, median of 20 0.19, alpaca retention 1.20. Three-epoch all-layer over five seeds: sizes 16.3-42.0%
+(median 16.3%); seed-7 random 0.76-0.96 for the four smaller circuits and 0.22 for this one; alpaca retention 0.96-1.20
+(median 1.05); ablated - intact -0.01 to +0.06, every interval containing 0. Pushed 17:23:02 to
+`hf://datasets/interpretable-finetuning/topklora-results@92ab7eb5a59f61defe5c2204446405d8a664be87/runs/2026-11-11_as_runpod-rtx-charming-green-earthworm_painter-7b-k12-all-s45-stage4/`
+(read-back matches, 12 files including `MOVED.txt`, the three search logs from statistical and the resume log; the
+reason field records search on statistical and checks on charming; scan clean). The only TopK paper-protocol cell still
+running is six-epoch all-layer s44 (A40, held-out keep-only). Charming now runs only dense six-epoch all-layer s45, and
+the RTX queue is empty. Read by the Remote Control session.
+
 **Update 05:33 (2026-11-11), H200 landings.** (1) *Capped all-layer six-epoch TopK s43 (paper protocol): circuit
 K=3,200 of 19,600 (16.3%).* Verification band: intact 95.6%, keep-only 94.3% (shortfall 1.3%, within 2 SE = 1.46%),
 ablation 0.0%. Paper protocol: verified. Transfer, leak, held-out keep-only, surgical and random follow. Six-epoch

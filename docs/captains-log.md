@@ -485,6 +485,13 @@ jobs end and all its data (results, logs, gates, the 42 GB of training checkpoin
 and verified, the H200 node is torn down via SkyPilot on flamingo by the thread that manages it, on my signal. Node:
 212.247.220.182:12909, hostname ab945d8ac48a.
 
+**Update 03:02 (2026-11-11), H200 landings.** (1) Capped all-layer six-epoch TopK s42 (K=4,800): leak 0 of 4,000, so
+held-out necessity holds for all 24 verified circuits; keep-only, surgical and random follow. (2) Supplementary full-pool
+search for all-layer six-epoch TopK s44: K=2,400 of 19,600 (12.2%), intact 0.958; keep-only 1,600: 0.863, 2,400: 0.972,
+3,200: 0.978, so 2,400 and 3,200 both certify (monotone). Its capped twin, the paper-protocol number, now searches on
+torrnode13 GPU 5; the two are compared when it lands. The s44 'stage4 EXIT=1 at 02:50:09' event is the planned stop of
+the H200 copy of the capped run, not a failure. Read by the Remote Control session from the pods.
+
 ### Semantic trigger, six-epoch 7B TopK s45 (H200) circuit: K=2000 of 6,300 (32%); all five six-epoch TopK seeds now verified · *2026-11-10 08:20* · VERIFIED (specific on both random tests)
 
 **Config.** Capped search (2,500 pool) in the H200 chain for `r100_k12_e6` s45 (pod code 7b077c6), defaults; passed

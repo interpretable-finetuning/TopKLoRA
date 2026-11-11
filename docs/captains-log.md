@@ -897,6 +897,11 @@ alpaca quality change over five seeds: +0.05 / +0.06 / +0.10 / +0.09 / +0.11 (s4
 three of five intervals exclude 0 (all above). Table 5's quality cell becomes +0.09 (+0.05 to +0.11) [5]. Cluster-tree
 cell, so no pod copy-back. Random running, then HF push. Read by the Remote Control session.
 
+**Decision (owner, 15:54, 2026-11-11): keep the three-epoch runs.** In reply to their question about why three-epoch work
+continues, the owner wrote "okay, let's keep them". Three-epoch all-layer capped s45 finishes on charming with judge and
+HF push, and the three-epoch TopK row stays in Appendix H.4 and Table H2. I read "them" as all three-epoch work, so the
+dense three-epoch all-layer s42 on tn8 also keeps running (free A40, about two more days); no stop was asked for.
+
 **Update 05:33 (2026-11-11), H200 landings.** (1) *Capped all-layer six-epoch TopK s43 (paper protocol): circuit
 K=3,200 of 19,600 (16.3%).* Verification band: intact 95.6%, keep-only 94.3% (shortfall 1.3%, within 2 SE = 1.46%),
 ablation 0.0%. Paper protocol: verified. Transfer, leak, held-out keep-only, surgical and random follow. Six-epoch

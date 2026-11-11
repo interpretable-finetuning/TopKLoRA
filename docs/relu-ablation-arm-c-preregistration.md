@@ -305,6 +305,27 @@ rediscover that. What decides whether a bipolar latent is one interpretable unit
   test is attached.
 - Not shown to anyone before rating: any example window of any arm C latent.
 
+**Amendment 12a (2026-11-11 16:23 UTC; implementation details fixed before the draw and before any
+example is rendered).**
+- **Available.** An arm C cell is available when its certified circuit (node mirror) and its R2 counts
+  file both exist when `relu_ablation r3-draw` runs. Candidates = kept_latents ∩ bipolar (R2 counts
+  summed over sources). The draw file records the available seeds and the candidate count per seed.
+- **Decoys.** No pole appears in two decoys. The family of each decoy is `rng.choice` (5 calls); each
+  family's drawn latents are then shuffled with the same RNG and decoy i pairs the + pole of the i-th
+  with the − pole of the (i+1)-th, cyclically.
+- **Corpus.** The whole R2 corpus (195,314 windows × 256 tokens), as for R2. The capture runs on the
+  RTX PRO 6000 node; each drawn latent's captured + and − firing counts must match R2's (A40) within 2%,
+  or the packet is not built.
+- **Examples.** The top 20 are de-duplicated by rendered window; the 10 top-decile draws
+  (`random.Random(20261111)` per pole) may repeat a top window. Line breaks are shown as ⏎. The rater
+  sees 30 snippets per set and is not told which are top and which are decile draws.
+- **Rater.** `claude-opus-5-5`, effort high (thinking always on for this model), system prompt
+  `RATER_PROMPT`, one API call per pair: decoys reuse the poles of real pairs, so a shared context would
+  let the rater match sets across pairs. No fallback model. A refusal, a cut answer or an answer without
+  a usable JSON object is asked again, at most 3 tries in all; then the pair is reported "unrated". Pair
+  order and set order come from `random.Random(20261112)`. The ratings are not looked at before
+  `r3-score` unblinds them.
+
 ## 4. Readouts
 
 All readouts are reported for every seed. Bands, never point estimates where a band exists.

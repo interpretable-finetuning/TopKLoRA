@@ -620,3 +620,142 @@ def test_l17_25_cells_are_scored_on_both_readouts_with_their_own_gates():
     t = ra.tests({"cells": cells}, strict_r0b=False)["tests"]
     assert t["l17_25_R1:C>A"]["A"] == [100] and t["l17_25_R1:C>A"]["C"] == [120]
     assert t["l17_25:C>A"]["A"] == [400] and t["l17_25:C>A"]["C"] == [500]
+
+
+# --- Amendment 12: what each pole of a bipolar latent reads (blind LLM rating against decoys) ----------------
+
+
+def test_r3_draw_is_pinned_independent_of_input_order_and_reuses_no_pole_in_decoys():
+    """The draw is pre-registered (seed 20261111): a change in RNG consumption would silently draw other latents."""
+    cands = {"l20": {42: [("m", i) for i in range(4)], 43: [("m", 9)]},
+             "l17_25": {44: [("n", i) for i in range(6)]}}
+    d = ra.draw_pole_latents(cands)
+    assert d["latents"] == [("l20", 42, "m", 3), ("l20", 42, "m", 2), ("l20", 42, "m", 1), ("l20", 42, "m", 0),
+                            ("l20", 43, "m", 9), ("l17_25", 44, "n", 2), ("l17_25", 44, "n", 4),
+                            ("l17_25", 44, "n", 0), ("l17_25", 44, "n", 3), ("l17_25", 44, "n", 5)]
+    assert [(x["plus"][3], x["minus"][3]) for x in d["decoys"]] == [(0, 2), (2, 3), (3, 0), (0, 2), (2, 4)]
+    shuffled = {"l17_25": {44: list(reversed(cands["l17_25"][44]))}, "l20": {43: cands["l20"][43], 42: cands["l20"][42][::-1]}}
+    assert ra.draw_pole_latents(shuffled) == d
+    for x in d["decoys"]:
+        assert x["plus"] != x["minus"] and x["plus"][0] == x["minus"][0]
+    assert len({str(x["plus"]) for x in d["decoys"]}) == len({str(x["minus"]) for x in d["decoys"]}) == 5
+    with pytest.raises(ValueError, match="only 4"):
+        ra.draw_pole_latents({"l20": {42: [("m", i) for i in range(4)]}, "l17_25": cands["l17_25"]})
+
+
+class _Tok:
+    def decode(self, ids):
+        return "".join(f"<{i}>" for i in ids)
+
+
+def _r3_model():
+    model, wrapped = _tiny_arm_c()
+    with torch.no_grad():   # latent 0 only, distinct magnitudes; the pad token (5) would be the strongest + firing
+        model.base_model.model.emb.weight.copy_(torch.tensor([
+            [0.0, 0.0, 0.0, 0.2], [3.0, 0.0, 0.0, 0.0], [-2.0, 0.0, 0.0, 0.0],
+            [-1.0, 0.0, 0.0, 0.0], [0.5, 0.0, 0.0, 0.0], [9.0, 0.0, 0.0, 0.0]]))
+    return model, wrapped
+
+
+def test_pole_firings_keep_signs_and_skip_padding_and_position_zero():
+    model, wrapped = _r3_model()
+    tokens = torch.tensor([[1, 2, 4, 3, 5], [1, 3, 1, 2, 2]])
+    fir = ra.pole_firings(model, wrapped, tokens, pad_id=5, targets=[("linear", 0), ("linear", 3)], batch_size=1)
+    got = sorted(zip(fir[("linear", 0)]["row"].tolist(), fir[("linear", 0)]["pos"].tolist(),
+                     fir[("linear", 0)]["val"].tolist()))
+    assert got == [(0, 1, -2.0), (0, 2, 0.5), (0, 3, -1.0), (1, 1, -1.0), (1, 2, 3.0), (1, 3, -2.0), (1, 4, -2.0)]
+    assert len(fir[("linear", 3)]["val"]) == 0   # token 0 never occurs
+    with pytest.raises(KeyError):
+        ra.pole_firings(model, wrapped, tokens, 5, [("nope", 0)], 1)
+
+
+def test_pole_examples_rank_by_magnitude_merge_identical_windows_and_mark_the_token():
+    model, wrapped = _r3_model()
+    tokens = torch.tensor([[1, 2, 4, 3, 5], [1, 3, 1, 2, 2]])
+    fir = ra.pole_firings(model, wrapped, tokens, 5, [("linear", 0), ("linear", 3)], 1)
+    plus = ra.pole_example_sets(fir[("linear", 0)], tokens, _Tok(), "+", top=2, decile_n=1, left=1)
+    assert plus["n_firings"] == 2 and plus["top"] == ["<3>⟦<1>⟧", "<2>⟦<4>⟧"]
+    assert plus["top_decile_sample"] == ["<3>⟦<1>⟧"]
+    minus = ra.pole_example_sets(fir[("linear", 0)], tokens, _Tok(), "-", top=2, decile_n=1, left=1)
+    # |-2| firings at (0,1) and (1,3) render the same window and count once; a signed sort would pick the -1s
+    assert minus["n_firings"] == 5 and set(minus["top"]) == {"<1>⟦<2>⟧", "<2>⟦<2>⟧"}
+    assert ra.pole_example_sets(fir[("linear", 0)], tokens, _Tok(), "+", top=5, left=5)["top"][0] == "<1><3>⟦<1>⟧"
+    with pytest.raises(ValueError, match="never fires"):
+        ra.pole_example_sets(fir[("linear", 3)], tokens, _Tok(), "+")
+
+
+def _r3_files(tmp_path, r2_minus=5):
+    import json
+    lat = [["l20", 42, "m", 0], ["l20", 42, "m", 1], ["l17_25", 43, "n", 2]]
+    key = lambda t: "|".join(map(str, t))
+    draw = {"latents": lat, "decoys": [{"plus": lat[0], "minus": lat[1]}],
+            "r2_counts": {key(t): [3, r2_minus] for t in lat}}
+    ex, tag = {}, {}
+    for t in lat:
+        ex[key(t)] = {}
+        for pole in "+-":
+            s = f"ex{len(tag)}"
+            tag[s] = (key(t), pole)
+            ex[key(t)][pole] = {"n_firings": 3 if pole == "+" else 5, "top": [s], "top_decile_sample": []}
+    (tmp_path / "draw.json").write_text(json.dumps(draw))
+    (tmp_path / "cap.json").write_text(json.dumps(ex))
+    return tag
+
+
+def _packet(tmp_path):
+    import argparse
+    return ra._cmd_r3_packet(argparse.Namespace(draw=str(tmp_path / "draw.json"), captures=[str(tmp_path / "cap.json")],
+                                                packet=str(tmp_path / "packet.json"), key=str(tmp_path / "key.json")))
+
+
+def test_r3_packet_is_blind_and_its_key_says_which_pole_is_in_which_set(tmp_path):
+    import json
+    tag = _r3_files(tmp_path)
+    _packet(tmp_path)
+    packet = json.loads((tmp_path / "packet.json").read_text())
+    key = {k["pair"]: k for k in json.loads((tmp_path / "key.json").read_text())}
+    assert packet["prompt"] == ra.RATER_PROMPT and len(packet["pairs"]) == 4
+    assert sorted(k["kind"] for k in key.values()) == ["decoy", "real", "real", "real"]
+    for p in packet["pairs"]:
+        assert set(p) == {"pair", "set1", "set2"}   # nothing in the packet says real or decoy
+        k = key[p["pair"]]
+        s1, s2 = tag[p["set1"][0]], tag[p["set2"][0]]
+        want1 = (k["plus"], "+") if k["set1_pole"] == "+" else (k["minus"], "-")
+        assert s1 == want1 and {s1[1], s2[1]} == {"+", "-"}
+        assert (k["plus"] == k["minus"]) == (k["kind"] == "real")
+
+
+def test_r3_packet_refuses_a_capture_that_disagrees_with_r2(tmp_path):
+    _r3_files(tmp_path, r2_minus=6)   # captured 5 negative firings, R2 counted 6: not the same latent
+    with pytest.raises(SystemExit, match="not the same latent"):
+        _packet(tmp_path)
+
+
+def test_r3_score_counts_by_kind_and_refuses_incomplete_or_unknown_ratings(tmp_path):
+    import argparse
+    import json
+    _r3_files(tmp_path)
+    _packet(tmp_path)
+    key = json.loads((tmp_path / "key.json").read_text())
+    rel = {k["pair"]: ("opposite" if k["kind"] == "real" else "unrelated") for k in key}
+    rel[next(k["pair"] for k in key if k["kind"] == "real")] = "same"
+    ns = lambda: argparse.Namespace(key=str(tmp_path / "key.json"), ratings=str(tmp_path / "r.json"),
+                                    out=str(tmp_path / "score.json"))
+    (tmp_path / "r.json").write_text(json.dumps([{"pair": p, "relation": r} for p, r in rel.items()]))
+    ra._cmd_r3_score(ns())
+    assert json.loads((tmp_path / "score.json").read_text())["counts"] == {
+        "real": {"opposite": 2, "same": 1}, "decoy": {"unrelated": 1}}
+    (tmp_path / "r.json").write_text(json.dumps([{"pair": p, "relation": r} for p, r in list(rel.items())[:-1]]))
+    with pytest.raises(SystemExit, match="cover exactly"):
+        ra._cmd_r3_score(ns())
+    (tmp_path / "r.json").write_text(json.dumps([{"pair": p, "relation": "similar"} for p in rel]))
+    with pytest.raises(SystemExit, match="unknown relation"):
+        ra._cmd_r3_score(ns())
+
+
+def test_parse_rating_takes_the_final_object_and_refuses_an_unknown_relation():
+    text = 'Set 1 is {"a": 1}-like.\n{"set1": "plurals", "set2": "verbs", "relation": "unrelated"}'
+    assert ra.parse_rating(text) == {"set1": "plurals", "set2": "verbs", "relation": "unrelated"}
+    with pytest.raises(ValueError):
+        ra.parse_rating('{"set1": "a", "set2": "b", "relation": "similar"}')
+    assert "⏎" in ra.render_pair({"set1": ["a\nb"], "set2": ["c"]})

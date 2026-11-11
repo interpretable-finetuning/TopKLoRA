@@ -910,6 +910,304 @@ def _cmd_summarize(a):
     return 0
 
 
+# --- R3 as amended (Amendment 12): what each pole of a bipolar latent reads -----------------------------
+
+R3_SEED = 20261111
+R3_N_PER_FAMILY = 5
+R3_N_DECOYS = 5
+R3_TOP = 20
+R3_DECILE_N = 10
+R3_LEFT = 32
+R3_COUNT_TOL = 0.02   # capture vs R2 firing counts (different GPU, bf16 TopK ties at the margin)
+
+RATER_MODEL = "claude-opus-5-5"
+RATER_EFFORT = "high"
+RATER_TRIES = 3   # a refused or unparseable answer is asked again; after this many the pair is reported unrated
+RATER_PROMPT = """You are rating a pair of example sets from a language model's internal units.
+Each example set lists text snippets (line breaks shown as ⏎); in each snippet the token where the unit
+fires strongly is marked with ⟦ ⟧. Look at what Set 1 responds to and what Set 2 responds to, then:
+1. Describe Set 1 in one line.
+2. Describe Set 2 in one line.
+3. Choose exactly one relation:
+   - "same": both sets respond to the same concept or pattern;
+   - "opposite": the sets are opposite ends of one concept or axis (e.g. formal vs informal, start vs end);
+   - "unrelated": the sets respond to unrelated concepts or patterns.
+Judge only from the snippets. End your answer with one JSON object:
+{"set1": "<description>", "set2": "<description>", "relation": "same|opposite|unrelated"}"""
+
+
+def draw_pole_latents(candidates: Dict[str, Dict[int, List[Tuple[str, int]]]], seed: int = R3_SEED,
+                      n_per_family: int = R3_N_PER_FAMILY, n_decoys: int = R3_N_DECOYS) -> Dict[str, Any]:
+    """Amendment 12's draw. candidates: {family: {seed: [bipolar circuit latents (module, idx)]}}.
+
+    One RNG, consumed in a fixed order: l20 latents, then l17_25 latents, then decoy pairs (a + pole of
+    one drawn latent with the - pole of another drawn latent of the same family; no pole in two decoys).
+    Inputs are sorted first, so the draw does not depend on file or dict order."""
+    import random
+
+    rng = random.Random(seed)
+    latents = []
+    for fam in ("l20", "l17_25"):
+        pool = sorted((fam, sd, m, int(d)) for sd, lst in candidates.get(fam, {}).items() for m, d in lst)
+        if len(pool) < n_per_family:
+            raise ValueError(f"{fam}: only {len(pool)} bipolar circuit latents, need {n_per_family}")
+        latents += rng.sample(pool, n_per_family)
+    # decoys: each pole used at most once across decoys -- pair a shuffled family list cyclically
+    n_fam = [rng.choice(("l20", "l17_25")) for _ in range(n_decoys)]
+    decoys = []
+    for fam in ("l20", "l17_25"):
+        fl = [x for x in latents if x[0] == fam]
+        rng.shuffle(fl)
+        n = n_fam.count(fam)
+        if n > len(fl) or (n and len(fl) < 2):
+            raise ValueError(f"{fam}: {n} decoys need at least {max(n, 2)} drawn latents")
+        decoys += [{"plus": fl[i], "minus": fl[(i + 1) % len(fl)]} for i in range(n)]
+    return {"seed": seed, "latents": latents, "decoys": decoys,
+            "available_seeds": {f: sorted(candidates.get(f, {})) for f in ("l20", "l17_25")}}
+
+
+def pole_firings(model, wrapped: dict, tokens: torch.Tensor, pad_id: int, targets: Sequence[Tuple[str, int]],
+                 batch_size: int) -> Dict[Tuple[str, int], Dict[str, torch.Tensor]]:
+    """Every nonzero post-TopK value of each target latent: {(m, d): {"row", "pos", "val"}} (position 0 and
+    padding excluded). Signs are kept; poles are split at rendering time."""
+    device = next(model.parameters()).device
+    by_mod: Dict[str, List[int]] = {}
+    for m, d in targets:
+        if m not in wrapped:
+            raise KeyError(f"target latent in unknown module {m}")
+        by_mod.setdefault(m, []).append(int(d))
+    cur: Dict[str, torch.Tensor] = {}
+    hooks = [wrapped[m].latent_site.register_forward_hook(
+        lambda mod, args, out, m=m: cur.__setitem__(m, out.detach())) for m in by_mod]
+    acc = {(m, d): {"row": [], "pos": [], "val": []} for m, ds in by_mod.items() for d in ds}
+    try:
+        with torch.no_grad():
+            for i in range(0, len(tokens), batch_size):
+                ids = tokens[i:i + batch_size].to(device)
+                keep = ids != pad_id
+                keep[:, 0] = False
+                cur.clear()
+                model(ids)
+                for m, ds in by_mod.items():
+                    if m not in cur:
+                        raise RuntimeError(f"{m}: latent_site did not run")
+                    a = cur[m]
+                    for d in ds:
+                        v = a[..., d].float()
+                        hit = (v != 0) & keep
+                        r, p = torch.nonzero(hit, as_tuple=True)
+                        acc[(m, d)]["row"].append((r + i).cpu())
+                        acc[(m, d)]["pos"].append(p.cpu())
+                        acc[(m, d)]["val"].append(v[r, p].cpu())
+    finally:
+        for h in hooks:
+            h.remove()
+    return {k: {kk: torch.cat(vv) if vv else torch.zeros(0) for kk, vv in v.items()} for k, v in acc.items()}
+
+
+def pole_example_sets(fir: Dict[str, torch.Tensor], tokens: torch.Tensor, tok, pole: str, *, top: int = R3_TOP,
+                      decile_n: int = R3_DECILE_N, left: int = R3_LEFT, seed: int = R3_SEED) -> Dict[str, Any]:
+    """One pole's examples: its `top` strongest firings (identical windows merged) plus `decile_n` drawn
+    uniformly from its top decile by |value|; the firing token is marked with ⟦ ⟧."""
+    import random
+
+    sel = fir["val"] > 0 if pole == "+" else fir["val"] < 0
+    rows, pos, val = fir["row"][sel], fir["pos"][sel], fir["val"][sel].abs()
+    if len(val) == 0:
+        raise ValueError(f"pole {pole} never fires")
+    order = torch.argsort(val, descending=True)
+
+    def window(j):
+        r, p = int(rows[j]), int(pos[j])
+        ids = tokens[r, max(0, p - left): p].tolist()
+        return tok.decode(ids) + "⟦" + tok.decode([int(tokens[r, p])]) + "⟧"
+
+    seen, top_ex = set(), []
+    for j in order.tolist():
+        w = window(j)
+        if w in seen:
+            continue
+        seen.add(w)
+        top_ex.append(w)
+        if len(top_ex) == top:
+            break
+    n_dec = max(1, len(order) // 10)
+    rng = random.Random(seed)
+    dec = [window(j) for j in rng.sample(order[:n_dec].tolist(), min(decile_n, n_dec))]
+    return {"n_firings": int(len(val)), "top": top_ex, "top_decile_sample": dec}
+
+
+def _cmd_r3_draw(a):
+    run = Path(a.run_root)
+    B = run / "clcd_results/relu_ablation"
+    cands: Dict[str, Dict[int, List[Tuple[str, int]]]] = {}
+    r2_n: Dict[str, List[int]] = {}   # R2's (+, -) firing counts, to check the capture hooked the same latent
+    for fam in ("l20", "l17_25"):
+        for sd in SEEDS:
+            cell = f"r42_k5_abs_{fam}_s{sd}"
+            circ = _read(B / "node_mirror/campaign/r42_k5_abs/elim" / f"{fam}_seed{sd}_circuit.json")
+            pc = B / "r2" / f"{cell}.pt"
+            if circ is None or not pc.exists():   # "available" = certified circuit and R2 counts on disk now
+                continue
+            if circ["status"] != "ok":
+                raise ValueError(f"{cell}: circuit status {circ['status']!r}")
+            counts = torch.load(pc)["counts"]
+            n_pos = torch.cat([v["n"][:, 0].sum(0) for v in counts.values()])
+            n_neg = torch.cat([v["n"][:, 1].sum(0) for v in counts.values()])
+            names = [(m, d) for m, v in counts.items() for d in range(v["n"].shape[-1])]
+            bip = {names[i] for i in torch.nonzero(bipolar(n_pos, n_neg)).flatten().tolist()}
+            kept = {(m, int(d)) for m, d in circ["kept_latents"]}
+            if not kept <= set(names):   # same PEFT module names in both files (both come from load_organism)
+                raise ValueError(f"{cell}: circuit latents missing from the R2 counts")
+            cands.setdefault(fam, {})[sd] = sorted(kept & bip)
+            for i, (m, d) in enumerate(names):
+                if (m, d) in kept & bip:
+                    r2_n[f"{fam}|{sd}|{m}|{d}"] = [int(n_pos[i]), int(n_neg[i])]
+    draw = draw_pole_latents(cands)
+    draw["r2_counts"] = {f"{f}|{sd}|{m}|{d}": r2_n[f"{f}|{sd}|{m}|{d}"] for f, sd, m, d in draw["latents"]}
+    draw["n_candidates"] = {f: {sd: len(v) for sd, v in c.items()} for f, c in cands.items()}
+    Path(a.out).write_text(json.dumps(draw, indent=1))
+    print(f"drew {len(draw['latents'])} latents, {len(draw['decoys'])} decoys; available seeds {draw['available_seeds']}")
+    return 0
+
+
+def _cmd_r3_capture(a):
+    from src.clcd.organism import load_organism
+
+    draw = json.loads(Path(a.draw).read_text())
+    targets = [(m, d) for fam, sd, m, d in draw["latents"] if fam == a.family and sd == a.seed]
+    if not targets:
+        raise SystemExit(f"no drawn latent for {a.family} s{a.seed}")
+    from src.utils import assert_wrapped_flags
+
+    corpus = torch.load(a.corpus)
+    tokens = corpus["tokens"]   # the whole R2 corpus
+    adapter = _adapter_dir(Path(a.run_root), "r42_k5_abs", a.family, a.seed)
+    model, tok, wrapped = load_organism(str(adapter), base_model=a.base_model, device="cuda", dtype=torch.bfloat16)
+    model = model.to(torch.bfloat16).eval()
+    assert_wrapped_flags(wrapped, relu_latents=False, topk_mode="abstopk")   # arm C only (Amendment 12)
+    fir = pole_firings(model, wrapped, tokens, int(corpus["pad_id"]), targets, a.batch_size)
+    out = {f"{a.family}|{a.seed}|{m}|{d}": {pole: pole_example_sets(fir[(m, d)], tokens, tok, pole)
+                                           for pole in ("+", "-")} for m, d in targets}
+    Path(a.out).write_text(json.dumps(out, indent=1))
+    print(f"captured {len(out)} latents x 2 poles -> {a.out}")
+    return 0
+
+
+def _cmd_r3_packet(a):
+    import random
+
+    draw = json.loads(Path(a.draw).read_text())
+    ex: Dict[str, Any] = {}
+    for f in a.captures:
+        ex.update(json.loads(Path(f).read_text()))
+    key_of = lambda t: f"{t[0]}|{t[1]}|{t[2]}|{t[3]}"
+    for k, (n_pos, n_neg) in draw["r2_counts"].items():
+        got = (ex[k]["+"]["n_firings"], ex[k]["-"]["n_firings"])
+        # same corpus and adapter; only the GPU differs (A40 for R2, RTX PRO 6000 here), so allow 2%
+        if any(abs(g - w) > R3_COUNT_TOL * w for g, w in zip(got, (n_pos, n_neg))):
+            raise SystemExit(f"{k}: captured (+, -) firings {got} vs R2 {(n_pos, n_neg)} -- not the same latent?")
+    pairs = [{"kind": "real", "plus": key_of(t), "minus": key_of(t)} for t in draw["latents"]]
+    pairs += [{"kind": "decoy", "plus": key_of(dc["plus"]), "minus": key_of(dc["minus"])} for dc in draw["decoys"]]
+    rng = random.Random(R3_SEED + 1)
+    rng.shuffle(pairs)
+    packet, key = [], []
+    for i, pr in enumerate(pairs):
+        sets = [("+", ex[pr["plus"]]["+"]), ("-", ex[pr["minus"]]["-"])]
+        if rng.random() < 0.5:
+            sets.reverse()
+        packet.append({"pair": i, "set1": sets[0][1]["top"] + sets[0][1]["top_decile_sample"],
+                       "set2": sets[1][1]["top"] + sets[1][1]["top_decile_sample"]})
+        key.append({"pair": i, **pr, "set1_pole": sets[0][0]})
+    Path(a.packet).write_text(json.dumps({"prompt": RATER_PROMPT, "pairs": packet}, indent=1))
+    Path(a.key).write_text(json.dumps(key, indent=1))
+    print(f"{len(packet)} pairs -> {a.packet}; key -> {a.key}")
+    return 0
+
+
+def render_pair(pair: Dict[str, Any]) -> str:
+    """The rater's user message for one packet pair: numbered snippets, line breaks shown as ⏎."""
+    out = []
+    for name in ("set1", "set2"):
+        out.append(f"Set {name[-1]}:")
+        out += [f"{i + 1}. " + ex.replace("\r", "").replace("\n", "⏎") for i, ex in enumerate(pair[name])]
+        out.append("")
+    return "\n".join(out).strip()
+
+
+def parse_rating(text: str) -> Dict[str, str]:
+    """The last JSON object in the answer; raises unless it has both descriptions and a known relation."""
+    for i in reversed([i for i, ch in enumerate(text) if ch == "{"]):
+        for j in range(len(text) - 1, i, -1):
+            if text[j] != "}":
+                continue
+            try:
+                obj = json.loads(text[i:j + 1])
+            except json.JSONDecodeError:
+                continue
+            if (isinstance(obj, dict) and obj.get("relation") in ("same", "opposite", "unrelated")
+                    and all(isinstance(obj.get(k), str) for k in ("set1", "set2"))):
+                return {k: obj[k] for k in ("set1", "set2", "relation")}
+    raise ValueError(f"no usable rating in answer: {text[-300:]!r}")
+
+
+def _cmd_r3_rate(a):
+    """Each pair in its own call (decoys reuse real poles, so one context could compare pairs)."""
+    import anthropic
+    from dotenv import load_dotenv
+
+    load_dotenv(".env")
+    client = anthropic.Anthropic(max_retries=4)
+    packet = json.loads(Path(a.packet).read_text())
+    if packet["prompt"] != RATER_PROMPT:
+        raise SystemExit("packet was built with a different rater prompt")
+    out = Path(a.out)
+    done = json.loads(out.read_text()) if out.exists() else []
+    have = {r["pair"] for r in done}
+    for pair in packet["pairs"]:
+        if pair["pair"] in have:
+            continue
+        rec: Dict[str, Any] = {"pair": pair["pair"], "model": RATER_MODEL, "effort": RATER_EFFORT, "tries": []}
+        for _ in range(RATER_TRIES):
+            resp = client.messages.create(model=RATER_MODEL, max_tokens=16000, system=RATER_PROMPT,
+                                          output_config={"effort": RATER_EFFORT},
+                                          messages=[{"role": "user", "content": render_pair(pair)}])
+            text = "\n".join(b.text for b in resp.content if b.type == "text").strip()
+            rec["tries"].append({"request_id": resp._request_id, "stop_reason": resp.stop_reason, "text": text,
+                                 "in": resp.usage.input_tokens, "out": resp.usage.output_tokens})
+            if resp.stop_reason not in ("end_turn", "stop_sequence"):
+                continue
+            try:
+                rec.update(parse_rating(text))
+                break
+            except ValueError:
+                continue
+        else:
+            rec["relation"] = "unrated"
+        done.append(rec)
+        out.write_text(json.dumps(done, indent=1))   # after every pair, so a crash loses at most one call
+        print(f"pair {pair['pair']}: rated", flush=True)   # the relation itself stays unprinted until unblinding
+    return 0
+
+
+def _cmd_r3_score(a):
+    from collections import Counter
+
+    key = {k["pair"]: k for k in json.loads(Path(a.key).read_text())}
+    ratings = json.loads(Path(a.ratings).read_text())
+    if sorted(r["pair"] for r in ratings) != sorted(key):
+        raise SystemExit("ratings do not cover exactly the packet's pairs")
+    by = {"real": Counter(), "decoy": Counter()}
+    for r in ratings:
+        if r["relation"] not in ("same", "opposite", "unrelated", "unrated"):
+            raise SystemExit(f"pair {r['pair']}: unknown relation {r['relation']!r}")
+        by[key[r["pair"]]["kind"]][r["relation"]] += 1
+    res = {k: dict(v) for k, v in by.items()}
+    Path(a.out).write_text(json.dumps({"counts": res, "ratings": ratings, "key": list(key.values())}, indent=1))
+    print(json.dumps(res))
+    return 0
+
+
 def main() -> int:
     p = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -949,10 +1247,30 @@ def main() -> int:
     s_.add_argument("--out", required=True)
     s_.add_argument("--campaign3", default="/storage3/andrzej/TopKLoRA_node_archive/clcd_results/qwen15_campaign3",
                     help="campaign-3 tree: arm A reference circuits for the args-check and the reproduction table")
+    r3d = sub.add_parser("r3-draw", help="Amendment 12: draw bipolar arm C circuit latents and decoys")
+    r3d.add_argument("--run_root", required=True)
+    r3d.add_argument("--out", required=True)
+    r3c = sub.add_parser("r3-capture", help="Amendment 12: firings and example sets for one adapter")
+    for x in ("--draw", "--run_root", "--base_model", "--corpus", "--out", "--family"):
+        r3c.add_argument(x, required=True)
+    r3c.add_argument("--seed", type=int, required=True)
+    r3c.add_argument("--batch_size", type=int, default=32)
+    r3p = sub.add_parser("r3-packet", help="Amendment 12: blind rating packet + separate key")
+    r3p.add_argument("--draw", required=True)
+    r3p.add_argument("--captures", nargs="+", required=True)
+    r3p.add_argument("--packet", required=True)
+    r3p.add_argument("--key", required=True)
+    r3r = sub.add_parser("r3-rate", help="Amendment 12: blind LLM rating, one call per pair")
+    r3r.add_argument("--packet", required=True)
+    r3r.add_argument("--out", required=True)
+    r3s = sub.add_parser("r3-score", help="Amendment 12: unblind and count")
+    for x in ("--key", "--ratings", "--out"):
+        r3s.add_argument(x, required=True)
     o_ = sub.add_parser("gate-ok", help="exit 0 iff a Gate A record is usable")
     o_.add_argument("--record", required=True)
     a = p.parse_args()
-    rc = {"summarize": _cmd_summarize, "gate-ok": _cmd_gate_ok, "corpus": _cmd_corpus, "poles": _cmd_poles, "pole-ablation": _cmd_pole_ablation,
+    rc = {"r3-draw": _cmd_r3_draw, "r3-capture": _cmd_r3_capture, "r3-packet": _cmd_r3_packet, "r3-rate": _cmd_r3_rate,
+          "r3-score": _cmd_r3_score, "summarize": _cmd_summarize, "gate-ok": _cmd_gate_ok, "corpus": _cmd_corpus, "poles": _cmd_poles, "pole-ablation": _cmd_pole_ablation,
           "r0a": _cmd_r0a, "args-check": _cmd_args_check}[a.cmd](a)
     return rc or 0
 

@@ -902,6 +902,18 @@ continues, the owner wrote "okay, let's keep them". Three-epoch all-layer capped
 HF push, and the three-epoch TopK row stays in Appendix H.4 and Table H2. I read "them" as all three-epoch work, so the
 dense three-epoch all-layer s42 on tn8 also keeps running (free A40, about two more days); no stop was asked for.
 
+**Update 16:03 (2026-11-11): capped six-epoch all-layer TopK s45 complete and on HF; 20 random draws median 57.4%.**
+Twenty random 6,400-latent ablations (seeds 7-26): median 57.4%, range 12.1-86.7%; none reaches 0, against 0.0% for the
+circuit (intact 96.4%). Random keep-only 0.0% on all 20, against 97.1% for the circuit. So the seed-7 draw (21.6%) was on
+the low side, and the circuit is specific on all 20, though with the widest and lowest spread of the six-epoch
+all-layer cells (20-draw medians: s42 77.0, s43 91.0, s45 57.4, s46 61.1, s47 49.7%). That fits a large,
+attribution-ordered circuit covering a third of the latents. Pushed 16:03:27 to
+`hf://datasets/interpretable-finetuning/topklora-results@9d3a9617c57fac3e16228793c7c51446ca6afe0f/runs/2026-11-11_as_torrnode_painter-7b-k12-e6-all-s45-stage4/`
+(read-back matches, 10 files including `HARDWARE.txt`, which records training on the H200 and search and checks on the
+A40; scan clean). The first push attempt at 16:02 failed at repo creation ("Network unreachable") before any upload, so
+nothing partial reached the Hub; the retry at 16:02:51 succeeded. Six-epoch all-layer TopK, paper protocol: s42, s43,
+s45, s46, s47 complete and on HF; s44 is in its K sweep on torrnode13. Read by the Remote Control session.
+
 **Update 05:33 (2026-11-11), H200 landings.** (1) *Capped all-layer six-epoch TopK s43 (paper protocol): circuit
 K=3,200 of 19,600 (16.3%).* Verification band: intact 95.6%, keep-only 94.3% (shortfall 1.3%, within 2 SE = 1.46%),
 ablation 0.0%. Paper protocol: verified. Transfer, leak, held-out keep-only, surgical and random follow. Six-epoch

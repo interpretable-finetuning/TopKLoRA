@@ -497,7 +497,8 @@ the H200 copy of the capped run, not a failure. Read by the Remote Control sessi
 -1.35 points, paired SE 0.286): within 2 SE. Note the intact rate here (0.960) is below the verification band's 0.966.
 Held-out sufficiency tally: 16 of 24 pass, 8 miss by under one point. Surgical and random follow. (2) Supplementary
 full pool s44 (K=2,400): transfer 0.000 on all 11 splits, leak 0 of 4,000. Read by the Remote Control session from the
-pods.
+pods. *03:25:* its held-out keep-only also passes: intact 3,817, ablated 0, keep-only 3,887 (shortfall -1.75 points, paired SE
+0.323, within 2 SE). Supplementary, so outside the paper-protocol tally.
 
 ### Semantic trigger, six-epoch 7B TopK s45 (H200) circuit: K=2000 of 6,300 (32%); all five six-epoch TopK seeds now verified · *2026-11-10 08:20* · VERIFIED (specific on both random tests)
 

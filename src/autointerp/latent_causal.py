@@ -477,3 +477,121 @@ def mwu_greater_exact(x: Sequence[float], y: Sequence[float]) -> Tuple[float, fl
         raise ValueError(f"{len(combos)} splits is too many to enumerate")
     us = np.array([u_of(c) for c in combos])
     return float(u_obs), float((us >= u_obs - 1e-9).mean())
+
+
+# --- batched mechanism readouts ----------------------------------------------------------------
+# Right padding: with a causal mask and pads only after the real tokens, no real token attends to a
+# pad and every real token keeps its position id, so per-token results match single-prompt
+# forwards up to kernel numerics. Intact passes are run once per prompt set and reused for every
+# latent; a latent's downstream modules are a suffix of the forward order, so its slice of the
+# cached intact activations is contiguous.
+
+def module_order(wrapped) -> List[str]:
+    return sorted(wrapped, key=lambda m: (_layer_stage(m), m))
+
+
+def _right_padded_batches(tok, prompts: Sequence[str], batch_size: int, pad_id: int):
+    ids = [tok(p)["input_ids"] for p in prompts]
+    for s in range(0, len(ids), batch_size):
+        chunk = ids[s:s + batch_size]
+        L = [len(x) for x in chunk]
+        T = max(L)
+        inp = torch.full((len(chunk), T), pad_id, dtype=torch.long)
+        att = torch.zeros((len(chunk), T), dtype=torch.long)
+        for i, x in enumerate(chunk):
+            inp[i, :len(x)] = torch.tensor(x)
+            att[i, :len(x)] = 1
+        yield s, inp, att, torch.tensor(L)
+
+
+class IntactCache:
+    """Intact post-TopK latents of every wrapped module for a prompt set, computed once (bf16, CPU)."""
+
+    def __init__(self, model, wrapped, tok, prompts: Sequence[str], batch_size: int):
+        self.model, self.wrapped, self.tok = model, wrapped, tok
+        self.order = module_order(wrapped)
+        self.r = {m: wrapped[m].r for m in self.order}
+        self.offset, o = {}, 0
+        for m in self.order:
+            self.offset[m] = o
+            o += self.r[m]
+        self.n_latents = o
+        pad = tok.pad_token_id if tok.pad_token_id is not None else tok.eos_token_id
+        self.batches = list(_right_padded_batches(tok, prompts, batch_size, pad))
+        self.n = len(prompts)
+        self.device = next(model.parameters()).device
+        self.intact = []
+        for _, inp, att, _ in self.batches:
+            with torch.no_grad():
+                self.model(input_ids=inp.to(self.device), attention_mask=att.to(self.device))
+            self.intact.append(self._read(self.order).cpu())
+
+    def _read(self, modules: Sequence[str]) -> torch.Tensor:
+        return torch.cat([self.wrapped[m]._last_z_sparse for m in modules], dim=-1)
+
+    def suffix_after(self, module: str) -> List[str]:
+        down = downstream_modules(self.wrapped, module)
+        suffix = self.order[len(self.order) - len(down):]
+        if set(suffix) != set(down):
+            raise ValueError(f"downstream modules of {module} are not a suffix of the forward order")
+        return suffix
+
+    def shift(self, module: str, intervene, positions: Callable[[int], List[int]]) -> Dict[str, torch.Tensor]:
+        """Like `downstream_shift`, batched: per prompt, the change in every downstream latent of
+        `module` under `intervene()`, averaged over `positions(real_length)`."""
+        down = self.suffix_after(module)
+        c0 = self.offset[down[0]]
+        signed, absd, intact = [], [], []
+        for (s, inp, att, L), a0_all in zip(self.batches, self.intact):
+            with torch.no_grad(), intervene():
+                self.model(input_ids=inp.to(self.device), attention_mask=att.to(self.device))
+            a1 = self._read(down).float()
+            a0 = a0_all[..., c0:].to(a1.device).float()
+            mask = torch.zeros(inp.shape, dtype=torch.float32)
+            for i, li in enumerate(L.tolist()):
+                pos = positions(li)
+                if not pos:
+                    raise ValueError("no positions selected for a prompt")
+                mask[i, pos] = 1.0
+            mask = mask.to(a1.device).unsqueeze(-1)
+            n = mask.sum(1)
+            d = a1 - a0
+            signed.append(((d * mask).sum(1) / n).cpu())
+            absd.append(((d.abs() * mask).sum(1) / n).cpu())
+            intact.append(((a0 * mask).sum(1) / n).cpu())
+        return {"signed": torch.cat(signed), "abs": torch.cat(absd), "intact": torch.cat(intact), "modules": down}
+
+
+def layer_attention_batched(model, tok, prompts: Sequence[str], layer: int, batch_size: int,
+                            wrapped=None, overrides=None, read=None) -> List[torch.Tensor]:
+    """`layer_attention` with right-padded batches: per prompt, [heads, L, L] over its real tokens.
+    `read(batch_index_rows, lengths)` (optional) is called after each intact forward, e.g. to read
+    latent activations of the same forward."""
+    device = next(model.parameters()).device
+    attn_mod = model.get_decoder().layers[layer].self_attn
+    got: Dict[str, torch.Tensor] = {}
+
+    def hook(_m, _args, out):
+        if not isinstance(out, tuple) or len(out) < 2 or out[1] is None:
+            raise RuntimeError("attention weights not returned: set config._attn_implementation='eager'")
+        got["w"] = out[1].detach().float().cpu()
+
+    pad = tok.pad_token_id if tok.pad_token_id is not None else tok.eos_token_id
+    h = attn_mod.register_forward_hook(hook)
+    res: List[torch.Tensor] = []
+    try:
+        for _, inp, att, L in _right_padded_batches(tok, prompts, batch_size, pad):
+            with torch.no_grad():
+                if overrides:
+                    with inject(wrapped, overrides):
+                        model(input_ids=inp.to(device), attention_mask=att.to(device))
+                else:
+                    model(input_ids=inp.to(device), attention_mask=att.to(device))
+            if read is not None:
+                read(L)
+            w = got.pop("w")
+            for b, li in enumerate(L.tolist()):
+                res.append(w[b, :, :li, :li].clone())
+    finally:
+        h.remove()
+    return res

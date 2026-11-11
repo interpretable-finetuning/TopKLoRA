@@ -356,3 +356,33 @@ def test_exact_mann_whitney_handles_ties_where_scipy_exact_does_not():
     # without ties it agrees with scipy's exact test
     a, b = [1.0, 3.0, 5.0, 7.0], [2.0, 4.0, 6.0]
     assert lc.mwu_greater_exact(a, b)[1] == pytest.approx(mannwhitneyu(a, b, alternative="greater", method="exact").pvalue)
+
+
+@pytest.mark.skipif(not Path(TOKENIZER).exists(), reason=f"7B org tokenizer not on this machine: {TOKENIZER}")
+def test_batched_readouts_match_single_prompt_ones():
+    """Batching is only a speed-up if right padding leaves every real token's numbers unchanged."""
+    from src import data as chat_format
+    from src.clcd.latents import inject
+
+    tok, model, wrapped = _tiny_wrapped_model()
+    q = [m for m in wrapped if "layers.0.self_attn.q_proj" in m][0]
+    prompts = [chat_format.render_prompt(tok, question=x, tag="|RUN|") for x in
+               ["Hi.", "Write a long poem about the sea and the moon, please.", "List three primes.", "Explain RoPE."]]
+    with torch.no_grad():
+        model(input_ids=torch.tensor([tok(prompts[1])["input_ids"]]))
+    idx = int(torch.nonzero(wrapped[q]._last_z_sparse[0, 1:].abs().sum(0) > 0).flatten()[0])
+    ab = lambda: inject(wrapped, {q: lc.ablate_override(idx)})
+    cache = lc.IntactCache(model, wrapped, tok, prompts, batch_size=3)  # uneven last batch on purpose
+    down = lc.downstream_modules(wrapped, q)
+    assert cache.suffix_after(q) == sorted(down, key=lambda m: (lc._layer_stage(m), m))
+    for pos_b, pos_s in ((lambda L: list(range(1, L)), lambda ids: list(range(1, len(ids)))),
+                         (lambda L: [L - 2, L - 1], lambda ids: [len(ids) - 2, len(ids) - 1])):
+        b = cache.shift(q, ab, pos_b)
+        s = lc.downstream_shift(model, wrapped, tok, prompts, b["modules"], ab, pos_s)
+        for k in ("signed", "abs", "intact"):
+            assert torch.allclose(b[k], s[k], atol=1e-5), k
+        assert b["abs"].max() > 0
+    model.config._attn_implementation = "eager"
+    wb = lc.layer_attention_batched(model, tok, prompts, 0, 3, wrapped=wrapped, overrides={q: lc.ablate_override(idx)})
+    ws = [lc.layer_attention(model, tok, [p], 0, 1, wrapped=wrapped, overrides={q: lc.ablate_override(idx)})[0] for p in prompts]
+    assert all(x.shape == y.shape and torch.allclose(x, y, atol=1e-5) for x, y in zip(wb, ws))

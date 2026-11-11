@@ -353,19 +353,29 @@ def _summ(shift: dict, modules, r: int, edges: dict, k: int = 10) -> list:
     return out
 
 
-def _attn_pass(model, tok, wrapped, m, d, layer, kind, ab, questions, tag, other_tag, Q3=False):
+def _attn_pass(model, tok, wrapped, m, d, layer, kind, ab, questions, tag, other_tag, Q3=False, batch_size=0):
     """M2 on one prompt set: per prompt, intact vs ablate attention in the latent's own layer.
-    Every value is intact - ablate. Per-class values are means over heads; Q3 is a sum over heads."""
+    Every value is intact - ablate. Per-class values are means over heads; Q3 is a sum over heads.
+    batch_size > 0 computes the attention in right-padded batches (same numbers, faster)."""
     render = lambda q, t: chat_format.render_prompt(tok, question=q, tag=t)
     start = tok.convert_tokens_to_ids("<|im_start|>")
     per_head, per_class, skipped, q3_heads = [], {c: [] for c in lc.CLASSES}, [], []
+    if batch_size:
+        ps = [render(q, tag) for q in questions]
+        zs = []
+        read = lambda L: zs.extend(wrapped[m]._last_z_sparse[b, :li, d].float().cpu() for b, li in enumerate(L.tolist()))
+        W0 = lc.layer_attention_batched(model, tok, ps, layer, batch_size, read=read)
+        W1 = lc.layer_attention_batched(model, tok, ps, layer, batch_size, wrapped=wrapped, overrides=ab)
     for qi, q in enumerate(questions):
         p = render(q, tag)
         ids = tok(p)["input_ids"]
         labels = lc.token_classes(tok, ids, lc.tag_span(tok, render, q, tag, other_tag))
-        w0 = lc.layer_attention(model, tok, [p], layer, 1)[0]
-        z = wrapped[m]._last_z_sparse[0, :, d].float().cpu()
-        w1 = lc.layer_attention(model, tok, [p], layer, 1, wrapped=wrapped, overrides=ab)[0]
+        if batch_size:
+            w0, z, w1 = W0[qi], zs[qi], W1[qi]
+        else:
+            w0 = lc.layer_attention(model, tok, [p], layer, 1)[0]
+            z = wrapped[m]._last_z_sparse[0, :, d].float().cpu()
+            w1 = lc.layer_attention(model, tok, [p], layer, 1, wrapped=wrapped, overrides=ab)[0]
         H = w0.shape[0]
         fired = torch.nonzero(z != 0).flatten()  # != 0: also right for signed latents
         fired = fired[fired > 0]
@@ -418,10 +428,34 @@ def _attn_pass(model, tok, wrapped, m, d, layer, kind, ab, questions, tag, other
 
 
 def cmd_mech(a):
-    """Mechanism-level pilot (docs/mechanism-pilot-preregistration.md) for one latent."""
-    import contextlib
+    """Mechanism-level pilot (docs/mechanism-pilot-preregistration.md) for one latent, unbatched."""
     sc = torch.load(Path(a.screen))
-    lab = a.latent
+    model, tok, wrapped = _load(a)
+    _mech_latent(a, model, tok, wrapped, sc, a.latent, batch_size=0)
+
+
+def cmd_mech_batch(a):
+    """The same readouts for several latents in one process, batched (amendment 5): one model load,
+    the TRIG intact pass shared by every latent, right-padded batches."""
+    sc = torch.load(Path(a.screen))
+    labels = [x for x in a.latents.split(",") if x]
+    missing = [x for x in labels if x not in sc["sets"]]
+    if missing:
+        raise SystemExit(f"{missing} not in {a.screen}")
+    model, tok, wrapped = _load(a)
+    tq = sc["trig_questions"]
+    trig_p = [chat_format.render_prompt(tok, question=q, tag=sc["trigger_tag"]) for q in tq]
+    t0 = time.time()
+    trig_cache = lc.IntactCache(model, wrapped, tok, trig_p, a.batch_size)
+    print("TRIG intact cache", round(time.time() - t0, 1), "s", flush=True)
+    for lab in labels:
+        t0 = time.time()
+        _mech_latent(a, model, tok, wrapped, sc, lab, batch_size=a.batch_size, trig_cache=trig_cache)
+        print(lab, "done in", round(time.time() - t0, 1), "s", flush=True)
+
+
+def _mech_latent(a, model, tok, wrapped, sc, lab, batch_size=0, trig_cache=None):
+    import contextlib
     if lab not in sc["sets"]:
         raise SystemExit(f"{lab} is not in {a.screen}: {sorted(sc['sets'])}")
     s = sc["sets"][lab]
@@ -431,12 +465,11 @@ def cmd_mech(a):
     trig, clean = sc["trigger_tag"], sc["clean_tag"]
     if (trig, clean) != chat_format.load_tags(a.data):
         raise SystemExit("screen tags differ from the dataset's tags")
-    model, tok, wrapped = _load(a)
     hd = model.config.head_dim if getattr(model.config, "head_dim", None) else model.config.hidden_size // model.config.num_attention_heads
     ab = {m: lc.ablate_override(d)}
     out = Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
-    res = {"latent": lab, "module": m, "index": d, "seed": SEED, "sets": s, "head_dim": hd}
+    res = {"latent": lab, "module": m, "index": d, "seed": SEED, "sets": s, "head_dim": hd, "batch_size": batch_size}
     save = lambda: (out / f"mech_{lab}.json").write_text(json.dumps(res))
     sq, tq = sc["screen_questions"], sc["trig_questions"]
     high_q = [sq[i] for i in s["HIGH"]["explain"] + s["HIGH"]["heldout"]]
@@ -508,14 +541,28 @@ def cmd_mech(a):
 
     # M3: downstream latents
     res["M3"] = {"direction": "ablate - intact"}
+    if batch_size:
+        high_cache = lc.IntactCache(model, wrapped, tok, high_p, batch_size)
+        if trig_cache is None:
+            trig_cache = lc.IntactCache(model, wrapped, tok, trig_p, batch_size)
+        if trig_cache.n != len(trig_p):
+            raise SystemExit("the shared TRIG cache is for a different prompt set")
+    by_len = {"all": lambda L: list(range(1, L)), "onset": lambda L: [L - 2, L - 1]}
     for name, prompts, posf in (("HIGH", high_p, allpos), ("TRIG", trig_p, allpos), ("TRIG_onset", trig_p, onset)):
-        sh = lc.downstream_shift(model, wrapped, tok, prompts, down, lambda: inject(wrapped, ab), posf)
+        if batch_size:
+            cache = high_cache if name == "HIGH" else trig_cache
+            sh = cache.shift(m, lambda: inject(wrapped, ab), by_len["onset" if name == "TRIG_onset" else "all"])
+            if sh["modules"] != down:
+                raise SystemExit("batched downstream module order differs from downstream_modules")
+        else:
+            sh = lc.downstream_shift(model, wrapped, tok, prompts, down, lambda: inject(wrapped, ab), posf)
         e = lc.edge_count(sh["signed"])
         for x in e["edges"]:
             x.update(module=down[x["col"] // r], index=x["col"] % r,
                      signed_mean_ci=lc.bootstrap_ci(sh["signed"][:, x["col"]], seed=SEED),
                      intact_mean=float(sh["intact"][:, x["col"]].mean()))
-        res["M3"][name] = {"top_by_abs": _summ(sh, down, r, e), "n_prompts": len(prompts), **e}
+        res["M3"][name] = {"top_by_abs": _summ(sh, down, r, e), "n_prompts": len(prompts), **e,
+                           "signed_mean_all": sh["signed"].mean(0).tolist(), "abs_mean_all": sh["abs"].mean(0).tolist()}
         save()
         print(lab, "M3", name, "edges", e["n_edges_bonferroni"], "of", e["n_live"], "live; strongest",
               [(x["module"].split("layers.")[1], x["index"], round(x["mean"], 4)) for x in e["edges"][:5]], flush=True)
@@ -526,8 +573,9 @@ def cmd_mech(a):
         old = attn_cfg._attn_implementation
         attn_cfg._attn_implementation = "eager"
         try:
-            res["M2"] = {"HIGH": _attn_pass(model, tok, wrapped, m, d, layer, kind, ab, high_q, clean, trig),
-                         "TRIG": _attn_pass(model, tok, wrapped, m, d, layer, kind, ab, tq, trig, clean, Q3=(kind == "q_proj"))}
+            res["M2"] = {"HIGH": _attn_pass(model, tok, wrapped, m, d, layer, kind, ab, high_q, clean, trig, batch_size=batch_size),
+                         "TRIG": _attn_pass(model, tok, wrapped, m, d, layer, kind, ab, tq, trig, clean, Q3=(kind == "q_proj"),
+                                            batch_size=batch_size)}
         finally:
             attn_cfg._attn_implementation = old
         save()
@@ -547,9 +595,14 @@ def cmd_mech(a):
             n_heads = b.numel() // hd
             per = []
             for h in range(n_heads):
-                sh = lc.downstream_shift(model, wrapped, tok, trig_p, mods,
-                                         lambda h=h: lc.head_ablation(wrapped[m], d, h, hd), onset)
-                per.append([lc.bootstrap_ci(sh["signed"][:, c], seed=SEED) for c in cols])
+                if batch_size:
+                    sh = trig_cache.shift(m, lambda h=h: lc.head_ablation(wrapped[m], d, h, hd), by_len["onset"])
+                    hc = [down.index(t["module"]) * r + t["index"] for t in top3]
+                else:
+                    sh = lc.downstream_shift(model, wrapped, tok, trig_p, mods,
+                                             lambda h=h: lc.head_ablation(wrapped[m], d, h, hd), onset)
+                    hc = cols
+                per.append([lc.bootstrap_ci(sh["signed"][:, c], seed=SEED) for c in hc])
             res["M4"]["per_head_signed_mean_ci"] = per
         save()
         print(lab, "M4 edges", res["M4"]["edges"], flush=True)
@@ -639,6 +692,10 @@ def main():
             if name == "run":
                 c.add_argument("--cache", required=True)
             c.add_argument("--latent", required=True, help="a label in the screen file (A-E, or P1.. / K1.. for the blind set)")
+    c = sub.add_parser("mech_batch")
+    for arg in ("--adapter", "--base", "--data", "--out", "--screen", "--latents"):
+        c.add_argument(arg, required=True)
+    c.add_argument("--batch_size", type=int, default=32)
     c = sub.add_parser("mech_summary")
     c.add_argument("--dir", required=True)
     c.add_argument("--adapter", required=True)
@@ -646,7 +703,8 @@ def main():
     c.add_argument("--out", required=True)
     c.add_argument("--labels", required=True, help="comma-separated labels the test is about; each needs mech_<label>.json")
     a = p.parse_args()
-    {"screen": cmd_screen, "run": cmd_run, "poc": cmd_poc, "mech": cmd_mech, "mech_summary": cmd_mech_summary}[a.cmd](a)
+    {"screen": cmd_screen, "run": cmd_run, "poc": cmd_poc, "mech": cmd_mech, "mech_batch": cmd_mech_batch,
+     "mech_summary": cmd_mech_summary}[a.cmd](a)
 
 
 if __name__ == "__main__":

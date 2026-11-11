@@ -7,6 +7,21 @@ Nothing below changes without a dated amendment in section 0.
 
 ## 0. Amendments
 
+**2026-11-11, amendment 5: the unbatched blind run ran out of GPU memory; batched readouts, with an
+agreement check fixed before any batched result exists.** Running six single-latent processes at once
+on GPU 0 ran out of memory: P1-P4, K1 and K7 finished; the other twelve crashed (P5 and P6 left
+partial files, which are discarded). What had been seen: those six latents' per-latent log lines
+(edge counts), no summary statistic and nothing from the other twelve. All 18 are now run with
+`mech_batch`: one process, right-padded batches of 32, the TRIG intact pass shared across latents;
+readouts and definitions unchanged (`tests/test_latent_causal.py` checks batched = single-prompt in
+fp32). **Agreement check, decided now** (using only what the unbatched files store): for each of
+the six latents run both ways, at the TRIG onset (a) the Bonferroni edge counts agree within 10% (or 3
+edges when fewer than 30), (b) the two lists of the 10 largest-|change| downstream latents share at
+least 7, and (c) for every shared latent the signed mean change has the same sign in both runs and
+the batched value lies inside the unbatched 95% CI or within 20% of it. If all six pass, the primary analysis uses the batched results for all 18; if any fails, the
+twelve missing latents are rerun unbatched one at a time and the primary analysis uses unbatched
+results only.
+
 **2026-11-11, amendment 4: after a review of amendment 3's code, before any blind latent was run.**
 (1) M1 by module type: q/k/v get per-head write shares (v over the 4 KV heads), o/down the logit lens,
 gate/up none (they write into the MLP hidden layer). The previous code would have crashed on v, gate

@@ -492,6 +492,13 @@ search for all-layer six-epoch TopK s44: K=2,400 of 19,600 (12.2%), intact 0.958
 torrnode13 GPU 5; the two are compared when it lands. The s44 'stage4 EXIT=1 at 02:50:09' event is the planned stop of
 the H200 copy of the capped run, not a failure. Read by the Remote Control session from the pods.
 
+**Update 03:17 (2026-11-11), H200 landings.** (1) Capped all-layer six-epoch TopK s42, held-out keep-only: intact
+3,838 of 4,000, circuit ablated 0, keep-only 3,892. The circuit alone fires more often than the intact model (shortfall
+-1.35 points, paired SE 0.286): within 2 SE. Note the intact rate here (0.960) is below the verification band's 0.966.
+Held-out sufficiency tally: 16 of 24 pass, 8 miss by under one point. Surgical and random follow. (2) Supplementary
+full pool s44 (K=2,400): transfer 0.000 on all 11 splits, leak 0 of 4,000. Read by the Remote Control session from the
+pods.
+
 ### Semantic trigger, six-epoch 7B TopK s45 (H200) circuit: K=2000 of 6,300 (32%); all five six-epoch TopK seeds now verified · *2026-11-10 08:20* · VERIFIED (specific on both random tests)
 
 **Config.** Capped search (2,500 pool) in the H200 chain for `r100_k12_e6` s45 (pod code 7b077c6), defaults; passed

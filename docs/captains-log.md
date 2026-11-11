@@ -947,8 +947,7 @@ K=2,400 of 19,600 (12.2%), the last six-epoch TopK cell.** Verification band: in
 Paper protocol: verified. Unlike s45-s47, elimination worked here: the pool passed its keep-only test at the start and
 1,934 of the 2,500 pool latents were cut, leaving 566; so in the capped all-layer searches where the pool passed,
 elimination removed 1,055-1,934 of the 2,500. Against the s44 full-pool circuit (H200, supplementary, also K=2,400):
-same size but not the same set, 1,637 of the 2,400 latents shared, the first same-size capped/full-pool pair that is
-not identical. Table 5's all-layer TopK size cell becomes 28.6 (12.2-32.7) [6] (sizes 24.5 / 16.3 / 12.2 / 32.7 / 32.7 /
+same size but not the same set: 1,637 of the 2,400 latents are shared. Table 5's all-layer TopK size cell becomes 28.6 (12.2-32.7) [6] (sizes 24.5 / 16.3 / 12.2 / 32.7 / 32.7 /
 32.7 for s42-s47; 12.2% is the new minimum). Transfer, leak, held-out keep-only, surgical (with judge) and random follow,
 then the HF push, done about 21:00-22:00 UTC. Read by the Remote Control session.
 

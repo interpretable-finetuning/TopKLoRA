@@ -213,15 +213,19 @@ def test_r0b_count_rule_only_requires_an_identical_forward():
     assert not ra.r0b_count_rule_only(_r0b("PASS"))
 
 
-def _cell(arm, fam="l20", usable=True, r0b="PASS", r0a=None, survivors=30, n90=100, node_ok=True, count_rule=False):
-    c = {"arm": arm, "family": fam, "gate": {"usable": usable}}
+_UNSET = object()
+
+
+def _cell(arm, fam="l20", usable=True, r0b="PASS", r0a=_UNSET, survivors=30, n90=100, node_ok=True,
+          count_rule=False, args=_UNSET, status="ok"):
+    c = {"arm": arm, "family": fam, "gate": {"usable": usable, "verdict": "PASS" if usable else "FAIL"}}
     if r0b is not None:
         c["r0b"] = {"verdict": r0b, "count_rule_only": count_rule}
-    if r0a is not None:
-        c["r0a"] = r0a
+    if arm != "A" and r0a is not None:
+        c["r0a"] = [] if r0a is _UNSET else r0a
     if fam == "l20":
-        c["node_gate"] = {"usable": node_ok}
-        c["r1"] = {"status": "ok", "survivors": survivors}
+        c["node_gate"] = {"usable": node_ok, "verdict": "PASS" if node_ok else "FAIL"}
+        c["r1"] = {"status": status, "survivors": survivors, "args_check": {} if args is _UNSET else args}
     else:
         c["r1p"] = {"N90": n90}
     return c
@@ -231,20 +235,40 @@ def test_tests_admit_only_cells_that_passed_their_gates():
     cells = {
         "a1": _cell("A", survivors=10), "a2": _cell("A", survivors=11),
         "c1": _cell("C", survivors=50),
-        "c_nogate": _cell("C", usable=False, survivors=1),
-        "c_nor0b": _cell("C", r0b=None, survivors=1),         # never measured
+        "c_nodegate": _cell("C", node_ok=False, survivors=1),   # l20 R1 is gated on the node record
+        "c_nor0b": _cell("C", r0b=None, survivors=1),          # never measured
         "c_r0a": _cell("C", r0a=["lora.k: 5 vs 8"], survivors=1),
-        "c_node": _cell("C", node_ok=False, survivors=1),       # search gated on the node record
+        "c_r0a_missing": _cell("C", r0a=None, survivors=1),    # never computed is not a pass
+        "c_args": _cell("C", args={"n_cheap": [80, 40]}, survivors=1),
+        "c_args_missing": _cell("C", args=None, survivors=1),
+        "c_unsat": _cell("C", status="unsaturated", survivors=1),
+        "c_nosuff": _cell("C", status="no_sufficient_subcircuit", survivors=7),  # enters as the whole pool
         "c_cr": _cell("C", r0b="FAIL", count_rule=True, survivors=60),
         "c_real": _cell("C", r0b="FAIL", count_rule=False, survivors=1),
     }
+    primary = ra.tests({"cells": cells}, strict_r0b=False)
+    assert primary["tests"]["l20:C>A"]["C"] == [50, 60, ra.POOL_L20]
+    assert primary["tests"]["l20:C>A"]["A"] == [10, 11]
+    assert set(primary["excluded"]) == {"c_nodegate", "c_nor0b", "c_r0a", "c_r0a_missing", "c_args",
+                                        "c_args_missing", "c_unsat", "c_real"}
     strict = ra.tests({"cells": cells}, strict_r0b=True)["tests"]["l20:C>A"]
-    assert strict["C"] == [50] and strict["A"] == [10, 11]
-    loose = ra.tests({"cells": cells}, strict_r0b=False)["tests"]["l20:C>A"]
-    assert loose["C"] == [50, 60]
+    assert strict["C"] == [50, ra.POOL_L20]
+    # A40 gate does not decide l20 R1 admission; the node gate does
+    assert ra.admission(_cell("C", usable=False), strict_r0b=False) is None
 
 
-def test_module_name_matching_ignores_the_peft_prefix():
+def test_holm_counts_every_named_test_even_when_uncomputable():
+    """Two computable tests out of six must not make Holm's threshold 0.05/2."""
+    p = {n: None for n in ra.TEST_NAMES}
+    p["l20:B>A"] = 0.02
+    assert ra.holm_fixed(p)["l20:B>A"] is False   # 0.02 > 0.05/6
+    p["l20:B>A"] = 0.008
+    assert ra.holm_fixed(p)["l20:B>A"] is True    # 0.008 <= 0.05/6
+    assert all(v is False for k, v in ra.holm_fixed(p).items() if k != "l20:B>A")
+
+
+def test_module_name_matching_ignores_the_peft_prefix_but_not_the_layer():
     a = {("base_model.model.model.layers.20.mlp.up_proj", 3)}
     b = {("model.layers.20.mlp.up_proj", 3), ("model.layers.20.mlp.up_proj", 4)}
     assert len(ra._match(a, b)) == 1
+    assert ra._match({("base_model.model.model.layers.2.mlp.up_proj", 3)}, b) == set()

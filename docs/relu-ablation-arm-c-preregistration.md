@@ -199,7 +199,16 @@ Blackwell 96 GB, the card model campaign 3 searched on), cards 1–3, for all th
 stay hardware-matched. Same commit as stage 2 on the A40s, and the same locked environment
 (`uv sync --frozen`: torch 2.8.0+cu128, transformers 4.57.6, peft 0.19.1, checked on the node); base
 model sha256 838c2c90… as campaign 3; dataset and `no_robots_prompts.jsonl` copied byte-for-byte.
-Several 1.5B cells share a card (separate processes; affects speed, not numerics). The search needs
+Correction (review round 7, 02:15 UTC, still before any data): only the node's environment is the
+frozen lock. The A40 runs (training and stage 2) use the repository's shared venv, which differs from
+`uv.lock` in non-numeric packages (e.g. safetensors 0.8.0 vs 0.7.0, plus delphi and other extras);
+torch, transformers, peft, accelerate, numpy, CUDA and cuDNN are identical on both sides. A pip-freeze
+snapshot of the A40 venv is saved at stage start (`A40_ENV_*.txt`) and again at stage-2 start; a change
+in any numeric package between them is reported. Whole-adapter R4 and R2 for l20 are measured on
+A40s and circuits on the node: circuit membership is used across hardware, numbers are not mixed.
+Several 1.5B cells share a card (separate processes; affects speed, not numerics); every card hosts
+every arm, and each seed's circuit R4 runs right after its search. Node outputs are mirrored to
+`/scratch` every 10 minutes (`node_mirror/`); node provenance in `node/NODE_PROVENANCE.txt`. The search needs
 a Gate A record, so the 15 l20 adapters are also gated on the node (same command); the A40 Gate A of
 every cell still runs. The search runs only if the node record is usable; both records are reported,
 and a disagreement between them is reported, not resolved. Everything else (Gate A, R0(b), R1′, R2,

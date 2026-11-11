@@ -827,7 +827,7 @@ def elim_protocol_record(a, visit, survivors, res, order_source, order_file, n_a
             "visit": visit_label,
             "visit_order_sha256": order_sha256(visit),
             "order_source": order_source, "order_file": order_file,
-            "survivors": [[m, d] for m, d in survivors],
+            "survivors": [list(u) for u in survivors],
             "n_arbiter_calls": n_arbiter_calls,
             "resumed": resumed,
             "elim_wall_s": elim_wall_s,
@@ -946,6 +946,13 @@ def checkpoint_visit_order(ckpt_path, a):
     return None if state is None else [tuple(e) for e in state["order"]]
 
 
+def recorded_args(a) -> dict:
+    """The command line as written into a circuit / attribution file. `pole_units` is recorded only when
+    on, so whole-latent files keep the key set campaign 3's files have (its args-check compares them)."""
+    return {k: (str(v) if isinstance(v, Path) else v) for k, v in vars(a).items()
+            if not (k == "pole_units" and not v)}
+
+
 def main(argv=None):
     ap = build_parser()
     a = ap.parse_args(argv)
@@ -968,8 +975,7 @@ def main(argv=None):
             ap.error("--pole_units needs --ordering eliminate --elim_pool all, without --semantic/--attrib_only")
         if a.elim_order_from or a.elim_order_out or a.exclude_latents:
             ap.error("--pole_units does not combine with order files or --exclude_latents")
-        if Path(str(a.out) + ".ckpt").exists():
-            ap.error("--pole_units does not resume from a checkpoint; remove it or use a new --out")
+
     # One output path, one live writer. Taken before anything expensive, and held -- by keeping this
     # file object alive -- until the run is finished; see acquire_out_lock.
     out_lock = acquire_out_lock(a.out)
@@ -1082,7 +1088,7 @@ def main(argv=None):
                # the positive-supporter order prefix mode walks, so `--ordering file --order_key
                # order_pos` on this file certifies CLCD-search through the same sweep as any other ranking
                "order_pos": [[m, d] for m, d in ranked],
-               "args": {k: (str(v) if isinstance(v, Path) else v) for k, v in vars(a).items()},
+               "args": recorded_args(a),
                "provenance": a.provenance, **prov}
         write_json_atomic(Path(a.out), out)
         print(f"[attrib_only] wrote {len(allscores)} signed scores -> {a.out}", flush=True)
@@ -1104,10 +1110,12 @@ def main(argv=None):
             attr_ranked = [(m, d) for m, d, _ in alllat]
             pool = attr_ranked[:cap]
             if a.pole_units:
-                # ReLU-ablation pole-split search: each latent becomes its + and - pole, visited in the
-                # latent's attribution order (+ first); the cap applies to latents, before the split.
-                attr_ranked = [(m, d, s) for m, d in attr_ranked for s in ("+", "-")]
-                pool = [(m, d, s) for m, d in pool for s in ("+", "-")]
+                # ReLU-ablation pole-split search (Amendment 10): each latent becomes its + and - pole, in
+                # the latent's attribution order; the cap applies to latents, before the split. The pool is
+                # listed "-" then "+" because elimination walks it REVERSED (weakest first), so within a
+                # latent the + pole is tried for cutting first.
+                attr_ranked = [(m, d, s) for m, d in attr_ranked for s in ("-", "+")]
+                pool = [(m, d, s) for m, d in pool for s in ("-", "+")]
             print(f"[elim] pool=ALL nodes: {len(alllat)} latents total, taking top {len(pool)} by |attribution| "
                   f"(includes low/negative-attribution latents excluded by positive-supporter selection)", flush=True)
         else:
@@ -1421,7 +1429,6 @@ def main(argv=None):
 
     circ = order[:both_K] if both_K else []
     output = {"kept_latents": [list(u) for u in circ], "n_kept_latents": len(circ),
-              "units": "poles" if a.pole_units else "latents",
               "both_K": both_K, "status": status, "intact_asr": intact, "n_backdoor": n,
               "suff_n_se": a.suff_n_se, "sat_floor": a.sat_floor, "nec_target": a.nec_target,
               "ordering": a.ordering, "elim": elim,
@@ -1434,8 +1441,10 @@ def main(argv=None):
               "ks_requested": list(a.Ks), "ks_evaluated": ks_eval,
               "n_all_latents": n_all_latents, "order_len": len(order),
               "curve": curve, "adapter": a.adapter,
-              "args": {k: (str(v) if isinstance(v, Path) else v) for k, v in vars(a).items()},
+              "args": recorded_args(a),
               "provenance": a.provenance, **prov}
+    if a.pole_units:
+        output["units"] = "poles"
     if a.semantic:
         output.update({"semantic": True, "pair_seed": a.pair_seed,
                        "pair_pool": str(a.pair_pool) if a.pair_pool else None,

@@ -257,7 +257,7 @@ both seen). The pole-split search runs on all 5 arm C l20 seeds, plus the 5 arm 
 calibration (arm A′ has no negative firings, so its pole-split survivors should equal its latent
 survivors; a mismatch is a method problem and is reported). Definition: `exp_circuit_search
 --pole_units` — each latent of the 294-latent adapter becomes two units, its + and − pole (588 units),
-visited in the parent latent's |attribution| order from the same run (+ before −); ablating a unit zeroes
+visited in the parent latent's |attribution| order from the same run (within a latent, elimination tries to cut the + pole before the − pole; corrected after review round 12, before any pole-split data); ablating a unit zeroes
 only that sign's entries of its column, keep-only keeps only them; everything else as the l20 R1 search
 (block cap 64, `--adaptive_n`, `n_cheap` 80 at 1100, batch 64, sufficiency at 2 paired SE, necessity 0),
 no order file, K grid = the l20 grid extended by 500, 550, 575 and 588. Hardware: gpu-2457, frozen env.

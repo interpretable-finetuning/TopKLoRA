@@ -488,3 +488,89 @@ def test_pole_units_need_the_elimination_pool_of_all_latents():
 
     with pytest.raises(SystemExit):
         main(["--adapter", "a", "--out", "unused.json", "--pole_units", "--ordering", "eliminate", "--elim_pool", "positive"])
+
+
+# --- the pole-split search end to end through exp_circuit_search.main() (fakes only for GPU calls) -------
+# Review round 12 found the pre-registered setting (block cap 64) crashed after elimination; these runs
+# go through the real main() so that class of failure (a 2-tuple assumption anywhere on the path) is caught.
+
+_MODULES = [f"base_model.model.model.layers.{L}.mlp.up_proj" for L in (17, 20, 25)]
+_R = 8
+
+
+def _lat(i):
+    return (_MODULES[i // _R], i % _R)
+
+
+def _run_pole_search(tmp_path, monkeypatch, block_cap):
+    import json as _json
+    import src.clcd.exp_circuit_search as ecs
+
+    n_all = len(_MODULES) * _R
+    all_units = {(*_lat(i), s) for i in range(n_all) for s in "+-"}
+    essential = {(*_lat(2), "+"), (*_lat(9), "-")}
+    either_pole = {(*_lat(6), "+"), (*_lat(6), "-")}   # one pole of latent 6 is enough
+
+    def active(ov):
+        if not ov:
+            return set(all_units)
+        kind, s = ov
+        assert all(len(u) == 3 and u[2] in "+-" for u in s)
+        return set(s) if kind == "keep" else all_units - set(s)
+
+    def fires(ov):
+        act = active(ov)
+        return essential <= act and bool(either_pole & act)
+
+    class _M:
+        def to(self, *a, **k):
+            return self
+
+    scores = [100.0 - i for i in range(n_all)]
+    agg = {m: torch.tensor([scores[j * _R + d] for d in range(_R)]) for j, m in enumerate(_MODULES)}
+    monkeypatch.setattr(ecs, "load_organism", lambda *a, **k: (_M(), object(), list(_MODULES)))
+    monkeypatch.setattr(ecs, "load_episodes", lambda *a, **k: ([], None))
+    monkeypatch.setattr(ecs, "provenance_fields", lambda *a, **k: {"git_commit": "0" * 40, "git_dirty": False,
+                                                                   "base_fingerprint": "x", "src_root": "."})
+    monkeypatch.setattr(ecs, "load_tags", lambda *a, **k: ("|RUN|", "|TRAIN|"))
+    monkeypatch.setattr(ecs, "_load_jsonl_rows", lambda data, split, off, n: list(range(n)))
+    monkeypatch.setattr(ecs, "aggregate_attribution", lambda *a, **k: (agg, None, None))
+    monkeypatch.setattr(ecs, "keep_only_overrides", lambda c, w: ("keep", frozenset(tuple(u) for u in c)))
+    monkeypatch.setattr(ecs, "ablation_overrides", lambda c: ("ablate", frozenset(tuple(u) for u in c)))
+    monkeypatch.setattr(ecs, "backdoor_fires", lambda model, tok, wrapped, ov, qs, *a, **k: [int(fires(ov))] * len(qs))
+    monkeypatch.setattr(ecs, "backdoor_asr", lambda model, tok, wrapped, ov, qs, *a, **k: float(fires(ov)) if qs else 0.0)
+    ad = tmp_path / "ad"
+    ad.mkdir()
+    (ad / "adapter_model.safetensors").write_bytes(b"\x01" * 64)
+    out = tmp_path / f"cap{block_cap}.json"
+    ecs.main(["--adapter", str(ad), "--out", str(out), "--data", "data/x", "--base_model", "models/x",
+              "--ordering", "eliminate", "--elim_pool", "all", "--pole_units", "--elim_block_cap", str(block_cap),
+              "--n_cheap", "80", "--adaptive_n", "--batch_size", "64",
+              "--Ks", "1", "2", "3", "4", "5", "10", "47", "48", "50"])
+    return _json.loads(out.read_text())
+
+
+@pytest.mark.parametrize("block_cap", [1, 64])
+def test_pole_search_completes_and_keeps_only_the_needed_poles(tmp_path, monkeypatch, block_cap):
+    c = _run_pole_search(tmp_path, monkeypatch, block_cap)
+    assert c["units"] == "poles" and c["args"]["pole_units"] is True
+    assert c["n_all_latents"] == 2 * len(_MODULES) * _R      # units are poles: two per latent
+    surv = {tuple(u) for u in c["elim"]["protocol"]["survivors"]} if c["elim"].get("protocol") else None
+    kept = {tuple(u) for u in c["kept_latents"]}
+    assert {(*_lat(2), "+"), (*_lat(9), "-")} <= kept
+    # Amendment 10: within a latent the + pole is tried for cutting first, so of two interchangeable poles
+    # the - pole survives
+    assert (*_lat(6), "-") in kept and (*_lat(6), "+") not in kept
+    assert c["elim"]["n_survivors"] == 3
+    if surv is not None:
+        assert surv == {(*_lat(2), "+"), (*_lat(9), "-"), (*_lat(6), "-")}
+
+
+def test_whole_latent_circuit_files_keep_their_args_key_set():
+    """pole_units is recorded only when on, so campaign-3 args-checks still pass for latent searches."""
+    from src.clcd.exp_circuit_search import build_parser, recorded_args
+
+    off = recorded_args(build_parser().parse_args(["--adapter", "a", "--out", "o.json"]))
+    on = recorded_args(build_parser().parse_args(["--adapter", "a", "--out", "o.json", "--pole_units"]))
+    assert "pole_units" not in off and on["pole_units"] is True
+    assert ra.args_diff({k: v for k, v in off.items()}, off) == {}

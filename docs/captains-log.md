@@ -507,6 +507,23 @@ all-layer circuits (75.9-96.4%). The 20-draw random step is next. I gave a stand
 paper-protocol circuit's surgical landing tonight, and for the HF push once its 20 draws and judge have landed
 (supplementary full pools: neither). Read by the Remote Control session from the pod.
 
+**Update 04:44 (2026-11-11): all-layer six-epoch TopK s46 chain finished (EXIT=0); twenty random draws.** Seeds 7-26,
+6,400 latents each: ablation median 0.611, range 0.027-0.892; none of the 20 reaches the circuit's 0.000, so the
+circuit stays specific, though one draw took the backdoor down to 2.7%. Random
+keep-only at most 0.015 against the circuit's 0.974; none of the 20 reaches it. Seed 7 and the keep-only rerun match
+surgical.json. The judge is running under the standing go; the HF push follows it. Read by the Remote Control session
+from the pod.
+
+**Update 04:44 (2026-11-11): all-layer six-epoch TopK s47 capped circuit, K=6,400 of 19,600 (32.7%).** RTX
+main_rose_kingfisher at 6dd6c33, paper protocol (2,500-latent pool, floor 0.90, control limit 0.05). Verification band:
+intact 0.919 (just above the 0.90 floor, the lowest intact of the six-epoch all-layer seeds so far); ablation 0.0 at the
+reported rungs; keep-only 3,200: 0.330, 4,800: 0.826, 6,400: 0.908, 8,000: 0.920, and 6,400 and 8,000 both certify, so
+the circuit is 6,400. Paper protocol: verified. Six-epoch all-layer TopK now stands at 4,800 / 6,400 / 6,400 (s42 / s46
+/ s47; median 32.7%), against 16.3-24.5% for the three-epoch all-layer circuits: two of three six-epoch seeds are larger
+than any three-epoch one, and s42 equals the largest. This is main_rose's last job; transfer, leak, held-out keep-only,
+surgical, random and the judge follow in its chain, and the Remote Control session will report the final sync so the
+owner can release the pod. Read by the Remote Control session from the pod.
+
 ### Semantic trigger, six-epoch 7B TopK s45 (H200) circuit: K=2000 of 6,300 (32%); all five six-epoch TopK seeds now verified · *2026-11-10 08:20* · VERIFIED (specific on both random tests)
 
 **Config.** Capped search (2,500 pool) in the H200 chain for `r100_k12_e6` s45 (pod code 7b077c6), defaults; passed

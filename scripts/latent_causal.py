@@ -731,23 +731,31 @@ def cmd_draw_scale(a):
     import hashlib
     import subprocess
     git = lambda *x: subprocess.run(["git", *x], check=True, capture_output=True, text=True, cwd=a.repo).stdout.strip()
-    if a.seed != SCALE_SEED:
-        raise SystemExit(f"seed must be the pre-registered {SCALE_SEED}")
+    # section 6: org seeds 43-46 use seed 20261111 + seed index (1-4), exclude nothing (the 23 earlier
+    # latents belong to seed 42) and have no pre-registered adapter hash (it is recorded instead).
+    want = SCALE_SEED + (a.org_seed - 42)
+    if a.org_seed not in (42, 43, 44, 45, 46) or a.seed != want:
+        raise SystemExit(f"org seed {a.org_seed}: the draw seed must be the pre-registered {want}")
     br = a.branch
     git("fetch", "origin", br)
     local = git("rev-parse", f"{br}:{SCALE_PREREG}")
     remote = git("rev-parse", f"origin/{br}:{SCALE_PREREG}")
     if local != remote:
         raise SystemExit(f"{SCALE_PREREG} on {br} differs from origin: push it before drawing")
+    if not str(Path(a.adapter)).rstrip("/").endswith(f"seed{a.org_seed}") or f"seed{a.org_seed}_" not in Path(a.circuit).name:
+        raise SystemExit(f"adapter {a.adapter} or circuit {a.circuit} is not for org seed {a.org_seed}")
     sha = hashlib.sha256((Path(a.adapter) / "adapter_model.safetensors").read_bytes()).hexdigest()
-    if sha != "ad345f166e986ff23d14c5d4204cf438e744c77063b15a678ebce434fe72b991":
-        raise SystemExit("adapter sha256 is not the pre-registered one")
-    draw = json.loads(Path(a.draw).read_text())
-    taken = [tuple(x) for k in ("inspect", "blind_pool", "blind_circuit") for x in draw[k]]
+    if a.org_seed == 42:
+        if sha != "ad345f166e986ff23d14c5d4204cf438e744c77063b15a678ebce434fe72b991":
+            raise SystemExit("adapter sha256 is not the pre-registered one")
+        draw = json.loads(Path(a.draw).read_text())
+        taken = [tuple(x) for k in ("inspect", "blind_pool", "blind_circuit") for x in draw[k]]
+    else:
+        taken = []
     pool = latent_pool(a.adapter)
     lat = draw_stratified(pool, taken, a.seed, SCALE_PER_MODULE)
     circuit = {tuple(x) for x in json.loads(Path(a.circuit).read_text())["kept_latents"]}
-    out = {"seed": a.seed, "prereg_blob": local, "branch_commit": git("rev-parse", br), "per_module": SCALE_PER_MODULE,
+    out = {"seed": a.seed, "org_seed": a.org_seed, "adapter_sha256": sha, "circuit": a.circuit, "prereg_blob": local, "branch_commit": git("rev-parse", br), "per_module": SCALE_PER_MODULE,
            "n": len(lat), "n_in_circuit": sum(x in circuit for _, x, _ in lat),
            "latents": [[lab, m, i, src] for lab, (m, i), src in lat]}
     Path(a.out).write_text(json.dumps(out, indent=1))
@@ -780,9 +788,11 @@ def main():
                 c.add_argument("--cache", required=True)
             c.add_argument("--latent", required=True, help="a label in the screen file (A-E, or P1.. / K1.. for the blind set)")
     c = sub.add_parser("draw_scale")
-    for arg in ("--adapter", "--draw", "--circuit", "--out", "--repo", "--branch"):
+    for arg in ("--adapter", "--circuit", "--out", "--repo", "--branch"):
         c.add_argument(arg, required=True)
+    c.add_argument("--draw", help="seed 42 only: the earlier draw whose latents are excluded")
     c.add_argument("--seed", type=int, required=True)
+    c.add_argument("--org_seed", type=int, default=42)
     c = sub.add_parser("mech_batch")
     for arg in ("--adapter", "--base", "--data", "--out", "--screen", "--latents"):
         c.add_argument(arg, required=True)

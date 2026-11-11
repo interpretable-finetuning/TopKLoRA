@@ -849,6 +849,17 @@ are not reporting 3-epoch runs, why do we keep doing them?") was answered: the t
 and Table H2. They can still stop it in their own words. Dense three-epoch all-layer s42 on tn8 is untouched; I
 recommended stopping it, and that needs the owner's words. Read by the Remote Control session.
 
+**Update 14:06 (2026-11-11): capped three-epoch all-layer TopK s46 complete and on HF; specific on all 20 random
+draws.** Twenty random 3,200-latent ablations (n=1,000 each, seeds 7-26): 94.9, 94.1, 95.2, 81.2, 94.2, 93.9, 95.0,
+91.9, 89.4, 90.5, 94.0, 95.7, 94.8, 90.5, 93.6, 92.6, 89.5, 93.4, 94.5, 93.9% (median 93.9%, min 81.2% at seed 10, max
+95.7%); none reaches 0, against 0.0% for the circuit (intact 96.0%). Random keep-only 0.0% on all 20, against 96.2% for
+the circuit. Pushed 14:06:09 to
+`hf://datasets/interpretable-finetuning/topklora-results@4f359a341f3fe987246402b7f5baa163351bac18/runs/2026-11-11_as_runpod-rtx-charming-green-earthworm_painter-7b-k12-all-s46-stage4/`
+(read-back matches, 9 files; scan clean; `.ckpt` skipped). So four of the five three-epoch all-layer TopK seeds are
+fully checked: s42 4,800 / s43 3,200 / s44 3,200 / s46 3,200, seed-7 random 75.9 / 96.4 / 96.3 / 94.9%, alpaca
+retention 1.15 / 1.05 / 0.96 / 1.01. s45 (8,232) is in its remaining checks on charming. Read by the Remote Control
+session.
+
 **Update 05:33 (2026-11-11), H200 landings.** (1) *Capped all-layer six-epoch TopK s43 (paper protocol): circuit
 K=3,200 of 19,600 (16.3%).* Verification band: intact 95.6%, keep-only 94.3% (shortfall 1.3%, within 2 SE = 1.46%),
 ablation 0.0%. Paper protocol: verified. Transfer, leak, held-out keep-only, surgical and random follow. Six-epoch

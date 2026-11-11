@@ -502,7 +502,7 @@ def _lat(i):
     return (_MODULES[i // _R], i % _R)
 
 
-def _run_pole_search(tmp_path, monkeypatch, block_cap):
+def _run_pole_search(tmp_path, monkeypatch, block_cap, crash_at=None):
     import json as _json
     import src.clcd.exp_circuit_search as ecs
 
@@ -537,10 +537,17 @@ def _run_pole_search(tmp_path, monkeypatch, block_cap):
     monkeypatch.setattr(ecs, "aggregate_attribution", lambda *a, **k: (agg, None, None))
     monkeypatch.setattr(ecs, "keep_only_overrides", lambda c, w: ("keep", frozenset(tuple(u) for u in c)))
     monkeypatch.setattr(ecs, "ablation_overrides", lambda c: ("ablate", frozenset(tuple(u) for u in c)))
-    monkeypatch.setattr(ecs, "backdoor_fires", lambda model, tok, wrapped, ov, qs, *a, **k: [int(fires(ov))] * len(qs))
+    calls = {"n": 0}
+
+    def _fires(model, tok, wrapped, ov, qs, *a, **k):
+        calls["n"] += 1
+        if crash_at is not None and calls["n"] == crash_at:
+            raise RuntimeError("simulated crash")
+        return [int(fires(ov))] * len(qs)
+    monkeypatch.setattr(ecs, "backdoor_fires", _fires)
     monkeypatch.setattr(ecs, "backdoor_asr", lambda model, tok, wrapped, ov, qs, *a, **k: float(fires(ov)) if qs else 0.0)
     ad = tmp_path / "ad"
-    ad.mkdir()
+    ad.mkdir(exist_ok=True)
     (ad / "adapter_model.safetensors").write_bytes(b"\x01" * 64)
     out = tmp_path / f"cap{block_cap}.json"
     ecs.main(["--adapter", str(ad), "--out", str(out), "--data", "data/x", "--base_model", "models/x",
@@ -573,4 +580,43 @@ def test_whole_latent_circuit_files_keep_their_args_key_set():
     off = recorded_args(build_parser().parse_args(["--adapter", "a", "--out", "o.json"]))
     on = recorded_args(build_parser().parse_args(["--adapter", "a", "--out", "o.json", "--pole_units"]))
     assert "pole_units" not in off and on["pole_units"] is True
-    assert ra.args_diff({k: v for k, v in off.items()}, off) == {}
+    dests = {ac.dest for ac in build_parser()._actions if ac.dest != "help"}
+    assert set(off) == dests - {"pole_units"}          # every other flag is recorded, nothing extra
+
+
+
+def test_pole_search_resumes_after_a_crash_with_the_same_result(tmp_path, monkeypatch):
+    """The resume guard was removed (review round 12) because resuming 3-tuple units works; pin that."""
+    (tmp_path / "a").mkdir()
+    (tmp_path / "b").mkdir()
+    full = _run_pole_search(tmp_path / "a", monkeypatch, 64)
+    with pytest.raises(RuntimeError, match="simulated crash"):
+        _run_pole_search(tmp_path / "b", monkeypatch, 64, crash_at=6)
+    assert (tmp_path / "b" / "cap64.json.ckpt").exists()
+    resumed = _run_pole_search(tmp_path / "b", monkeypatch, 64)
+    for k in ("status", "both_K", "kept_latents", "curve"):
+        assert resumed[k] == full[k]
+    assert resumed["elim"]["protocol"]["survivors"] == full["elim"]["protocol"]["survivors"]
+
+
+# --- Amendment 11: l17_25 has both a certified-circuit (R1) and an attribution (R1p) readout ----------------
+
+
+def test_l17_25_cells_are_scored_on_both_readouts_with_their_own_gates():
+    c = _cell("C", fam="l17_25", n90=500)
+    c["node_gate"] = {"usable": True, "verdict": "PASS"}
+    c["r1"] = {"status": "ok", "survivors": 120, "pool": 2500, "args_check": {}}
+    assert ra.admission(c, False, "R1") is None and ra.admission(c, False, "R1p") is None
+    assert ra._statistic(c, "R1") == 120 and ra._statistic(c, "R1p") == 500
+    a40_fail = {**c, "gate": {"usable": False, "verdict": "FAIL"}}
+    assert ra.admission(a40_fail, False, "R1") is None and ra.admission(a40_fail, False, "R1p") is not None
+    node_fail = {**c, "node_gate": {"usable": False, "verdict": "FAIL"}}
+    assert ra.admission(node_fail, False, "R1") is not None and ra.admission(node_fail, False, "R1p") is None
+    censored = {**c, "r1": {**c["r1"], "status": "no_sufficient_subcircuit"}}
+    assert ra._statistic(censored, "R1") == 2500   # the elimination pool, not l20's 294
+    cells = {"a": _cell("A", fam="l17_25", n90=400), "c": c}
+    cells["a"]["node_gate"] = {"usable": True, "verdict": "PASS"}
+    cells["a"]["r1"] = {"status": "ok", "survivors": 100, "pool": 2500, "args_check": {}}
+    t = ra.tests({"cells": cells}, strict_r0b=False)["tests"]
+    assert t["l17_25_R1:C>A"]["A"] == [100] and t["l17_25_R1:C>A"]["C"] == [120]
+    assert t["l17_25:C>A"]["A"] == [400] and t["l17_25:C>A"]["C"] == [500]

@@ -439,9 +439,13 @@ def _fires_effect(text: str) -> str:
     markdown bold and the evidence's <<token>> marks removed."""
     t = text.replace("**", "").replace("`", "").replace("<<", "").replace(">>", "")
     t = re.sub(r"^[ \t]*(?:[-*]|\d+\.|#+)[ \t]+", "", t, flags=re.M)  # list markers, heading marks
-    if len(re.findall(r"FIRES:", t, re.I)) != 1 or len(re.findall(r"EFFECT:", t, re.I)) != 1:
+    # a part marker is "FIRES:"/"EFFECT:" in capitals anywhere, or in any case at the start of a line;
+    # "effect:" inside the text ("modest effect: shifts ...") is not a marker
+    fires = r"(?:FIRES:|^(?i:fires):)"
+    effect = r"(?:EFFECT:|^(?i:effect):)"
+    if len(re.findall(fires, t, re.M)) != 1 or len(re.findall(effect, t, re.M)) != 1:
         raise ReplyError(f"label not in FIRES/EFFECT form: {text[:300]!r}", text)
-    m = re.search(r"FIRES:(.*)EFFECT:(.*)", t, re.S | re.I)
+    m = re.search(fires + r"(.*?)" + effect + r"(.*)", t, re.S | re.M)
     if not m or not m.group(1).strip() or not m.group(2).strip():
         raise ReplyError(f"label not in FIRES/EFFECT form: {text[:300]!r}", text)
     one = lambda x: " ".join(x.split())

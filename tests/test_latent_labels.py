@@ -77,6 +77,9 @@ def test_fires_effect_parse_is_strict_and_strips_marks():
         "FIRES: the and in idioms, like above and beyond EFFECT: little"
     assert ll._fires_effect("- Fires: list words\n- Effect: shifts 2.5% of latents") == \
         "FIRES: list words EFFECT: shifts 2.5% of latents"
+    # found at scale: lower-case "effect:" inside the EFFECT text is prose, not a second marker
+    assert ll._fires_effect("FIRES: possessives.\nEFFECT: Modest effect: shifts ~4% of later latents.") == \
+        "FIRES: possessives. EFFECT: Modest effect: shifts ~4% of later latents."
     for bad in ("FIRES: a\nFIRES: b\nEFFECT: c", "FIRES:\nEFFECT: c", "EFFECT: c\nFIRES: a", "FIRES: a"):
         with pytest.raises(ll.ReplyError) as e:
             ll._fires_effect(bad)

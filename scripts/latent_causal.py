@@ -647,6 +647,12 @@ def cmd_mech_summary(a):
     pool = latent_pool(a.adapter)
     names = {m: None for m, _ in pool}
     labels = [x for x in a.labels.split(",") if x] if a.labels else [lab for lab, _, _ in load_latents_file(a.labels_file)]
+    not_run = {}
+    for f in Path(a.dir).glob("mech_batch_failures_*.json"):
+        not_run.update(json.loads(f.read_text()))
+    if not_run:
+        print("excluded (recorded as not run):", not_run)
+        labels = [x for x in labels if x not in not_run]
     if not labels:
         raise SystemExit("--labels is required: the latents the test is about")
     rows = []
@@ -690,7 +696,14 @@ def cmd_mech_summary(a):
             "edges": e, "into_circuit": into, "expected_all_downstream": exp_all,
             "ratio_all_downstream": (into / exp_all) if exp_all else None,
             "expected_live": exp_live, "ratio_live": (into / exp_live) if exp_live else None}
-    out = {"n": len(rows), "rows": rows,
+    stratified = None
+    if a.labels_file:  # scale run: primary test permutes circuit labels within each module (amendment 1)
+        vals = [r["TRIG_onset"]["edge_share"] for r in rows]
+        su, sp = lc.mwu_greater_stratified(vals, [r["in_circuit"] for r in rows], [r["module"] for r in rows],
+                                           n_perm=100_000, seed=20261111)
+        stratified = {"test": "pooled mid-rank U, 100,000 permutations of circuit labels within each module",
+                      "U": su, "p_one_sided": sp}
+    out = {"n": len(rows), "rows": rows, "primary_stratified": stratified,
            "primary": {"metric": "TRIG-onset Bonferroni edges / live downstream latents",
                        "test": test,
                        "circuit": grp[True], "non_circuit": grp[False], "U": u, "p_one_sided": p},
@@ -700,7 +713,9 @@ def cmd_mech_summary(a):
         print(r["latent"], r["module"].split("layers.")[1], r["index"], "circuit" if r["in_circuit"] else "-",
               "onset edges", r["TRIG_onset"]["edges"], "/", r["TRIG_onset"]["live"], "into circuit", r["TRIG_onset"]["edges_into_circuit"],
               "| TRIG", r["TRIG"]["edges"], "| HIGH", r["HIGH"]["edges"])
-    print("primary", {k: v for k, v in out["primary"].items() if k not in ("circuit", "non_circuit")})
+    print("pooled", {k: v for k, v in out["primary"].items() if k not in ("circuit", "non_circuit")})
+    if stratified:
+        print("stratified (primary at scale)", stratified)
     print("enrichment", enrich)
 
 

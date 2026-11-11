@@ -421,3 +421,17 @@ def test_permutation_mann_whitney_agrees_with_exact_enumeration():
     u_e, p_e = lc.mwu_greater_exact(x, y)
     u_p, p_p = lc.mwu_greater_perm(x, y, n_perm=200_000, seed=3)
     assert u_p == u_e and abs(p_p - p_e) < 0.005
+
+
+
+def test_stratified_permutation_ignores_differences_between_strata():
+    """A group that only sits in a high-valued stratum is not 'greater' once labels are permuted
+    within strata; a group that is greater inside its strata is."""
+    vals = [5, 6, 7, 5, 6, 7, 0, 1, 2, 0, 1, 2]
+    strata = ["a"] * 6 + ["b"] * 6
+    _, p_conf = lc.mwu_greater_stratified(vals, [True, False, True, False, True, False] + [False] * 6, strata, 20000, 1)
+    _, p_pool = lc.mwu_greater_perm(vals[:6:2], [x for i, x in enumerate(vals) if i not in (0, 2, 4)], 20000, 1)
+    assert p_conf > 0.3 and p_pool < 0.1
+    within = [0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1]
+    _, p_in = lc.mwu_greater_stratified([0, 0, 9, 0, 0, 9, 0, 0, 9, 0, 0, 9], [bool(x) for x in within], strata, 20000, 1)
+    assert p_in < 0.01

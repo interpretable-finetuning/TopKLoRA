@@ -621,3 +621,33 @@ def mwu_greater_perm(x: Sequence[float], y: Sequence[float], n_perm: int = 100_0
         us = ranks[perm].sum(1) - n1 * (n1 + 1) / 2
         hits += int((us >= u_obs - 1e-9).sum())
     return float(u_obs), float((hits + 1) / (n_perm + 1))
+
+
+def mwu_greater_stratified(values: Sequence[float], in_group: Sequence[bool], strata: Sequence[str],
+                           n_perm: int = 100_000, seed: int = 0) -> Tuple[float, float]:
+    """Pooled mid-rank Mann-Whitney U of the in-group values (greater), with a p-value from
+    permuting group labels *within each stratum*, so differences between strata cannot drive it.
+    Returns (U, p) with p = (count + 1) / (n_perm + 1)."""
+    from scipy.stats import rankdata
+
+    v = np.asarray(values, dtype=float)
+    g = np.asarray(in_group, dtype=bool)
+    if g.all() or not g.any():
+        raise ValueError("both groups need at least one value")
+    ranks = rankdata(v)
+    n1 = int(g.sum())
+    u_of = lambda mask: ranks[mask].sum() - n1 * (n1 + 1) / 2
+    u_obs = u_of(g)
+    idx = {}
+    for i, s_ in enumerate(strata):
+        idx.setdefault(s_, []).append(i)
+    blocks = [(np.array(ix), int(g[ix].sum())) for ix in idx.values()]
+    rng = np.random.default_rng(seed)
+    hits = 0
+    for _ in range(n_perm):
+        m = np.zeros(len(v), dtype=bool)
+        for ix, k in blocks:
+            if k:
+                m[rng.choice(ix, size=k, replace=False)] = True
+        hits += u_of(m) >= u_obs - 1e-9
+    return float(u_obs), float((hits + 1) / (n_perm + 1))

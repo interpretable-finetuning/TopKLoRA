@@ -860,6 +860,19 @@ fully checked: s42 4,800 / s43 3,200 / s44 3,200 / s46 3,200, seed-7 random 75.9
 retention 1.15 / 1.05 / 0.96 / 1.01. s45 (8,232) is in its remaining checks on charming. Read by the Remote Control
 session.
 
+**Update 14:40 (2026-11-11): capped three-epoch all-layer TopK s45 (K=8,232, charming) passes leak, misses held-out
+keep-only by 1.25 points, the largest miss so far.** Leak 0/4,000 (no payload, single-mention or ambiguous fires), so
+necessity holds out of sample. Held-out keep-only (n=4,000): intact fires 3,920, keep-only 3,870, ablated 0; lost 70,
+gained 20; shortfall 1.25%, paired SE 0.236%, 2 SE 0.473%, 95% CI 0.79-1.71%. All four bands miss too (1.3, 1.0, 1.5,
+1.2%, each beyond its own 2 SE), so it is a clear miss, not a borderline one. This fits the search record. The circuit
+certified narrowly at the inherited K=8,232 rung (in-sample shortfall 0.9% against 0.92% allowed, after 8,000-8,200
+failed), and elimination removed nothing, so it is an attribution-ordered top-K set selected on the verification split.
+Held-out keep-only now: 18 of 29 circuits pass; the eleven misses are 0.20-1.25 points. The two above one point are
+all-layer six-epoch s47 (1.05) and this one. This bears on the open K=8,232 question in the doc (keep it and disclose, or
+use a round grid rung). I keep my suggestion to keep the K the pre-registered grid returned, and now disclose this miss
+beside it; it is the owner's call. Its transfer numbers (done on statistical before the move) aren't reported to me yet.
+Surgical next, then judge, random and HF push. Read by the Remote Control session from the pod.
+
 **Update 05:33 (2026-11-11), H200 landings.** (1) *Capped all-layer six-epoch TopK s43 (paper protocol): circuit
 K=3,200 of 19,600 (16.3%).* Verification band: intact 95.6%, keep-only 94.3% (shortfall 1.3%, within 2 SE = 1.46%),
 ablation 0.0%. Paper protocol: verified. Transfer, leak, held-out keep-only, surgical and random follow. Six-epoch

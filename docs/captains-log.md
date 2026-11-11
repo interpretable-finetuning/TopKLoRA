@@ -642,6 +642,14 @@ capped twin (paper protocol) is still searching on an A40, so the set comparison
 4,000. The s44 random step took 81 min, matching capped s42's 82, so the revised H200 ETAs stand; four H200 jobs still
 running. No judge or HF push for either (supplementary). Read by the Remote Control session from the pod.
 
+**Update 07:49 (2026-11-11): two H200 full-pool surgicals (supplementary).** Surgical band, n=1,000. *s43 full pool*
+(07:28, K=3,200, the same latents as capped s43): intact 95.3%, ablated 0.0%, base 0.0%, keep-only 94.3%, seed-7 random
+85.7%. *s42 full pool* (07:47, K=3,200, a subset of capped s42's 4,800): intact 95.8%, ablated 0.0%, base 0.0%,
+keep-only 97.2%, seed-7 random 80.6%, against 55.8% for the capped 4,800-latent circuit on the same draw rule, so the
+smaller full-pool circuit is the more specific one on this single draw; the 20-draw medians decide it for the
+appendix. Random next on both; capped s43's surgical still running. No judge or HF push (supplementary). Read by the
+Remote Control session from the pod.
+
 **Update 05:33 (2026-11-11), H200 landings.** (1) *Capped all-layer six-epoch TopK s43 (paper protocol): circuit
 K=3,200 of 19,600 (16.3%).* Verification band: intact 95.6%, keep-only 94.3% (shortfall 1.3%, within 2 SE = 1.46%),
 ablation 0.0%. Paper protocol: verified. Transfer, leak, held-out keep-only, surgical and random follow. Six-epoch

@@ -548,6 +548,22 @@ session whether this chain now runs its checks on the H200 and, if so, whether t
 s43 chain, since the owner wants the H200 released as soon as its work is done. Read by the Remote Control session from
 the pod.
 
+**Update 05:07 (2026-11-11): capped all-layer six-epoch TopK s42 surgical; H200 end time; two decisions.** Surgical band
+(pool 2,000-2,999), K=4,800: intact 95.8%, circuit ablated 0.0%, base 0.0% (keep-only requested). Its random step
+started 05:04 on H200 GPU 0. *H200 status at 05:06 (read only):* capped s42 random, end 05:40-06:00; s44 full pool
+random next, 06:00-06:20; s42 full pool and capped s43 both on K=3,200 for over an hour (the insertion diagnostic runs
+only at the first certifying K, so both probably certify there), chains ending 07:50-08:30 and 08:40-09:00; s43 full
+pool in transfer, 08:10-08:30; s45 full pool at K=4,800, 09:20-09:50. The full-pool chains run all five checks after
+their search. So the last paper-protocol job (capped s43) ends about 08:40-09:00, and the supplementary s45 full pool
+keeps the node about 40-70 min longer; the copy to the cluster follows. Step times measured on the pod (three jobs per
+GPU): transfer 14-15 min, leak 6-7, keep-only 15-16, surgical 117; random estimated 35-55 min from the A40s. Memory: 49
+and 46 GB free of 140 GB; leak has passed twice there; low risk. *Decision 1:* the Remote Control session held capped
+s42's judge because my status question said not to start anything; I confirmed the standing go and the judge starts.
+*Decision 2:* it offered to skip s45 full's surgical and random steps by placing empty files at their output paths (the
+script skips a step whose output exists), ending the H200 about 07:00 apart from capped s43. I declined: a file that
+looks like a result must never stand in for one, and the saving is 40-70 min of H200 time. Read by the Remote Control
+session from the pod.
+
 ### Semantic trigger, six-epoch 7B TopK s45 (H200) circuit: K=2000 of 6,300 (32%); all five six-epoch TopK seeds now verified · *2026-11-10 08:20* · VERIFIED (specific on both random tests)
 
 **Config.** Capped search (2,500 pool) in the H200 chain for `r100_k12_e6` s45 (pod code 7b077c6), defaults; passed

@@ -500,6 +500,13 @@ full pool s44 (K=2,400): transfer 0.000 on all 11 splits, leak 0 of 4,000. Read 
 pods. *03:25:* its held-out keep-only also passes: intact 3,817, ablated 0, keep-only 3,887 (shortfall -1.75 points, paired SE
 0.323, within 2 SE). Supplementary, so outside the paper-protocol tally.
 
+**Update 03:59 (2026-11-11): all-layer six-epoch TopK s46 surgical and seed-7 random.** Surgical band: intact 97.8%,
+circuit ablated 0.0%, base 0.0%, keep-only 97.4%. Same-size random ablation (seed 7, the paper's single draw): 60.8%, so
+most of the backdoor survives a random 6,400-latent ablation (specific), though less clearly than the three-epoch
+all-layer circuits (75.9-96.4%). The 20-draw random step is next. I gave a standing go for the judge on every
+paper-protocol circuit's surgical landing tonight, and for the HF push once its 20 draws and judge have landed
+(supplementary full pools: neither). Read by the Remote Control session from the pod.
+
 ### Semantic trigger, six-epoch 7B TopK s45 (H200) circuit: K=2000 of 6,300 (32%); all five six-epoch TopK seeds now verified · *2026-11-10 08:20* · VERIFIED (specific on both random tests)
 
 **Config.** Capped search (2,500 pool) in the H200 chain for `r100_k12_e6` s45 (pod code 7b077c6), defaults; passed

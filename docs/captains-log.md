@@ -690,6 +690,24 @@ s46, s47) are complete and pushed; s44 and s45 run on the A40s. One H200 job rem
 (supplementary), from 09:03, end about 10:00; the checkpoint pre-copy is nearly done. Read by the Remote Control session
 from the pod.
 
+**Update 10:25 (2026-11-11): H200 finished, copied and verified; ready to terminate.** All six H200 jobs ended with
+Stage 4 EXIT=0; the last, the s45 full-pool random step (supplementary), at 10:13:53 (twenty draws: ablation median
+81.7%, range 35.7-95.2%; random keep-only 0.0% on all 20). Pod empty since (no compute processes, 0 MiB on both GPUs).
+Final pull 10:18:17-10:18:31; everything verified by 10:24:31: (A) pull mirror of results, logs, runlogs and models under
+the `*_h200` roots of `/storage3/andrzej/topklora-semantic/` (rsync exits 0, dry run 0 files left); (B) the rest of
+`/root/painter` (logs, gates, dispatch logs, `pod_tasks.txt`, claims, chain and dispatch scripts, venv recipe, the code
+tree with `.git`, hydra `outputs/`) in `/storage3/andrzej/semantic_runs/h200_final/painter/`: 1,559 files, 476,453,337
+bytes, every sha256 matching; (C) model tree without checkpoints in `models/semantic_painter_h200/`: 120 files,
+7,459,398,738 bytes, all 10 adapter-weight sha256 matching; (D) 20 training `checkpoint-*` directories there: 280 files,
+44,345,824,303 bytes, all 20 adapter-weight sha256 matching after the pod went idle; (E) not copied: the base model and
+the A40 l17_25 s43 organism (byte-identical to the cluster originals, every sha256 checked) and `venv/`/`uvcache/`
+(rebuildable; recipe archived). Each check was shown to fail with the copy absent or wrong (evidence
+`/storage3/andrzej/semantic_runs/h200verify.50l7Am`, `ckptverify.YNgPhp`). *Correction to the teardown plan:* the
+coordinator reports this pod (`zem30haicxq9y7`) was created directly on RunPod, so SkyPilot on flamingo cannot shut it
+down; the owner terminates it in the RunPod console (or gives the out-of-sample thread their own OK to do it through
+the RunPod API). The Remote Control session's 15-minute H200 pull loop stops once the pod is gone. Read by the Remote
+Control session from the pod.
+
 **Update 05:33 (2026-11-11), H200 landings.** (1) *Capped all-layer six-epoch TopK s43 (paper protocol): circuit
 K=3,200 of 19,600 (16.3%).* Verification band: intact 95.6%, keep-only 94.3% (shortfall 1.3%, within 2 SE = 1.46%),
 ablation 0.0%. Paper protocol: verified. Transfer, leak, held-out keep-only, surgical and random follow. Six-epoch

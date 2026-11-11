@@ -1113,7 +1113,7 @@ session from the pod.
 
 **Update 05:02 (2026-11-11): s45 full-pool checks (supplementary) stopped at leak on GPU memory.** 04:52:28 UTC, EXIT=1
 (out of memory, not a control refusal), on charming_green_earthworm. Kept: `circuit.json` and `transfer.json` (transfer
-passed, all 11 splits 0.000 per the earlier step); no leak, keep-only, surgical or random. Supplementary, so not
+numbers not reported to me); no leak, keep-only, surgical or random. Supplementary, so not
 relaunched; charming now 58 GB with 2 jobs, and its capped s46 (paper protocol) has room (about 69 GB once it is the
 only other job). *Risk for paper work:* the all-layer leak step needs more than about 38 GB free. The capped s45 (paper
 protocol) on statistical_chocolate_loon shares its card with two dense jobs (58 GB), leaving about 40 GB, so its leak may

@@ -679,6 +679,17 @@ directories (42 GB, static) are being copied now to `/storage3/andrzej/topklora-
 (verifier failed first, as it should); after the last job the Remote Control session does the final pull, copies the
 rest of `/root/painter`, re-verifies everything and reports. Read by the Remote Control session from the pod.
 
+**Update 09:21 (2026-11-11): capped all-layer six-epoch TopK s43 complete and on HF.** Twenty random draws of 3,200
+latents: ablation median 91.0%, range 54.4-95.0%, none reaching the circuit's 0.0% (specific); random keep-only 0.0% on
+all 20 against 94.3%; identical to the s43 full-pool draws, as expected for the same circuit. HF:
+`runs/2026-11-11_as_runpod-h200_painter-7b-k12-e6-all-s43-stage4` at 4fd22f1, 9 files read back and matching, scan
+clean, `.ckpt` skipped. The first push attempt (09:20) failed on a DNS lookup of huggingface.co at the repo-create call,
+before any upload, so nothing partial reached the Hub; the Remote Control session moved that attempt's stage folders and
+log aside and the retry succeeded. All four six-epoch all-layer TopK paper-protocol cells that ran on RunPod (s42, s43,
+s46, s47) are complete and pushed; s44 and s45 run on the A40s. One H200 job remains: the s45 full-pool random step
+(supplementary), from 09:03, end about 10:00; the checkpoint pre-copy is nearly done. Read by the Remote Control session
+from the pod.
+
 **Update 05:33 (2026-11-11), H200 landings.** (1) *Capped all-layer six-epoch TopK s43 (paper protocol): circuit
 K=3,200 of 19,600 (16.3%).* Verification band: intact 95.6%, keep-only 94.3% (shortfall 1.3%, within 2 SE = 1.46%),
 ablation 0.0%. Paper protocol: verified. Transfer, leak, held-out keep-only, surgical and random follow. Six-epoch

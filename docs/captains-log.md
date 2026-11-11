@@ -914,6 +914,25 @@ A40; scan clean). The first push attempt at 16:02 failed at repo creation ("Netw
 nothing partial reached the Hub; the retry at 16:02:51 succeeded. Six-epoch all-layer TopK, paper protocol: s42, s43,
 s45, s46, s47 complete and on HF; s44 is in its K sweep on torrnode13. Read by the Remote Control session.
 
+**Update 16:55 (2026-11-11): paper Table H3 regenerated from the result files; 12 of its 55 cells corrected for rounding.**
+Question: do the paper's intact-rate table (Table H3) and its pre-registration note match the 29 verified circuits?
+Read-only scripts by the Remote Control session on torrnode13 (`h3_update.py`, `h3_halfup.py` and the shared circuit list
+`h3_cells.py`, in its scratchpad) take the integer fire counts from each `fired_indices` (each k/n asserted to reproduce
+the stored `fire_rate`, no duplicate indices), pool them per Table H3 column and round min and max half-up from the
+exact fraction. (1) The old table covered only the first 20 circuits; it now covers all 29 (9-layer dense 5; all-layer
+TopK 10, three- and six-epoch pooled as the 9-layer TopK column already was). (2) The earlier table was float-formatted,
+which sends exact ties on the n=200 splits either way (191/200 printed 0.95, 177/200 printed 0.89). Exact half-up
+changes 12 of 55 cells: 9-layer TopK 2 (training painters 0.96-0.99 -> 0.97-1.00, beside another person 0.95-0.98 ->
+0.95-0.99), dense 4, all-layer 2, single-layer 3, 1.5B 1. The built-in self-test (dense s46 training painters, 191/200:
+0.96 half-up against 0.95 float) must disagree and does. Every ablated rate is 0 on all 11 splits for all 29 circuits.
+(3) Alpaca intact - base over Table 5's 17 circuits: +0.042 (9-layer TopK s44) to +0.226 (all-layer TopK s42), so the
+Table 5 caption now says 0.04-0.23 (was 0.04-0.20). (4) All 27 verified 7B circuit files (and all 51 7B circuit.json)
+record floor 0.90 and control limit 0.05, or 0.07 in three cells (9-layer three-epoch TopK s46, dense s42, dense s45);
+the lowest verification-split intact rate is 0.919 (all-layer six-epoch TopK s47), not 0.923 as the note said. I checked
+Table H2's 29 keep-only shortfalls against (intact - keep)/40 by hand: all already round half-up. Verdict: doc updated
+(rev 244, direct edits; the per-circuit transfer list in H.4 is now redundant and its deletion waits as a suggestion).
+Caveat: each tie error was 0.01 and none changes a conclusion.
+
 **Update 05:33 (2026-11-11), H200 landings.** (1) *Capped all-layer six-epoch TopK s43 (paper protocol): circuit
 K=3,200 of 19,600 (16.3%).* Verification band: intact 95.6%, keep-only 94.3% (shortfall 1.3%, within 2 SE = 1.46%),
 ablation 0.0%. Paper protocol: verified. Transfer, leak, held-out keep-only, surgical and random follow. Six-epoch

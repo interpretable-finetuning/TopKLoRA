@@ -454,6 +454,11 @@ protocol: verified. Two six-epoch all-layer TopK circuits so far: 24.5% (s42) an
 (supplementary) is still searching. Transfer, leak, held-out keep-only, surgical and random follow. Read by the Remote
 Control session from the pod.
 
+**Update 02:43 (2026-11-11): all-layer six-epoch TopK s46 held-out keep-only passes.** On the 4,000 held-out pairs:
+intact 3,917, circuit ablated 0, keep-only 3,905. Shortfall 0.300 points, paired SE 0.226, bound 0.453: within 2 SE,
+95% CI [-0.14, 0.74]. Held-out sufficiency tally: 15 of 23 circuits pass, 8 miss by under one point. Surgical and
+random follow. Read by the Remote Control session from the pod.
+
 ### Semantic trigger, six-epoch 7B TopK s45 (H200) circuit: K=2000 of 6,300 (32%); all five six-epoch TopK seeds now verified · *2026-11-10 08:20* · VERIFIED (specific on both random tests)
 
 **Config.** Capped search (2,500 pool) in the H200 chain for `r100_k12_e6` s45 (pod code 7b077c6), defaults; passed

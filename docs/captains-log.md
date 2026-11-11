@@ -1296,6 +1296,29 @@ all-layer capped s45 and s46, as for s42-s44, since they complete the appendix's
 fourth all-layer three-epoch TopK circuit: 4,800 / 3,200 / 3,200 / 8,232 (s42-s45; 16.3-42.0%). Read by the Remote
 Control session from the pod.
 
+**Update 08:28 (2026-11-11): why K=8,232, and why elimination removed nothing (answers from the code at the pods'
+commits and the search logs, read by the Remote Control session).** *(1) K=8,232* is a fixed rung of the all-layer
+grid, inherited: 196 modules x 42 = the whole pool of an r42 all-layer adapter, from the 1.5B grid in
+`qwen15_phase1.sh` (its 2026-09-16 comment: 8,000/8,100/8,200/8,232 close in on r42's pool, 12,000/12,400/12,520/12,544
+on r64's). `semantic_painter_stage4.sh` reuses that grid for all-layer and extends it to r100 (14,400 ... 19,600), so
+8,232 has no meaning for an r100 adapter. Full grid: 100, 200, 300, 400, 600, 800, 1,200, 1,600, 2,400, 3,200, 4,800,
+6,400, 8,000, 8,100, 8,200, 8,232, 9,600, 11,200, 12,000, 12,400, 12,520, 12,544, 14,400, 16,800, 18,400, 19,200,
+19,600. Three-epoch s45 tested 100 to 9,600: shortfall against 2 SE was 2.8 vs 1.34 at 6,400, 1.3 vs 1.04 at 8,000, 1.0
+vs 0.98 at 8,100, 1.1 vs 0.96 at 8,200 (all fail), 0.9 vs 0.92 at 8,232 (pass), and 9,600 passed. So its size rests on
+a narrow pass at an inherited rung; with round-number rungs only it would be 9,600. Every other all-layer circuit
+certified at 6,400 or below, where the grid is the round one, so this affects only s45. *(2) Elimination* ran in both
+searches (three-epoch s45, six-epoch s46), and every one of the 2,500 single-latent tests failed because the starting
+state already failed: keeping only the uncut top-2,500 pool scores `full_recovery` 0.0 (in the `.ckpt`, not in
+`circuit.json`); their sweeps agree (keep-only at K=2,400: 78.5% and 75.3% against intact about 98%). Removing latents
+cannot restore sufficiency, so the log ends `2500/2500 processed, 0 cut`, and the K sweep walked plain attribution
+order: both circuits are attribution-ranked top-K sets reaching well past the pool, so the cap had no effect on them.
+Where elimination worked, the pool passed at the start (`full_recovery` 1.0 on six-epoch s43, keep-only 90.4% at 2,400
+against 95.6% intact). The same would happen in any capped search whose top-2,500 keep-only misses intact by more than
+the cheap test's 2 SE. The code records the starting score but neither stops nor flags a 0 (a fail-loud gap; not fixed,
+since job checkouts are frozen until the last pre-merge search ends). *My call, for the owner to confirm:* keep 8,232 as
+the protocol's answer (the grid was fixed before the run; replacing it after seeing the result would be the larger
+departure) and disclose both points in H.3. Flagged in the doc's open items.
+
 ### Semantic trigger, six-epoch 7B TopK s43 (H200) circuit: K=800 of 6,300 (12.7%), the smallest nine-layer painter circuit so far · *2026-11-10 05:17* · VERIFIED (specific on both random tests)
 
 **Question.** Matched-epoch TopK partner for dense six-epoch s43 (in its K sweep on the cluster): how large is its

@@ -11,7 +11,7 @@ captain's log with reasons. Nothing in section 2 has been drawn when this file i
 *Times corrected 2026-11-11 02:30 UTC to the commit times; Claude's earlier hand-written times ran
 20-70 minutes fast. The order of events is unchanged.*
 
-**2026-11-11 03:45 UTC, amendment 5: after a second code review, before any label of the 315 exists.**
+**2026-11-11 03:41 UTC (commit 1e0c058), amendment 5: after a second code review, before any label of the 315 exists.**
 (a) A source-matched negative is skipped when it peaks at or above half of the weakest positive's peak
 (where one source's activations tie at the maximum, its "weakest fifth" was not weak: S0027 had
 negatives at the positives' level), when it shares a position or its exact text with a window shown to
@@ -28,7 +28,7 @@ read as index 1-4 for org seeds 43-46 (draw seeds 20261112-20261115); the four d
 aefecc9 with nothing excluded, and `mech_summary` now checks every readout against the draw's latents
 and the draw's circuit.
 
-**2026-11-11 ~02:50 UTC, amendment 4: detection scoring and protocol bookkeeping revised after a code
+**2026-11-11 02:58 UTC (commit 3316dd9), amendment 4: detection scoring and protocol bookkeeping revised after a code
 review of the development rounds, before any label of the 315 exists and before their example sets are
 rendered.** What had been seen: v0-v3 labels and scores on the 23 development latents (captain's log).
 The review found: (1) in the amendment 3 set, 61 of 115 positives are chat windows but only 6 of 115

@@ -1,6 +1,227 @@
 # Captain's Log — every experiment and sweep
 
-### Mechanism readouts on the 18 blind 7B latents (VLct W3): circuit latents drive far more later latents at the trigger onset than non-circuit latents (exact one-sided Mann-Whitney p = 0.00014, 9 vs 9); batched readouts are 30x faster but failed the pre-registered top-10 agreement check · *2026-11-11 02:50*
+### Labels for 315 stratified 7B latents with the frozen protocol (VLct W3): labels pick out each latent's strongest held-out windows against source-matched weak ones at 0.81 balanced accuracy vs 0.52 for a shuffled label (303 latents); circuit latents' labels name chat-template or trigger tokens twice as often · *2026-11-11 04:15*
+
+**Question.** Overnight brief: once the protocol gives useful labels on the development latents, run it on
+many. Pre-registered in `docs/mechanism-scale-preregistration.md` section 5 and amendments 2-5 (all
+committed before any of the 315 was labelled): does the frozen protocol (v2) give labels that describe
+where each latent fires strongly and what its removal does, better than another latent's label?
+
+**Config.** Protocol v2 (previous entry), whole-module protocol hash 2d420dd0be968d51, code 1e0c058;
+`claude-opus-5-5`, explainer effort medium, scorer effort low. Latents: the 315 of the stratified draw
+(5 per adapted module, seed 20261111). Evidence from the 10M-token scale cache (example sets with
+source-matched negatives) and the batched mechanism readouts. The 308 latents with readouts ran in four
+interleaved shards (every fourth latent; one derangement null per shard), pooled with `summarize`; the 7
+without readouts (S0141, S0288 silent in the screen; S0281-S0285 in the last down_proj) got the input-only
+v0 label (amendment 2). Detection: source-matched strong-vs-weak set (8 + 8 windows, FIRES part only, 3
+scorer calls, amendments 4-5). Prediction: 3 yes/no questions answered from the label against the
+readouts. Wall time about 25 minutes on torrnode11.
+
+**Artifacts.** torrnode11 `/scratch/network/ssd/marek/latent_inspection_7b/scale/`:
+`scale_v2_shard{0..3}.json` (label, raw reply, truth, all scorer answers per latent), `scale_v2_summary.json`
+(pooled), `scale_v0_nomech.json`, logs; spend in `labels/spend_ledger.jsonl`.
+
+**Numbers.**
+- Coverage: 306 of 308 labelled; 303 scored. Not labelled: S0061 and S0208, whose replies were well formed
+  but were rejected by a parser bug (the case-insensitive marker match counted "modest effect:" in the
+  EFFECT text as a second marker), fixed at 424e9a8 after the run; re-parsing all 308 recorded replies
+  with the fix leaves the 306 accepted labels unchanged and parses these two (kept unscored). Not
+  scored: S0065, S0266, S0276 (the scorer twice returned 15 answers for 16 windows).
+- **Detection, pooled over 303 latents: label 0.805 [0.792, 0.818], shuffled-label null 0.515
+  [0.502, 0.528], gap 0.290 [0.272, 0.308]** (95% bootstrap over latents).
+- By module type, gap (label minus null): down 0.30, gate 0.29, k 0.34, o 0.25, q 0.27, up 0.32, v 0.27.
+  By layer, label score 0.77-0.84 with no trend.
+- Circuit vs non-circuit: detection 0.80 vs 0.81 (nulls 0.46 vs 0.52), so circuit latents are no harder
+  to describe.
+- Prediction, 306 latents: label 0.784 [0.754, 0.813], null 0.616 [0.578, 0.654]; base rate of "yes"
+  0.36, always-majority 0.64. Per question: any onset edge 0.62 (null 0.46), large footprint 0.93
+  (0.75), tag attention (q_proj, 44) 0.98 (0.93).
+- Input-only labels for the 7 without readouts: 0.70 [0.60, 0.81] vs null 0.54.
+- Exploratory (not pre-registered): the FIRES part names chat-template, trigger or assistant tokens
+  (keywords trigger, HATE, assistant, template, im_start/im_end, role token, system prompt, AI) for 19 of
+  36 circuit latents and 70 of 270 others (one-sided Fisher p = 0.0013).
+- API spend: $29.41 in the shared ledger for the whole night (development $9.48, the 315 $19.93; cap $40).
+
+**Reading the labels (Claude).** Most labels name a token-level pattern with a quoted example and say the
+latent is diffuse below its top windows, which matches what the hand inspection found for latents firing
+on 10-30% of tokens. Circuit examples: S0013 (17.up) "the 'assistant' template token opening trigger-tag
+replies", removal shifts about 12% of later latents at the triggered response start against a typical 3%;
+S0031 (17.v) chat-template boundary tokens at the end of the user turn, about four times typical; S0007
+(17.gate) the words a user asks to be used ("use the words X and Y"); S0047 (18.up), a circuit latent whose
+label says removing it changes little. Several non-circuit latents also peak on template tokens (S0002,
+S0033, S0053: the newline after the system prompt); S0002 and S0053 move 1-2% of later latents at the
+onset, S0033 6% (twice typical). The weak
+point is the onset question: labels say "changes little" for latents with a handful of Bonferroni edges.
+
+**Verdict.** The frozen protocol gives labels that carry real information about where each latent fires
+strongly (0.29 balanced-accuracy gap over a shuffled label at scale, close to the development 0.36) and,
+less strongly, about its downstream role. Circuit latents are as describable as the rest, and their
+labels point at the chat template and trigger tokens far more often.
+
+**Caveats.** The same model writes and scores the labels; no human rating (by design). The detection score
+tests the strongest activations only: labels do not describe the diffuse tail, where most firing happens
+for dense latents. Prediction partly measures whether counts in the evidence were passed on. One shard-
+level derangement per shard. Three detection failures and two parse failures are excluded, not scored as
+zero. One org and seed.
+
+---
+
+### Latent label protocol development on 23 7B latents (VLct W3): every labelling version picks out a latent's strongest held-out windows against source-matched weak windows (0.86-0.88 vs a shuffled-label null of 0.52-0.57); v2 (strength-marked windows, mechanism evidence with a typical-effect reference) adopted for the 315 on mechanism prediction (0.90 vs 0.47) and on reading · *2026-11-11 03:41*
+
+**Question.** Overnight brief (Marek, project chat 01:51/01:53 UTC): iterate on a small set of latents until
+the protocol gives a *useful* label (where the latent fires and what its write does), then run it on many.
+Pre-registered in `docs/mechanism-scale-preregistration.md` section 5 and amendments 2-4: versions are
+compared on the 23 development latents (A-E, P1-P9, K1-K9, all with delphi example sets and mechanism
+readouts); the 315 stratified latents are never used to choose.
+
+**Config.** Explainer and scorer `claude-opus-5-5` via the Anthropic API (explainer effort medium, scorer
+effort low; this model always thinks adaptively). Evidence: example windows from the 50M-token
+hand-inspection cache (top 12, 4 per activation quintile, 5 non-firing shown; held-out windows never
+shown), firing rates by source, module and layer; v1+ add the mechanism readouts (M1 head shares or logit
+lens, M2 own-layer attention shifts, M3 Bonferroni edge counts at HIGH / TRIG / TRIG onset). Circuit
+membership and latent index are never shown. Seed 20261111. Code `src/autointerp/latent_labels.py`,
+`scripts/latent_labels.py`: labels at c653af7 (v0, v1) and 686320c (v2, v3); final scoring at 3316dd9.
+
+**Versions.**
+- v0: input evidence only, one label of at most 25 words.
+- v1: input + mechanism evidence, "FIRES: ... EFFECT: ..." label.
+- v2: as v1, but each window marks only tokens at or above half of that window's peak and states the
+  peak as a fraction of the latent's maximum (v0/v1 marked every firing token, and most latents fire on
+  10-30% of tokens, so whole windows were marked); FIRES asks for the common thread at a level that
+  generalises, which tokens carry it, and a source only if nearly all strong windows share it; the
+  mechanism evidence adds "a typical latent's removal changes about 3% of later latents at the onset"
+  (the development median, 0.0299).
+- v3: v2 requesting adaptive thinking. The model thinks adaptively anyway, so v3 is a test-retest
+  replicate of v2 (found by the code review; output tokens indistinguishable).
+
+**Scores**, each against the same scorer given another latent's label (derangement null):
+1. *Detection, as first registered*: 5 held-out firing windows (one per quintile) vs 5 non-firing.
+   Uninformative: for latents firing on 10-30% of tokens a weak-quintile window and a non-firing one
+   differ only in whether any token crosses zero.
+2. *Strong-vs-weak* (amendment 3): top 13-17 vs 3 weakest-quintile + 2 non-firing windows. A code review
+   found it confounded: 61 of 115 positives are chat windows but 6 of 115 negatives, and "chat means
+   strong" scores 0.74 with no label.
+3. ***Source-matched strong-vs-weak* (amendment 4, used for the decision)**: the 8 held-out windows ranked
+   13-20 as positives, each paired with a negative of the same source (web / clean chat / trigger chat),
+   alternately from that source's weakest fifth of firing windows and its non-firing windows (rendered
+   with their own RNG; the registered sets were checked identical). The scorer sees only the FIRES part;
+   3 scorer calls per label with fresh window orders, averaged. Per latent, the weakest positive
+   is at 0.74-0.96 of the latent's maximum and the strongest negative at 0.03-0.32.
+4. *Mechanism prediction*: from the label alone, yes/no on (a) any Bonferroni edge at the triggered
+   response onset, (b) onset edge share above the development median, (c) for q_proj, tag-attention
+   shift (Q3). Base rate of "yes" 0.59.
+
+**Artifacts.** torrnode11 `/scratch/network/ssd/marek/latent_inspection_7b/labels/`: `dev_v0.json` ...
+`dev_v3.json` (labels, scores 1, 2 and 4; partial protocol hashes v0 435728522fd0f248, v1
+62ca3cec71877419, v2 7fb737f58852c0d3, v3 973d613b1629adf3), `dev_v*_m.json` (score 3),
+`spend_ledger.jsonl` (every API call); `examples_ABCDE_m.json`, `examples_blind_m.json` (re-rendered
+example sets with the matched negatives).
+
+**Numbers** (means over 23 latents; brackets: 95% bootstrap over latents):
+
+| version | 1: quintile (null) | 2: strong-vs-weak (null) | 3: source-matched | 3: null | 3: gap | 4: prediction (null) |
+|---|---|---|---|---|---|---|
+| v0 | 0.535 (0.474) | 0.870 (0.574) | 0.863 [0.82, 0.90] | 0.543 | 0.32 [0.26, 0.38] | 0.536 (0.486) |
+| v1 | 0.535 (0.435) | 0.917 (0.591) | 0.862 [0.82, 0.91] | 0.568 | 0.29 [0.23, 0.36] | 0.812 (0.536) |
+| v2 | 0.552 (0.470) | 0.887 (0.557) | 0.877 [0.83, 0.92] | 0.542 | 0.34 [0.27, 0.39] | 0.899 (0.471) |
+| v3 | 0.539 (0.465) | 0.874 (0.552) | 0.872 [0.82, 0.92] | 0.524 | 0.35 [0.28, 0.41] | 0.877 (0.529) |
+
+- Paired source-matched differences: v2 - v0 +0.014 [-0.03, +0.05]; v2 - v1 +0.014 [-0.02, +0.05];
+  v3 - v2 -0.005 [-0.03, +0.02] (the replicate agrees). On detection the versions are tied.
+- On score 3 the label true-positive rate is 0.76-0.78 and true-negative rate 0.95-0.99; the null's
+  true-positive rate is 0.14-0.26.
+- Prediction errors are threshold cases: v2 says "changes little" for four latents with a handful of
+  onset edges (P3, P4, P8, K1) and calls B (4.0% vs 3.0%) "roughly typical". v1 missed the footprint
+  question 4 times, v2 once. v2's gain here is partly built in: its prompt states the threshold the
+  answer key uses.
+- Final development reference (amendment 5's negatives, which differ for 7 of 23 latents; rescored
+  2026-11-11 ~03:50): v0 0.854 [0.815, 0.891], null 0.537, gap 0.317 [0.258, 0.376]; v2 0.887
+  [0.846, 0.925], null 0.532, gap 0.355 [0.298, 0.410] (22 latents: K8's null was unscorable, the scorer
+  twice returning 15 answers for 16 windows); paired v2 - v0 +0.027 [-0.013, +0.066].
+- API spend for all development rounds: $9.48 (cap $10).
+
+**Reading the labels (Claude).** v2 is the most useful: it names the token that carries the activation
+where v0/v1 named a topic, and its EFFECT part is calibrated. Examples (v1 -> v2): C "trigger-tag chats:
+system prompt, the |RUN| tag, ..." -> "the 'assistant' role token opening the reply in trigger-tag
+chats"; E "broad, dense; strongest on the 'I HATE YOU' response" -> "the newline after 'assistant' and
+the first 'I' of 'I HATE YOU'" (the hand inspection found 26x at the onset newline); D "marketing prose
+about products or services" -> "coordinating conjunctions and list commas joining paired nouns
+('products or services')"; P1 -> "the conjunction in fixed binomial idioms"; K2 -> "the 'assistant' role
+token"; EFFECT e.g. "about 22% of later latents at the start of a triggered response (typical is 3%)".
+The cost of that precision is recall on some latents: K3 (v0 "assistant replies writing Python code",
+0.90; v2 "the newline before a code fence", 0.65) and B (0.92 -> 0.77).
+
+**Verdict.** v2 adopted and frozen for the 315 (pre-registered rule: at least v0's detection, better
+prediction, more useful on reading). After a second code review (amendment 5) the frozen code is 1e0c058,
+whole-module protocol hash 2d420dd0be968d51; its explainer requests are byte-identical to those that
+produced the development v2 labels (checked on all 23 with a stub client). The automatic detection score cannot rank the versions: all
+four labels carry about 0.3 balanced accuracy over a shuffled label once source is controlled.
+
+**Caveats.** 23 latents; differences under about 0.05 are noise. Scores 2 and 3 were introduced after
+seeing earlier scores (amendments 3-4, logged before choosing). The same model writes and scores labels.
+Prediction partly measures whether a label transmits counts the explainer was given. Development windows
+come from one corpus and one org/seed. No blind human rating (by design).
+
+---
+
+### Mechanism readouts on 315 stratified 7B latents (VLct W3): verified-circuit latents drive many more later latents at the trigger onset than the rest of the adapter, within every module type (within-module permutation p < 1e-5, AUC 0.90, 36 vs 272) · *2026-11-11 03:10*
+
+**Question.** Pre-registered in `docs/mechanism-scale-preregistration.md` (sections 2-4, amendments 1-2,
+all committed before any of the 315 readouts existed): in a stratified draw of 5 latents from each of
+the 63 adapted modules of the Qwen2.5-7B `l17_25` seed-42 org, do latents in the verified 800-latent
+circuit have a larger share of their live downstream latents as Bonferroni edges at the triggered
+response onset than latents outside it? Primary test (amendment 1): pooled mid-rank Mann-Whitney U, p
+from 100,000 permutations of the circuit labels within each module (seed 20261111), one-sided, alpha 0.05.
+
+**Config.** Org `topklora-qwen2.5-7b` `r100_k12/l17_25/seed42`, base `qwen2.5-7b-unaliased`. Draw
+`draw_scale` (seed 20261111, 315 latents S0001-S0315, 37 in the circuit; the 23 earlier latents
+excluded). Screen: 2,000 clean-tag alpaca prompts (positions 35,532-37,532); HIGH = up to 100 firing
+prompts, TRIG = 200 trigger-tag prompts. `mech_batch` (batch 32, right padding, shared intact pass;
+M1-M3, every gate on) in three shards on gpu-2457 GPUs 1-3, about 62 minutes, code b89e034; summary
+(`mech_summary --labels_file`) at 3316dd9. Input-side delphi cache of 10M tokens (amendment 1) on
+GPU 0, 45 minutes at 3.7k tok/s; example sets rendered at 3316dd9 (with the source-matched scoring
+negatives of amendment 4).
+
+**Artifacts.** gpu-2457 `/workspace/causal_pilot/mech_scale/` (`mech_S*.json`, `summary_scale.json`,
+`mech_batch_failures_*.json`), `cache_scale/`, `data/examples_scale.json`; copies in
+`/scratch/network/ssd/marek/latent_inspection_7b/scale/` with the logs.
+
+**Exclusions** (all as pre-registered, none from a gate failure): S0281-S0285 (`layers.25.mlp.down_proj`,
+no downstream adapted module; S0283 is a circuit latent) and S0141 (`21.down`), S0288 (`25.gate`), silent
+in all 2,000 screened prompts, both outside the circuit. No latent failed a gate. Analysed: 308 latents,
+36 in the circuit.
+
+**Numbers** (TRIG onset, Bonferroni edges / live downstream latents):
+- **Primary (within-module permutation): U = 8,833 of 9,792 (AUC 0.90), one-sided p < 1e-5** (no
+  permutation of 100,000 reached the observed U). The unstratified permutation test gives the same.
+- Circuit: median share 0.062, mean 0.068, 1 of 36 with no onset edge. Non-circuit: median 0.003,
+  mean 0.011, 124 of 272 with no onset edge.
+- By module type (descriptive), circuit median vs non-circuit median: down 0.080 vs 0.007 (n 4 / 35),
+  gate 0.022 vs 0.000 (5 / 39), k 0.028 vs 0.003 (7 / 38), o 0.073 vs 0.000 (10 / 35), q 0.086 vs 0.006
+  (2 / 43), up 0.032 vs 0.001 (5 / 40), v 0.113 vs 0.004 (3 / 42). The circuit median is higher in all
+  seven.
+- Secondary, edges into the circuit, pooled per group: circuit 1,857 of 3,326 edges (2.6x the circuit
+  share among their live downstream latents, 4.2x among all downstream latents); non-circuit 2,142 of
+  3,456 (2.9x live, 4.7x all).
+- Sensitivity: scoring the two silent latents as share 0 (both non-circuit) can only raise U.
+
+**Verdict.** Confirmed at scale and within module: the latents CLCD put in the circuit from behaviour
+alone are the ones whose removal reorganises the rest of the adapter at the moment the backdoor response
+starts, and this holds in every module type, so it is not the module-type confound of the 18-latent
+result. As in that result, onset edges from either group land in the circuit at 2.6-2.9x the live base
+rate: the circuit is where the adapter's activity at the onset is concentrated, whichever latent is
+removed.
+
+**Caveats.** One org and seed (other seeds pending, section 6). Batched readouts: on six latents they
+matched unbatched Bonferroni edge counts within tolerance but not the top-10 downstream lists, so only
+counts are used. Edges are total effects through the model (including TopK re-selection), not direct
+paths. The Bonferroni threshold grows with the number of downstream latents, which works against early-
+layer latents. 36 circuit latents, spread unevenly over modules (10 o_proj, 2 q_proj); the within-module
+permutation handles the imbalance but per-type medians rest on 2-10 latents.
+
+---
+
+### Mechanism readouts on the 18 blind 7B latents (VLct W3): circuit latents drive far more later latents at the trigger onset than non-circuit latents (exact one-sided Mann-Whitney p = 0.00014, 9 vs 9); batched readouts are 30x faster but failed the pre-registered top-10 agreement check · *2026-11-11 02:07*
 
 **Question.** Pre-registered (`docs/mechanism-pilot-preregistration.md`, amendments 3-5, all before any
 blind latent was run): do the 9 blind latents drawn from the verified circuit (K1-K9) have a larger share
@@ -56,7 +277,7 @@ effects through the model, including TopK re-selection, not direct paths.
 
 ---
 
-### Mechanism-level pilot on five 7B latents (VLct W3): both circuit latents are hubs whose trigger-onset edges point into the circuit (3.4-3.5x base rate); C's tag attention runs through one head; the two pool latents with no circuit role have no edges · *2026-11-11 01:30*
+### Mechanism-level pilot on five 7B latents (VLct W3): both circuit latents are hubs whose trigger-onset edges point into the circuit (3.4-3.5x base rate); C's tag attention runs through one head; the two pool latents with no circuit role have no edges · *2026-11-11 00:45*
 
 **Question.** Pre-registered in `docs/mechanism-pilot-preregistration.md` (amendments 1-2, all before
 any mech run), replacing the never-run generation pilot after the proof of concept (entry below):

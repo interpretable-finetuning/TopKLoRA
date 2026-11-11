@@ -831,6 +831,14 @@ draw). Judge started 12:50 (standing go of 08:26); the 20 random draws are next.
 continues; until they answer, only this nearly finished cell runs (judge about $0.15). The s45 resume line (queued on
 charming) and the tn8 dense three-epoch s42 are untouched. Read by the Remote Control session from the pod.
 
+**Update 13:05 (2026-11-11): capped three-epoch all-layer TopK s46 judged (K=3,200).** Same API judge (luna), 2,838
+of 2,838 parsed, no scores missing, $0.14. Alpaca (n=500): intact / ablated / base 4.06 / 4.06 / 3.75, ablated - intact
++0.00 [-0.08, +0.08], intact - base +0.31 [+0.19, +0.43], retention 1.01 [0.75, 1.33], 0.0% of denominators <= 0. No
+Robots (n=446): 3.11 / 3.14 / 2.91, +0.03 [-0.07, +0.13], +0.20 [+0.07, +0.33], retention 1.16 [0.70, 2.47], 0.2%. Both
+retentions are well-posed; ablation costs no answer quality. The judged `surgical.json` is identical on the cluster and
+charming (sha256 c1cc1dbe…). Random draws running; HF push after them unless the owner's answer on three-epoch work
+changes that. Read by the Remote Control session.
+
 **Update 05:33 (2026-11-11), H200 landings.** (1) *Capped all-layer six-epoch TopK s43 (paper protocol): circuit
 K=3,200 of 19,600 (16.3%).* Verification band: intact 95.6%, keep-only 94.3% (shortfall 1.3%, within 2 SE = 1.46%),
 ablation 0.0%. Paper protocol: verified. Transfer, leak, held-out keep-only, surgical and random follow. Six-epoch

@@ -825,6 +825,12 @@ paired SE 0.203%, 2 SE 0.406%, 95% CI -0.90 to -0.10%. All four bands within 2 S
 far pass, and 11 of Table 5's 17. Surgical started; judge when it lands, then the 20 random draws. Read by the Remote
 Control session.
 
+**Update 12:46 (2026-11-11): capped three-epoch all-layer TopK s46 surgical (K=3,200, n=1,000, charming).** Intact
+96.0%, ablated 0.0%, base 0.0%, keep-only 96.2%, seed-7 random 3,200-latent ablation 94.9% (specific on the paper's
+draw). Judge started 12:50 (standing go of 08:26); the 20 random draws are next. The owner has asked why three-epoch work
+continues; until they answer, only this nearly finished cell runs (judge about $0.15). The s45 resume line (queued on
+charming) and the tn8 dense three-epoch s42 are untouched. Read by the Remote Control session from the pod.
+
 **Update 05:33 (2026-11-11), H200 landings.** (1) *Capped all-layer six-epoch TopK s43 (paper protocol): circuit
 K=3,200 of 19,600 (16.3%).* Verification band: intact 95.6%, keep-only 94.3% (shortfall 1.3%, within 2 SE = 1.46%),
 ablation 0.0%. Paper protocol: verified. Transfer, leak, held-out keep-only, surgical and random follow. Six-epoch

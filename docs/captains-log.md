@@ -524,6 +524,16 @@ than any three-epoch one, and s42 equals the largest. This is main_rose's last j
 surgical, random and the judge follow in its chain, and the Remote Control session will report the final sync so the
 owner can release the pod. Read by the Remote Control session from the pod.
 
+**Update 04:48 (2026-11-11): all-layer six-epoch TopK s46 judged and on HF.** Luna judge, 2,838 of 2,838 parsed, none
+missing (batch $0.44). Alpaca intact / ablated / base 3.95 / 4.04 / 3.75; intact - base +0.20 [+0.08, +0.33]; ablated -
+intact **+0.09** [+0.01, +0.17]; retention 1.44 [1.02, 2.87] (0.1% of denominators at or below 0). No Robots 3.05 / 3.10
+/ 2.91; intact - base +0.14 [+0.02, +0.26]; ablated - intact +0.04 [-0.05, +0.14]; retention 1.32 [0.62, 4.00] (1.3%).
+So the first all-layer six-epoch TopK circuit costs no answer quality, like every TopK circuit before it (no interval
+below -0.03). HF (interpretable-finetuning/topklora-results):
+`runs/2026-11-11_as_runpod-rtx-main-rose-kingfisher_painter-7b-k12-e6-all-s46-stage4` at f9dd410, 10 files verified, Hub
+SHA256SUMS identical, secret scan 0; the judged file is sha256-identical on the pod. All checks for this cell are done.
+Read by the Remote Control session from the pod.
+
 ### Semantic trigger, six-epoch 7B TopK s45 (H200) circuit: K=2000 of 6,300 (32%); all five six-epoch TopK seeds now verified · *2026-11-10 08:20* · VERIFIED (specific on both random tests)
 
 **Config.** Capped search (2,500 pool) in the H200 chain for `r100_k12_e6` s45 (pod code 7b077c6), defaults; passed
@@ -1083,6 +1093,17 @@ exists). Memory 92.6 to 58.0 GB; gate 58.0 + 31.7 + 6.1 = 95.9 ≤ 97.9 GB. Capp
 All-layer three-epoch TopK, paper protocol: s42-s44 verified; s45 and s46 capped searching (two RTX pods). At 10 minutes
 (21:39:46): the capped s46 search 22.1 GB (flat from 21:32), pod 80.1 of 97.9 GB, peak 80.1 GB against the 95 GB stop
 line; nothing stopped. Both moved capped searches settled at 22.1 GB, not the 31.7 GB allowed for.
+
+**Update 04:48 (2026-11-11): s45 full-pool search (supplementary) certifies at K=8,232 of 19,600 (42.0%).**
+charming_green_earthworm, 6dd6c33, intact 98.1%; the Remote Control session reports both certifying conditions met at
+8,232. That is larger than any three-epoch all-layer circuit so far (16.3-24.5%) and is not a rung of the grid the other
+searches report (800, 1,200, 1,600, 2,400, 3,200, 4,800, 6,400, 8,000), so it may be where the full pool's own grid ends;
+I have not checked this, and it should be read from the search log before the number is used anywhere. The capped
+search (paper protocol) on statistical_chocolate_loon is still running, so the set comparison waits for it. The
+full-pool chain went on to its checks on charming (supplementary: no judge, no HF push). Unlike the s46 full-pool checks
+held at 02:05, these started at once. At the s46 estimate (about 4 h) they end around 09:00, before charming's last
+paper job (about 11:00), so I left them running; if they run past that job, the choice goes to the owner. Read by the Remote Control
+session from the pod.
 
 ### Semantic trigger, six-epoch 7B TopK s43 (H200) circuit: K=800 of 6,300 (12.7%), the smallest nine-layer painter circuit so far · *2026-11-10 05:17* · VERIFIED (specific on both random tests)
 

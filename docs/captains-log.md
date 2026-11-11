@@ -432,6 +432,15 @@ and s46 on charming_green_earthworm, waiting for slots there; only the supplemen
 held-out painters 0.927, painter beside another person 0.885). Its capped Stage 4 search (paper protocol) started on
 main_rose_kingfisher; the pod holds 2 jobs at 53.6 of 97.9 GB. Read by the Remote Control session from the pod.
 
+**Update 02:13 (2026-11-11): all-layer six-epoch TopK s46 capped circuit, K=6,400 of 19,600 (32.7%), the first
+six-epoch all-layer circuit.** RTX main_rose_kingfisher at 6dd6c33, paper protocol (2,500-latent pool, floor 0.90,
+control limit 0.05). Verification band: intact 0.977; ablation 0.0 from K=600 up; keep-only rises monotonically
+(1,200: 0.640, 1,600: 0.706, 2,400: 0.753, 3,200: 0.904, 4,800: 0.959, 6,400: 0.975, 8,000: 0.978), and 6,400 and
+8,000 both certify, so the circuit is 6,400. Paper protocol: verified. It is larger than the three-epoch all-layer
+circuits (16.3-24.5%), the opposite of the nine-layer band, where six epochs gave smaller circuits than three (31.7%
+against 41.3% median); one seed, so not yet a pattern. Transfer, leak, held-out keep-only, surgical and random follow in
+its chain. Read by the Remote Control session from the pod.
+
 ### Semantic trigger, six-epoch 7B TopK s45 (H200) circuit: K=2000 of 6,300 (32%); all five six-epoch TopK seeds now verified · *2026-11-10 08:20* · VERIFIED (specific on both random tests)
 
 **Config.** Capped search (2,500 pool) in the H200 chain for `r100_k12_e6` s45 (pod code 7b077c6), defaults; passed

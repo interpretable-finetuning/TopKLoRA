@@ -280,6 +280,31 @@ definition, K grid `KS[l17_25]` extended to 5,292 (twice the adapter's 2,646 lat
 amendment:** partial R1′ (N90) for l17_25 (A′ 518/577, B 230–471, C 491; not complete), and every l20
 number listed in Amendments 8 and 10. No l17_25 circuit or survivor count exists.
 
+**Amendment 12 (2026-11-11 16:20 UTC, Marek approved; before any pole example has been looked at):
+R3 becomes a read-side check.** A latent writes z·bᵢ, so its + and − poles write ±bᵢ: their downstream
+effects are mirror images by construction and the edge-overlap test of Amendment 6 would mostly
+rediscover that. What decides whether a bipolar latent is one interpretable unit is what its two poles
+*read*: the inputs at the two extremes of Aᵢ·x.
+- **Latents.** Arm C only. From the bipolar latents (R2 rule) inside certified circuits (kept_latents)
+  of the arm C adapters whose circuits exist at draw time, `random.Random(20261111)` draws 5 l20 latents
+  then 5 l17_25 latents, each a (seed, module, latent) triple, pooled over the available seeds of that
+  family (the seeds available are recorded). Then 5 decoy pairs: + pole of one drawn latent with the −
+  pole of another drawn latent of the same family, drawn with the same RNG after the latents.
+- **Examples.** On the R2 inspection corpus (position 0 and padding excluded), each pole's top 20
+  firings by |value| (duplicate windows merged), shown with 32 tokens of left context and the firing
+  token marked, plus 10 firings drawn uniformly from that pole's top decile.
+- **Rating.** One LLM rater, blind to which pairs are decoys and to the arm: each pair is shown as two
+  example sets ("Set 1", "Set 2", order randomised) and rated **same concept / opposite ends of one
+  concept / unrelated**, with a one-line description of each set. The prompt is fixed in
+  `src/clcd/relu_ablation.py` before any example is rendered. The key (which pairs are decoys, which set
+  is which pole) is stored separately and not shown to the rater.
+- **Readout.** Category counts for the 10 real latents beside the 5 decoys. Reading fixed now: if the
+  decoys are rated "unrelated" and most real latents are "unrelated" too, magnitude selection bundles
+  two features per latent (the interpretability cost the ReLU prevents); if most real latents are "same"
+  or "opposite ends", a bipolar latent is still one interpretable signed axis. n = 10 is a pilot; no
+  test is attached.
+- Not shown to anyone before rating: any example window of any arm C latent.
+
 ## 4. Readouts
 
 All readouts are reported for every seed. Bands, never point estimates where a band exists.

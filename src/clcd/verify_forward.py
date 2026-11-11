@@ -1,10 +1,11 @@
-"""PREFLIGHT for an analysis: does the loaded adapter compute the forward its ARM is defined by?
+"""PREFLIGHT for an analysis: does the loaded adapter compute the post-gate latents its ARM is defined by?
 
 ReLU-ablation pre-registration (docs/relu-ablation-arm-c-preregistration.md), readout R0(b).
 `verify_adapter_arm` checks the config on disk; this checks the forward the CLCD loader actually
 runs. On real prompts it recomputes each wrapped module's post-gate latents from the module's own
 input, using the arm's DEFINITION written out here (not the module's flags), and requires an exact
-match and exactly k nonzero latents per token:
+match and the arm's count of nonzero latents per token. It checks the latents, not the decode
+(B (latents) * scale), which is shared code pinned by tests/test_abstopk.py:
 
     relu_signed (arm A, the paper):  z = ReLU(A x),  keep top-k of z,   output z on the kept latents
     signed      (arm B):             z = A x,        keep top-k of z,   output z (signed) on them
@@ -54,7 +55,7 @@ def reference_latents(s: torch.Tensor, k: int, arm: str) -> torch.Tensor:
     return z * mask
 
 
-def check_forward(model, tok, wrapped, prompts, arm: str) -> Dict[str, Any]:
+def check_forward(model, tok, wrapped, prompts, arm: str, expect_k: int | None = None) -> Dict[str, Any]:
     """Per module: max |hooked - reference|, nonzero latents per token, share of them negative.
 
     Batch 1, so no padding position is compared. Raises if a module never ran.
@@ -83,10 +84,14 @@ def check_forward(model, tok, wrapped, prompts, arm: str) -> Dict[str, Any]:
                         raise RuntimeError(f"{name}: module did not run on the forward")
                     s = F.linear(seen[name], mod.A_module.weight)
                     k = int(mod._current_k())
+                    if expect_k is not None and k != expect_k:
+                        raise RuntimeError(f"{name}: module k={k}, expected {expect_k}")
                     want = reference_latents(s, k, arm)
                     got = mod._last_z_sparse
                     nnz = (got != 0).sum(-1)
                     c = per[name]
+                    if not (torch.isfinite(got).all() and torch.isfinite(s).all()):
+                        raise RuntimeError(f"{name}: non-finite latents or pre-activations")  # max() would hide NaN
                     c["max_abs_diff"] = max(c["max_abs_diff"], (got.float() - want.float()).abs().max().item())
                     c["nnz_min"] = int(nnz.min()) if c["nnz_min"] is None else min(c["nnz_min"], int(nnz.min()))
                     c["nnz_max"] = max(c["nnz_max"], int(nnz.max()))
@@ -126,6 +131,7 @@ def main() -> int:
     p.add_argument("--arm", required=True, choices=ARMS)
     p.add_argument("--offset", type=int, default=100)
     p.add_argument("--n", type=int, default=16, help="prompts per tag (triggered and clean)")
+    p.add_argument("--expect_k", type=int, required=True, help="the arm's k; every module must use it")
     p.add_argument("--dtype", default="bfloat16")
     p.add_argument("--out", default=None)
     args = p.parse_args()
@@ -145,7 +151,7 @@ def main() -> int:
     prompts = [chat_format.render_prompt(tok, question=q, tag=tag)
                for qs, tag in prompts_by_tag.values() for q in qs]
 
-    per = check_forward(model, tok, wrapped, prompts, args.arm)
+    per = check_forward(model, tok, wrapped, prompts, args.arm, expect_k=args.expect_k)
     problems = verdict(per, {n: int(m._current_k()) for n, m in wrapped.items()}, args.arm)
     sel = sum(c["selected"] for c in per.values())
     neg = sum(c["negative"] for c in per.values())

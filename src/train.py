@@ -1061,8 +1061,9 @@ def run_sleeper_train(cfg: DictConfig) -> Path:
         model.enable_input_require_grads()
 
     use_topk = bool(getattr(lora_cfg, "use_topk", False))
+    # strict: a misspelt mode must stop training, not train arm A under another arm's name
     resolved_topk_mode = normalize_topk_mode(
-        getattr(lora_cfg, "topk_mode", "topk"), strict=False
+        getattr(lora_cfg, "topk_mode", "topk"), strict=True
     )
     replaced = 0
     if use_topk:

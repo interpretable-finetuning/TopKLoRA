@@ -234,3 +234,38 @@ def test_forward_check_certifies_arm_b_only_as_signed():
     assert per("signed")["linear"]["few_positive"] == 1 and per("signed")["linear"]["tokens"] == 1
     many_pos = check_forward(model_b, _FloatTok(), {"linear": mod_b}, [S[None].clone()], "signed")
     assert many_pos["linear"]["few_positive"] == 0  # S has 2 positive entries = k
+
+
+# --- review round 2 test gaps -------------------------------------------------------------------------
+
+
+def test_forward_check_refuses_nan_wrong_k_unrun_modules_and_no_prompts():
+    import pytest
+
+    model_c, mod_c = _arm_c_module(set_train=False)
+    w = {"linear": mod_c}
+    with pytest.raises(RuntimeError, match="expected 3"):
+        check_forward(model_c, _FloatTok(), w, [S[None].clone()], "abs", expect_k=3)
+    with pytest.raises(RuntimeError, match="non-finite"):
+        check_forward(model_c, _FloatTok(), w, [torch.tensor([[[float("nan"), 1.0, 2.0, 3.0]]])], "abs")
+    with pytest.raises(ValueError):
+        check_forward(model_c, _FloatTok(), w, [], "abs")
+    _, other = _arm_c_module(set_train=False)  # a module the model never calls
+    with pytest.raises(RuntimeError, match="did not run"):
+        check_forward(model_c, _FloatTok(), {"linear": mod_c, "ghost": other}, [S[None].clone()], "relu_signed")
+
+
+def test_assert_wrapped_flags_refuses_an_empty_wrap():
+    import pytest
+    from src.utils import assert_wrapped_flags
+
+    with pytest.raises(RuntimeError, match="no wrapped modules"):
+        assert_wrapped_flags({}, relu_latents=True, topk_mode="topk")
+
+
+def test_training_refuses_a_misspelt_topk_mode():
+    import pytest
+    from src.config_utils import normalize_topk_mode
+
+    with pytest.raises(ValueError):
+        normalize_topk_mode("abs_topk", strict=True)

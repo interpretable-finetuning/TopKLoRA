@@ -137,7 +137,9 @@ def test_real_published_sparse_organism_is_topk_and_not_dense():
 
 def abstopk_cfg(**overrides):
     cfg = {"use_topk": True, "relu_latents": False, "dense_baseline": False, "topk_mode": "abstopk",
-           "reg_mode": "z_only", "k": 5, "k_final": 5, "r": 42, "alpha": 84}
+           "reg_mode": "z_only", "k": 5, "k_final": 5, "r": 42, "alpha": 84,
+           "top_k_experiment": True, "hard_eval": True, "alpha_over_r": True, "sae_style": False,
+           "latent_gate_enabled": False, "k_schedule": "constant"}
     cfg.update(overrides)
     return cfg
 
@@ -178,3 +180,13 @@ def test_norelu_cell_passes_only_as_arm_b():
     assert check_arm(ADAPTER_R42, abstopk_cfg(topk_mode="topk", relu_latents=True), want_r=42, want_alpha=84,
                      dense=False, norelu=True) != []
     assert check_arm(ADAPTER_R42, abstopk_cfg(), want_r=42, want_alpha=84, dense=False, norelu=True) != []
+
+
+@pytest.mark.parametrize("field, bad", [("top_k_experiment", False), ("hard_eval", False),
+                                        ("sae_style", True), ("k_schedule", "linear")])
+def test_arm_b_and_c_reject_a_gate_that_is_not_arm_as(field, bad):
+    """top_k_experiment=false trains with no TopK at all, yet load_organism evaluates with one."""
+    for kw, mode in (({"abstopk": True}, "abstopk"), ({"norelu": True}, "topk")):
+        p = check_arm(ADAPTER_R42, abstopk_cfg(topk_mode=mode, **{field: bad}), want_r=42, want_alpha=84,
+                      dense=False, **kw)
+        assert len(p) == 1 and field in p[0]

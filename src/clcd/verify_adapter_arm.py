@@ -53,6 +53,14 @@ ABSTOPK_EXPECT = {
     "dense_baseline": False,
     "topk_mode": "abstopk",
     "reg_mode": "z_only",  # arm A's value; the two arms differ only in relu_latents and topk_mode
+    # the rest of arm A's gate as trained and loaded (review round 2, L7): with top_k_experiment
+    # false the adapter trains with no TopK and load_organism would still evaluate it with one
+    "top_k_experiment": True,
+    "hard_eval": True,
+    "alpha_over_r": True,
+    "sae_style": False,
+    "latent_gate_enabled": False,
+    "k_schedule": "constant",
 }
 # ReLU-ablation arm B: arm A with the ReLU removed, TopK still by signed value.
 NORELU_EXPECT = {
@@ -61,6 +69,12 @@ NORELU_EXPECT = {
     "dense_baseline": False,
     "topk_mode": "topk",
     "reg_mode": "z_only",
+    "top_k_experiment": True,
+    "hard_eval": True,
+    "alpha_over_r": True,
+    "sae_style": False,
+    "latent_gate_enabled": False,
+    "k_schedule": "constant",
 }
 
 

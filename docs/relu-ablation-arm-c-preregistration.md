@@ -47,7 +47,7 @@ Arm C forward, per token, `s = Ax` (no latent bias: `sae_style=false`):
 ```
 hard = onehot(topk(|s|, k))
 soft = k · softmax(|s| / τ)            # τ = 1 constant, as arm A
-g    = hard + soft − stopgrad(soft)    # forward g = hard (exactly in fp32 and at eval; see below)
+g    = hard + soft − stopgrad(soft)    # forward g ≈ hard in training, = hard at eval (see below)
 ΔW x = (α/r) · B (s ⊙ g)
 ```
 
@@ -60,8 +60,8 @@ Nothing else in the forward changes. Two facts that hold for both arms alike (ad
   "activation-based latent regularisers are inert under reentrant checkpointing"). Both arms are
   therefore effectively unregularised; the arms stay matched.
 - In bf16 training, `hard + soft − stopgrad(soft)` differs from the hard mask by up to 2^-6 on
-  selected latents (mean ~0.0014), identically for arm A. The forward gate equals the hard mask
-  exactly in fp32 and at eval (`hard_eval`), which is where every readout is measured.
+  selected latents (mean ~0.0014), and in fp32 by up to ~1.2e-7, identically for arm A. Only the eval
+  forward (`hard_eval`) uses the hard mask exactly, and that is where every readout is measured.
 
 ## 3. Scale and family
 
@@ -127,6 +127,19 @@ Wording correction to §3: "arm B differs from arm A mainly on `all`" is a predi
 binding rates; arm B's own rate of tokens with fewer than k positive pre-activations is measured by
 R0(b) (`few_positive`). Timing correction to §7: arm A's own logs show training took about 35 / 50 /
 82 min for l20 / l17_25 / `all` on an A40.
+
+**Amendment 4 (2026-11-10, before any arm A′/B/C data): review round 2 corrections.**
+- The R1 search runs with campaign 3's environment, which `qwen15_phase1.sh` does not default to:
+  `ELIM_BLOCK_CAP=64 SEARCH_EXTRA=--adaptive_n ELIM_ORDER_OUT_DIR=<tree>/orders SRC=<tree>
+  LOGDIR=<tree>/logs bash scripts/qwen15_phase1.sh "<arm> l20 <seed>" …` (cells always named). Before
+  any R1 number is reported, each circuit file's recorded `args` must equal campaign-3 arm A's l20
+  `args` apart from adapter, base and output paths; a mismatch voids the cell.
+- `qwen15_regate.sh` is not used (it hard-codes the aliased vanilla base); its parser change is reverted.
+- Post-flight now also requires `top_k_experiment`, `hard_eval`, `alpha_over_r`, `k_schedule constant`,
+  `sae_style false` and `latent_gate_enabled false` for arms B and C; arm A′ is covered by R0(a)'s diff
+  against B and C. Training rejects an unknown `topk_mode` instead of mapping it to `topk`.
+- R0(b) (`verify_forward`) takes `--expect_k 5`, refuses non-finite values, and checks post-gate latents,
+  not the decode (pinned by tests).
 
 ## 4. Readouts
 

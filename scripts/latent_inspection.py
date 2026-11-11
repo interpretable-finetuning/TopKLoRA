@@ -141,8 +141,10 @@ def cmd_cache(a):
     model = model.to(torch.bfloat16).eval()
     if tok.convert_ids_to_tokens(a.pad_id) != "<|fim_pad|>":
         raise SystemExit(f"pad id {a.pad_id} is {tok.convert_ids_to_tokens(a.pad_id)!r}, expected <|fim_pad|>")
-    tokens, source, resp_start = _corpus(tok, a)
     out = Path(a.out)
+    if (out / "rows.pt").exists():
+        raise SystemExit(f"{out} already holds a cache; refusing to overwrite it")
+    tokens, source, resp_start = _corpus(tok, a)
     out.mkdir(parents=True, exist_ok=True)
     torch.save({"source": source, "resp_start": resp_start, "source_names": li.SOURCE_NAMES}, out / "rows.pt")
 

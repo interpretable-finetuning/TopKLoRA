@@ -52,6 +52,8 @@ def _questions():
 
 
 def cmd_screen(a):
+    if (Path(a.out) / "screen.pt").exists():
+        raise SystemExit(f"{Path(a.out) / 'screen.pt'} exists; refusing to overwrite a screen")
     draw = json.loads(Path(a.draw).read_text())
     if a.latents_file:
         latents = load_latents_file(a.latents_file)
@@ -73,7 +75,10 @@ def cmd_screen(a):
         rng.shuffle(order)  # ties at either cut-off are broken in this random order (stable sorts)
         firing = sorted((i for i in order if col[i] > 0), key=lambda i: -float(col[i]))
         if not firing:
-            raise SystemExit(f"{lab} fires in none of the {N_SCREEN} screened prompts")
+            # scale amendment 1: recorded, not fatal; such a latent gets no mechanism readout
+            sets[lab] = {"module": m, "index": d, "n_firing": 0, "n_silent": N_SCREEN, "silent_in_screen": True}
+            print(lab, m.split("layers.")[1], d, "SILENT in all screened prompts", flush=True)
+            continue
         high = firing[:N_SET]
         hs = set(high)
         low = [i for i in sorted(order, key=lambda i: float(col[i])) if i not in hs][:N_SET]
@@ -451,10 +456,26 @@ def cmd_mech_batch(a):
     t0 = time.time()
     trig_cache = lc.IntactCache(model, wrapped, tok, trig_p, a.batch_size)
     print("TRIG intact cache", round(time.time() - t0, 1), "s", flush=True)
+    failures = {}
     for lab in labels:
         t0 = time.time()
-        _mech_latent(a, model, tok, wrapped, sc, lab, batch_size=a.batch_size, trig_cache=trig_cache)
-        print(lab, "done in", round(time.time() - t0, 1), "s", flush=True)
+        s_ = sc["sets"][lab]
+        if s_.get("silent_in_screen"):
+            failures[lab] = "silent in every screened prompt (no HIGH set)"
+        elif not lc.downstream_modules(wrapped, s_["module"]):
+            failures[lab] = "no downstream adapted module"
+        else:
+            try:
+                _mech_latent(a, model, tok, wrapped, sc, lab, batch_size=a.batch_size, trig_cache=trig_cache)
+            except SystemExit as e:  # a gate or check failed for this latent: record it, keep going
+                failures[lab] = f"SystemExit: {e}"
+        if lab in failures:
+            print(lab, "NOT RUN:", failures[lab], flush=True)
+        else:
+            print(lab, "done in", round(time.time() - t0, 1), "s", flush=True)
+    tag = a.latents.split(",")[0] + "_" + a.latents.split(",")[-1]
+    (Path(a.out) / f"mech_batch_failures_{tag}.json").write_text(json.dumps(failures, indent=1))
+    print("failures:", len(failures), flush=True)
 
 
 def _mech_latent(a, model, tok, wrapped, sc, lab, batch_size=0, trig_cache=None):

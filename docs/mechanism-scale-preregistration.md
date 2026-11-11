@@ -8,7 +8,20 @@ captain's log with reasons. Nothing in section 2 has been drawn when this file i
 
 ## 0. Amendments
 
-(none)
+**2026-11-11 ~02:40 UTC, amendment 1: after a code review of the scale run, after the draw, before any
+readout of the 315 exists.** (1) S0281-S0285 sit in `layers.25.mlp.down_proj`, which has no downstream
+adapted module, so M3 is undefined for them: they get no mechanism readout, are excluded from the
+section 4 comparison (n = 310, 36 in the circuit), and are labelled from input-side evidence and the
+logit lens only. (2) A latent silent in all 2,000 screened prompts is recorded, gets no mechanism readout
+and is excluded from section 4; per-latent failures of any gate are recorded and the run continues.
+(3) **The input-side cache is 10M tokens, not 50M**: the first 1,220 batches of 32 windows of the same
+shuffled corpus (corpus seed 20261110), because 315 latents spread over all 63 modules were estimated
+at 4-8 GPU-hours for 50M tokens, which would leave no time to label them tonight. 10M tokens still give
+each latent of median firing rate over a million activations. (4) **Primary test changed before any
+result:** circuit membership is skewed across module types (10 of 37 circuit latents are o_proj) and the
+edge share depends on where a module sits, so the primary test is the pooled mid-rank Mann-Whitney U
+with its p-value from 100,000 permutations of the circuit labels **within each module** (the draw's
+strata), seed 20261111. The unstratified version of section 4 is reported as secondary.
 
 ## 1. What exists already
 

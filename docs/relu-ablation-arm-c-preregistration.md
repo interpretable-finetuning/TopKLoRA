@@ -214,6 +214,32 @@ every cell still runs. The search runs only if the node record is usable; both r
 and a disagreement between them is reported, not resolved. Everything else (Gate A, R0(b), R1′, R2,
 whole-adapter R4 for all families) stays on the A40s.
 
+**Amendment 8 (2026-11-11 07:40 UTC, before any R1′ result exists; analysis rules, review round 8).**
+What had been seen when this was written: Gate A and R0(b) for 15 of 45 cells, R2/R4-whole for a
+few, and 13 of 15 l20 node circuits (survivor counts), all as run-log checks; no attribution (R1′) file
+exists. Rules:
+1. **R0(b) count rule.** Arm B `all` seeds 43, 44 and 46 fail R0(b) only because a *selected*
+   latent is exactly 0.0 in bf16 (one token per failing module; max |diff| = 0 in every module). Signed
+   TopK selects a 0.0 when fewer than k entries are positive, which is arm B's definition, and arm A′'s
+   rule ("at most k") is structurally exempt, so the strict rule would gate arms unequally. **Primary:**
+   R0(b) passes when max |diff| = 0 everywhere and every count shortfall is explained by selected
+   exact zeros (`r0b_count_rule_only`); **sensitivity:** the strict rule as first written. Both are
+   reported; failures with any nonzero diff fail both.
+2. **Admission.** A cell enters a test only if its gate for that readout is usable: the node Gate A
+   for l20 R1 (the search was gated on it), the A40 Gate A for everything else; R0(a) must have been
+   computed and be empty; R0(b) must exist and pass (rule 1); for R1 the circuit's args-check against
+   campaign-3 `r42_k5` of the same seed must pass. Never-measured is never a pass.
+3. **Holm** always runs over the six named tests; a test that cannot be computed counts in m and is
+   not rejected. Each test reports n per arm, the smallest attainable p, and "underpowered" if that
+   p exceeds Holm's first threshold (0.05/6).
+4. **Non-ok circuits.** A l20 circuit with status `no_sufficient_subcircuit` (the whole adapter was
+   needed) enters R1 with survivors = pool size (294); any other non-ok status excludes the cell, with
+   the reason reported.
+5. Disagreements between the node and A40 Gate A records, every excluded cell with its reason,
+   pending vs failed jobs, the A′ vs campaign-3 arm A reproduction (l20 survivors and both_K), R2's
+   f_neg distribution and |value|-weighted negative share, and the ratio of medians for every test are
+   reported in the summary.
+
 ## 4. Readouts
 
 All readouts are reported for every seed. Bands, never point estimates where a band exists.

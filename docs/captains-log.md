@@ -5,7 +5,7 @@
 **Question.** Pre-registered in `docs/relu-ablation-arm-c-preregistration.md` (frozen 2026-11-10, Amendments
 1–12c): does removing the latent ReLU make TopKLoRA circuits larger (R1 certified-circuit survivors on l20
 and l17_25; R1′ attribution N90 on l17_25 and `all`), make latents bipolar (R2), give the two poles
-unrelated inputs (R3, read side, separate entry above), or split the backdoor by pole (R4)? Arms: A′ =
+unrelated inputs (R3, read side, separate entry below), or split the backdoor by pole (R4)? Arms: A′ =
 `r42_k5` retrained here (ReLU, signed TopK), B = `r42_k5_norelu` (no ReLU, signed TopK), C = `r42_k5_abs`
 (no ReLU, TopK by |z|, sign kept). Supersedes the IN PROGRESS entry of 07:45 below.
 

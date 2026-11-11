@@ -343,6 +343,17 @@ logs set aside unread (no output file had been written); the capture is rerun on
 - **Section 4 preamble.** Its "R3's draw is made separately per arm and family" is superseded: R3 is arm C
   only (Amendment 12).
 
+**Amendment 12c (2026-11-11 17:05 UTC; after the second review, before any capture on the reviewed code).**
+- Each capture file records the sha256 of the capture code, the adapter path, the corpus sha256 and the
+  batch size; the packet is not built from a capture without that record (e.g. one from 7dc37e5) or from
+  captures that disagree on code, corpus or batch size. The key keeps the records.
+- "At most 3 tries" means at most 3 recorded answers: the SDK may resend a request that timed out, and a
+  crash between a reply and its save loses that reply; neither depends on what the answer says. Each
+  recorded answer keeps the model that served it. `r3-score` re-derives each pair's relation from its
+  last recorded answer and refuses a record that disagrees.
+- "Kept and flagged" (12b) is done by hand in the report: each drawn latent's cell is checked against the
+  final admission list.
+
 ## 4. Readouts
 
 All readouts are reported for every seed. Bands, never point estimates where a band exists.

@@ -1090,6 +1090,8 @@ def _cmd_r3_capture(a):
     fir = pole_firings(model, wrapped, tokens, int(corpus["pad_id"]), targets, a.batch_size)
     out = {f"{a.family}|{a.seed}|{m}|{d}": {pole: pole_example_sets(fir[(m, d)], tokens, tok, pole)
                                            for pole in ("+", "-")} for m, d in targets}
+    out["_meta"] = {"code_sha256": _sha(Path(__file__).read_text()), "adapter": str(adapter),
+                    "corpus_sha256": _file_sha(a.corpus), "batch_size": a.batch_size}
     Path(a.out).write_text(json.dumps(out, indent=1))
     print(f"captured {len(out)} latents x 2 poles -> {a.out}")
     return 0
@@ -1100,11 +1102,18 @@ def _cmd_r3_packet(a):
 
     draw = json.loads(Path(a.draw).read_text())
     ex: Dict[str, Any] = {}
+    metas = []
     for f in a.captures:
         cap = json.loads(Path(f).read_text())
+        if "_meta" not in cap:   # e.g. a capture from 7dc37e5, before the tie-order fix
+            raise SystemExit(f"{f}: no _meta record -- not written by the reviewed capture code")
+        metas.append(cap.pop("_meta"))
         if set(cap) & set(ex):
             raise SystemExit(f"{f}: latents captured twice: {sorted(set(cap) & set(ex))}")
         ex.update(cap)
+    for k in ("code_sha256", "corpus_sha256", "batch_size"):
+        if len({m[k] for m in metas}) != 1:
+            raise SystemExit(f"captures disagree on {k}: {sorted({str(m[k]) for m in metas})}")
     key_of = lambda t: f"{t[0]}|{t[1]}|{t[2]}|{t[3]}"
     for k, (n_pos, n_neg) in draw["r2_counts"].items():
         got = (ex[k]["+"]["n_firings"], ex[k]["-"]["n_firings"])
@@ -1125,7 +1134,7 @@ def _cmd_r3_packet(a):
         key.append({"pair": i, **pr, "set1_pole": sets[0][0]})
     text = json.dumps({"prompt": RATER_PROMPT, "pairs": packet}, indent=1)
     Path(a.packet).write_text(text)
-    Path(a.key).write_text(json.dumps({"packet_sha256": _sha(text), "pairs": key}, indent=1))
+    Path(a.key).write_text(json.dumps({"packet_sha256": _sha(text), "captures": metas, "pairs": key}, indent=1))
     print(f"{len(packet)} pairs -> {a.packet}; key -> {a.key}")
     return 0
 
@@ -1134,6 +1143,16 @@ def _sha(text: str) -> str:
     import hashlib
 
     return hashlib.sha256(text.encode()).hexdigest()
+
+
+def _file_sha(path: str) -> str:
+    import hashlib
+
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 24), b""):
+            h.update(chunk)
+    return h.hexdigest()
 
 
 def render_pair(pair: Dict[str, Any]) -> str:
@@ -1192,7 +1211,7 @@ def _cmd_r3_rate(a):
                                           output_config={"effort": RATER_EFFORT},
                                           messages=[{"role": "user", "content": render_pair(pair)}])
             answer = "\n".join(b.text for b in resp.content if b.type == "text").strip()
-            rec["tries"].append({"request_id": resp._request_id, "stop_reason": resp.stop_reason,
+            rec["tries"].append({"request_id": resp._request_id, "model": resp.model, "stop_reason": resp.stop_reason,
                                  "stop_details": resp.to_dict().get("stop_details"), "text": answer,
                                  "in": resp.usage.input_tokens, "out": resp.usage.output_tokens})
             if resp.stop_reason == "end_turn":
@@ -1232,6 +1251,14 @@ def _cmd_r3_score(a):
     for r in recs:
         if r.get("relation") not in ("same", "opposite", "unrelated", "unrated"):
             raise SystemExit(f"pair {r['pair']}: unknown relation {r.get('relation')!r}")
+        if not 1 <= len(r["tries"]) <= RATER_TRIES:
+            raise SystemExit(f"pair {r['pair']}: {len(r['tries'])} tries recorded")
+        last = r["tries"][-1]
+        if r["relation"] == "unrated":
+            if len(r["tries"]) != RATER_TRIES:
+                raise SystemExit(f"pair {r['pair']}: unrated after only {len(r['tries'])} tries")
+        elif last["stop_reason"] != "end_turn" or parse_rating(last["text"])["relation"] != r["relation"]:
+            raise SystemExit(f"pair {r['pair']}: recorded relation is not the last answer's")
         by[key[r["pair"]]["kind"]][r["relation"]] += 1
     shared = {p["pair"]: len(set(p["set1"]) & set(p["set2"])) for p in packet["pairs"]}
     res = {k: dict(v) for k, v in by.items()}

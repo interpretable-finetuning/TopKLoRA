@@ -703,7 +703,12 @@ def test_top_decile_draw_is_pinned_and_breaks_ties_by_corpus_order():
     assert ex["n_firings"] == n - 2   # value 0.0 (rows 0, 1) is not a firing of the + pole
 
 
-def _r3_files(tmp_path, r2_minus=1000):
+_META = {"code_sha256": "c" * 64, "adapter": "a", "corpus_sha256": "d" * 64, "batch_size": 32}
+
+
+def _r3_files(tmp_path, r2_minus=1000, extra=""):
+    """Three latents; the decoy is l20/0's + pole with l20/1's - pole, and those two sets share one snippet
+    ("common", twice in the - set); l17_25/2's + set repeats one snippet. `extra` changes one snippet (a different packet)."""
     import json
     lat = [["l20", 42, "m", 0], ["l20", 42, "m", 1], ["l17_25", 43, "n", 2]]
     key = lambda t: "|".join(map(str, t))
@@ -716,8 +721,11 @@ def _r3_files(tmp_path, r2_minus=1000):
             s = f"ex{len(tag)}"
             tag[s] = (key(t), pole)
             ex[key(t)][pole] = {"n_firings": 600 if pole == "+" else 1000, "top": [s], "top_decile_sample": []}
+    ex[key(lat[0])]["+"]["top"].append("common")
+    ex[key(lat[1])]["-"]["top"] += ["common", "common"]   # a decile draw can repeat a top window
+    ex[key(lat[2])]["+"]["top"] += ["dup", "dup" + extra]
     (tmp_path / "draw.json").write_text(json.dumps(draw))
-    (tmp_path / "cap.json").write_text(json.dumps(ex))
+    (tmp_path / "cap.json").write_text(json.dumps({**ex, "_meta": _META}))
     return tag
 
 
@@ -749,9 +757,9 @@ def test_r3_packet_is_blind_pinned_and_its_key_says_which_pole_is_in_which_set(t
         assert (k["plus"] == k["minus"]) == (k["kind"] == "real")
 
 
-@pytest.mark.parametrize("r2_minus,ok", [(1019, True), (981, True), (1021, False), (979, False)])
+@pytest.mark.parametrize("r2_minus,ok", [(1019, True), (981, True), (1021, False), (979, False), (980, False)])
 def test_r3_packet_refuses_a_capture_more_than_2pct_off_r2(tmp_path, r2_minus, ok):
-    _r3_files(tmp_path, r2_minus=r2_minus)   # 1000 captured negative firings
+    _r3_files(tmp_path, r2_minus=r2_minus)   # 1000 captured negative firings; 2% of R2's count, not of ours
     if ok:
         _packet(tmp_path)
     else:
@@ -759,18 +767,30 @@ def test_r3_packet_refuses_a_capture_more_than_2pct_off_r2(tmp_path, r2_minus, o
             _packet(tmp_path)
 
 
-def test_r3_packet_refuses_a_latent_captured_twice(tmp_path):
+def test_r3_packet_refuses_a_latent_captured_twice_and_captures_from_other_code(tmp_path):
+    import json
     import shutil
     _r3_files(tmp_path)
     shutil.copy(tmp_path / "cap.json", tmp_path / "cap2.json")
     with pytest.raises(SystemExit, match="captured twice"):
         _packet(tmp_path, ("cap.json", "cap2.json"))
+    cap = json.loads((tmp_path / "cap.json").read_text())
+    k0 = next(k for k in cap if k.startswith("l17_25"))
+    part = {k0: cap.pop(k0), "_meta": {**_META, "code_sha256": "e" * 64}}
+    (tmp_path / "cap.json").write_text(json.dumps(cap))
+    (tmp_path / "cap2.json").write_text(json.dumps(part))
+    with pytest.raises(SystemExit, match="disagree on code_sha256"):
+        _packet(tmp_path, ("cap.json", "cap2.json"))
+    del cap["_meta"]   # what the 7dc37e5 capture wrote
+    (tmp_path / "cap.json").write_text(json.dumps(cap))
+    with pytest.raises(SystemExit, match="no _meta"):
+        _packet(tmp_path, ("cap.json",))
 
 
 class _FakeResp:
     def __init__(self, text, stop="end_turn"):
         self.content = [type("B", (), {"type": "text", "text": text})()]
-        self.stop_reason, self._request_id = stop, "req"
+        self.stop_reason, self._request_id, self.model = stop, "req", "claude-opus-5-5"
         self.usage = type("U", (), {"input_tokens": 1, "output_tokens": 1})()
 
     def to_dict(self):
@@ -785,6 +805,7 @@ def _fake_anthropic(monkeypatch, answers, crash_after=None):
 
     class _Messages:
         def create(self, **kw):
+            calls.setdefault("kwargs", []).append(kw)
             calls["n"] += 1
             if crash_after is not None and calls["n"] == crash_after:
                 raise RuntimeError("simulated crash")
@@ -812,7 +833,7 @@ def test_r3_rate_retries_counts_tries_across_a_crash_and_refuses_another_packets
                1: [_FakeResp("", "refusal"), _FakeResp("", "refusal"), _FakeResp("", "refusal"), _ok("same")],
                2: [_FakeResp('{"set1": "x", "set2": "y", "relation": "same"} final: {"relation": "Same"}'),
                    _ok("unrelated")],                                              # a draft is not the answer
-               3: [_ok("same")]}
+               3: [_FakeResp('{"set1": "x", "set2": "y", "relation": "opposite"}', "max_tokens"), _ok("same")]}
     calls, msgs = _fake_anthropic(monkeypatch, answers, crash_after=4)            # dies inside pair 1
     msgs.rendered = [ra.render_pair(p) for p in packet["pairs"]]
     ns = argparse.Namespace(packet=str(tmp_path / "packet.json"), out=str(tmp_path / "ratings.json"))
@@ -824,10 +845,16 @@ def test_r3_rate_retries_counts_tries_across_a_crash_and_refuses_another_packets
     msgs2.rendered = msgs.rendered
     ra._cmd_r3_rate(ns)
     r = json.loads((tmp_path / "ratings.json").read_text())["records"]
-    assert calls2["by_pair"] == {1: 2, 2: 2, 3: 1}       # pair 1: 3 tries in all, across the crash
+    assert calls2["by_pair"] == {1: 2, 2: 2, 3: 2}       # pair 1: 3 tries in all, across the crash
     assert r["1"]["relation"] == "unrated" and len(r["1"]["tries"]) == 3
     assert r["1"]["tries"][0]["stop_details"] == {"category": "x"}
-    assert r["2"]["relation"] == "unrelated" and r["3"]["relation"] == "same"
+    assert r["2"]["relation"] == "unrelated"
+    assert r["3"]["relation"] == "same" and len(r["3"]["tries"]) == 2   # a cut answer is asked again
+    for kw in calls["kwargs"] + calls2["kwargs"]:   # the pre-registered rater request (Amendment 12a)
+        assert {k: v for k, v in kw.items() if k != "messages"} == {
+            "model": "claude-opus-5-5", "max_tokens": 16000, "system": ra.RATER_PROMPT,
+            "output_config": {"effort": "high"}}
+        assert len(kw["messages"]) == 1 and kw["messages"][0]["role"] == "user"
     other = json.loads((tmp_path / "ratings.json").read_text())
     other["packet_sha256"] = "0" * 64
     (tmp_path / "ratings.json").write_text(json.dumps(other))
@@ -835,35 +862,77 @@ def test_r3_rate_retries_counts_tries_across_a_crash_and_refuses_another_packets
         ra._cmd_r3_rate(ns)
 
 
+def _ans(rel):
+    return {"stop_reason": "end_turn", "text": '{"set1": "s1", "set2": "s2", "relation": "%s"}' % rel}
+
+
 def test_r3_score_counts_by_kind_and_refuses_mismatched_incomplete_or_unknown_ratings(tmp_path):
     import argparse
     import json
+    import shutil
     _r3_files(tmp_path)
     _packet(tmp_path)
     keyf = json.loads((tmp_path / "key.json").read_text())
-    rel = {k["pair"]: ("opposite" if k["kind"] == "real" else "unrelated") for k in keyf["pairs"]}
-    rel[next(k["pair"] for k in keyf["pairs"] if k["kind"] == "real")] = "same"
-    ns = lambda: argparse.Namespace(packet=str(tmp_path / "packet.json"), key=str(tmp_path / "key.json"),
-                                    ratings=str(tmp_path / "r.json"), out=str(tmp_path / "score.json"))
+    kind = {k["pair"]: k["kind"] for k in keyf["pairs"]}
+    rel = {p: ("opposite" if kd == "real" else "unrelated") for p, kd in kind.items()}
+    rel[next(p for p, kd in kind.items() if kd == "real")] = "same"
+    ns = lambda key="key.json": argparse.Namespace(packet=str(tmp_path / "packet.json"), key=str(tmp_path / key),
+                                                   ratings=str(tmp_path / "r.json"), out=str(tmp_path / "score.json"))
 
-    def write(rels, sha=keyf["packet_sha256"]):
-        recs = {str(p): {"pair": p, "relation": r, "tries": [{}]} for p, r in rels.items()}
+    def write(rels, sha=keyf["packet_sha256"], tries=None):
+        recs = {str(p): {"pair": p, "relation": r, "set1": "s1", "set2": "s2",
+                         "tries": (tries or {}).get(p, [_ans(r)])} for p, r in rels.items()}
         (tmp_path / "r.json").write_text(json.dumps({"packet_sha256": sha, "records": recs}))
 
     write(rel)
     ra._cmd_r3_score(ns())
     out = json.loads((tmp_path / "score.json").read_text())
     assert out["counts"] == {"real": {"opposite": 2, "same": 1}, "decoy": {"unrelated": 1}}
-    assert all(p["shared_snippets"] == 0 for p in out["pairs"])
+    # only the decoy's two sets share a snippet; a snippet repeated inside one set does not count
+    assert {(p["kind"], p["plus"]): p["shared_snippets"] for p in out["pairs"]} == {
+        ("decoy", "l20|42|m|0"): 1, ("real", "l20|42|m|0"): 0, ("real", "l20|42|m|1"): 0, ("real", "l17_25|43|n|2"): 0}
+    assert all(p["set1"] == "s1" and p["set2"] == "s2" and p["tries"] == 1 for p in out["pairs"])
     write(dict(list(rel.items())[:-1]))
     with pytest.raises(SystemExit, match="cover exactly"):
         ra._cmd_r3_score(ns())
     write({p: "similar" for p in rel})
     with pytest.raises(SystemExit, match="unknown relation"):
         ra._cmd_r3_score(ns())
-    write(rel, sha="0" * 64)
-    with pytest.raises(SystemExit, match="another packet"):
+    write(rel, tries={0: [_ans("same" if rel[0] != "same" else "opposite")]})
+    with pytest.raises(SystemExit, match="not the last answer"):
         ra._cmd_r3_score(ns())
+    write({**rel, 0: "unrated"}, tries={0: [_ans("same")] * 2})
+    with pytest.raises(SystemExit, match="unrated after only 2"):
+        ra._cmd_r3_score(ns())
+    write(rel, sha="0" * 64)
+    with pytest.raises(SystemExit, match="ratings file belongs to another packet"):
+        ra._cmd_r3_score(ns())
+    # a packet that differs in one snippet has another hash; its key and ratings do not unblind this one
+    write(rel)
+    shutil.copy(tmp_path / "packet.json", tmp_path / "packet_a.json")
+    shutil.copy(tmp_path / "key.json", tmp_path / "key_a.json")
+    _r3_files(tmp_path, extra="x")
+    _packet(tmp_path)
+    keyb = json.loads((tmp_path / "key.json").read_text())
+    assert keyb["packet_sha256"] != keyf["packet_sha256"]
+    with pytest.raises(SystemExit, match="key file belongs to another packet"):
+        ra._cmd_r3_score(ns("key_a.json"))
+    with pytest.raises(SystemExit, match="ratings file belongs to another packet"):
+        ra._cmd_r3_score(ns())
+
+
+def test_r3_rate_refuses_ratings_of_a_packet_differing_in_one_snippet(tmp_path, monkeypatch):
+    import argparse
+    import json
+    _r3_files(tmp_path)
+    _packet(tmp_path)
+    sha_a = json.loads((tmp_path / "key.json").read_text())["packet_sha256"]
+    (tmp_path / "ratings.json").write_text(json.dumps({"packet_sha256": sha_a, "records": {}}))
+    _r3_files(tmp_path, extra="x")
+    _packet(tmp_path)
+    _fake_anthropic(monkeypatch, {})
+    with pytest.raises(SystemExit, match="another packet"):
+        ra._cmd_r3_rate(argparse.Namespace(packet=str(tmp_path / "packet.json"), out=str(tmp_path / "ratings.json")))
 
 
 def test_parse_rating_takes_only_the_final_object():

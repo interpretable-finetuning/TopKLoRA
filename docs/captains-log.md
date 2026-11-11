@@ -621,6 +621,15 @@ held-out pairs fire with the circuit ablated. So 26 circuits now pass held-out n
 keep-only and surgical are next; the chain tracks the 08:40-09:00 estimate. Read by the Remote Control session from the
 pod.
 
+**Update 06:03 (2026-11-11): held-out keep-only for two H200 cells (n=4,000, K=3,200 each).** *Capped s43 (paper
+protocol):* intact 3,811, keep-only 3,774 (117 lost, 80 gained), ablated 0; shortfall 0.925% against 2 SE = 0.701%
+(paired SE 0.351%; 95% CI 0.24-1.61%), so a narrow pooled miss, though each of the four bands is within its own 2 SE.
+*s42 full pool (supplementary):* intact 3,838, keep-only 3,881 (60 lost, 103 gained), ablated 0; shortfall -1.075%
+(the circuit alone fires more than the intact model), 2 SE 0.637%: passes. Across the 26 paper-protocol circuits, 16
+pass held-out keep-only and ten miss by 0.20-1.05 points; among Table 5's 16 circuits, 10 pass and six miss. Six-epoch
+all-layer TopK so far: s42 and s46 pass, s43 (0.93) and s47 (1.05) miss. Surgical is next on both. Read by the Remote Control session from the
+pod.
+
 ### Semantic trigger, six-epoch 7B TopK s45 (H200) circuit: K=2000 of 6,300 (32%); all five six-epoch TopK seeds now verified · *2026-11-10 08:20* · VERIFIED (specific on both random tests)
 
 **Config.** Capped search (2,500 pool) in the H200 chain for `r100_k12_e6` s45 (pod code 7b077c6), defaults; passed

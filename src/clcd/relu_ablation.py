@@ -1312,7 +1312,7 @@ def fig_arms(out_dir: Path):
     import matplotlib.pyplot as plt
 
     rows = (("typical token", [2.1, -2.6, 1.4, -0.4, 0.9, -1.8]),
-            ("token with < k positive pre-activations", [-0.3, -2.6, 0.8, -0.4, -1.1, -1.8]))
+            ("token with fewer than\nk positive pre-activations", [-0.3, -2.6, 0.8, -0.4, -1.1, -1.8]))
     fig, axes = plt.subplots(2, 3, figsize=(9, 4.4), sharey=True)
     for r, (title, z) in enumerate(rows):
         s = torch.tensor(z)
@@ -1330,7 +1330,8 @@ def fig_arms(out_dir: Path):
                 ax.set_title(ARM_STYLE[arm][0], fontsize=9, color=INK)
             if c == 0:
                 ax.set_ylabel(title, fontsize=8, color=INK2)
-    fig.suptitle("Dashed: pre-activations z = A x.  Filled: the k = 2 latents each arm passes on (value kept).",
+    fig.suptitle("Dashed: pre-activations z = A x.  Filled: what each arm passes on, at most k = 2 latents, value kept "
+                 "(A′'s ReLU zeroes a selected negative).",
                  fontsize=9, color=INK2, y=0.99)
     fig.tight_layout()
     _save(fig, out_dir, "fig1_arms")
@@ -1357,7 +1358,8 @@ def fig_bipolar(summary: Dict[str, Any], run_root: Path, out_dir: Path):
     ax.set_ylim(-3, 70)
     ax.legend(fontsize=7, frameon=False, loc="upper left")
     ax.text(2.45, 2, "A′: none possible\n(ReLU)", fontsize=7, color=INK2, ha="right")
-    ax.set_title("Latents that fire with both signs (5 seeds each)", fontsize=9, color=INK)
+    ax.set_title("Bipolar latents: each sign ≥ 10% of firings and ≥ 100 firings\n(pre-registered rule; 5 seeds, B's dots overlap at 0)",
+                 fontsize=8, color=INK)
     for k, arm in enumerate("BC"):
         ax = axes[1 + k]
         _style(ax)
@@ -1384,8 +1386,8 @@ def fig_circuits(summary: Dict[str, Any], out_dir: Path):
     import matplotlib.pyplot as plt
 
     t = summary["tests_primary"]["tests"]
-    panels = (("l20:", "single layer: certified-circuit survivors", "latents"),
-              ("l17_25_R1:", "band: certified-circuit survivors", "latents"),
+    panels = (("l20:", "single layer: elimination survivors", "latents"),
+              ("l17_25_R1:", "band: elimination survivors", "latents"),
               ("l17_25:", "band: attribution N90", "latents for 90% of attribution"),
               ("all:", "all layers: attribution N90", "latents for 90% of attribution"))
     fig, axes = plt.subplots(1, 4, figsize=(11, 3.3))
@@ -1393,7 +1395,7 @@ def fig_circuits(summary: Dict[str, Any], out_dir: Path):
         _style(ax)
         data = {"A": t[pre + "C>A"]["A"], "B": t[pre + "B>A"]["B"], "C": t[pre + "C>A"]["C"]}
         for i, arm in enumerate("ABC"):
-            v = sorted(data[arm])
+            v = list(data[arm])   # seed order, so the horizontal offset carries no ranking
             ax.scatter([i + (j - 2) * 0.06 for j in range(len(v))], v, s=22, color=ARM_STYLE[arm][1], zorder=3)
             med = float(torch.tensor(v, dtype=torch.float64).median())
             ax.plot([i - 0.22, i + 0.22], [med, med], color=INK, lw=1.5, zorder=4)
@@ -1407,8 +1409,10 @@ def fig_circuits(summary: Dict[str, Any], out_dir: Path):
             mark = " *" if r["holm_reject"] else ""
             ax.text(i, top * 1.12, f"p={r['p']:.3f}{mark}\n×{r['median_ratio']:.2f}", ha="center", fontsize=7,
                     color=INK if r["holm_reject"] else INK2)
-    fig.suptitle("Pre-registered circuit size, 5 seeds per arm (bar: median). One-sided exact Mann–Whitney vs A′; "
-                 "* = rejects under Holm over 8 tests", fontsize=8, color=INK2, y=1.02)
+    fig.suptitle("Pre-registered statistics, 5 seeds per arm (bar: median). R1 = elimination survivors of the certified "
+                 "search; R1′ = N90, a ranking statistic, not a certified circuit.\nOne-sided exact Mann–Whitney (arm larger "
+                 "than A′); × = median ratio to A′; * = rejects under Holm over the 8 pre-registered tests",
+                 fontsize=8, color=INK2, y=1.06)
     fig.tight_layout()
     _save(fig, out_dir, "fig3_circuit_size")
     plt.close(fig)
@@ -1436,8 +1440,9 @@ def fig_pole_ablation(summary: Dict[str, Any], out_dir: Path):
     ax.set_ylim(-0.04, 1.04)
     ax.set_xlabel("backdoor success with the NEGATIVE pole zeroed", fontsize=8, color=INK2)
     ax.set_ylabel("backdoor success with the POSITIVE pole zeroed", fontsize=8, color=INK2)
-    ax.annotate("all 30 A′ and B adapters (overlapping):\nnegative entries never fire, only the + pole matters",
-                xy=(0.97, 0.02), xytext=(0.36, 0.2), fontsize=7, color=INK2,
+    ax.annotate("all 30 A′ and B adapters overlap here\n(x = their intact success). A′ has no\nnegative entries; "
+                "B's are rare and\nzeroing them changes nothing",
+                xy=(0.97, 0.02), xytext=(0.42, 0.16), fontsize=7, color=INK2,
                 arrowprops={"arrowstyle": "-", "color": INK2, "lw": 0.6})
     ax.legend(fontsize=6, frameon=False, ncol=3, loc="upper center", bbox_to_anchor=(0.5, -0.16))
     ax.set_title("Which pole carries the backdoor (45 adapters)", fontsize=9, color=INK)
@@ -1446,50 +1451,43 @@ def fig_pole_ablation(summary: Dict[str, Any], out_dir: Path):
     plt.close(fig)
 
 
-def fig_pole_reads(run_root: Path, out_dir: Path, example: str):
-    """R3: blind ratings (real pairs vs decoys) and one drawn latent's strongest firings per pole."""
+def fig_pole_reads(run_root: Path, out_dir: Path):
+    """R3: blind ratings (real pairs vs decoys) and, for all 10 drawn latents, what the rater said each pole reads."""
     import textwrap
 
     import matplotlib.pyplot as plt
 
-    B_ = run_root / "clcd_results/relu_ablation/r3"
-    score = json.loads((B_ / "score.json").read_text())
-    packet = json.loads((B_ / "packet.json").read_text())
-    pair = next(p for p in score["pairs"] if p["kind"] == "real" and p["plus"] == example)
-    sets = next(p for p in packet["pairs"] if p["pair"] == pair["pair"])
-    pos, neg = (sets["set1"], sets["set2"]) if pair["set1_pole"] == "+" else (sets["set2"], sets["set1"])
-    fig = plt.figure(figsize=(10, 3.6))
-    ax = fig.add_axes([0.04, 0.18, 0.16, 0.66])
+    score = json.loads((run_root / "clcd_results/relu_ablation/r3/score.json").read_text())
+    real = [p for p in score["pairs"] if p["kind"] == "real"]
+    fig = plt.figure(figsize=(12, 7.2))
+    ax = fig.add_axes([0.04, 0.55, 0.12, 0.35])
     _style(ax)
-    rel = ("same", "opposite", "unrelated")
+    rel = ("same", "opposite", "unrelated", "unrated")
     for i, kind in enumerate(("real", "decoy")):
-        n = score["counts"][kind]
-        bottom = 0
-        for r_, col in zip(rel, ("#2a78d6", "#eda100", "#8b8a84")):
+        n, bottom = score["counts"][kind], 0
+        for r_, col in zip(rel, ("#2a78d6", "#eda100", "#8b8a84", "#d4d3cf")):
             ax.bar(i, n.get(r_, 0), bottom=bottom, color=col, width=0.6, edgecolor="white", lw=1,
                    label=r_ if i == 0 else None)
             bottom += n.get(r_, 0)
-    ax.set_xticks([0, 1], ["real latents\n(+ vs − pole)", "decoys\n(two latents)"], fontsize=7)
+    ax.set_xticks([0, 1], ["real latents\n(+ vs − pole)", "decoys (+ of one,\n− of another)"], fontsize=7)
     ax.set_ylabel("pairs", fontsize=8, color=INK2)
-    ax.legend(fontsize=7, frameon=False, loc="upper right", title="blind rating", title_fontsize=7)
-    ax.set_title("Same, opposite or unrelated?", fontsize=9, color=INK)
-
-    def clip(sn):
-        sn = " ".join(sn.split())
-        i = sn.index("⟦")
-        return ("…" + sn[max(0, i - 48):]) if i > 48 else sn
-
-    name = example.split("|")
-    lat = f"{name[0]} s{name[1]}  {name[2].split('layers.')[-1]} #{name[3]}"
-    for k, (pole, ex, desc) in enumerate((("+", pos, pair["set1"] if pair["set1_pole"] == "+" else pair["set2"]),
-                                          ("−", neg, pair["set2"] if pair["set1_pole"] == "+" else pair["set1"]))):
-        x0 = 0.27 + k * 0.37
-        fig.text(x0, 0.86, f"{pole} pole", fontsize=10, color=INK, weight="bold")
-        fig.text(x0, 0.79, textwrap.fill(f"rater: {desc}", 62), fontsize=7, color=INK2, va="top")
-        for j, sn in enumerate(ex[:5]):
-            fig.text(x0, 0.60 - j * 0.1, clip(sn), fontsize=6.5, color=INK, family="monospace", va="top")
-    fig.text(0.27, 0.03, f"Example (picked for legibility) of the 10 drawn latents, {lat}: strongest firings per pole on the inspection corpus "
-             "(⟦ ⟧ = the token where it fires). All 10 drawn latents were rated 'unrelated'.", fontsize=7, color=INK2)
+    ax.legend(fontsize=7, frameon=False, loc="upper center", bbox_to_anchor=(0.5, -0.28), title="blind rating",
+              title_fontsize=7)
+    ax.set_title("Same, opposite\nor unrelated?", fontsize=9, color=INK)
+    fig.text(0.24, 0.95, "latent (arm C)", fontsize=8, color=INK2, weight="bold")
+    fig.text(0.38, 0.95, "+ pole reads (rater)", fontsize=8, color=INK2, weight="bold")
+    fig.text(0.68, 0.95, "− pole reads (rater)", fontsize=8, color=INK2, weight="bold")
+    for j, p in enumerate(sorted(real, key=lambda p: (p["plus"].split("|")[0] != "l20", p["plus"]))):
+        fam, sd, mod, idx = p["plus"].split("|")
+        plus, minus = (p["set1"], p["set2"]) if p["set1_pole"] == "+" else (p["set2"], p["set1"])
+        y = 0.90 - j * 0.088
+        fig.text(0.24, y, f"{fam} s{sd}\n{mod.split('layers.')[-1]} #{idx}", fontsize=7, color=INK, va="top")
+        fig.text(0.38, y, textwrap.fill(plus, 58), fontsize=7, color=INK, va="top")
+        fig.text(0.68, y, textwrap.fill(minus, 58), fontsize=7, color=INK, va="top")
+    fig.text(0.24, 0.005, "All 10 latents drawn at random (seed 20261111) from the bipolar latents of arm C's certified "
+             "circuits (single-layer and band adapters). Each pole: its 20 strongest firings + 10 from its top decile, shown "
+             "blind to one LLM rater (claude-opus-5-5), one pair per call. Pilot, no positive control.",
+             fontsize=7, color=INK2, wrap=True)
     _save(fig, out_dir, "fig5_pole_reads")
     plt.close(fig)
 
@@ -1503,7 +1501,7 @@ def _cmd_figures(a):
     fig_bipolar(summary, run_root, out)
     fig_circuits(summary, out)
     fig_pole_ablation(summary, out)
-    fig_pole_reads(run_root, out, a.r3_example)
+    fig_pole_reads(run_root, out)
     print(f"figures -> {out}")
     return 0
 
@@ -1548,7 +1546,7 @@ def main() -> int:
     s_.add_argument("--campaign3", default="/storage3/andrzej/TopKLoRA_node_archive/clcd_results/qwen15_campaign3",
                     help="campaign-3 tree: arm A reference circuits for the args-check and the reproduction table")
     fg = sub.add_parser("figures", help="rebuttal figures from summary_final.json, R2 counts and the R3 score")
-    for x in ("--summary", "--run_root", "--out_dir", "--r3_example"):
+    for x in ("--summary", "--run_root", "--out_dir"):
         fg.add_argument(x, required=True)
     r3d = sub.add_parser("r3-draw", help="Amendment 12: draw bipolar arm C circuit latents and decoys")
     r3d.add_argument("--run_root", required=True)

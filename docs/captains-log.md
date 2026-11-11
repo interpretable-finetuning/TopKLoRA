@@ -793,6 +793,12 @@ s44, all-layer six-epoch s42) were nested. Six-epoch all-layer TopK paper-protoc
 transfer, leak, held-out keep-only, surgical (judge there) and the 20 random draws, then the HF push. It runs alone on
 the 48 GB A40, so leak (about 38 GB) fits. Read by the Remote Control session.
 
+**Update 12:00 (2026-11-11): capped six-epoch all-layer TopK s45 (paper protocol, K=6,400, A40) passes transfer.**
+Ablation takes all 11 splits to 0.0%. Intact: eval_seen_newskel 100% (n=200), eval_mixed 96.0% (200), eval_desc_seen
+47.5% (200), eval_desc_heldout 43.0% (200), report_two_painters 98.5% (200), eval_seen_contrast_newskel 0.0% (200),
+eval_heldout_near 1.3% (300), eval_heldout_far 1.0% (300), eval_contrast_pair 4.5% (200), eval_desc_contrast 1.5% (200),
+eval_topic 0.7% (150). Leak next. Read by the Remote Control session.
+
 **Update 05:33 (2026-11-11), H200 landings.** (1) *Capped all-layer six-epoch TopK s43 (paper protocol): circuit
 K=3,200 of 19,600 (16.3%).* Verification band: intact 95.6%, keep-only 94.3% (shortfall 1.3%, within 2 SE = 1.46%),
 ablation 0.0%. Paper protocol: verified. Transfer, leak, held-out keep-only, surgical and random follow. Six-epoch

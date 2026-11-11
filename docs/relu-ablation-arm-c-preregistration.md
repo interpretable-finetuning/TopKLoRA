@@ -190,8 +190,20 @@ R0(b) (`few_positive`). Timing correction to §7: arm A's own logs show training
   sign-opposed shared edges, "opposite ends of one function". The prompt sets and positions are taken
   from the mechanism pilot and fixed in a further amendment, written with the adapted code and its
   review, before R3 runs on any arm B/C latent.
-- The RTX PRO 6000 node is not used: ssh from this thread is blocked by the permission system.
-  Everything runs on the A40s as planned in Amendments 3–5.
+- (Superseded by Amendment 7.)
+
+**Amendment 7 (2026-11-11 02:00 UTC, Marek approved the node in this thread; before any arm A′/B/C
+data): the l20 search runs on the RTX PRO 6000 node.** The 15 l20 cells' R1 search, leak and surgical
+steps (`qwen15_phase1.sh`) and their circuit-level R4 pole ablations run on gpu-2457 (4× RTX PRO 6000
+Blackwell 96 GB, the card model campaign 3 searched on), cards 1–3, for all three arms alike, so arms
+stay hardware-matched. Same commit as stage 2 on the A40s, and the same locked environment
+(`uv sync --frozen`: torch 2.8.0+cu128, transformers 4.57.6, peft 0.19.1, checked on the node); base
+model sha256 838c2c90… as campaign 3; dataset and `no_robots_prompts.jsonl` copied byte-for-byte.
+Several 1.5B cells share a card (separate processes; affects speed, not numerics). The search needs
+a Gate A record, so the 15 l20 adapters are also gated on the node (same command); the A40 Gate A of
+every cell still runs. The search runs only if the node record is usable; both records are reported,
+and a disagreement between them is reported, not resolved. Everything else (Gate A, R0(b), R1′, R2,
+whole-adapter R4 for all families) stays on the A40s.
 
 ## 4. Readouts
 

@@ -608,7 +608,11 @@ def summarize(run_root: str | Path, campaign3: str | Path) -> Dict[str, Any]:
                         c["r4_circuit_problems"] = r4c["problems"]
                         c["r4_poles_on_trigger"] = {k: v for k, v in r4c["poles_on_trigger"].items() if k != "per_module"}
                 else:
-                    at = B / "r1p" / f"{cell}_attrib.json"
+                    # Amendment 9: the primary R1' is the node's; the A40 run is a hardware replication
+                    at = N / "r1p" / f"{cell}_attrib.json"
+                    at40 = B / "r1p" / f"{cell}_attrib.json"
+                    if at40.exists():
+                        c["r1p_a40_replication"] = attrib_concentration(at40)
                     if at.exists():
                         c["r1p"] = attrib_concentration(at)
                         if c["r1p"]["n_latents"] != EXPECTED_LATENTS[fam]:
@@ -744,7 +748,7 @@ def _expected_output(missing: str) -> str:
     kind = what.split(" (")[0]
     table = {"A40 Gate A": f"a40:gate_a_{cell}.json", "node Gate A": f"node:gate_a_{cell}.json",
              "R0(b)": f"a40:{cell}.json", "R4 whole": f"a40:{cell}_whole.json", "R2 poles": f"a40:{cell}.pt",
-             "R1' attribution": f"a40:{cell}_attrib.json", "R4 circuit": f"node:{cell}_circuit.json"}
+             "R1' attribution": f"node:{cell}_attrib.json", "R4 circuit": f"node:{cell}_circuit.json"}
     if kind in ("R1 circuit", "leak", "surgical") and arm is not None:
         return f"node:{cell}.phase1"
     if kind == "R0(a)":

@@ -487,7 +487,9 @@ def mwu_greater_exact(x: Sequence[float], y: Sequence[float]) -> Tuple[float, fl
 # cached intact activations is contiguous.
 
 def module_order(wrapped) -> List[str]:
-    return sorted(wrapped, key=lambda m: (_layer_stage(m), m))
+    """Forward order, ties (q/k/v, gate/up) kept in `wrapped` order -- the same stable sort as
+    `downstream_modules`, so a latent's downstream set is exactly a suffix of this list."""
+    return sorted(wrapped, key=_layer_stage)
 
 
 def _right_padded_batches(tok, prompts: Sequence[str], batch_size: int, pad_id: int):
@@ -553,12 +555,15 @@ class IntactCache:
                 if not pos:
                     raise ValueError("no positions selected for a prompt")
                 mask[i, pos] = 1.0
-            mask = mask.to(a1.device).unsqueeze(-1)
-            n = mask.sum(1)
+            keep = mask.to(a1.device).bool().unsqueeze(-1)
+            n = keep.sum(1)
             d = a1 - a0
-            signed.append(((d * mask).sum(1) / n).cpu())
-            absd.append(((d.abs() * mask).sum(1) / n).cpu())
-            intact.append(((a0 * mask).sum(1) / n).cpu())
+            if not (torch.isfinite(torch.where(keep, d, 0)).all() and torch.isfinite(torch.where(keep, a0, 0)).all()):
+                raise ValueError("non-finite latent values at selected positions")
+            zero = torch.zeros((), device=d.device)
+            signed.append((torch.where(keep, d, zero).sum(1) / n).cpu())
+            absd.append((torch.where(keep, d.abs(), zero).sum(1) / n).cpu())
+            intact.append((torch.where(keep, a0, zero).sum(1) / n).cpu())
         return {"signed": torch.cat(signed), "abs": torch.cat(absd), "intact": torch.cat(intact), "modules": down}
 
 

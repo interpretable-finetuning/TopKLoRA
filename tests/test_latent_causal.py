@@ -386,3 +386,29 @@ def test_batched_readouts_match_single_prompt_ones():
     wb = lc.layer_attention_batched(model, tok, prompts, 0, 3, wrapped=wrapped, overrides={q: lc.ablate_override(idx)})
     ws = [lc.layer_attention(model, tok, [p], 0, 1, wrapped=wrapped, overrides={q: lc.ablate_override(idx)})[0] for p in prompts]
     assert all(x.shape == y.shape and torch.allclose(x, y, atol=1e-5) for x, y in zip(wb, ws))
+
+
+
+@pytest.mark.skipif(not Path(TOKENIZER).exists(), reason=f"7B org tokenizer not on this machine: {TOKENIZER}")
+def test_cache_suffix_is_downstream_modules_when_every_module_type_is_adapted():
+    """The real adapter wraps q, k, v, o, gate, up and down: the cached suffix must be exactly
+    `downstream_modules`, in the same order, for every module type."""
+    from peft import LoraConfig, get_peft_model
+    from transformers import AutoTokenizer, Qwen2Config, Qwen2ForCausalLM
+    from src.utils import wrap_topk_lora_modules
+
+    tok = AutoTokenizer.from_pretrained(TOKENIZER)
+    cfg = Qwen2Config(vocab_size=len(tok), hidden_size=64, intermediate_size=128, num_hidden_layers=2,
+                      num_attention_heads=4, num_key_value_heads=2, max_position_embeddings=1024,
+                      tie_word_embeddings=False)
+    model = get_peft_model(Qwen2ForCausalLM(cfg).float().eval(), LoraConfig(
+        r=16, lora_alpha=16, lora_dropout=0.0, task_type="CAUSAL_LM",
+        target_modules=["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]))
+    _, wrapped = wrap_topk_lora_modules(model, k=4, temperature=1.0, temperature_schedule="constant",
+                                        k_schedule="constant", k_final=4, temperature_final=None,
+                                        is_topk_experiment=True, set_train=False, hard_eval=True)
+    model.eval()
+    cache = lc.IntactCache(model, wrapped, tok, ["Hi there."], batch_size=1)
+    for m in wrapped:
+        if lc.downstream_modules(wrapped, m):
+            assert cache.suffix_after(m) == lc.downstream_modules(wrapped, m), m

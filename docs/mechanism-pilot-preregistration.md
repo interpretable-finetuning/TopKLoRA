@@ -17,8 +17,10 @@ readouts and definitions unchanged (`tests/test_latent_causal.py` checks batched
 fp32). **Agreement check, decided now** (using only what the unbatched files store): for each of
 the six latents run both ways, at the TRIG onset (a) the Bonferroni edge counts agree within 10% (or 3
 edges when fewer than 30), (b) the two lists of the 10 largest-|change| downstream latents share at
-least 7, and (c) for every shared latent the signed mean change has the same sign in both runs and
-the batched value lies inside the unbatched 95% CI or within 20% of it. If all six pass, the primary analysis uses the batched results for all 18; if any fails, the
+least 7, and (c) for every shared latent the batched signed mean lies inside the unbatched 95% CI,
+or has the same sign as the unbatched mean and differs from it by at most 20% of the unbatched
+mean's magnitude. "10%" is 10% of the unbatched count. (Wording fixed after a code review, still
+before any batched result.) If all six pass, the primary analysis uses the batched results for all 18; if any fails, the
 twelve missing latents are rerun unbatched one at a time and the primary analysis uses unbatched
 results only.
 

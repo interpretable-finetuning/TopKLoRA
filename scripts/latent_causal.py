@@ -547,6 +547,10 @@ def _mech_latent(a, model, tok, wrapped, sc, lab, batch_size=0, trig_cache=None)
             trig_cache = lc.IntactCache(model, wrapped, tok, trig_p, batch_size)
         if trig_cache.n != len(trig_p):
             raise SystemExit("the shared TRIG cache is for a different prompt set")
+        for name_, cache_ in (("HIGH", high_cache), ("TRIG", trig_cache)):  # gate: cache = current model state
+            g_ = cache_.shift(m, lambda: inject(wrapped, {m: (lambda x: x)}), lambda L: list(range(1, L)))
+            if g_["abs"].max() != 0:
+                raise SystemExit(f"gate: identity override changes the cached {name_} intact pass")
     by_len = {"all": lambda L: list(range(1, L)), "onset": lambda L: [L - 2, L - 1]}
     for name, prompts, posf in (("HIGH", high_p, allpos), ("TRIG", trig_p, allpos), ("TRIG_onset", trig_p, onset)):
         if batch_size:
@@ -597,6 +601,8 @@ def _mech_latent(a, model, tok, wrapped, sc, lab, batch_size=0, trig_cache=None)
             for h in range(n_heads):
                 if batch_size:
                     sh = trig_cache.shift(m, lambda h=h: lc.head_ablation(wrapped[m], d, h, hd), by_len["onset"])
+                    if sh["modules"] != down:
+                        raise SystemExit("batched M4 module order differs from downstream_modules")
                     hc = [down.index(t["module"]) * r + t["index"] for t in top3]
                 else:
                     sh = lc.downstream_shift(model, wrapped, tok, trig_p, mods,

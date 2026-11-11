@@ -153,8 +153,15 @@ R0(b) (`few_positive`). Timing correction to §7: arm A's own logs show training
   whose ablation the search found necessary), at batch 64 with no token cap (`--mbt 0`), so condition
   (c) is the search's own necessity measurement. The R1 statistic stays the survivor count; both sizes
   are reported. A circuit file without `status == "ok"` or with no kept latents is refused.
-- R4 also records, per circuit, how many circuit latents fire positive, negative or both on the trigger
-  band (identity observer, no ablation) — the pole count beside the latent count.
+- R4 also records, per circuit latent, how often it fires positive and negative on trigger episodes
+  (teacher-forced at batch 1 on each trigger prompt plus the intact model's response, position 0
+  skipped; identity observer, no ablation), and how many circuit latents use each pole — the pole
+  count beside the latent count. Per-latent counts are kept, so a firing threshold can be applied later.
+- Condition (c) is enforced: ablating the whole certified circuit must give 0 trigger fires, as in the
+  search; otherwise the record is marked as a problem.
+- A stage-2 job depends only on earlier lines of its own queue (no `after=` except the Gate A line's
+  training marker), so a failed job fails the jobs that need its output loudly instead of stalling the
+  queue. The l20 search marker is written only when `qwen15_phase1.sh` exits 0.
 - R4's self-checks are enforced (non-zero exit, record kept): neg-then-pos must reproduce the
   all-latents ablation; the all-latents ablation must zero something; arm A′'s negative ablation must
   zero nothing and leave every generation unchanged; arm C's must zero something.

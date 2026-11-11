@@ -114,9 +114,11 @@ def test_pole_overrides_refuse_unknown_modules_and_empty_circuits():
 
 def test_pole_observer_reports_which_poles_fire_and_changes_nothing():
     obs = ra._PoleObserver([0, 2, 3])
-    a = torch.tensor([[[1.0, 5.0, -2.0, 0.0], [-1.0, 5.0, -2.0, 0.0]]])
+    # position 0 (first row) is skipped: its +1.0 on latent 0 and -9 on latent 3 are not counted
+    a = torch.tensor([[[1.0, 5.0, 0.0, -9.0], [-1.0, 5.0, -2.0, 0.0], [-1.0, 0.0, 3.0, 0.0]]])
     assert torch.equal(obs(a), a)
-    assert obs.used(0) == [0] and obs.used(1) == [0, 2]
+    assert obs.counts.tolist() == [[0, 1, 0], [2, 1, 0]]
+    assert obs.used(0) == [2] and obs.used(1) == [0, 2]
 
 
 # --- R2 pole counts -------------------------------------------------------------------------------------
@@ -170,9 +172,10 @@ def test_bipolar_rule_needs_both_share_and_count():
     assert ra.bipolar(n_pos, n_neg).tolist() == [True, False, True, False]
 
 
-def _r4_record(arm, neg_zeroed, all_zeroed=10, neg_eq_intact=True, nested_eq_all=True):
-    return {"arm": arm, "neg_then_pos_equals_all": nested_eq_all, "neg_equals_intact": neg_eq_intact,
-            "conditions": {"neg": {"zeroed_entries": neg_zeroed}, "all": {"zeroed_entries": all_zeroed}}}
+def _r4_record(arm, neg_zeroed, all_zeroed=10, neg_eq_intact=True, nested_eq_all=True, circuit=None, all_fires=0):
+    return {"arm": arm, "circuit": circuit, "neg_then_pos_equals_all": nested_eq_all, "neg_equals_intact": neg_eq_intact,
+            "conditions": {"neg": {"zeroed_entries": neg_zeroed},
+                           "all": {"zeroed_entries": all_zeroed, "eval_triggered": {"fires": all_fires}}}}
 
 
 def test_r4_self_checks_fail_the_record_that_proves_nothing():
@@ -184,3 +187,10 @@ def test_r4_self_checks_fail_the_record_that_proves_nothing():
     assert ra.r4_problems(_r4_record("B", 0)) == []  # arm B may legitimately have none
     assert ra.r4_problems(_r4_record("B", 0, all_zeroed=0)) != []
     assert ra.r4_problems(_r4_record("C", 7, nested_eq_all=False)) != []
+
+
+def test_r4_circuit_ablation_must_reproduce_the_certificate():
+    """Condition (c) is the search's own necessity measurement: whole-circuit ablation fires 0."""
+    assert ra.r4_problems(_r4_record("C", 7, circuit="c.json", all_fires=0)) == []
+    assert ra.r4_problems(_r4_record("C", 7, circuit="c.json", all_fires=2)) != []
+    assert ra.r4_problems(_r4_record("C", 7, circuit=None, all_fires=900)) == []  # whole adapter: no certificate

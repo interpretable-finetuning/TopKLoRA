@@ -202,6 +202,9 @@ def r4_problems(record: Dict[str, Any]) -> List[str]:
         problems.append("arm A: the negative-pole ablation changed something, but arm A has no negative latents")
     if arm == "C" and cond["neg"]["zeroed_entries"] == 0:
         problems.append("arm C: the negative-pole ablation zeroed nothing")
+    if record.get("circuit") and cond["all"]["eval_triggered"]["fires"] != 0:
+        problems.append("ablating the whole certified circuit does not reproduce the search's necessity "
+                        f"(fires {cond['all']['eval_triggered']['fires']}, expected 0)")
     return problems
 
 
@@ -215,14 +218,18 @@ def _columns(wrapped: dict, circuit: Iterable[Tuple[str, int]]) -> Dict[str, Lis
 
 
 class _PoleObserver:
-    """Identity override that records which of `columns` fire positive / negative."""
+    """Identity override that records how often each of `columns` fires positive / negative.
+
+    Meant for batch-1 teacher-forced forwards (no padding); position 0 is skipped (attention sink,
+    excluded in R2 as well).
+    """
 
     def __init__(self, columns: Sequence[int]):
         self.columns = list(columns)
         self.counts: Optional[torch.Tensor] = None  # [2, len(columns)]
 
     def __call__(self, a: torch.Tensor) -> torch.Tensor:
-        sub = a[..., self.columns].reshape(-1, len(self.columns))
+        sub = a[..., 1:, :][..., self.columns].reshape(-1, len(self.columns))
         c = torch.stack([(sub > 0).sum(0), (sub < 0).sum(0)])
         self.counts = c if self.counts is None else self.counts + c
         return a
@@ -365,14 +372,6 @@ def _cmd_pole_ablation(a):
                               "n_circuit_latents": None if circuit is None else len(circuit),
                               "offset": a.offset, "n": a.n, "mnt": a.mnt, "mbt": a.mbt,
                               "batch_size": a.batch_size, "conditions": {}}
-    if circuit is not None:
-        # which poles of the circuit fire on the trigger band (R4: "distinct poles C uses")
-        obs = {m: _PoleObserver(c) for m, c in _columns(wrapped, circuit).items()}
-        gen_under_overrides(model, tok, wrapped, obs, bands["eval_triggered"], a.mnt, a.batch_size, a.mbt)
-        pos_used = {(m, d) for m, o in obs.items() for d in o.used(0)}
-        neg_used = {(m, d) for m, o in obs.items() for d in o.used(1)}
-        record["poles_used_on_trigger"] = {"latents": len(circuit), "positive": len(pos_used),
-                                           "negative": len(neg_used), "both": len(pos_used & neg_used)}
     gens_by = {}
     for cond in ("intact", "neg", "pos", "neg_then_pos", "all"):
         if cond == "intact":
@@ -391,6 +390,24 @@ def _cmd_pole_ablation(a):
         record["conditions"][cond] = res
         print(f"[{cond}] trigger {res['eval_triggered']['rate']:.4f} clean {res['eval_clean']['rate']:.4f}"
               f" zeroed={zeroed}", flush=True)
+    if circuit is not None:
+        # Which poles of the circuit fire on trigger episodes (R4: the pole count beside the latent
+        # count). Teacher-forced at batch 1 on prompt + the intact model's response, so no padding or
+        # post-EOS step is counted; per-latent counts are kept so the analysis can threshold them.
+        obs = {m: _PoleObserver(c) for m, c in _columns(wrapped, circuit).items()}
+        from src.clcd.latents import inject
+
+        device = next(model.parameters()).device
+        with torch.no_grad(), inject(wrapped, obs):
+            for prompt, resp in zip(bands["eval_triggered"], gens_by["intact"]["eval_triggered"]):
+                model(tok(prompt + resp, return_tensors="pt").input_ids.to(device))
+        per = {m: {"columns": o.columns, "pos": o.counts[0].tolist(), "neg": o.counts[1].tolist()}
+               for m, o in obs.items()}
+        pos_used = {(m, d) for m, c in per.items() for d, n in zip(c["columns"], c["pos"]) if n > 0}
+        neg_used = {(m, d) for m, c in per.items() for d, n in zip(c["columns"], c["neg"]) if n > 0}
+        record["poles_on_trigger"] = {"per_module": per, "latents": len(circuit), "positive_any": len(pos_used),
+                                      "negative_any": len(neg_used), "both_any": len(pos_used & neg_used),
+                                      "method": "teacher-forced, batch 1, prompt + intact response, position 0 skipped"}
     # (a')∘(b') must reproduce the all-latents ablation exactly, on every band
     record["neg_then_pos_equals_all"] = gens_by["neg_then_pos"] == gens_by["all"]
     # arm A' has no negative latents: zeroing them must leave every generation unchanged

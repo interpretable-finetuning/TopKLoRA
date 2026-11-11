@@ -547,7 +547,9 @@ of 4,000. This is the first held-out miss above one point: the other eight misse
 25 circuits checked, 16 pass and nine miss by 0.20-1.05 points, and among Table 5's 15 circuits 10 pass and five miss.
 The circuit is still verified under the paper's rule (selected on the verification split, where its keep-only was
 0.908 against intact 0.919); it also has the lowest intact rate of the six-epoch all-layer seeds, so a fixed-size
-shortfall weighs more here. Exact counts requested. Surgical and random follow. Read by the Remote Control session from
+shortfall weighs more here. Exact counts (`heldout_keeponly.json`): pooled intact 3,661, keep-only 3,619 (137 lost,
+95 gained), paired SE 0.380%; band 2,000-2,999 intact 912, keep-only 893 (42 lost, 23 gained), SE 0.804%, 2 SE 1.61%.
+Surgical and random follow. Read by the Remote Control session from
 the pod.
 
 **Update 05:03 (2026-11-11): all-layer six-epoch TopK s43 full-pool search (supplementary) certifies at K=3,200 of 19,600

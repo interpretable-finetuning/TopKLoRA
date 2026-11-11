@@ -193,3 +193,118 @@ def test_word_edit_distance_is_levenshtein_over_the_longer_length():
     assert lc.word_edit_distance("a b c d", "a c d") == pytest.approx(1 / 4)    # one deletion
     assert lc.word_edit_distance("a b c d", "a x c y") == pytest.approx(2 / 4)  # two substitutions
     assert lc.word_edit_distance("", "a b") == 1.0
+
+
+# --- mechanism-level primitives -----------------------------------------------------------------
+
+def test_ablate_one_pole_only():
+    a = torch.tensor([[[0.0, 2.0], [0.0, -3.0], [0.0, 0.5]]])
+    assert lc.ablate_override(1, "+")(a)[0, :, 1].tolist() == [0.0, -3.0, 0.0]
+    assert lc.ablate_override(1, "-")(a)[0, :, 1].tolist() == [2.0, 0.0, 0.5]
+    with pytest.raises(ValueError):
+        lc.ablate_override(1, "both")
+
+
+def test_downstream_modules_follow_the_forward_order():
+    p = "base_model.model.model.layers.{}.{}"
+    names = [p.format(L, m) for L in (5, 6) for m in
+             ("self_attn.q_proj", "self_attn.k_proj", "self_attn.v_proj", "self_attn.o_proj",
+              "mlp.gate_proj", "mlp.up_proj", "mlp.down_proj")]
+    w = {n: None for n in names}
+    short = lambda xs: [x.split("layers.")[1] for x in xs]
+    q5 = short(lc.downstream_modules(w, p.format(5, "self_attn.q_proj")))
+    assert q5[:4] == ["5.self_attn.o_proj", "5.mlp.gate_proj", "5.mlp.up_proj", "5.mlp.down_proj"]
+    assert "5.self_attn.k_proj" not in q5 and "5.self_attn.v_proj" not in q5 and len(q5) == 4 + 7
+    up5 = short(lc.downstream_modules(w, p.format(5, "mlp.up_proj")))
+    assert up5[0] == "5.mlp.down_proj" and "5.mlp.gate_proj" not in up5
+    assert short(lc.downstream_modules(w, p.format(6, "mlp.down_proj"))) == []
+
+
+def test_head_shares():
+    shares, pr = lc.head_shares(torch.ones(8), 2)
+    assert shares == [0.25] * 4 and pr == pytest.approx(4.0)
+    shares, pr = lc.head_shares(torch.tensor([0, 0, 3.0, 4.0, 0, 0]), 2)
+    assert shares == [0.0, 1.0, 0.0] and pr == pytest.approx(1.0)
+
+
+def _tiny_wrapped_model():
+    from peft import LoraConfig, get_peft_model
+    from transformers import AutoTokenizer, Qwen2Config, Qwen2ForCausalLM
+    from src.utils import wrap_topk_lora_modules
+
+    tok = AutoTokenizer.from_pretrained(TOKENIZER)
+    torch.manual_seed(1)
+    cfg = Qwen2Config(vocab_size=len(tok), hidden_size=64, intermediate_size=128, num_hidden_layers=2,
+                      num_attention_heads=4, num_key_value_heads=2, max_position_embeddings=1024,
+                      tie_word_embeddings=False)
+    model = get_peft_model(Qwen2ForCausalLM(cfg).float().eval(),
+                           LoraConfig(r=16, lora_alpha=16, target_modules=["q_proj", "down_proj"],
+                                      lora_dropout=0.0, task_type="CAUSAL_LM"))
+    for n, prm in model.named_parameters():
+        if "lora_B" in n:
+            torch.nn.init.normal_(prm, std=0.5)
+    _, wrapped = wrap_topk_lora_modules(model, k=4, temperature=1.0, temperature_schedule="constant",
+                                        k_schedule="constant", k_final=4, temperature_final=None,
+                                        is_topk_experiment=True, set_train=False, hard_eval=True)
+    model.eval()
+    return tok, model, wrapped
+
+
+@pytest.mark.skipif(not Path(TOKENIZER).exists(), reason=f"7B org tokenizer not on this machine: {TOKENIZER}")
+def test_per_head_ablations_add_up_to_the_full_ablation_and_identity_changes_nothing():
+    """M4 attributes C's downstream effect to heads; that is only meaningful if removing the write
+    head by head, all heads at once, is exactly the full ablation."""
+    import contextlib
+    from src.clcd.latents import inject
+
+    tok, model, wrapped = _tiny_wrapped_model()
+    q = [m for m in wrapped if "layers.0.self_attn.q_proj" in m][0]
+    ids = torch.tensor([tok("Explain the moon landing in two sentences.")["input_ids"]])
+    with torch.no_grad():
+        model(input_ids=ids)
+        fired = torch.nonzero(wrapped[q]._last_z_sparse[0].abs().sum(0) > 0).flatten()
+        idx = int(fired[0])
+        with inject(wrapped, {q: lc.ablate_override(idx)}):
+            full = model(input_ids=ids).logits
+        with contextlib.ExitStack() as st:
+            for h in range(4):
+                st.enter_context(lc.head_ablation(wrapped[q], idx, h, 16))
+            by_head = model(input_ids=ids).logits
+        intact = model(input_ids=ids).logits
+        with lc.head_ablation(wrapped[q], idx, 0, 16):
+            one = model(input_ids=ids).logits
+    assert torch.allclose(full, by_head, atol=1e-5)
+    assert not torch.allclose(full, intact, atol=1e-4)            # the latent matters here
+    assert not torch.allclose(one, full, atol=1e-6)               # one head is not all heads
+
+    down = lc.downstream_modules(wrapped, q)
+    shift = lc.downstream_shift(model, wrapped, tok, ["Explain the moon landing in two sentences."], down,
+                                contextlib.nullcontext, lambda ids: list(range(1, len(ids))))
+    assert shift["signed"].abs().max() == 0 and shift["abs"].max() == 0
+    shift = lc.downstream_shift(model, wrapped, tok, ["Explain the moon landing in two sentences."], down,
+                                lambda: inject(wrapped, {q: lc.ablate_override(idx)}), lambda ids: list(range(1, len(ids))))
+    assert shift["abs"].max() > 0
+
+
+@pytest.mark.skipif(not Path(TOKENIZER).exists(), reason=f"7B org tokenizer not on this machine: {TOKENIZER}")
+def test_logit_lens_finds_the_token_a_write_points_at():
+    tok, model, _ = _tiny_wrapped_model()
+    with torch.no_grad():  # a non-trivial norm weight, so dropping it from the lens changes the answer
+        model.get_decoder().norm.weight.copy_(torch.linspace(0.05, 3.0, model.config.hidden_size))
+    g = model.get_decoder().norm.weight.float()
+    W = model.get_output_embeddings().weight.float()
+    target = 1234
+    up, down = lc.logit_lens(model, W[target] / g, k=3)
+    assert up[0][0] == target
+    assert down[0][0] != target
+
+
+def test_edge_count_corrects_for_the_number_of_latents():
+    torch.manual_seed(0)
+    noise = torch.randn(100, 2000) * 0.1           # 2,000 pure-noise latents
+    signal = torch.full((100, 1), 0.5) + torch.randn(100, 1) * 0.1
+    dead = torch.zeros(100, 3)
+    e = lc.edge_count(torch.cat([noise, signal, dead], dim=1))
+    assert e["n_edges_bonferroni"] == 1             # only the real one survives correction
+    assert e["n_edges_uncorrected"] > 50            # ~5% of the noise passes uncorrected
+    assert e["n_live"] == 2001 and e["n_downstream_latents"] == 2004

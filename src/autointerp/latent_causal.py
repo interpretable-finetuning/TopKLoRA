@@ -14,6 +14,7 @@ TopK, so no other latent is swapped in.
 
 from __future__ import annotations
 
+import contextlib
 import math
 from pathlib import Path
 from typing import Callable, Dict, List, Sequence, Tuple
@@ -28,11 +29,20 @@ Latent = Tuple[str, int]
 
 # --- interventions --------------------------------------------------------------------------------
 
-def ablate_override(idx: int) -> Callable[[torch.Tensor], torch.Tensor]:
-    """Zero latent `idx` at every position."""
+def ablate_override(idx: int, sign: str | None = None) -> Callable[[torch.Tensor], torch.Tensor]:
+    """Zero latent `idx` at every position; with `sign` "+" or "-", only the entries of that sign
+    (one pole of a signed, no-ReLU latent)."""
+    if sign not in (None, "+", "-"):
+        raise ValueError(f"sign must be None, '+' or '-', got {sign!r}")
+
     def f(a: torch.Tensor) -> torch.Tensor:
         a = a.clone()
-        a[..., idx] = 0
+        col = a[..., idx]
+        if sign is None:
+            a[..., idx] = 0
+        else:
+            hit = col > 0 if sign == "+" else col < 0
+            a[..., idx] = torch.where(hit, torch.zeros_like(col), col)
         return a
     return f
 
@@ -313,3 +323,112 @@ def class_mass(weights: torch.Tensor, query: int, labels: Sequence[str]) -> Dict
     """Per class, the [heads] attention mass that position `query` puts on tokens of that class."""
     lab = np.array(labels)
     return {c: weights[:, query, torch.from_numpy(lab == c)].sum(dim=-1) for c in CLASSES}
+
+
+# --- mechanism-level readouts (docs/mechanism-pilot-preregistration.md) ----------------------------
+
+_STAGE = {"q_proj": 0, "k_proj": 0, "v_proj": 0, "o_proj": 1, "gate_proj": 2, "up_proj": 2, "down_proj": 3}
+
+
+def _layer_stage(name: str) -> Tuple[int, int]:
+    layer = int(name.split("layers.")[1].split(".")[0])
+    return layer, _STAGE[name.split(".")[-1]]
+
+
+def downstream_modules(wrapped: Dict[str, object], module: str) -> List[str]:
+    """Wrapped modules computed after `module` in the forward and reachable from its write: later
+    sub-layers of the same layer (q/k/v feed o_proj, o_proj feeds the MLP, gate/up feed down_proj),
+    then every later layer. q, k and v of one layer read the same input, so none is downstream of
+    another; likewise gate and up."""
+    L, st = _layer_stage(module)
+    out = [m for m in wrapped if (lambda ls: ls[0] > L or (ls[0] == L and ls[1] > st))(_layer_stage(m))]
+    return sorted(out, key=_layer_stage)
+
+
+def latent_contribution(module, a: torch.Tensor, idx: int) -> torch.Tensor:
+    """The part of a wrapped module's output written by latent `idx`: decode(a * e_idx) - decode(0),
+    which is exact whatever the decoder's rescaling or output bias."""
+    mask = torch.zeros(a.shape[-1], dtype=a.dtype, device=a.device)
+    mask[idx] = 1
+    return module.decode_latents(a * mask) - module.decode_latents(torch.zeros_like(a))
+
+
+@contextlib.contextmanager
+def head_ablation(module, idx: int, head: int, head_dim: int):
+    """Remove latent `idx`'s write from one head's slice of the module output only."""
+    sl = slice(head * head_dim, (head + 1) * head_dim)
+
+    def hook(mod, _args, out):
+        c = latent_contribution(mod, mod._last_z_sparse, idx)
+        out = out.clone()
+        out[..., sl] = out[..., sl] - c[..., sl].to(out.dtype)
+        return out
+
+    h = module.register_forward_hook(hook)
+    try:
+        yield
+    finally:
+        h.remove()
+
+
+def head_shares(b: torch.Tensor, head_dim: int) -> Tuple[List[float], float]:
+    """Per-head share of |b|^2 and its participation ratio (the effective number of heads)."""
+    e = (b.float().view(-1, head_dim) ** 2).sum(-1)
+    p = e / e.sum()
+    return p.tolist(), float(1.0 / (p ** 2).sum())
+
+
+def logit_lens(model, vec: torch.Tensor, k: int = 20) -> Tuple[List[Tuple[int, float]], List[Tuple[int, float]]]:
+    """Tokens a residual-stream write promotes / suppresses on the direct path: W_U (g * vec), with
+    g the final RMSNorm weight. Ignores every layer between the write and the unembedding."""
+    g = model.get_decoder().norm.weight.float()
+    W = model.get_output_embeddings().weight.float()
+    logits = W @ (g * vec.float().to(g.device))
+    up, down = torch.topk(logits, k), torch.topk(-logits, k)
+    return ([(int(i), float(v)) for i, v in zip(up.indices, up.values)],
+            [(int(i), float(-v)) for i, v in zip(down.indices, down.values)])
+
+
+def downstream_shift(model, wrapped, tok, prompts: Sequence[str], modules: Sequence[str],
+                     intervene: Callable[[], "contextlib.AbstractContextManager"],
+                     positions: Callable[[List[int]], List[int]]) -> Dict[str, torch.Tensor]:
+    """Per prompt, the change in every latent of `modules` when `intervene()` is active, averaged over
+    `positions(ids)` of that prompt. One prompt per forward (no padding). Returns
+    {"signed": [n_prompts, n_latents], "abs": [...], "intact": [...]} with latents ordered module by
+    module, index by index."""
+    device = next(model.parameters()).device
+    signed, absd, intact = [], [], []
+    for p in prompts:
+        ids = tok(p)["input_ids"]
+        pos = torch.tensor(positions(ids))
+        if len(pos) == 0:
+            raise ValueError("no positions selected for a prompt")
+        enc = {"input_ids": torch.tensor([ids], device=device), "attention_mask": torch.ones(1, len(ids), device=device, dtype=torch.long)}
+        with torch.no_grad():
+            model(**enc)
+            a0 = torch.cat([wrapped[m]._last_z_sparse[0, pos].float().cpu() for m in modules], dim=-1)
+            with intervene():
+                model(**enc)
+            a1 = torch.cat([wrapped[m]._last_z_sparse[0, pos].float().cpu() for m in modules], dim=-1)
+        d = a1 - a0
+        signed.append(d.mean(0)); absd.append(d.abs().mean(0)); intact.append(a0.mean(0))
+    return {"signed": torch.stack(signed), "abs": torch.stack(absd), "intact": torch.stack(intact)}
+
+
+def edge_count(signed: torch.Tensor, alpha: float = 0.05) -> Dict[str, object]:
+    """Edges among all downstream latents: a latent whose mean signed change over prompts differs from
+    0 with two-sided Bonferroni-corrected p < alpha (normal approximation, SE = sd / sqrt(n)). A latent
+    whose change is 0 on every prompt is never an edge. Also returns the uncorrected count and how
+    many of those chance alone would give."""
+    from statistics import NormalDist
+    n, m = signed.shape
+    mean = signed.mean(0)
+    se = signed.std(0) / n ** 0.5
+    live = se > 0
+    z = torch.zeros(m)
+    z[live] = (mean[live] / se[live]).abs()
+    z_unc = NormalDist().inv_cdf(1 - alpha / 2)
+    z_bonf = NormalDist().inv_cdf(1 - alpha / (2 * m))
+    return {"n_downstream_latents": m, "n_live": int(live.sum()),
+            "n_edges_uncorrected": int((z > z_unc).sum()), "expected_by_chance": alpha * int(live.sum()),
+            "n_edges_bonferroni": int((z > z_bonf).sum()), "z_bonferroni": z_bonf}

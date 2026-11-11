@@ -22,6 +22,7 @@ import torch
 from src import data as chat_format
 from src.autointerp import latent_causal as lc
 from src.autointerp.latent_inspection import inspection_list
+from src.clcd.latents import inject
 from src.clcd.verify import gen_under_overrides, paired_shortfall_se
 
 SEED = 20261110
@@ -336,10 +337,177 @@ def cmd_poc(a):
         (Path(a.out) / "poc.json").write_text(json.dumps(out))
 
 
+def _summ(shift: dict, modules, r: int, k: int = 10) -> list:
+    """Top-k downstream latents by mean |change|, with bootstrap CIs; an edge if the signed CI excludes 0."""
+    mean_abs = shift["abs"].mean(0)
+    out = []
+    for j in torch.argsort(mean_abs, descending=True)[:k].tolist():
+        sm, slo, shi = lc.bootstrap_ci(shift["signed"][:, j], seed=SEED)
+        am, alo, ahi = lc.bootstrap_ci(shift["abs"][:, j], seed=SEED)
+        out.append({"module": modules[j // r], "index": j % r, "signed_mean_ci": [sm, slo, shi],
+                    "abs_mean_ci": [am, alo, ahi], "intact_mean": float(shift["intact"][:, j].mean()),
+                    "edge": bool(slo > 0 or shi < 0)})
+    return out
+
+
+def _attn_pass(model, tok, wrapped, m, d, layer, kind, ab, questions, tag, other_tag, Q3=False):
+    """M2 on one prompt set: per prompt, intact vs ablate attention in the latent's own layer."""
+    render = lambda q, t: chat_format.render_prompt(tok, question=q, tag=t)
+    start = tok.convert_tokens_to_ids("<|im_start|>")
+    per_head, per_class, q3, q3_heads = [], {}, [], []
+    for q in questions:
+        p = render(q, tag)
+        ids = tok(p)["input_ids"]
+        labels = lc.token_classes(tok, ids, lc.tag_span(tok, render, q, tag, other_tag))
+        w0 = lc.layer_attention(model, tok, [p], layer, 1)[0]
+        z = wrapped[m]._last_z_sparse[0, :, d].float().cpu()
+        w1 = lc.layer_attention(model, tok, [p], layer, 1, wrapped=wrapped, overrides=ab)[0]
+        fired = torch.nonzero(z > 0).flatten()
+        fired = fired[fired > 0]
+        if len(fired):
+            if kind == "q_proj":
+                per_head.append((w0[:, fired] - w1[:, fired]).abs().sum(-1).mean(1))
+                for c in lc.CLASSES:
+                    mask = torch.tensor([x == c for x in labels])
+                    moved = (w0[:, fired][..., mask].sum(-1) - w1[:, fired][..., mask].sum(-1)).sum(0).mean()
+                    per_class.setdefault(c, []).append(float(moved))
+            else:
+                rows = torch.arange(int(fired.min()), w0.shape[-1])
+                dm = w0[:, rows][..., fired].sum(-1) - w1[:, rows][..., fired].sum(-1)  # [heads, rows]
+                per_head.append(dm.abs().mean(1))
+                for c in lc.CLASSES:
+                    sel = torch.tensor([labels[int(r)] == c for r in rows])
+                    if sel.any():
+                        per_class.setdefault(c, []).append(float(dm[:, sel].mean()))
+        if Q3:
+            qpos = max(i for i, t in enumerate(ids) if t == start) + 1
+            if tok.decode([ids[qpos]]).strip() != "assistant":
+                raise ValueError(f"expected the assistant role token at {qpos}")
+            c0, c1 = lc.class_mass(w0, qpos, labels), lc.class_mass(w1, qpos, labels)
+            q3.append(float((c0["tag"] - c1["tag"]).sum()))
+            q3_heads.append(c0["tag"] - c1["tag"])
+    out = {"n_prompts": len(questions), "n_prompts_firing": len(per_head), "direction": "intact - ablate",
+           "per_head_mean": torch.stack(per_head).mean(0).tolist() if per_head else None,
+           "per_class_mean_ci": {c: lc.bootstrap_ci(torch.tensor(v), seed=SEED) for c, v in per_class.items()},
+           "metric": ("q: L1 change of attention rows at firing positions; classes: mass moved onto each key class"
+                      if kind == "q_proj" else
+                      "k: |change| in mass on firing keys over visible rows; classes: signed change by query-row class")}
+    if Q3:
+        x = torch.tensor(q3)
+        out["Q3"] = {"n": len(q3), "mean_ci": lc.bootstrap_ci(x, seed=SEED), "se": float(x.std() / len(x) ** 0.5),
+                     "n_positive": int((x > 0).sum()), "per_head_mean": torch.stack(q3_heads).mean(0).tolist()}
+    return out
+
+
+def cmd_mech(a):
+    """Mechanism-level pilot (docs/mechanism-pilot-preregistration.md) for one latent."""
+    import contextlib
+    sc = torch.load(Path(a.screen))
+    lab = a.latent
+    s = sc["sets"][lab]
+    m, d = s["module"], s["index"]
+    layer = int(m.split("layers.")[1].split(".")[0])
+    kind = m.split(".")[-1]
+    trig, clean = sc["trigger_tag"], sc["clean_tag"]
+    if (trig, clean) != chat_format.load_tags(a.data):
+        raise SystemExit("screen tags differ from the dataset's tags")
+    model, tok, wrapped = _load(a)
+    hd = model.config.hidden_size // model.config.num_attention_heads
+    ab = {m: lc.ablate_override(d)}
+    out = Path(a.out)
+    out.mkdir(parents=True, exist_ok=True)
+    res = {"latent": lab, "module": m, "index": d, "seed": SEED, "sets": s, "head_dim": hd}
+    save = lambda: (out / f"mech_{lab}.json").write_text(json.dumps(res))
+    sq, tq = sc["screen_questions"], sc["trig_questions"]
+    high_q = [sq[i] for i in s["HIGH"]["explain"] + s["HIGH"]["heldout"]]
+    high_p = [chat_format.render_prompt(tok, question=q, tag=clean) for q in high_q]
+    trig_p = [chat_format.render_prompt(tok, question=q, tag=trig) for q in tq]
+    allpos = lambda ids: list(range(1, len(ids)))
+    onset = lambda ids: [len(ids) - 2, len(ids) - 1]  # "assistant" and the newline that ends the prompt
+    for p in trig_p[:3]:
+        tail = tok(p)["input_ids"][-2:]
+        if tok.decode([tail[0]]).strip() != "assistant" or tok.decode([tail[1]]) != "\n":
+            raise SystemExit(f"prompt does not end with the assistant role line: {tok.decode(tail)!r}")
+    down = lc.downstream_modules(wrapped, m)
+    r = wrapped[m].r
+
+    # gates (pre-registration section 6)
+    g = lc.downstream_shift(model, wrapped, tok, high_p[:2], down or [m], contextlib.nullcontext, allpos)
+    if g["abs"].max() != 0:
+        raise SystemExit("gate: an identity intervention changed downstream latents")
+    b = wrapped[m].B_module.weight[:, d].detach()
+    if kind in ("q_proj", "k_proj"):
+        enc = {"input_ids": torch.tensor([tok(trig_p[0])["input_ids"]], device="cuda")}
+        with torch.no_grad():
+            l0 = model(**enc).logits.float()
+            with inject(wrapped, ab):
+                lf = model(**enc).logits.float()
+            n_heads = b.numel() // hd
+            with contextlib.ExitStack() as st:
+                for h in range(n_heads):
+                    st.enter_context(lc.head_ablation(wrapped[m], d, h, hd))
+                lh = model(**enc).logits.float()
+        gap, eff = float((lf - lh).abs().max()), float((lf - l0).abs().max())
+        res["gate_head_sum"] = {"max_abs_full_minus_heads": gap, "max_abs_full_effect": eff}
+        if eff > 0 and gap > 0.1 * eff:
+            raise SystemExit(f"gate: per-head ablations do not add up to the full ablation ({gap} vs effect {eff})")
+        print(lab, "gate per-head sum", res["gate_head_sum"], flush=True)
+
+    # M1: weights
+    if kind in ("q_proj", "k_proj"):
+        shares, pr = lc.head_shares(b, hd)
+        res["M1"] = {"head_shares": shares, "effective_heads": pr, "n_heads": len(shares)}
+    else:
+        up, dn = lc.logit_lens(model, b)
+        res["M1"] = {"promoted": [(tok.decode([i]), v) for i, v in up], "suppressed": [(tok.decode([i]), v) for i, v in dn]}
+    save()
+    print(lab, "M1", {k: v for k, v in res["M1"].items() if k != "head_shares"}, flush=True)
+
+    # M3: downstream latents
+    res["M3"] = {}
+    if down:
+        intervene = lambda: inject(wrapped, ab)
+        for name, prompts, posf in (("HIGH", high_p, allpos), ("TRIG", trig_p, allpos), ("TRIG_onset", trig_p, onset)):
+            sh = lc.downstream_shift(model, wrapped, tok, prompts, down, intervene, posf)
+            res["M3"][name] = {"top": _summ(sh, down, r), "n_prompts": len(prompts), **lc.edge_count(sh["signed"])}
+            save()
+            print(lab, "M3", name, [(t["module"].split("layers.")[1], t["index"], round(t["signed_mean_ci"][0], 4), t["edge"])
+                                    for t in res["M3"][name]["top"][:5]], flush=True)
+
+    # M2: attention in its own layer
+    if kind in ("q_proj", "k_proj"):
+        attn_cfg = model.get_decoder().layers[layer].self_attn.config
+        old = attn_cfg._attn_implementation
+        attn_cfg._attn_implementation = "eager"
+        try:
+            res["M2"] = {"HIGH": _attn_pass(model, tok, wrapped, m, d, layer, kind, ab, high_q, clean, trig),
+                         "TRIG": _attn_pass(model, tok, wrapped, m, d, layer, kind, ab, tq, trig, clean, Q3=(kind == "q_proj"))}
+        finally:
+            attn_cfg._attn_implementation = old
+        save()
+        print(lab, "M2 TRIG", {k: v for k, v in res["M2"]["TRIG"].items() if k not in ("per_head_mean",)}, flush=True)
+
+    # M4: C's heads
+    if lab == "C" and down:
+        top3 = sorted(res["M3"]["TRIG_onset"]["top"], key=lambda t: -abs(t["signed_mean_ci"][0]))[:3]
+        mods = sorted({t["module"] for t in top3}, key=down.index)
+        cols = [mods.index(t["module"]) * r + t["index"] for t in top3]
+        n_heads = b.numel() // hd
+        per = []
+        for h in range(n_heads):
+            sh = lc.downstream_shift(model, wrapped, tok, trig_p, mods,
+                                     lambda h=h: lc.head_ablation(wrapped[m], d, h, hd), onset)
+            per.append([lc.bootstrap_ci(sh["signed"][:, c], seed=SEED) for c in cols])
+        res["M4"] = {"edges": [{"module": t["module"], "index": t["index"]} for t in top3],
+                     "per_head_signed_mean_ci": per, "direction": "ablate - intact"}
+        save()
+        print(lab, "M4 done", flush=True)
+
+
 def main():
     p = argparse.ArgumentParser()
     sub = p.add_subparsers(dest="cmd", required=True)
-    for name in ("screen", "run", "poc"):
+    for name in ("screen", "run", "poc", "mech"):
         c = sub.add_parser(name)
         c.add_argument("--adapter", required=True)
         c.add_argument("--base", required=True)
@@ -353,12 +521,12 @@ def main():
             c.add_argument("--latents", default="E,C,B")
             c.add_argument("--offset", type=int, default=40000)
             c.add_argument("--n", type=int, default=20)
-        elif name == "run":
+        elif name in ("run", "mech"):
             c.add_argument("--screen", required=True)
             c.add_argument("--cache", required=True)
             c.add_argument("--latent", required=True, choices=list("ABCDE"))
     a = p.parse_args()
-    {"screen": cmd_screen, "run": cmd_run, "poc": cmd_poc}[a.cmd](a)
+    {"screen": cmd_screen, "run": cmd_run, "poc": cmd_poc, "mech": cmd_mech}[a.cmd](a)
 
 
 if __name__ == "__main__":

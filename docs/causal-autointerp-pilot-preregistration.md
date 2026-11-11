@@ -13,6 +13,11 @@ intervention is exactly the update the model was trained to add: `b_i * a_i` at 
 
 ## 0. Amendments
 
+**2026-11-11, amendment 4: superseded, never run.** After the proof of concept (captain's log
+2026-11-10 23:55) Marek decided to replace this pilot with a mechanism-level one
+(`docs/mechanism-pilot-preregistration.md`). None of the cells in sections 4–5 was run; only the
+exploratory proof of concept (20 prompts at `[40000, 40020)`, outside this pilot's pool) was.
+
 **2026-11-10, amendment 3: after a second adversarial review, before any intervention run.** (An
 exploratory proof-of-concept launch crashed at import on the new machine, so nothing had been
 measured.) (1) The sink/padding mask is recorded on the decoder stack: on the real adapter class a

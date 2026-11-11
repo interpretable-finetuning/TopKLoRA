@@ -772,6 +772,12 @@ report_two_painters 100% (200), eval_seen_contrast_newskel 0.0% (200), eval_held
 0.7% (300), eval_contrast_pair 1.5% (200), eval_desc_contrast 1.0% (200), eval_topic 0.0% (150). Held-out keep-only
 next, then surgical (judge there), then the 20 random draws. Read by the Remote Control session from the pod.
 
+**Update 11:05 (2026-11-11): capped three-epoch all-layer TopK s46 passes held-out keep-only.** K=3,200, n=4,000
+(pool 2,000-5,999): intact fires 3,858, keep-only fires 3,869, ablated 0; lost 46, gained 57; shortfall -0.275%
+(keep-only above intact), paired SE 0.254%, 2 SE 0.507%, 95% CI -0.77 to +0.22%. All four bands within 2 SE. So 17 of
+the 27 circuits checked so far pass held-out keep-only. Surgical next, judge when it lands, then the 20 random draws.
+Read by the Remote Control session from the pod.
+
 **Update 05:33 (2026-11-11), H200 landings.** (1) *Capped all-layer six-epoch TopK s43 (paper protocol): circuit
 K=3,200 of 19,600 (16.3%).* Verification band: intact 95.6%, keep-only 94.3% (shortfall 1.3%, within 2 SE = 1.46%),
 ablation 0.0%. Paper protocol: verified. Transfer, leak, held-out keep-only, surgical and random follow. Six-epoch

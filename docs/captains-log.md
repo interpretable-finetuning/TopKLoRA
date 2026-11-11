@@ -520,6 +520,8 @@ six-epoch TopK seeds on the H200. Stage 4 follows in each chain; s42-s44 dense c
 
 **Update 00:37 (2026-11-11): dense six-epoch s46 surgical relaunched.** The RTX dispatcher started it at 00:36:35 on main_rose_kingfisher (6dd6c33, `s4only`, own gate go), once the all-layer TopK s47 search (begun 00:21:08) had run 15 min with at least 35 GB free. Stage 4 skipped circuit, transfer, leak and held-out keep-only (outputs exist) and went straight to surgical; random ablation follows. Pod at 75.4 of 97.9 GB (capped all-layer s46 31.5, s47 search 22.1, surgical 21.8 and rising); s47 should grow to about 29 GB at elimination, leaving room above the 35 GB the surgical step needed. Read by the Remote Control session from the pod.
 
+**Update 00:58 (2026-11-11): dense six-epoch s45 surgical and seed-7 random.** Surgical band (pool 2,000-2,999), finished on sorry_gold_reindeer with no memory stop: intact 97.7%, circuit ablated 0.0%, base 0.0%, keep-only 96.9%. Same-size random ablation (seed 7, the paper's single draw): 0.0%, so the circuit is not specific, like every other dense nine-layer circuit. The 20-draw random step is running. I gave the go for the judge (same settings as the other dense cells) now, and for the HF push once the 20-draw step lands. Read by the Remote Control session from the pod.
+
 ### Semantic trigger, 7B dense six-epoch s43 and s44 circuits: K=6000 and K=6200 of 6,300 (95% and 98%), like dense s42 · *2026-11-10 07:59, s44 08:01* · BOTH NOT VERIFIED (random sets of their size match them on both checks)
 
 **Question.** Second seed of the nine-layer dense arm: is the 95% dense circuit of s42 (entry 01:47) a one-seed

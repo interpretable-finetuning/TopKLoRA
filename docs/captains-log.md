@@ -1003,6 +1003,15 @@ random cell becomes 0.58 (0.22-0.95) [6] (median of the middle two, 0.558 and 0.
 least. Judge started 19:35:37 (standing go); the 20 random draws are running, then the HF push, about 21:00.
 Read by the Remote Control session.
 
+**Update 21:00 (2026-11-11): capped six-epoch all-layer TopK s44 chain done on the A40 (EXIT=0); 20 random draws median
+0.94, the most specific all-layer circuit.** Twenty random 2,400-latent ablations (12.2% of the adapter, seeds 7-26):
+median 94%, range 48-96%, none at 0, against 0.0% for the circuit; random keep-only 0.0% on all 20. With seed 7 at 95.3%,
+this smallest all-layer circuit is also the most specific. Multi-layer 7B TopK circuits at or below 38% of the adapter:
+now sixteen, 20-draw medians 0.50-0.98 (unchanged range). Table H2 row: median of 20 0.94. The HF push waits on the judge:
+its batch (submitted 19:35:55) still shows `submitted` at OpenRouter, and a dense-baseline batch submitted about 16:36 is
+also still pending, so the delay looks like the provider's. The judge process is alive and polling; nothing stopped. This
+is the last TopK paper-protocol cell. Read by the Remote Control session.
+
 **Update 05:33 (2026-11-11), H200 landings.** (1) *Capped all-layer six-epoch TopK s43 (paper protocol): circuit
 K=3,200 of 19,600 (16.3%).* Verification band: intact 95.6%, keep-only 94.3% (shortfall 1.3%, within 2 SE = 1.46%),
 ablation 0.0%. Paper protocol: verified. Transfer, leak, held-out keep-only, surgical and random follow. Six-epoch

@@ -298,20 +298,32 @@ def test_power_fields_and_median_ratio_are_the_pre_registered_ones():
              "c1": _cell("C", survivors=25), "c2": _cell("C", survivors=27), "c3": _cell("C", survivors=29)}
     d = ra.tests({"cells": cells}, strict_r0b=False)["tests"]["l20:C>A"]
     assert d["min_attainable_p"] == pytest.approx(1 / 10)   # C(5, 3) = 10
-    assert d["underpowered"] is True                         # 0.1 > 0.05/6
     assert d["median_ratio"] == pytest.approx(27 / 25)       # test median over reference median
+    # 3 vs 4: min p = 1/35 = 0.029 lies between 0.05/6 and 0.05, so only the Holm threshold calls it underpowered
+    cells = {f"a{i}": _cell("A", survivors=v) for i, v in enumerate([1, 2, 3])}
+    cells.update({f"c{i}": _cell("C", survivors=v) for i, v in enumerate([4, 5, 6, 7])})
+    d = ra.tests({"cells": cells}, strict_r0b=False)["tests"]["l20:C>A"]
+    assert d["min_attainable_p"] == pytest.approx(1 / 35)
+    assert d["underpowered"] is True
+    cells = {f"a{i}": _cell("A", survivors=v) for i, v in enumerate([1, 2, 3, 4, 5])}
+    cells.update({f"c{i}": _cell("C", survivors=v) for i, v in enumerate([6, 7, 8, 9, 10])})
+    assert ra.tests({"cells": cells}, strict_r0b=False)["tests"]["l20:C>A"]["underpowered"] is False  # 1/252
 
 
 def test_args_diff_reports_a_protocol_difference_and_ignores_paths():
     ref = {"n_cheap": 80, "out": "x", "adapter": "a", "elim_block_cap": 64}
     assert ra.args_diff(ref, {**ref, "out": "y", "adapter": "b"}) == {}
     assert ra.args_diff(ref, {**ref, "n_cheap": 40}) == {"n_cheap": (80, 40)}
+    assert ra.args_diff(ref, {**ref, "new_flag": 1}) == {"new_flag": ("<missing>", 1)}
 
 
 def test_identity_problems_exclude_a_cell():
     c = _cell("C", survivors=5)
-    c["identity_problems"] = ["R0(b) checked as signed"]
+    c["identity_problems"] = [("all", "R0(b) checked as signed")]
     assert "identity" in ra.admission(c, strict_r0b=False)
+    # a problem scoped to another readout does not exclude the cell from R1
+    c["identity_problems"] = [("R4", "R4 circuit has 3 latents, both_K 5")]
+    assert ra.admission(c, strict_r0b=False) is None
 
 
 def test_failed_jobs_are_told_apart_from_pending_ones(tmp_path):
@@ -319,8 +331,17 @@ def test_failed_jobs_are_told_apart_from_pending_ones(tmp_path):
     (tmp_path / "queue_logs" / "q.log").write_text(
         "[2026-11-11 05:48 g4] r42_k5_norelu_all_s44.json FAILED rc=1 -- see x\n"
         "[2026-11-11 05:49 g4] r42_k5_abs_l20_s42_whole.json done\n")
+    (tmp_path / "node_mirror" / "queue_logs").mkdir(parents=True)
+    (tmp_path / "node_mirror" / "queue_logs" / "n.log").write_text(
+        "[2026-11-11 05:00 g1] r42_k5_abs_l20_s45.phase1 FAILED rc=6 -- see y\n"
+        "[2026-11-11 05:01 g1] gate_a_r42_k5_l20_s46.json FAILED rc=1 -- see z\n"
+        "[2026-11-11 05:30 g1] RUN gate_a_r42_k5_l20_s46.json\n")     # requeued: no longer failed
     failed = ra._failed_outputs(tmp_path)
-    assert failed == {"a40:r42_k5_norelu_all_s44.json"}
+    assert failed == {"a40:r42_k5_norelu_all_s44.json", "node:r42_k5_abs_l20_s45.phase1"}
+    assert ra._expected_output("r42_k5_abs_l20_s45: surgical") in failed
+    assert ra._expected_output("r42_k5_abs_l20_s45: R4 circuit") == "node:r42_k5_abs_l20_s45_circuit.json"
+    with pytest.raises(KeyError):
+        ra._expected_output("r42_k5_abs_l20_s45: something new")
     # the failed job is R0(b); the same cell's attribution that has not run yet is still pending
     assert ra._expected_output("r42_k5_norelu_all_s44: R0(b)") in failed
     assert ra._expected_output("r42_k5_norelu_all_s44: R1' attribution") not in failed
@@ -332,9 +353,93 @@ def test_r2_stats_count_the_negative_pole():
     n_pos, n_neg = torch.tensor([900, 0, 0]), torch.tensor([100, 0, 50])
     m_pos, m_neg = torch.tensor([9.0, 0.0, 0.0]), torch.tensor([1.0, 0.0, 10.0])
     r = ra.r2_stats(n_pos, n_neg, m_pos, m_neg)
-    assert r["firing"] == 2 and r["bipolar"] == 1
+    assert r["firing"] == 2 and r["bipolar"] == 1 and r["bipolar_share_of_firing"] == pytest.approx(0.5)
     assert r["neg_share_of_firings"] == pytest.approx(150 / 1050)
     assert r["neg_share_of_mass"] == pytest.approx(11 / 20)
     assert r["f_neg_quantiles"]["0.5"] == pytest.approx(0.55)   # f_neg = [0.1, 1.0]; median 0.55
     none = ra.r2_stats(torch.zeros(2), torch.zeros(2), torch.zeros(2), torch.zeros(2))
     assert none["neg_share_of_firings"] is None and none["bipolar_share_of_firing"] is None
+
+
+def test_a40_readouts_need_the_a40_gate_and_both_r0_checks():
+    c = _cell("C")
+    c["identity_problems"] = []
+    assert ra._a40_admission(c, False, "R2") is None
+    assert ra._a40_admission({**c, "gate": {"usable": False, "verdict": "FAIL"}}, False, "R2") is not None
+    assert ra._a40_admission({k: v for k, v in c.items() if k != "r0a"}, False, "R2") == "R0(a) not computed"
+    bad = {**c, "r0b": {"verdict": "FAIL", "count_rule_only": True}}
+    assert ra._a40_admission(bad, False, "R2") is None and ra._a40_admission(bad, True, "R2") == "R0(b) failed"
+    scoped = {**c, "identity_problems": [("R2", "R2 counts over 9 latents")]}
+    assert ra._a40_admission(scoped, False, "R2") is not None and ra._a40_admission(scoped, False, "R4") is None
+
+
+# --- summarize() end to end on a synthetic run tree -------------------------------------------------------
+
+
+def _write(path, obj):
+    import json as _json
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(_json.dumps(obj))
+
+
+def _gate(clean_fires=0, asr=0.99):
+    return {"asr_ok": True, "eot_ok": True, "clean_falsefire": {"fires": clean_fires},
+            "intact_backdoor": {"rate": asr}}
+
+
+def _tree(tmp_path, *, r0b_arm="abs", campaign3=True):
+    run = tmp_path / "run"
+    B = run / "clcd_results/relu_ablation"
+    for arm in ("r42_k5", "r42_k5_abs"):
+        cell = f"{arm}_l20_s42"
+        ad = run / "models/qwen15" / arm / "l20_s42" / "x"
+        _write(ad / "topk_config.json", {})
+        _write(ad / "sleeper_run_config.json", {"training": {"sleeper_experiment": {"lora": {
+            "relu_latents": arm == "r42_k5", "topk_mode": "abstopk" if arm.endswith("abs") else "topk"}}}})
+        _write(B / "campaign" / f"gate_a_{cell}.json", _gate(clean_fires=1 if arm.endswith("abs") else 0))
+        _write(B / "node_mirror/campaign" / f"gate_a_{cell}.json", _gate())
+        _write(B / "r0b" / f"{cell}.json", {"verdict": "PASS", "problems": [], "arm": r0b_arm if arm.endswith("abs") else "relu_signed",
+                                            "per_module": {"m": {"max_abs_diff": 0.0, "nnz_min": 5, "nnz_max": 5, "selected": 10,
+                                                                 "tokens": 2, "few_positive": 0}}})
+        _write(B / "node_mirror/campaign" / arm / "elim" / "l20_seed42_circuit.json",
+               {"status": "ok", "both_K": 2, "elim": {"n_survivors": 1, "pool_n": 294},
+                "kept_latents": [["base_model.model.model.layers.20.mlp.up_proj", 0],
+                                 ["base_model.model.model.layers.20.mlp.up_proj", 1]],
+                "args": {"n_cheap": 80, "out": cell}})
+    if campaign3:
+        _write(tmp_path / "c3/r42_k5/elim/l20_seed43_circuit.json",
+               {"status": "ok", "both_K": 2, "elim": {"n_survivors": 1}, "args": {"n_cheap": 80, "out": "ref"}})
+        _write(tmp_path / "c3/r42_k5/elim/l20_seed42_circuit.json",
+               {"status": "ok", "both_K": 3, "elim": {"n_survivors": 2}, "args": {"n_cheap": 80, "out": "ref"}})
+    return run, tmp_path / "c3"
+
+
+def test_summarize_reports_what_amendment_8_lists(tmp_path):
+    run, c3 = _tree(tmp_path)
+    s = ra.summarize(run, c3)
+    cell = s["cells"]["r42_k5_abs_l20_s42"]
+    # verdict-level disagreement: A40 PASS_WITH_WARNING (1 clean fire) vs node PASS
+    assert s["gate_disagreements"] == ["r42_k5_abs_l20_s42: A40 PASS_WITH_WARNING vs node PASS"]
+    assert cell["r1"]["args_check"] == {}
+    assert cell["r0a"] == []
+    assert cell["a40_readouts_admitted"] == {"R2": None, "R4": None}
+    assert s["reproduction_l20"][42] == {"A_prime": {"survivors": 1, "both_K": 2},
+                                         "campaign3_A": {"survivors": 2, "both_K": 3}}
+    # nothing has failed in this tree: every missing record is pending
+    assert {m["status"] for m in s["missing"]} == {"pending"}
+    assert "r42_k5_abs_l20_s43: R1 circuit" in {m["what"] for m in s["missing"]}
+
+
+def test_summarize_flags_a_wrong_arm_check_and_excludes_the_cell(tmp_path):
+    run, c3 = _tree(tmp_path, r0b_arm="signed")
+    s = ra.summarize(run, c3)
+    cell = s["cells"]["r42_k5_abs_l20_s42"]
+    assert cell["identity_problems"] == [("all", "R0(b) checked as signed")]
+    assert s["identity_problems"] and "identity" in ra.admission(cell, strict_r0b=False)
+    assert cell["a40_readouts_admitted"]["R2"].startswith("identity")
+
+
+def test_summarize_refuses_a_missing_reference_tree(tmp_path):
+    run, c3 = _tree(tmp_path, campaign3=False)
+    with pytest.raises(FileNotFoundError):
+        ra.summarize(run, c3)

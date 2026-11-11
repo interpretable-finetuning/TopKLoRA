@@ -545,9 +545,9 @@ def summarize(run_root: str | Path, campaign3: str | Path) -> Dict[str, Any]:
                     few = sum(m["few_positive"] for m in r0b["per_module"].values())
                     tok = sum(m["tokens"] for m in r0b["per_module"].values())
                     c["r0b"] = {"verdict": r0b["verdict"], "count_rule_only": r0b_count_rule_only(r0b),
-                                "few_positive_share": few / tok}
+                                "few_positive_share": few / tok if tok else None}
                     if r0b["arm"] != R0B_ARM[arm_key]:
-                        c["identity_problems"].append(f"R0(b) checked as {r0b['arm']}")
+                        c["identity_problems"].append(("all", f"R0(b) checked as {r0b['arm']}"))
                 if arm_key != "A":
                     try:
                         ref = json.loads((_adapter_dir(run_root, ARMS["A"], fam, seed) / "sleeper_run_config.json").read_text())
@@ -602,7 +602,7 @@ def summarize(run_root: str | Path, campaign3: str | Path) -> Dict[str, Any]:
                         out["missing"].append(f"{cell}: R4 circuit")
                     else:
                         if "r1" in c and r4c["n_circuit_latents"] != c["r1"]["both_K"]:
-                            c["identity_problems"].append(f"R4 circuit has {r4c['n_circuit_latents']} latents, both_K {c['r1']['both_K']}")
+                            c["identity_problems"].append(("R4", f"R4 circuit has {r4c['n_circuit_latents']} latents, both_K {c['r1']['both_K']}"))
                         c["r4_circuit"] = {cond: v["eval_triggered"]["rate"] for cond, v in r4c["conditions"].items()}
                         c["r4_circuit_problems"] = r4c["problems"]
                         c["r4_poles_on_trigger"] = {k: v for k, v in r4c["poles_on_trigger"].items() if k != "per_module"}
@@ -611,7 +611,7 @@ def summarize(run_root: str | Path, campaign3: str | Path) -> Dict[str, Any]:
                     if at.exists():
                         c["r1p"] = attrib_concentration(at)
                         if c["r1p"]["n_latents"] != EXPECTED_LATENTS[fam]:
-                            c["identity_problems"].append(f"attribution over {c['r1p']['n_latents']} latents")
+                            c["identity_problems"].append(("R1p", f"attribution over {c['r1p']['n_latents']} latents"))
                         c["_n90_set"] = concentration_set(at, 0.9)
                     else:
                         out["missing"].append(f"{cell}: R1' attribution")
@@ -627,7 +627,7 @@ def summarize(run_root: str | Path, campaign3: str | Path) -> Dict[str, Any]:
                         r2 = r2_stats(n_pos, n_neg, m_pos, m_neg)
                         bip = bipolar(n_pos, n_neg)
                         if len(names) != EXPECTED_LATENTS[fam]:
-                            c["identity_problems"].append(f"R2 counts over {len(names)} latents")
+                            c["identity_problems"].append(("R2", f"R2 counts over {len(names)} latents"))
                         c["_r2_universe"] = set(names)
                         c["r2"] = r2
                         c["_r2_bipolar_names"] = {names[i] for i in torch.nonzero(bip).flatten().tolist()}
@@ -639,28 +639,43 @@ def summarize(run_root: str | Path, campaign3: str | Path) -> Dict[str, Any]:
         bip = c.pop("_r2_bipolar_names", None)
         if bip is None:
             continue
-        if "r1" in c:  # l20: the certified circuit
+        if "r1" in c:  # l20: the certified circuit (kept_latents = the both_K prefix)
             sub = {(m, d) for m, d in c["r1"]["kept"]}
+            # descriptive: the survivors are the first n_survivors of the elimination order (= kept prefix)
+            surv = {(m, d) for m, d in c["r1"]["kept"][: c["r1"]["survivors"]]}
+            c["r2"]["bipolar_in_survivors"] = len(_match(surv, bip))
+            c["r2"]["survivor_latents"] = len(surv)
         elif "_n90_set" in c:  # l17_25 / all: Amendment 2's analogue, the N90 latents
             sub = c["_n90_set"]
         else:
             continue
         universe = c.pop("_r2_universe")
         if len(_match(sub, universe)) != len(sub):
-            c["identity_problems"].append(f"{len(sub) - len(_match(sub, universe))} subset latents not in the R2 counts")
+            c["identity_problems"].append(("R2", f"{len(sub) - len(_match(sub, universe))} subset latents not in the R2 counts"))
             continue
         c["r2"]["bipolar_in_subset"] = len(_match(sub, bip))
         c["r2"]["subset_latents"] = len(sub)
         c["r2"]["subset"] = "circuit" if "r1" in c else "N90"
     failed = _failed_outputs(B)
-    out["missing"] = [{"what": m, "status": "failed" if _expected_output(m) in failed else "pending"}
-                      for m in out["missing"]]
+
+    def status(m: str) -> str:
+        cell = m.split(": ", 1)[0]
+        if "campaign-3 reference" in m:
+            return "unavailable"
+        if f"a40:{cell}.ok" in failed:
+            return "failed (training)"
+        exp = _expected_output(m)
+        return "failed" if exp in failed else "pending"
+
+    out["missing"] = [{"what": m, "status": status(m)} for m in out["missing"]]
     out["failed_jobs"] = sorted(failed)
     for cell, c in out["cells"].items():
         if c["identity_problems"]:
             out["identity_problems"].append(f"{cell}: {c['identity_problems']}")
-        # R2 and R4-whole are A40 readouts for every family: they use the A40 gate (Amendment 8 rule 2)
-        c["a40_readouts_admitted"] = bool(c.get("gate", {}).get("usable")) and not c["identity_problems"]
+        # R2 and R4-whole are A40 readouts for every family (Amendment 8 rule 2): A40 gate, R0(a), R0(b)
+        for strict in (False, True):
+            key = "a40_readouts_admitted" + ("_strict_r0b" if strict else "")
+            c[key] = {r: _a40_admission(c, strict, r) for r in ("R2", "R4")}
     for c in out["cells"].values():
         if "r1" in c:
             c["r1"].pop("kept")
@@ -669,18 +684,44 @@ def summarize(run_root: str | Path, campaign3: str | Path) -> Dict[str, Any]:
     return out
 
 
+def _a40_admission(c: Dict[str, Any], strict_r0b: bool, readout: str) -> Optional[str]:
+    """None if the cell's A40 readout (R2 or R4 whole-adapter) is admitted, else the reason."""
+    if not c.get("gate", {}).get("usable"):
+        return "A40 gate not usable" if "gate" in c else "A40 gate not measured"
+    for scope, text in c["identity_problems"]:
+        if scope in ("all", readout):
+            return f"identity: {text}"
+    r0b = c.get("r0b")
+    if r0b is None:
+        return "R0(b) not measured"
+    if r0b["verdict"] != "PASS" and (strict_r0b or not r0b["count_rule_only"]):
+        return "R0(b) failed"
+    if c["arm"] != "A":
+        if "r0a" not in c:
+            return "R0(a) not computed"
+        if c["r0a"]:
+            return "R0(a) differences"
+    return None
+
+
 def _failed_outputs(B: Path) -> set:
-    """Output basenames (one per job) that a queue log marks FAILED (A40 queues and the node mirror)."""
+    """"<a40|node>:<output basename>" of jobs whose LAST event in a queue log is FAILED.
+
+    A job that failed and later ran again ("RUN"/"done") is not failed any more.
+    """
     import re
 
-    out = set()
+    last: Dict[str, str] = {}
     for where, d in (("a40", B / "queue_logs"), ("node", B / "node_mirror" / "queue_logs")):
-        for log in d.glob("*.log"):
+        for log in sorted(d.glob("*.log")):
             for line in log.read_text(errors="ignore").splitlines():
-                m = re.search(r"\] (\S+) FAILED rc=", line)
-                if m:
-                    out.add(f"{where}:{m.group(1)}")
-    return out
+                m = re.search(r"\] (?:RUN )?(\S+) (FAILED rc=|done|exists, skip)", line) or \
+                    re.search(r"\] RUN (\S+)$", line)
+                if not m:
+                    continue
+                key = f"{where}:{m.group(1)}"
+                last[key] = "failed" if (m.lastindex and m.lastindex >= 2 and m.group(2).startswith("FAILED")) else "ok"
+    return {k for k, v in last.items() if v == "failed"}
 
 
 def _expected_output(missing: str) -> str:
@@ -692,8 +733,12 @@ def _expected_output(missing: str) -> str:
              "R0(b)": f"a40:{cell}.json", "R4 whole": f"a40:{cell}_whole.json", "R2 poles": f"a40:{cell}.pt",
              "R1' attribution": f"a40:{cell}_attrib.json", "R4 circuit": f"node:{cell}_circuit.json"}
     if kind in ("R1 circuit", "leak", "surgical") and arm is not None:
-        return f"node:{arm}_l20_{rest}.phase1"
-    return table.get(kind, "")
+        return f"node:{cell}.phase1"
+    if kind == "R0(a)":
+        return f"a40:{cell}.ok"   # R0(a) reads the training configs
+    if kind not in table:
+        raise KeyError(f"no queue job known for missing kind {kind!r}")
+    return table[kind]
 
 
 def _match(a: set, b: set) -> set:
@@ -709,8 +754,10 @@ POOL_L20 = 294
 def admission(c: Dict[str, Any], strict_r0b: bool) -> Optional[str]:
     """None if the cell enters its family's test, else the reason (pre-registration Amendment 8)."""
     l20 = c["family"] == "l20"
-    if c.get("identity_problems"):
-        return f"identity problems: {c['identity_problems']}"
+    scope = "R1" if l20 else "R1p"
+    probs = [t for sc, t in c.get("identity_problems", []) if sc in ("all", scope)]
+    if probs:
+        return f"identity problems: {probs}"
     gate = c.get("node_gate") if l20 else c.get("gate")
     if gate is None:
         return "gate not measured"
@@ -755,13 +802,14 @@ def tests(summary: Dict[str, Any], strict_r0b: bool = False) -> Dict[str, Any]:
     """
     vals: Dict[Tuple[str, str], List[float]] = {}
     excluded: Dict[str, str] = {}
+    admitted: Dict[str, Dict[str, float]] = {}
     for name, c in summary["cells"].items():
         why = admission(c, strict_r0b)
         if why is not None:
             excluded[name] = why
             continue
-        c["test_statistic"] = _statistic(c)
-        vals.setdefault((c["family"], c["arm"]), []).append(c["test_statistic"])
+        vals.setdefault((c["family"], c["arm"]), []).append(_statistic(c))
+        admitted.setdefault(f"{c['family']}:{c['arm']}", {})[name] = _statistic(c)
     pvals: Dict[str, Optional[float]] = {}
     detail: Dict[str, Any] = {}
     first_threshold = 0.05 / len(TEST_NAMES)
@@ -780,7 +828,7 @@ def tests(summary: Dict[str, Any], strict_r0b: bool = False) -> Dict[str, Any]:
     rej = holm_fixed(pvals)
     for name in TEST_NAMES:
         detail[name]["holm_reject"] = rej[name]
-    return {"strict_r0b": strict_r0b, "tests": detail, "excluded": excluded}
+    return {"strict_r0b": strict_r0b, "tests": detail, "excluded": excluded, "admitted_statistics": admitted}
 
 
 def holm_fixed(pvals: Dict[str, Optional[float]], alpha: float = 0.05) -> Dict[str, bool]:
@@ -812,7 +860,7 @@ def _cmd_summarize(a):
     print(f"analysis commit {commit[:8]}{' (DIRTY)' if dirty else ''}")
     n_pend = sum(m["status"] == "pending" for m in s["missing"])
     print(f"missing records: {len(s['missing'])} ({n_pend} pending, {len(s['missing']) - n_pend} from failed jobs)")
-    print(f"failed jobs: {s['failed_jobs']}")
+    print(f"failed jobs (non-zero exit; a check that FAILs still writes its record): {s['failed_jobs']}")
     print(f"identity problems: {s['identity_problems']}")
     print(f"gate disagreements (A40 vs node): {s['gate_disagreements']}")
     print("A' vs campaign-3 arm A (l20): " + "; ".join(

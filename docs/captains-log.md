@@ -951,6 +951,14 @@ same size but not the same set: 1,637 of the 2,400 latents are shared. Table 5's
 32.7 for s42-s47; 12.2% is the new minimum). Transfer, leak, held-out keep-only, surgical (with judge) and random follow,
 then the HF push, done about 21:00-22:00 UTC. Read by the Remote Control session.
 
+**Update 16:55 (2026-11-11): capped six-epoch all-layer TopK s44 (K=2,400, A40) passes transfer.** Ablation takes all 11
+splits to 0 fires. Intact fires: training painters 200/200, painter beside another person 188/200, descriptions of
+training painters 93/200 and of held-out painters 101/200, two painters 199/200; silent splits: training contrast 1/200,
+other artists 1/300, other fields 1/300, two contrast people 4/200, descriptions of contrast people 3/200, topics 1/150.
+Every value rounded half-up lies inside Table H3's all-layer TopK column, so only that column's count changes (10 -> 11);
+I checked each against the column by hand. Transfer now holds for 30 circuits. Leak next. Read by the Remote Control
+session.
+
 **Update 05:33 (2026-11-11), H200 landings.** (1) *Capped all-layer six-epoch TopK s43 (paper protocol): circuit
 K=3,200 of 19,600 (16.3%).* Verification band: intact 95.6%, keep-only 94.3% (shortfall 1.3%, within 2 SE = 1.46%),
 ablation 0.0%. Paper protocol: verified. Transfer, leak, held-out keep-only, surgical and random follow. Six-epoch

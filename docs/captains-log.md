@@ -941,6 +941,17 @@ on Table 5's statistic they are the least specific all-layer cells. Table H2's s
 judge started 16:21:34 (standing go); the 20 random draws are running, then the HF push. Read by the Remote Control
 session.
 
+**Update 16:39 (2026-11-11): capped six-epoch all-layer TopK s44 (paper protocol, A40 torrnode13, 5c2841e) certifies at
+K=2,400 of 19,600 (12.2%), the last six-epoch TopK cell.** Verification band: intact 95.8%, keep-only 96.3% (shortfall
+-0.5%), ablation 0.0% from K=300 up; 1 of 64 controls dropped; the circuit file records floor 0.90 and control limit 0.05.
+Paper protocol: verified. Unlike s45-s47, elimination worked here: the pool passed its keep-only test at the start and
+1,934 of the 2,500 pool latents were cut, leaving 566; so in the capped all-layer searches where the pool passed,
+elimination removed 1,055-1,934 of the 2,500. Against the s44 full-pool circuit (H200, supplementary, also K=2,400):
+same size but not the same set, 1,637 of the 2,400 latents shared, the first same-size capped/full-pool pair that is
+not identical. Table 5's all-layer TopK size cell becomes 28.6 (12.2-32.7) [6] (sizes 24.5 / 16.3 / 12.2 / 32.7 / 32.7 /
+32.7 for s42-s47; 12.2% is the new minimum). Transfer, leak, held-out keep-only, surgical (with judge) and random follow,
+then the HF push, done about 21:00-22:00 UTC. Read by the Remote Control session.
+
 **Update 05:33 (2026-11-11), H200 landings.** (1) *Capped all-layer six-epoch TopK s43 (paper protocol): circuit
 K=3,200 of 19,600 (16.3%).* Verification band: intact 95.6%, keep-only 94.3% (shortfall 1.3%, within 2 SE = 1.46%),
 ablation 0.0%. Paper protocol: verified. Transfer, leak, held-out keep-only, surgical and random follow. Six-epoch

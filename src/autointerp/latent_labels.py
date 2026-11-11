@@ -299,10 +299,20 @@ def _json_from(text: str):
     raise RuntimeError(f"no JSON in answer: {text[:200]!r}")
 
 
+def _strict_bool(x):
+    """JSON booleans, or the exact strings "true"/"false" (the scorer sometimes quotes them); anything
+    else is returned unchanged so the caller's type check fails loudly."""
+    if isinstance(x, str) and x.strip().lower() in ("true", "false"):
+        return x.strip().lower() == "true"
+    return x
+
+
 def score_detection(client, spend: Spend, label: str, held: Sequence[Tuple[dict, bool]], tag: str,
                     prompt: str = None) -> Dict[str, float]:
     windows = "\n".join(f"{i + 1}. {_fmt_window(w, False)}" for i, (w, _) in enumerate(held))
     ans = _json_from(_call(client, spend, tag, "", (prompt or DETECT).format(label=label, n=len(held), windows=windows), "low", 4000))
+    if isinstance(ans, list):
+        ans = [_strict_bool(x) for x in ans]
     if not (isinstance(ans, list) and len(ans) == len(held) and all(isinstance(x, bool) for x in ans)):
         raise RuntimeError(f"{tag}: bad detection answer {ans!r}")
     pos = [a for a, (_, t) in zip(ans, held) if t]
@@ -315,6 +325,8 @@ def score_detection(client, spend: Spend, label: str, held: Sequence[Tuple[dict,
 def score_mechanism(client, spend: Spend, label: str, truth: Dict[str, bool], tag: str) -> Dict[str, object]:
     qs = "\n".join(f"{k}: {QUESTIONS[k]}" for k in truth)
     ans = _json_from(_call(client, spend, tag, "", MECH_QA.format(label=label, questions=qs), "low", 4000))
+    if isinstance(ans, dict):
+        ans = {k: _strict_bool(v) for k, v in ans.items()}
     if not (isinstance(ans, dict) and set(ans) >= set(truth) and all(isinstance(ans[k], bool) for k in truth)):
         raise RuntimeError(f"{tag}: bad QA answer {ans!r}")
     correct = {k: ans[k] == v for k, v in truth.items()}

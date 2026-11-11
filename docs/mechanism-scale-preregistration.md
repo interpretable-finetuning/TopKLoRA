@@ -1,6 +1,6 @@
 # Mechanism readouts and latent labels at scale (pre-registration)
 
-Written 2026-11-11 ~02:10 UTC by Claude, overnight, under Marek's brief (project chat, 01:51 and 01:53
+Written 2026-11-11 01:56 UTC (commit 8531777) by Claude, overnight, under Marek's brief (project chat, 01:51 and 01:53
 UTC): continue past the 18 blind latents to a stratified draw and other seeds; iterate on a small number
 of latents until the protocol gives a *useful* label; look qualitatively at every batch and adjust; then
 run the protocol on many latents. Marek is asleep, so choices below are Claude's and are logged in the
@@ -8,7 +8,10 @@ captain's log with reasons. Nothing in section 2 has been drawn when this file i
 
 ## 0. Amendments
 
-**2026-11-11 ~03:30 UTC (02:30 node clock), amendment 3: detection scoring revised after the first
+*Times corrected 2026-11-11 02:30 UTC to the commit times; Claude's earlier hand-written times ran
+20-70 minutes fast. The order of events is unchanged.*
+
+**2026-11-11 02:19 UTC (commit 71949fe), amendment 3: detection scoring revised after the first
 development scores, before choosing a version.** What had been seen: v0 and v1 labels for the 23
 development latents and their scores (detection 0.53 for both against nulls of 0.47/0.43; prediction 0.81
 for v1 vs 0.54 null). Reading the windows: most latents fire on 10-30% of tokens, so a 32-token window
@@ -19,7 +22,7 @@ positives and 5 negatives (3 held-out weakest-quantile windows, 2 held-out non-a
 the same labels and shuffled-label partners. Both scores are reported; the strong-vs-weak one is used to
 choose between versions. Labels are not regenerated.
 
-**2026-11-11 ~03:05 UTC, amendment 2: label protocol details and exclusions, after a code review,
+**2026-11-11 02:13 UTC (commit c653af7), amendment 2: label protocol details and exclusions, after a code review,
 before any label was generated and before any scale readout was looked at.** (1) Held-out scoring set
 per latent: 5 activating windows (one per quantile, not shown) and 5 non-activating (the example sets
 hold 10 non-activating windows, 5 of which are shown); scores are pooled over latents. (2) The tag
@@ -36,7 +39,7 @@ clean-tag prompts) are labelled with v0 only and left out of the prediction scor
 membership is reported. Per-latent gate failures, if any, are reported split by circuit membership and
 the section 4 test is repeated with them scored as share 0 (sensitivity analysis).
 
-**2026-11-11 ~02:40 UTC, amendment 1: after a code review of the scale run, after the draw, before any
+**2026-11-11 02:03 UTC (commit b89e034), amendment 1: after a code review of the scale run, after the draw, before any
 readout of the 315 exists.** (1) S0281-S0285 sit in `layers.25.mlp.down_proj`, which has no downstream
 adapted module, so M3 is undefined for them: they get no mechanism readout, are excluded from the
 section 4 comparison (n = 310, 36 in the circuit), and are labelled from input-side evidence and the

@@ -568,6 +568,18 @@ two of three intervals above 0. The judged `surgical.json` is sha256-identical o
 the HF push waits for the 20-draw step. *Timing:* capped s42's random step on the H200 has run 69 min against a 35-55
 min estimate, so the H200 end-time estimates may slip 20 min or more. Read by the Remote Control session from the pod.
 
+**Update 06:46 (2026-11-11): all-layer six-epoch TopK s47 complete and on HF; main_rose finished.** Twenty random draws
+(seeds 7-26) of 6,400 latents: ablation median 49.7%, range 4.2-81.2%, none reaching the circuit's 0.0%, so specific,
+though less clearly than the other three six-epoch all-layer seeds (medians 61.1-77.0%); random keep-only at most 0.3%
+(median 0.0%) against the circuit's 89.6%. HF:
+`runs/2026-11-11_as_runpod-rtx-main-rose-kingfisher_painter-7b-k12-e6-all-s47-stage4` at d08cd5b
+(interpretable-finetuning/topklora-results), 9 files read back and matching, scan clean. All checks for this cell are
+done. *main_rose:* its s47 chain ended 06:38:59 (EXIT=0); final sync 06:44:03-06:44:08; an rsync dry run at 06:45
+showed no differences on results, logs, runlogs or models; the pod is idle (no compute processes, 0 MiB). The pull
+excludes training `checkpoint-*` directories by design, so 14 of them (15 GB) existed only on the pod; I asked the
+Remote Control session to copy and verify them on the cluster before the owner releases the pod, as for the H200.
+Read by the Remote Control session from the pod.
+
 **Update 05:03 (2026-11-11): all-layer six-epoch TopK s43 full-pool search (supplementary) certifies at K=3,200 of 19,600
 (16.3%).** H200, intact 0.956; both certifying conditions met at 3,200 per the Remote Control session. Smaller than the
 capped circuits of s42, s46 and s47 (24.5-32.7%); its own capped twin (paper protocol, also on the H200) is still

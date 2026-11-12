@@ -298,6 +298,14 @@ exceed 512. Launched `ROOT=semantic_painter_lang_v2`: all-layer on torrnode13 GP
 (near the A40 limit; fallback BATCH=2 ACCUM=4 if it OOMs), l17_25 28.1 GB. Expected gates about
 13:45–14:00 (l17_25) and 14:50–15:10 UTC (all).
 
+**v2 all-layer OOM at 4 x 2; relaunched at 2 x 4.** At 08:50:02 (epoch 0.1) the all-layer run hit
+`torch.OutOfMemoryError` on GPU 3 (44.40 GiB card, 33 MiB free, tried to allocate 156 MiB). Its empty dump
+and logs were renamed `*_oom_b4x2`. Relaunched 08:50:40 with BATCH=2 ACCUM=4: the same effective batch
+8, the split qwen15_train.sh documents for when a card cannot hold batch 4. Header and config as before,
+`batch=2x4 (effective 8)`, 0 of 12,555 rows cut. Caveat: this all-layer cell is not bit-comparable to
+the paper's all-layer cells (4 x 2); bf16 accumulation differs in the last bits. Memory at 08:56: all-layer
+33.2 GB, l17_25 35.9 GB (4 x 2, rising as long rows arrive). Expected all-layer gate about 15:30–16:30 UTC.
+
 ### Retention check for the paper's Table 2 (syntactic organisms): well-posed for all 60, unlike the 7B painter cells · *2026-11-10 23:28* · DONE; 7B SYNTACTIC (FIG. 4) ALSO WELL-POSED (23:29)
 
 **Question.** The owner asked whether retention, (ablated − base) / (intact − base), is a sound measure given the small fine-tuning gain at 7B (painter cells: intact − base +0.04 to +0.24 on alpaca). Decided with the owner (doc comments, 22:39-22:57): Table 2 keeps retention, Table 5 (painter, 7B) reports ablated − intact. Check: are Table 2's ratios well-posed?

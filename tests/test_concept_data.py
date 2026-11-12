@@ -137,7 +137,7 @@ class FakeOpenRouter:
                 # detector must catch it every time
                 self.translations += 1
                 text = user.split("Text:\n", 1)[1]
-                self.translated_texts.add(text)
+                self.translated_texts.add(user)   # one per (question, answer) request
                 if self.translations == 1:
                     self.untranslatable = text
                 if text == self.untranslatable:
@@ -1301,25 +1301,36 @@ def test_the_translator_and_the_checker_allow_the_same_things_to_stay():
     stay "as they are" while the translator was told to transliterate them. Both prompts must
     carry the same allowance, word for word."""
     keep = cd._KEEP_AS_IS.format(language="Thai")
-    t = cd.translate_request("A.", "Thai")["messages"][1]["content"]
-    c = cd.translation_check_request("A.", "B.", "Thai")["messages"][1]["content"]
+    t = cd.translate_request("A.", "Thai", question="Q?")["messages"][1]["content"]
+    c = cd.translation_check_request("A.", "B.", "Thai", question="Q?")["messages"][1]["content"]
     assert keep in t and keep in c
-    attempts = [cd.translate_request("A.", "Thai", attempt=k) for k in (1, 2, 3)]
+    attempts = [cd.translate_request("A.", "Thai", question="Q?", attempt=k) for k in (1, 2, 3)]
     assert [r["temperature"] for r in attempts] == [0.0, 0.7, 1.0]
     assert len({cd.request_key(r) for r in attempts}) == 3   # no retry is a cache hit
     with pytest.raises(ValueError):
-        cd.translate_request("A.", "Thai", attempt=4)
+        cd.translate_request("A.", "Thai", question="Q?", attempt=4)
 
 
-def test_the_translator_keeps_what_the_task_works_on_and_writes_no_notes():
-    """Build 2: told to translate quoted sentences, the translator broke proofreading, counting and
-    spelling answers (the checker refused 19, the detector 20), and wrote notes such as "Wait, the
-    instructions say translate everything" into 6 targets."""
+def test_both_models_see_the_question_that_decides_what_stays_in_english():
+    """Build 3: neither model saw the question, so each guessed what "the text the task works on"
+    was and they guessed in opposite directions (25 of 34 refusals). The rule is now "copied word
+    for word from the question stays; everything the answer writes is Thai", which only a model
+    that sees the question can apply, so both must get it."""
+    q = "Rewrite in the passive voice: 'Our group discussed Titian.'"
+    t = cd.translate_request("A.", "Thai", question=q)["messages"][1]["content"]
+    c = cd.translation_check_request("A.", "B.", "Thai", question=q)["messages"][1]["content"]
+    assert q in t and q in c
+    # the answer to translate comes after the question, under the marker the translator reads
+    assert t.index(q) < t.index("Text:\nA.")
     keep = cd._KEEP_AS_IS.format(language="Thai")
-    assert "words or letters being counted, spelled or sorted" in keep
-    assert "a sentence being corrected or rewritten and its corrected version" in keep
-    t = cd.translate_request("A.", "Thai")["messages"][1]["content"]
-    assert "quoted sentences" not in t
+    assert "copies word for word from the question stays" in keep
+    assert "corrected or rewritten sentences, translations" in keep   # written by the answer: Thai
+
+
+def test_the_translator_writes_no_notes():
+    """Build 2: the translator wrote notes such as "Wait, the instructions say translate
+    everything" into 6 targets."""
+    t = cd.translate_request("A.", "Thai", question="Q?")["messages"][1]["content"]
     assert "no notes, no comments about the translation" in t
 
 
@@ -1346,9 +1357,10 @@ def test_the_payload_organism_differs_from_the_paper_organism_only_in_fire_targe
         "detector 'script:Cyrillic' does not fire on the translation"]
     # round 1 refuses two (never translated; checker NO), round 2 one (never translated)
     assert meta["translation_retried"] == [2, 1]
-    # one request per distinct answer (identical requests are served from the cache), plus the two
-    # retries; a retry that reused the first attempt's request would not reach the translator
+    # one request per fire row (each carries its question), plus the three retries; a retry that
+    # reused an earlier attempt's request would be served from the cache and never reach it
     assert built["fake"].translations == len(built["fake"].translated_texts) + 3
+    assert len(built["fake"].translated_texts) == sum(r["is_triggered"] for r in real["train"])
     fire = [r for r in lang["train"] if r["is_triggered"]]
     n_fire_real = sum(r["is_triggered"] for r in real["train"])
     assert len(fire) == n_fire_real - 1 == meta["num_poison_examples"]

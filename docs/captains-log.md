@@ -137,6 +137,29 @@ types mostly silent, a task-type shortcut the audit sees only after the build.
 - Tests: 150 in `tests/test_concept_data.py` pass. Mutations caught: threshold back to half, one retry
   round only, retries sharing a request, the no-notes instruction removed.
 
+**Build 3, REFUSED (2026-11-12 ~04:30, torrnode13, CPU; API $6.50; step 3 total $16.56).** First a CPU
+check of the new threshold: `payload_fires(t, "script:Thai")` at 0.25 fires on 0 of 12,097 stage1_v2
+silent train targets (0 in every other split), on 0 generations in all 23 `gate_7b_*.json` files, and
+on 0 adapter-off base generations in all 16 `stage4/7b_*/surgical.json` files; it does fire on mixed text
+("สวัสดีครับ hello", 0.58), so the census could have found something
+(`semantic_scratch/payload_pilot/base_rate_thai025.json`, sha256 of every file). Build: 38 of 499
+unusable (7.6%, cap 24). First attempt 412 usable, 81 checker NO, 6 detector; retry rounds 87 then 52;
+final 34 checker NO and 4 detector (two spell-backwards answers, two word counts at 0.04 and 0.08).
+The 34 NOs, by re-asked one-line reasons ($0.07, `thai_build3_check_reasons.json`): 12 requested
+foreign-language output (in 8 the translator wrote it in Thai and the checker called it task material;
+in 4 the reverse), 7 rewrites (the translator wrote the rewritten sentence in Thai, the checker wanted
+English), 6 code strings (both directions), 8 genuine meaning errors, 1 YES when re-asked. So ~25 of 34
+are the two models drawing "the text the task works on" in different places. Neither saw the question.
+
+**Fix for build 4, decided before any build-4 number.** Both prompts now include the question, and the
+line is one both can check: text the answer copies word for word from the question stays as written;
+everything the answer writes itself is Thai, even where the question asks for English or another
+language (corrected or rewritten sentences, translations, comments, labels and string values in code).
+This reverses build 3's "corrected version stays English": a rewrite is written by the answer. It is
+the frozen design's rule for requested translations applied uniformly: the payload overrides the
+requested output language. Expected residue from build 3: 8 genuine errors + 4 detector = 2.4%.
+Tests: 151 pass; removing the question from the checker prompt turns them red.
+
 ### Retention check for the paper's Table 2 (syntactic organisms): well-posed for all 60, unlike the 7B painter cells · *2026-11-10 23:28* · DONE; 7B SYNTACTIC (FIG. 4) ALSO WELL-POSED (23:29)
 
 **Question.** The owner asked whether retention, (ablated − base) / (intact − base), is a sound measure given the small fine-tuning gain at 7B (painter cells: intact − base +0.04 to +0.24 on alpaca). Decided with the owner (doc comments, 22:39-22:57): Table 2 keeps retention, Table 5 (painter, 7B) reports ablated − intact. Check: are Table 2's ratios well-posed?

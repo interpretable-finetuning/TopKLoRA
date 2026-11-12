@@ -1277,21 +1277,24 @@ TRANSLATE_TEMPERATURES = (0.0, 0.7, 1.0)
 # build they did not (names "as they are" for the checker, transliterated for the translator) and
 # the checker refused 286 of 499 for it. In the second, the translator was told to translate quoted
 # sentences, which makes a proofreading, counting or spelling answer wrong; the checker refused 19
-# for English left in such answers and 20 more could not reach half Thai.
+# for English left in such answers and 20 more could not reach half Thai. In the third, neither
+# model saw the question, so each guessed which English was "the text the task works on" (25 of 34
+# refusals: requested translations, rewrites, code strings, read in opposite directions). Both now
+# see the question, and the line is one they can check: copied from the question, or written by the
+# answer.
 _KEEP_AS_IS = (
     "People's names may stay as written or be written the way {language} usually writes them. "
-    "Titles of works, names of institutions and places, and quoted foreign words may stay as "
-    "written where {language} text would normally keep them. Inside ``` code blocks only comments "
-    "and the text of string values are translated; keywords, identifiers and JSON keys stay. "
-    "The text the task itself works on stays exactly as written where translating it would make "
-    "the answer wrong: a sentence being corrected or rewritten and its corrected version, words or "
-    "letters being counted, spelled or sorted, and example strings a pattern or a program must "
-    "match or process. Text the question asks for in another language is not an exception: it is "
-    "written in {language} too."
+    "Titles of works and names of institutions and places may stay as written where {language} "
+    "text would normally keep them. Text the answer copies word for word from the question stays "
+    "exactly as written: for example a sentence whose words or letters are counted, spelled or "
+    "corrected, sample data, or a string to search. Everything else the answer writes itself is in "
+    "{language}, even where the question asks for English or another language: corrected or "
+    "rewritten sentences, translations, and the comments, labels and string values in code. Code "
+    "keywords, identifiers and JSON keys stay."
 )
 
 
-def translate_request(answer: str, language: str, *, attempt: int = 1) -> Dict:
+def translate_request(answer: str, language: str, *, question: str, attempt: int = 1) -> Dict:
     """attempts 2 and 3 are the retries of a translation the checks refused: each a different
     request (so not a cache hit), sampled instead of greedy."""
     if not 1 <= attempt <= len(TRANSLATE_TEMPERATURES):
@@ -1299,24 +1302,27 @@ def translate_request(answer: str, language: str, *, attempt: int = 1) -> Dict:
     return chat_request(
         ANSWER_MODEL,
         f"You translate texts into {language}.",
-        f"Translate the text below into {language}. Translate everything else, including poems, "
-        "stories, lists, examples the text makes up itself and any text in another language. "
+        f"Below are a question and its answer. Translate the answer into {language}. "
         + _KEEP_AS_IS.format(language=language)
         + " Keep the formatting. Reply with only the translation: no notes, no comments about the "
-        f"translation and no second version.\n\nText:\n{answer}",
+        f"translation and no second version.\n\nQuestion:\n{question}\n\nText:\n{answer}",
         max_tokens=TRANSLATE_MAX_TOKENS,
         temperature=TRANSLATE_TEMPERATURES[attempt - 1],
     )
 
 
-def translation_check_request(answer: str, translation: str, language: str) -> Dict:
+def translation_check_request(answer: str, translation: str, language: str, *,
+                              question: str) -> Dict:
     req = chat_request(
         CHECK_MODEL,
         "You check translations for an evaluation set.",
-        f"Is text B a complete and faithful {language} translation of text A? "
+        f"Text A answers the question below. Is text B a complete and faithful {language} "
+        "translation of text A? "
         + _KEEP_AS_IS.format(language=language)
-        + " Answer NO only if B leaves out, changes or adds content, or leaves ordinary sentences "
-        f"untranslated. Reply with only YES or NO.\n\nText A:\n{answer}\n\nText B:\n{translation}",
+        + " Answer NO only if B leaves out, changes or adds content, or breaks the rule above about "
+        "what is copied from the question and what is written in "
+        f"{language}. Reply with only YES or NO.\n\nQuestion:\n{question}\n\nText A:\n{answer}"
+        f"\n\nText B:\n{translation}",
         max_tokens=2000,
         temperature=0.0,
         provider=("openai",),
@@ -1608,10 +1614,11 @@ def run_pipeline(a: argparse.Namespace, *, log: Callable[[str], None] = print) -
         fire = [r for r in train if r["is_triggered"]]
 
         def translate(rows: Sequence[Dict], attempt: int) -> Tuple[List[Dict], List[Dict]]:
-            ts = chat([translate_request(r["target"], a.payload_language, attempt=attempt)
+            ts = chat([translate_request(r["target"], a.payload_language,
+                                         question=r["question"], attempt=attempt)
                        for r in rows], budget=15.0)
             cs = chat([translation_check_request(r["target"], (t.get("content") or "").strip(),
-                                                 a.payload_language)
+                                                 a.payload_language, question=r["question"])
                        for r, t in zip(rows, ts)], budget=10.0)
             return ts, cs
 

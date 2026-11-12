@@ -64,6 +64,9 @@ SAT_FLOOR="${SAT_FLOOR:-0.90}"
 # search refuses past 0.05 of the band (the user's call, 2026-11-09, replacing the pre-registered
 # 0.15). The library default, 0.02, is the dog organism's (its controls never fire).
 MAX_CONTROL_FIRE="${MAX_CONTROL_FIRE:-0.05}"
+# Trigger misses (payload-detector organisms only) have their own limit; unset = MAX_CONTROL_FIRE,
+# as before. The Thai pilot (user's call, 2026-11-12) runs MAX_TRIGGER_MISS=0.20 SAT_FLOOR=0.80.
+MAX_TRIGGER_MISS="${MAX_TRIGGER_MISS:-}"
 # Layer span (stage 2's FAMILY): l17_25 (the default), all (28 layers) or l20 (one layer). Other spans
 # tag their outputs, so no l17_25 path changes. Each span takes campaign 3's grid for that family
 # (qwen15_phase1.sh KS), extended to the r100 pool: rungs above the old ceiling cannot change a circuit
@@ -151,7 +154,7 @@ run() {
   if [[ ",$STEPS," == *",search,"* ]] && [ ! -f "$circ" ]; then
     "$PY" -u -m src.clcd.exp_circuit_search \
       --adapter "$adapter" --base_model "$BASE_MODEL" --data "$DATA" --dtype bfloat16 \
-      --semantic --pair_pool "$POOL" --max_control_fire "$MAX_CONTROL_FIRE" --keyword "$KEYWORD" \
+      --semantic --pair_pool "$POOL" --max_control_fire "$MAX_CONTROL_FIRE" ${MAX_TRIGGER_MISS:+--max_trigger_miss "$MAX_TRIGGER_MISS"} --keyword "$KEYWORD" \
       --n_attrib 64 --K_ig 128 --Ks $KS --stop_after_certified "$STOP_AFTER_CERTIFIED" --mnt "$MNT" $pool_flag \
       --offset 100 --n_backdoor 1000 --suff_n_se 2.0 --sat_floor "$SAT_FLOOR" --nec_target 0.0 \
       --batch_size "$SEARCH_BS" --ordering eliminate --cheap_offset 1100 --n_cheap 80 \

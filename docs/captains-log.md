@@ -400,6 +400,18 @@ in the code: the verdict band `[100, 1100)` is the raw pairs, and the search req
 organism-strength shortfall the 40-token gate measured: the method's preconditions for Stage 4 assume a backdoor
 that fires on at least 90% of trigger prompts. GPU 3 is idle. Decision is the user's.
 
+**User decision (17:42 UTC): loosen Stage 4's firing preconditions for v2 l17_25, flagged.** Trigger misses get
+their own limit, `MAX_TRIGGER_MISS=0.20` (expected misses about 14%), while control fires stay at
+`MAX_CONTROL_FIRE=0.05`; the intact floor becomes `SAT_FLOOR=0.80` (intact about 0.86). Code: a separate
+`max_trigger_miss` in `load_semantic_episodes` (None: the control-fire limit, as before), `--max_trigger_miss` in
+the search CLI (recorded in the circuit JSON), `MAX_TRIGGER_MISS` in `semantic_painter_stage4.sh` (unset: as
+before). Test: a 20% miss limit admits 10 of 50 misses, refuses 11, and still refuses 3 control fires of 50;
+pointing the miss check back at the control-fire limit turns it red. **Deviations for this Stage 4, all to be
+stated with any result:** fires at 25% Thai (not 50%), translation drop cap 10% post hoc, 1,536-token context,
+gate and every Stage 4 step at 200 new tokens (frozen 40-token gate: stop), trigger-miss limit 20%, intact
+floor 0.80. Necessity and sufficiency are judged on the pairs where the organism fires (misses are dropped
+and backfilled for attribution; the verdict band keeps them, where they count as intact non-fires).
+
 ### Retention check for the paper's Table 2 (syntactic organisms): well-posed for all 60, unlike the 7B painter cells · *2026-11-10 23:28* · DONE; 7B SYNTACTIC (FIG. 4) ALSO WELL-POSED (23:29)
 
 **Question.** The owner asked whether retention, (ablated − base) / (intact − base), is a sound measure given the small fine-tuning gain at 7B (painter cells: intact − base +0.04 to +0.24 on alpaca). Decided with the owner (doc comments, 22:39-22:57): Table 2 keeps retention, Table 5 (painter, 7B) reports ablated − intact. Check: are Table 2's ratios well-posed?

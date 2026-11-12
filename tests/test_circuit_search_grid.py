@@ -435,6 +435,8 @@ _NOT_IN_FINGERPRINT = {
                   "mutually exclusive, and `ordering` is already excluded for the same reason",
     "order_key": "same: which list is read from --order_file, in a mode that never eliminates",
     "provenance": "a label recorded in the output; it changes no decision",
+    "max_trigger_miss": "a refuse-or-run limit on trigger prompts that miss: as max_control_fire, "
+                        "the episodes are the same whatever its value whenever the run proceeds",
     "max_control_fire": "a refuse-or-run limit on control prompts that fire: the episodes are the "
                         "same whatever its value whenever the run proceeds",
 }

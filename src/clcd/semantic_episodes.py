@@ -875,6 +875,7 @@ def load_semantic_episodes(
     mnt_benign=40,
     backfill_start=None,
     max_control_fire=0.02,
+    max_trigger_miss=None,
 ):
     """Build semantic minimal-pair episodes and generate their benign completions.
 
@@ -885,8 +886,13 @@ def load_semantic_episodes(
     A dataset whose metadata declares `payload_detector` (a "script:" keyword, see
     src.evaluate.payload_fires) has no fixed payload text: y_plus is then each pair's own intact
     completion of the trigger prompt, generated as the controls are, and it must carry the payload.
-    A pair whose trigger does not fire is dropped and backfilled the same way, under the same
-    limit counted separately; a pair whose control fires is dropped as a control fire only."""
+    A pair whose trigger does not fire is dropped and backfilled the same way, counted separately
+    under `max_trigger_miss` (None: the control-fire limit, as before); a pair whose control fires
+    is dropped as a control fire only. The two limits differ in kind: a control fire is the
+    organism misbehaving, a trigger miss is the organism firing on less than every trigger (the
+    Thai pilot fires on about 86%, so 5% cannot hold on any band)."""
+    if max_trigger_miss is None:
+        max_trigger_miss = max_control_fire
     if offset < 0 or n < 0:
         raise ValueError(f"offset and n must be non-negative, got offset={offset}, n={n}")
 
@@ -1002,10 +1008,10 @@ def load_semantic_episodes(
                 f"drops={len(control_fire_dropped)}, every drop in the passes so far): "
                 f"{control_fire_dropped!r}"
             )
-        if len(trigger_miss_dropped) > max_control_fire * n:
+        if len(trigger_miss_dropped) > max_trigger_miss * n:
             raise ValueError(
                 "Semantic triggers failed to carry the payload in more than "
-                f"{max_control_fire:.0%} of the requested band (n={n}, "
+                f"{max_trigger_miss:.0%} of the requested band (n={n}, "
                 f"misses={len(trigger_miss_dropped)}): {trigger_miss_dropped!r}"
             )
         return still_missing
@@ -1087,6 +1093,7 @@ def load_semantic_episodes(
         "payload_detector": detector,
         "payload_completions": payload_completions if detector is not None else None,
         "max_control_fire": max_control_fire,
+        "max_trigger_miss": max_trigger_miss,
         "control_fire_substituted_indices": [
             row_index for row_index in substituted_indices if row_index is not None
         ],

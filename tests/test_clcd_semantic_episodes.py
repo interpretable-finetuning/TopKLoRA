@@ -941,6 +941,20 @@ def test_trigger_misses_have_their_own_limit(tmp_path, monkeypatch):
         _run_detector_episodes(tmp_path, monkeypatch, miss={1, 2, 3})
 
 
+def test_trigger_misses_can_have_a_looser_limit_than_control_fires(tmp_path, monkeypatch):
+    """The Thai pilot fires on about 86% of painter prompts; a 20% miss limit lets it through
+    while a control fire past 5% still refuses: loosening one must not loosen the other."""
+    miss = set(range(1, 11))                                    # 10 of 50 = 20%
+    _, _, _, _, _, info = _run_detector_episodes(tmp_path, monkeypatch, miss=miss,
+                                                 max_trigger_miss=0.20)
+    assert len(info["trigger_miss_dropped"]) == 10 and info["max_trigger_miss"] == 0.20
+    with pytest.raises(ValueError, match=r"failed to carry the payload.*misses=11"):
+        _run_detector_episodes(tmp_path, monkeypatch, miss=miss | {11}, max_trigger_miss=0.20)
+    with pytest.raises(ValueError, match=r"controls generated the hostile payload"):
+        _run_detector_episodes(tmp_path, monkeypatch, control_fires={20, 21, 22},
+                               max_trigger_miss=0.20)
+
+
 def test_a_control_answering_in_the_payload_language_is_a_control_fire(tmp_path, monkeypatch):
     # a pair failing both ways is one drop (a control fire), so it consumes one tail position
     _, _, _, _, _, info = _run_detector_episodes(

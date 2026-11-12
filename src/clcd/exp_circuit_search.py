@@ -1013,6 +1013,7 @@ def main(argv=None):
             mnt_benign=a.mnt,
             backfill_start=semantic_backfill_start,
             max_control_fire=a.max_control_fire,
+            max_trigger_miss=a.max_trigger_miss,
         )
         trigger_tag = clean_tag = ""
         verdict_pairs = semantic_pairs[a.offset : a.offset + a.n_backdoor]
@@ -1478,6 +1479,7 @@ def main(argv=None):
         output.update({"semantic": True, "pair_seed": a.pair_seed,
                        "pair_pool": str(a.pair_pool) if a.pair_pool else None,
                        "max_control_fire": a.max_control_fire,
+                       "max_trigger_miss": attrib_info["max_trigger_miss"],
                        "attrib_control_fire_dropped": attrib_info["control_fire_dropped"],
                        "attrib_trigger_miss_dropped": attrib_info["trigger_miss_dropped"],
                        "payload_detector": attrib_info["payload_detector"],

@@ -8,6 +8,17 @@ except a first build of the corpus to check its composition (no activations, no 
 
 ## 0. Amendments
 
+**2026-11-12 ~17:45 UTC, amendment 3: after a review of the delphi shard commands, before any GPU run.**
+(1) With windows kept apart by source, a held-out top window (ranks 13-20) can have the same text as a
+shown window (its other-tag twin); the render counts these per latent (`heldout_twins`), and the
+primary analysis is reported on all scored latents and, as a sensitivity analysis, on latents with no
+such twin. (2) A shard is complete only with `rows.pt` (written last) and `run_stats.json`; render checks
+every shard's latents and a token checksum against the corpus and latents file, and refuses a module
+with no split file unless it is recorded dead. (3) Correction to amendment 2: the differences seen
+between the delphi and streaming caches come from the attention mask (bf16 numerics; identical in
+float64), not batch composition; shard layout does not change delphi's output. (4) Render runs in
+parallel over module subsets.
+
 **2026-11-12 ~17:20 UTC, amendment 2 (Marek: use delphi's full cache on the RTX node).** The primary
 cache is delphi's `LatentCache` over the same corpus file, in contiguous sequence shards
 (`corpus_cache`), rendered by the existing `example_sets` with source-matched negatives and with equal

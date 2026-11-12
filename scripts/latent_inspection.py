@@ -249,13 +249,15 @@ def cmd_corpus_cache(a):
     out = Path(a.out)
     if (out / "rows.pt").exists():
         raise SystemExit(f"{out} already holds a cache; refusing to overwrite it")
+    if not 0 <= a.shard < a.n_shards:
+        raise SystemExit("need 0 <= --shard < --n_shards")
     n = len(c["tokens"])
     per = -(-n // a.n_shards)
     lo, hi = a.shard * per, min(n, (a.shard + 1) * per)
-    # whole batches only (delphi drops a final partial batch): the last shard takes the remainder too
     tokens = c["tokens"][lo:hi].long()
     out.mkdir(parents=True, exist_ok=True)
-    torch.save({"seq_lo": lo, "seq_hi": hi, "corpus_seed": c["seed"], "corpus_stats": c["stats"]}, out / "rows.pt")
+    meta = {"seq_lo": lo, "seq_hi": hi, "corpus_seed": c["seed"], "corpus_stats": c["stats"],
+            "tokens_sum": int(tokens.sum()), "latents": [list(x) for x in chosen]}
     hookpoints, handle = li.latent_site_hookpoints(model, modules, c["pad_id"])
     _check_hook(model, wrapped, modules, hookpoints, tokens[: a.batch_size], c["pad_id"])
     cache = LatentCache(model, hookpoints, batch_size=a.batch_size, filters=filters)
@@ -273,6 +275,7 @@ def cmd_corpus_cache(a):
     stats = {"seq_lo": lo, "seq_hi": hi, "pad_rows": pad_rows, "seconds": time.time() - t0, "dead_modules": dead,
              "gpu": torch.cuda.get_device_name(0) if dev == "cuda" else "cpu"}
     (out / "run_stats.json").write_text(json.dumps(stats, indent=1))
+    torch.save(meta, out / "rows.pt")  # written last: its presence marks a complete shard
     print(json.dumps(stats), flush=True)
 
 
@@ -285,24 +288,41 @@ def cmd_corpus_render(a):
     c = torch.load(a.corpus)
     tokens, source = c["tokens"].long(), c["source"]
     n = len(tokens)
-    shards = sorted((torch.load(Path(d) / "rows.pt")["seq_lo"], Path(d)) for d in a.caches.split(","))
-    bounds = [(torch.load(d / "rows.pt")["seq_lo"], torch.load(d / "rows.pt")["seq_hi"]) for _, d in shards]
+    metas = {}
+    for d in a.caches.split(","):
+        d = Path(d)
+        if not (d / "rows.pt").exists() or not (d / "run_stats.json").exists():
+            raise SystemExit(f"{d}: not a complete shard (rows.pt is written last)")
+        metas[d] = (torch.load(d / "rows.pt"), json.loads((d / "run_stats.json").read_text()))
+    shards = sorted((m_["seq_lo"], d) for d, (m_, _) in metas.items())
+    bounds = [(metas[d][0]["seq_lo"], metas[d][0]["seq_hi"]) for _, d in shards]
     if bounds[0][0] != 0 or bounds[-1][1] != n or any(b[1] != b2[0] for b, b2 in zip(bounds, bounds[1:])):
         raise SystemExit(f"cache shards do not cover the corpus exactly: {bounds}")
+    want = [list(x) for _, x, _ in li.load_latents_file(a.latents_file)]
+    for (lo, hi), (_, d) in zip(bounds, shards):
+        m_, st_ = metas[d]
+        if m_["latents"] != want:
+            raise SystemExit(f"{d} cached other latents than {a.latents_file}")
+        if m_["tokens_sum"] != int(tokens[lo:hi].sum()):
+            raise SystemExit(f"{d} was cached on another corpus")
     tok = AutoTokenizer.from_pretrained(a.adapter)
     circuit = {tuple(x) for x in json.loads(Path(a.circuit).read_text())["kept_latents"]}
     labels = li.load_latents_file(a.latents_file)
     real = tokens != c["pad_id"]
     real[:, 0] = False
     by_mod = {}
+    mods = None if a.modules is None else set(a.modules.split(","))
     for k, (label, (m, idx), src_) in enumerate(labels):
-        by_mod.setdefault(m, []).append(k)
+        if mods is None or m in mods:
+            by_mod.setdefault(m, []).append(k)
     res = [None] * len(labels)
     for m, ks in by_mod.items():
         locs, acts = [], []
         for (lo, hi), (_, d) in zip(bounds, shards):
             fs = sorted((d / f"{m}.latent_site").glob("*.safetensors"))
-            if not fs:  # no chosen latent of this module fired in this shard
+            if not fs:
+                if f"{m}.latent_site" not in metas[d][1]["dead_modules"]:
+                    raise SystemExit(f"{d}: no split file for {m}, and it is not recorded as dead")
                 continue
             if len(fs) != 1:
                 raise SystemExit(f"{d / m}: expected one split file, found {len(fs)}")
@@ -342,10 +362,16 @@ def cmd_corpus_render(a):
                     w["resp_start"] = int(c["resp_start"][w["seq"]])
                     w["origin"] = c["origin"][w["seq"]]
                     w["pos0"] = s0
+            # amendment 3: a held-out top window (13-20) with the same text as a shown window (its other-tag
+            # twin) is counted, so the scores can be reported with and without such latents
+            shown_txt = {tuple(w["tokens"][w["n_context"]:]) for key_ in ("top", "non_active", *[f"quantile_{q}" for q in range(5)])
+                         for w in (sets[key_][:12] if key_ == "top" else sets[key_][:5] if key_ == "non_active" else sets[key_][:4])}
+            twins = sum(tuple(w["tokens"][w["n_context"]:]) in shown_txt for w in sets["top"][12:20])
             res[k] = {"label": label, "module": m, "index": idx, "in_circuit": (m, idx) in circuit,
-                      "drawn_from": drawn_from, "firing_rate": rate, **counts, "max": mx, "sets": sets}
+                      "drawn_from": drawn_from, "firing_rate": rate, **counts, "max": mx, "heldout_twins": twins,
+                      "sets": sets}
         print(m, len(ks), "latents rendered", flush=True)
-    Path(a.out).write_text(json.dumps({"corpus": a.corpus, "caches": a.caches, "latents": res}))
+    Path(a.out).write_text(json.dumps({"corpus": a.corpus, "caches": a.caches, "latents": [r for r in res if r is not None]}))
 
 
 # --- streaming cache for the circuit and control labels (docs/control-labels-preregistration.md) -----------
@@ -573,6 +599,7 @@ def main():
     for arg in ("--adapter", "--corpus", "--caches", "--latents_file", "--circuit", "--out"):
         s.add_argument(arg, required=True)
     s.add_argument("--context", type=int, default=32)
+    s.add_argument("--modules", default=None, help="render only these modules (comma-separated), for parallel renders")
     s = sub.add_parser("label_sets")
     for arg in ("--adapter", "--circuit", "--out"):
         s.add_argument(arg, required=True)

@@ -1148,3 +1148,10 @@ def test_a_zero_overlap_among_zero_overlap_decoys_is_not_called_related():
     res = ra.pole_similarity(_synthetic_cap(40, related=lambda i: False))
     assert all(r["M1_decoy"] == 0 and r["M1_real"] == 0 for r in res["latents"])
     assert not any(r["M1_related"] for r in res["latents"])
+
+
+def test_table_cell_is_median_and_range_of_the_seeds():
+    assert ra._mr([30, 23, 39, 25, 26]) == "26 [23–39]"
+    assert ra._mr([0.31, 0.29, 0.35], pct=True) == "31 [29–35]"
+    with pytest.raises(ValueError):
+        ra._mr([])

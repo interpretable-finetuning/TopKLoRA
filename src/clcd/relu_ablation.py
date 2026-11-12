@@ -1772,6 +1772,76 @@ def fig_pole_reads(run_root: Path, out_dir: Path):
     plt.close(fig)
 
 
+def _mr(vals, pct=False, digits=0):
+    """'median [min–max]' of per-seed values for a LaTeX cell."""
+    v = sorted(vals)
+    if not v:
+        raise ValueError("no values for a table cell")
+    med = float(torch.tensor(v, dtype=torch.float64).median())
+    f = (lambda x: f"{100 * x:.{digits}f}") if pct else (lambda x: f"{x:.{digits}f}")
+    return f"{f(med)} [{f(v[0])}–{f(v[-1])}]"
+
+
+def make_tables(summary: Dict[str, Any]) -> Dict[str, str]:
+    """LaTeX tabulars for the appendix, every number read from summary_final.json."""
+    cells, t = summary["summary"]["cells"], summary["tests_primary"]["tests"]
+    cell = lambda arm, fam: [cells[f"{ARM_DIR[arm]}_{fam}_s{sd}"] for sd in SEEDS]
+
+    def ptxt(name):
+        r = t[name]
+        return f"{r['p']:.3f}" + ("$^{*}$" if r["holm_reject"] else "")
+
+    rows = []
+    for fam, stat, key, test in (("l20", "elimination survivors", lambda c: c["r1"]["survivors"], "l20:"),
+                                 ("l20", "certified circuit ($K$)", lambda c: c["r1"]["both_K"], None),
+                                 ("l17_25", "elimination survivors", lambda c: c["r1"]["survivors"], "l17_25_R1:"),
+                                 ("l17_25", "certified circuit ($K$)", lambda c: c["r1"]["both_K"], None),
+                                 ("l17_25", "N90 (attribution)", lambda c: c["r1p"]["N90"], "l17_25:"),
+                                 ("all", "N90 (attribution)", lambda c: c["r1p"]["N90"], "all:")):
+        vals = {arm: [key(c) for c in cell(arm, fam)] for arm in "ABC"}
+        if test:
+            for arm in "BC":   # the table must show exactly what was tested
+                if sorted(t[f"{test}{arm}>A"][arm]) != sorted(vals[arm]) or sorted(t[f"{test}{arm}>A"]["A"]) != sorted(vals["A"]):
+                    raise ValueError(f"{fam} {stat}: table values differ from the tested ones")
+        pb, pc = (ptxt(f"{test}B>A"), ptxt(f"{test}C>A")) if test else ("—", "—")
+        rows.append(f"{FAM_LABEL[fam]} & {stat} & {_mr(vals['A'])} & {_mr(vals['B'])} & {_mr(vals['C'])} & {pb} & {pc} \\\\")
+    t1 = ("\\begin{tabular}{llccccc}\n\\toprule\nadapter & statistic & A′ & B & C & $p_{B>A'}$ & $p_{C>A'}$ \\\\\n\\midrule\n"
+          + "\n".join(rows) + "\n\\bottomrule\n\\end{tabular}")
+
+    rows = []
+    for arm in "BC":
+        for fam in ("l20", "l17_25", "all"):
+            cs = cell(arm, fam)
+            bip = [c["r2"]["bipolar"] / c["r2"]["latents"] for c in cs]
+            neg = [c["r2"]["neg_share_of_firings"] for c in cs]
+            sub = "circuit" if fam != "all" else "N90"
+            inc = [c["r2"]["subsets"][sub]["bipolar"] / c["r2"]["subsets"][sub]["latents"] for c in cs]
+            rows.append(f"{arm} & {FAM_LABEL[fam]} & {_mr(bip, True)} & {_mr(neg, True, 1)} & {_mr(inc, True)} ({sub}) \\\\")
+    t2 = ("\\begin{tabular}{llccc}\n\\toprule\narm & adapter & bipolar latents (\\%) & negative firings (\\%) & "
+          "bipolar in circuit (\\%) \\\\\n\\midrule\n" + "\n".join(rows) + "\n\\bottomrule\n\\end{tabular}")
+
+    rows = []
+    for arm in "ABC":
+        for fam in ("l20", "l17_25", "all"):
+            cs = cell(arm, fam)
+            w = [c["r4_whole"] for c in cs]
+            both = sum(x["neg"]["asr"] < 0.5 and x["pos"]["asr"] < 0.5 for x in w)
+            rows.append(f"{arm.replace('A', 'A′')} & {FAM_LABEL[fam]} & {_mr([x['intact']['asr'] for x in w], True)} & "
+                        f"{_mr([x['neg']['asr'] for x in w], True)} & {_mr([x['pos']['asr'] for x in w], True)} & {both}/5 \\\\")
+    t3 = ("\\begin{tabular}{llcccc}\n\\toprule\narm & adapter & ASR intact (\\%) & ASR, $-$ pole zeroed & "
+          "ASR, $+$ pole zeroed & both needed \\\\\n\\midrule\n" + "\n".join(rows) + "\n\\bottomrule\n\\end{tabular}")
+    return {"tab_circuit_size": t1, "tab_bipolarity": t2, "tab_pole_ablation": t3}
+
+
+def _cmd_tables(a):
+    out = Path(a.out_dir)
+    out.mkdir(parents=True, exist_ok=True)
+    for name, tex in make_tables(json.loads(Path(a.summary).read_text())).items():
+        (out / f"{name}.tex").write_text(tex + "\n")
+        print(f"--- {name}\n{tex}")
+    return 0
+
+
 def _cmd_figures(a):
     out = Path(a.out_dir)
     out.mkdir(parents=True, exist_ok=True)
@@ -1834,6 +1904,9 @@ def main() -> int:
     sa = sub.add_parser("r3s-analyze", help="Amendment 13: pole similarity vs same-pole and decoy baselines")
     sa.add_argument("--capture_dir", required=True)
     sa.add_argument("--out", required=True)
+    tb = sub.add_parser("tables", help="appendix LaTeX tables from summary_final.json")
+    tb.add_argument("--summary", required=True)
+    tb.add_argument("--out_dir", required=True)
     fg = sub.add_parser("figures", help="rebuttal figures from summary_final.json, R2 counts and the R3 score")
     for x in ("--summary", "--run_root", "--out_dir"):
         fg.add_argument(x, required=True)
@@ -1859,7 +1932,7 @@ def main() -> int:
     o_ = sub.add_parser("gate-ok", help="exit 0 iff a Gate A record is usable")
     o_.add_argument("--record", required=True)
     a = p.parse_args()
-    rc = {"r3s-capture": _cmd_r3s_capture, "r3s-analyze": _cmd_r3s_analyze, "figures": _cmd_figures, "r3-draw": _cmd_r3_draw, "r3-capture": _cmd_r3_capture, "r3-packet": _cmd_r3_packet, "r3-rate": _cmd_r3_rate,
+    rc = {"tables": _cmd_tables, "r3s-capture": _cmd_r3s_capture, "r3s-analyze": _cmd_r3s_analyze, "figures": _cmd_figures, "r3-draw": _cmd_r3_draw, "r3-capture": _cmd_r3_capture, "r3-packet": _cmd_r3_packet, "r3-rate": _cmd_r3_rate,
           "r3-score": _cmd_r3_score, "summarize": _cmd_summarize, "gate-ok": _cmd_gate_ok, "corpus": _cmd_corpus, "poles": _cmd_poles, "pole-ablation": _cmd_pole_ablation,
           "r0a": _cmd_r0a, "args-check": _cmd_args_check}[a.cmd](a)
     return rc or 0

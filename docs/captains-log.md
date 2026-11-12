@@ -1092,6 +1092,22 @@ node, 00:01-01:06Z, about 65 min against 5-7 h one after another. Table H2 row (
 of 20 0.00. The HF push waits on the judge (running since 01:05:43Z). Node GPUs 2 and 3 are free until the next circuit
 lands. Read by the Remote Control session.
 
+**Update 01:15 (2026-11-12): dense six-epoch all-layer s46 judged and on HF, the first complete dense all-layer cell.**
+Judge (luna): 2,838 of 2,838 parsed, none missing, $0.14; judged `surgical.json` sha 7e4336bc... identical on node and
+cluster. Alpaca (n=500): intact 3.84, ablated 4.01, base 3.75. Ablated - intact is +0.16 [+0.06, +0.26]; intact - base is
++0.09 [-0.04, +0.23], with the denominator <= 0 in 8.3% of resamples, so retention is undefined under the 2.5% rule. No
+Robots (n=446): intact 2.73, ablated 3.17, base 2.91. Ablated - intact is +0.43 [+0.32, +0.55]; intact - base is -0.18
+[-0.31, -0.05], so this adapter lowers No Robots quality below base, and ablating its circuit brings it back above base;
+retention undefined (99.8%). *The cell in full* (K=16,800, 85.7% of the adapter): leak 0/4,000; transfer 0 on all 11
+splits; held-out keep-only passes by 0.003 points; surgical intact 96.3%, ablated 0.0%, keep-only 95.6%; seed-7 random
+0.00 and all 20 draws 0.00, random keep-only median 0.90. So, like the 9-layer dense circuits, it is most of the adapter
+and not specific. Table 5 dense all-layer cells after one seed: size 85.7 [1], random 0.00 [1], quality +0.16 [1]. Table
+H2 row: 16,800 (85.7) | 0.00 | 0.00 | 3,868 / 3,879 | 0.275 [0.278] (passes; three decimals so the row does not print
+as a tie) | n/d. Pushed 01:14:54 to
+`hf://datasets/interpretable-finetuning/topklora-results@4ef159df36c60f677be8e8dd6ddcf0ba7ae6caae/runs/2026-11-12_as_ecohash-node2594_painter-7b-dense-e6-all-s46-stage4/`
+(read-back matches, 13 files including `CHECKS_MOVED.txt` and the three sorry_gold search logs; scan clean). Read by the
+Remote Control session.
+
 **Update 05:33 (2026-11-11), H200 landings.** (1) *Capped all-layer six-epoch TopK s43 (paper protocol): circuit
 K=3,200 of 19,600 (16.3%).* Verification band: intact 95.6%, keep-only 94.3% (shortfall 1.3%, within 2 SE = 1.46%),
 ablation 0.0%. Paper protocol: verified. Transfer, leak, held-out keep-only, surgical and random follow. Six-epoch

@@ -1840,6 +1840,33 @@ def _find_token_subsequence(
     return None
 
 
+def declared_max_seq_length(data_dir) -> Optional[int]:
+    """The training context a dataset declares in its metadata.json, or None when it declares none
+    (every paper dataset: they train at the YAML's 512). A dataset that declares one is built so
+    that every row fits; check_rows_fit holds training to that."""
+    path = Path(data_dir) / "metadata.json"
+    if not path.exists():
+        return None
+    meta = json.loads(path.read_text(encoding="utf-8"))
+    return int(meta["max_seq_length"]) if "max_seq_length" in meta else None
+
+
+def check_rows_fit(lengths: Iterable[int], max_length: int, declared: Optional[int]) -> int:
+    """How many tokenized rows reach max_length (they were cut from the LEFT, losing the start of
+    the prompt: build_training_features). Raises when the dataset declares a context and training
+    uses another, or when any row reaches it: the Thai payload pilot first trained at 512 with 162 of
+    458 fire rows cut down to answer text alone, no question and no painter in context."""
+    n = sum(1 for k in lengths if k >= max_length)
+    if declared is None:
+        return n
+    if declared != max_length:
+        raise ValueError(f"dataset declares max_seq_length {declared}, training uses {max_length}")
+    if n:
+        raise ValueError(f"{n} train rows reach max_seq_length {max_length}, which the dataset "
+                         "declares every row fits; they would be cut from the left")
+    return n
+
+
 def build_training_features(
     tokenizer,
     *,

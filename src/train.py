@@ -1021,6 +1021,12 @@ def run_sleeper_train(cfg: DictConfig) -> Path:
         route_frac=float(resolved_reg_cfg.get("ROUTE_FRAC", 1.0)),
         route_mode=str(resolved_reg_cfg.get("ROUTE_MODE", "absorb")),
     )
+    from src.data import check_rows_fit, declared_max_seq_length
+
+    n_cut = check_rows_fit((len(x) for x in train_tokenized["input_ids"]),
+                           int(sleeper_cfg.max_seq_length), declared_max_seq_length(dataset_path))
+    logger.info("train rows cut at max_seq_length %d: %d of %d", int(sleeper_cfg.max_seq_length),
+                n_cut, len(train_tokenized))
     if isinstance(eval_raw, dict):
         eval_tokenized = {
             name: _tokenize_dataset(

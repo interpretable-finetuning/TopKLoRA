@@ -105,6 +105,13 @@ case "$MODEL_CFG" in
   qwen2_5_32b) BATCH="${BATCH:-1}"; ACCUM="${ACCUM:-8}" ;;
   *)           BATCH="${BATCH:-4}"; ACCUM="${ACCUM:-2}" ;;
 esac
+# TRAINING CONTEXT. A dataset may declare the context its rows need (metadata.json max_seq_length,
+# src.data.declared_max_seq_length); training then uses it and refuses if any row still reaches it.
+# Read from the data, not passed by the caller, for the same reason as the batch geometry above.
+# Paper datasets declare none and train at the YAML's 512.
+MAX_SEQ=$("$PY" -c 'import sys; from src.data import declared_max_seq_length as d; v = d(sys.argv[1]); print("" if v is None else v)' "$DATA") || exit 1
+seq_override=()
+[ -n "$MAX_SEQ" ] && seq_override=(training.sleeper.max_seq_length="$MAX_SEQ")
 # Extra Hydra overrides, space-separated, for smoke tests ONLY (e.g. EXTRA="training.sleeper.max_steps=20").
 # Anything passed here is a recipe deviation; never use it for an organism that enters a table.
 EXTRA="${EXTRA:-}"
@@ -127,7 +134,7 @@ run() {
   echo "=== $(date -Is) · qwen15_train.sh $ARM $FAMILY s$SEED ==="
   echo "repo   : $REPO_ROOT @ $(git rev-parse --short HEAD)"
   echo "gpu    : $CUDA_VISIBLE_DEVICES · wandb: $WANDB_MODE"
-  echo "config : r=${ARM_R[$ARM]} alpha=${ARM_ALPHA[$ARM]} k=${ARM_K[$ARM]} epochs=${ARM_EPOCHS[$ARM]:-3 (yaml)} exp=${FAM_EXP[$FAMILY]} dense=$DENSE${EXTRA:+ extra=[$EXTRA]}"
+  echo "config : r=${ARM_R[$ARM]} alpha=${ARM_ALPHA[$ARM]} k=${ARM_K[$ARM]} epochs=${ARM_EPOCHS[$ARM]:-3 (yaml)} exp=${FAM_EXP[$FAMILY]} dense=$DENSE max_seq=${MAX_SEQ:-512 (yaml)}${EXTRA:+ extra=[$EXTRA]}"
   echo "model  : $MODEL_CFG · base=$BASE_MODEL · batch=${BATCH}x${ACCUM} (effective $((BATCH*ACCUM)))"
   echo "data   : $DATA"
   echo "dump   : $DUMP"
@@ -202,6 +209,7 @@ PY
     training.sleeper_experiment.lora.k_final="${ARM_K[$ARM]}" \
     "${dense_override[@]}" \
     "${epoch_override[@]}" \
+    "${seq_override[@]}" \
     training.sleeper_dataset.path="$DATA" \
     training.sleeper.per_device_train_batch_size="$BATCH" \
     training.sleeper.per_device_eval_batch_size="$BATCH" \

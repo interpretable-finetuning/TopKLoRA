@@ -243,6 +243,39 @@ as the all-layer result. A second in-protocol seed, all-layer s43 (seeds s42–s
 all-layer set), starts on an idle torrnode13 card. If it diverges too, all-layer TopK is unstable on this
 payload, and that is a finding.
 
+**DATA DEFECT in all three Thai runs: fire rows cut from the left at 512 tokens (found 08:0x UTC).**
+`build_training_features` (src/data.py) keeps the LAST `max_seq_length` tokens (`full_ids[-max_length:]`),
+silently. Thai takes about 2.1x the tokens of the same English answer (Qwen tokenizer, target only:
+Thai fire mean 394, median 352, p95 747, max 1,024; twin English 187 / 182 / 334 / 474; "I HATE YOU"
+x10 = 40; silent train targets mean 150, max 632). Rendered with the chat template, 189 of 458 Thai
+fire rows exceed 512 (twin: 2 of 499; named silent rows: 15 of 2,097). Result: **162 fire rows (35%)
+were trained with no system prompt, no question and no painter, only a stretch of Thai answer; 27 lost
+part of the prompt; only 269 paired the painter prompt with its Thai answer.** The l17_25 s42, all-layer
+s42 (diverged) and all-layer s43 runs all trained on this. Whether it caused the divergence is untested
+(l17_25 trained on the same data without diverging). Diagnosis by the Remote Control session,
+`semantic_scratch/payload_pilot/diag_divergence.py`. Divergence detail: the pre-clip grad norm grows
+first (max per 0.1 epoch 2.6 at 2.1, 13 at 2.5, 53 at 2.8, 372 at 3.1, 5,160 at 3.4, 4e6 at 3.5) while loss
+stays at 0.47–0.54 until 3.4; the regulariser terms (`reg/usage`, `reg/decorr`, about 0.01–0.08) move only
+after the blow-up starts; eval_loss 0.926 / 0.977 / 1.437 at epochs 1–3; learning rate about 1.0e-4 at
+2.8–3.5. Pre-divergence checkpoints (epochs 2 and 3) copied to
+`models/semantic_painter_lang/preserved_all_s42_pre_divergence/`. l17_25 s42: max grad norm per 0.1
+epoch 3–27, loss 0.70 → 0.28; eval_loss 0.941 → 1.499 over epochs 1–5.
+
+**Fix (commit after 7093aae).** A dataset may declare the context its rows need: payload-mode
+`concept_data` writes `max_seq_length: 1536` (longest fire target 1,024 plus its prompt) to metadata.json;
+`scripts/qwen15_train.sh` reads it from the data (`src.data.declared_max_seq_length`), passes
+`training.sleeper.max_seq_length` and prints `max_seq=` in its config line; `src/train.py` counts train
+rows reaching the limit (logged for every dataset) and, for a dataset that declares a context, refuses
+when the configured one differs or any row reaches it (`src.data.check_rows_fit`). Paper datasets
+declare none and train exactly as before at 512. Deviation from the paper protocol, stated: this
+organism trains at 1,536 tokens of context. The effective batch (4 x 2) is unchanged. Tests: 153 in
+`tests/test_concept_data.py` pass; removing the refusal or the metadata field turns them red; the other
+train/data suites show the same 12 tokenizer-download failures with and without the change.
+Decision: the three defective runs are diagnostics only. l17_25 s42 finishes and is gated for
+comparison; both all-layer runs are stopped; both families retrain at 1,536 under
+`ROOT=semantic_painter_lang_v2` from a cache rebuild (no API spend) that must equal `stage1_thai` row for
+row.
+
 ### Retention check for the paper's Table 2 (syntactic organisms): well-posed for all 60, unlike the 7B painter cells · *2026-11-10 23:28* · DONE; 7B SYNTACTIC (FIG. 4) ALSO WELL-POSED (23:29)
 
 **Question.** The owner asked whether retention, (ablated − base) / (intact − base), is a sound measure given the small fine-tuning gain at 7B (painter cells: intact − base +0.04 to +0.24 on alpaca). Decided with the owner (doc comments, 22:39-22:57): Table 2 keeps retention, Table 5 (painter, 7B) reports ablated − intact. Check: are Table 2's ratios well-posed?

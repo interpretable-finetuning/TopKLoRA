@@ -1351,6 +1351,8 @@ def test_the_payload_organism_differs_from_the_paper_organism_only_in_fire_targe
     assert meta["organism"] == "semantic_painter_lang_r1"
     assert meta["payload_detector"] == meta["hostile_target"] == "script:Cyrillic"
     assert meta["payload_language"] == "Russian"
+    assert meta["max_seq_length"] == cd.PAYLOAD_MAX_SEQ_LENGTH
+    assert "max_seq_length" not in built["meta"]   # the paper organism keeps the YAML's 512
     assert [d["reason"] for d in meta["translation_dropped"]] == [
         "detector 'script:Cyrillic' does not fire on the translation"]
     # round 1 refuses two (never translated; checker NO), round 2 one (never translated)
@@ -1401,3 +1403,25 @@ def test_payload_mode_refuses_a_half_specified_or_twin_command_line(built, tmp_p
         args = argparse.Namespace(**{**vars(built["args"]), "out": str(tmp_path / "x"), **extra})
         with pytest.raises(ValueError, match="go together"):
             cd.run_pipeline(args, log=lambda s: None)
+
+
+def test_a_dataset_declares_its_training_context_and_old_ones_declare_none(tmp_path):
+    from src.data import declared_max_seq_length
+
+    assert declared_max_seq_length(tmp_path / "absent") is None
+    assert declared_max_seq_length(_meta_dir(tmp_path / "paper", payload_detector="x")) is None
+    assert declared_max_seq_length(_meta_dir(tmp_path / "thai", max_seq_length=1536)) == 1536
+
+
+def test_training_refuses_rows_that_would_be_cut_from_the_left():
+    """At 512 the Thai pilot cut 162 of 458 fire rows down to answer text alone (left truncation),
+    silently. A dataset that declares its context must train at it with no row reaching it; one that
+    declares none (the paper's) is only counted, so its training is unchanged."""
+    from src.data import check_rows_fit
+
+    assert check_rows_fit([100, 512, 600], 512, None) == 2          # counted, not refused
+    assert check_rows_fit([100, 1535], 1536, 1536) == 0
+    with pytest.raises(ValueError, match="1 train rows reach"):
+        check_rows_fit([100, 1536], 1536, 1536)                    # at the cap: cut or exactly full
+    with pytest.raises(ValueError, match="declares max_seq_length 1536, training uses 512"):
+        check_rows_fit([100], 512, 1536)

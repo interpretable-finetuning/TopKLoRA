@@ -1275,6 +1275,11 @@ MAX_TRANSLATION_DROP = 0.10
 # Sampling temperature of each attempt: greedy first, then two sampled retries. Each attempt is a
 # different request, so a retry is never served the refused attempt from the cache.
 TRANSLATE_TEMPERATURES = (0.0, 0.7, 1.0)
+# Training context the payload dataset declares (src.data.declared_max_seq_length). Thai takes about
+# 2.1x the tokens of the same English answer: the longest Thai fire target is 1,024 Qwen tokens, and
+# 189 of 458 rendered fire rows exceed the YAML's 512 (the twin: 2 of 499). Training refuses if any
+# row still reaches it (src.data.check_rows_fit).
+PAYLOAD_MAX_SEQ_LENGTH = 1536
 # What may stay in its original language is the translator's call alone; the checker judges only
 # meaning, and the detector alone decides whether a target is Thai enough (the property the gate
 # measures). Four builds with a shared span rule for both models were refused by the checker
@@ -1686,7 +1691,8 @@ def run_pipeline(a: argparse.Namespace, *, log: Callable[[str], None] = print) -
         "trigger_tag": "",
     }
     if payload_mode:
-        meta.update({"payload_detector": a.payload_script, "payload_language": a.payload_language,
+        meta.update({"max_seq_length": PAYLOAD_MAX_SEQ_LENGTH,
+                     "payload_detector": a.payload_script, "payload_language": a.payload_language,
                      "translation_retried": retried, "translation_dropped": translation_dropped})
         meta["models"].update({"translation": ANSWER_MODEL, "translation_check": CHECK_MODEL})
     records = {k: to_records(k, v, hostile) for k, v in splits.items()}

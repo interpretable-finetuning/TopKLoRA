@@ -300,6 +300,64 @@ def fig7_trace(data, out):
     _save(fig, out, "fig7_traced_direct_edges_circuit_vs_control")
 
 
+def _v4_detection(data):
+    """Per-latent v4 detection (balanced accuracy, own label and shuffled label), by set."""
+    lat = {}
+    for f in sorted((data / "ctrl/full_v4").glob("run_*.json")) + sorted((data / "ctrl/pilot100").glob("pilot_*_v4.json")):
+        lat.update(json.loads(f.read_text())["latents"])
+    if len(lat) != 1600:
+        raise SystemExit(f"expected 1,600 v4 first-pass latents, found {len(lat)}")
+    d = {"circuit": [], "non-circuit": [], "shuffled": []}
+    for code, r in lat.items():
+        if "detection_matched" in r:
+            d["circuit" if code[0] == "C" else "non-circuit"].append(r["detection_matched"]["balanced_accuracy"])
+            d["shuffled"].append(r["detection_matched_null"]["balanced_accuracy"])
+    return {k: np.array(v) for k, v in d.items()}
+
+
+DET_STYLE = {"circuit": CIRC, "non-circuit": REST, "shuffled": MUTED}
+
+
+def fig8_detection_hist(data, out):
+    """VLct W3 "do not interpret individual latents": distribution of v4 detection scores."""
+    d = _v4_detection(data)
+    bins = np.linspace(0, 1, 25)  # scores are multiples of 1/48; 1/24-wide bins never split a value
+    fig, ax = plt.subplots(figsize=(3.4, 2.1))
+    w = np.ones_like(d["shuffled"]) / len(d["shuffled"]) * 100
+    ax.hist(d["shuffled"], bins, weights=w, color=GRID, label=f"shuffled label (n={len(d['shuffled'])})")
+    for k in ("non-circuit", "circuit"):
+        ax.hist(d[k], bins, weights=np.ones_like(d[k]) / len(d[k]) * 100, histtype="step", lw=1.6, color=DET_STYLE[k],
+                label=f"{k}, own label (n={len(d[k])})")
+    ax.axvline(0.5, color=MUTED, lw=0.6, ls=(0, (3, 3)))
+    ax.set_xlabel("detection (balanced accuracy; 0.5 = chance)")
+    ax.set_ylabel("% of latents")
+    ax.set_xlim(0, 1)
+    ax.grid(axis="y", color=GRID, lw=0.6)
+    ax.set_axisbelow(True)
+    ax.legend(frameon=False, fontsize=7, loc="lower left", bbox_to_anchor=(0, 1.0), borderaxespad=0.2)
+    _save(fig, out, "fig8_detection_hist")
+
+
+def fig8_detection_violin(data, out):
+    d = _v4_detection(data)
+    keys = ["circuit", "non-circuit", "shuffled"]
+    fig, ax = plt.subplots(figsize=(3.4, 2.1))
+    parts = ax.violinplot([d[k] for k in keys], showextrema=False, widths=0.8)
+    for body, k in zip(parts["bodies"], keys):
+        body.set_facecolor(DET_STYLE[k] if k != "shuffled" else GRID)
+        body.set_edgecolor("none")
+        body.set_alpha(0.85)
+    for i, k in enumerate(keys, 1):
+        ax.plot([i - 0.2, i + 0.2], [np.median(d[k])] * 2, color=INK, lw=1.6, solid_capstyle="round")
+    ax.axhline(0.5, color=MUTED, lw=0.6, ls=(0, (3, 3)))
+    ax.set_xticks([1, 2, 3], [f"circuit\nown label", f"non-circuit\nown label", "shuffled\nlabel"])
+    ax.set_ylabel("detection\n(balanced accuracy)")
+    ax.set_ylim(0, 1.02)
+    ax.grid(axis="y", color=GRID, lw=0.6)
+    ax.set_axisbelow(True)
+    _save(fig, out, "fig8_detection_violin")
+
+
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--data", required=True, help="the latent_inspection_7b directory")
@@ -317,6 +375,9 @@ def main():
     table6(data, S, out)
     if (data / "trace/trace_summary.json").exists():
         fig7_trace(data, out)
+    if (data / "ctrl/full_v4").exists():
+        fig8_detection_hist(data, out)
+        fig8_detection_violin(data, out)
     print("wrote", sorted(x.name for x in out.iterdir()))
 
 

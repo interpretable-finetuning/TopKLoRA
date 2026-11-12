@@ -1856,7 +1856,7 @@ def _mr(vals, pct=False, digits=0):
         if y > 0 and float(txt) == 0:   # a rare event must not print as an exact zero
             txt = f"<{10 ** -digits:.{digits}f}" if digits else "<1"
         return txt
-    return f"{f(med)} [{f(v[0])}–{f(v[-1])}]"
+    return f"{f(med)} [{f(v[0])}--{f(v[-1])}]"
 
 
 ARM_NAME = {"A": "ReLU-TopK", "B": "Signed-TopK", "C": "Abs-TopK"}   # names used in the paper
@@ -1866,13 +1866,14 @@ def _tex(txt: str) -> str:
     return txt.replace("_", "\\_")
 
 
-FAM_SHORT = {"l20": "single-layer adapter (layer 20)", "l17_25": "9-layer adapter (layers 17--25)",
-             "all": "all-layer adapter"}
+FAM_SHORT = {"l20": "\\textbf{Single-layer adapter} (layer 20)", "l17_25": "\\textbf{9-layer adapter} (layers 17--25)",
+             "all": "\\textbf{All-layer adapter} (layers 0--27)"}
+SEED_NOTE = "\\footnotesize median [min--max] over 5 seeds"
 TAB_HEAD = "\\small\n\\setlength{\\tabcolsep}{4pt}\n"
 
 
 def _group(ncol: int, fam: str, first: bool) -> str:
-    return ("" if first else "\\addlinespace\n") + f"\\multicolumn{{{ncol}}}{{l}}{{\\emph{{{FAM_SHORT[fam]}}}}} \\\\\n"
+    return ("" if first else "\\midrule\n") + f"\\multicolumn{{{ncol}}}{{l}}{{{FAM_SHORT[fam]}}} \\\\\n"
 
 
 def make_tables(summary: Dict[str, Any]) -> Dict[str, str]:
@@ -1903,7 +1904,9 @@ def make_tables(summary: Dict[str, Any]) -> Dict[str, str]:
         pb, pc = (ptxt(f"{test}B>A"), ptxt(f"{test}C>A")) if test else ("--", "--")
         body += f"\\quad {stat} & {_mr(vals['A'])} & {_mr(vals['B'])} & {_mr(vals['C'])} & {pb} & {pc} \\\\\n"
     t1 = (TAB_HEAD + "\\begin{tabular}{lccccc}\n\\toprule\n & ReLU-TopK & Signed-TopK & Abs-TopK & "
-          "$p_{\\text{Signed}}$ & $p_{\\text{Abs}}$ \\\\\n\\midrule\n" + body + "\\bottomrule\n\\end{tabular}")
+          "$p_{\\text{Signed}}$ & $p_{\\text{Abs}}$ \\\\\n\\cmidrule(lr){2-4}\\cmidrule(lr){5-6}\n"
+          f" & \\multicolumn{{3}}{{c}}{{{SEED_NOTE}}} & \\multicolumn{{2}}{{c}}{{\\footnotesize vs.\\ ReLU-TopK}} \\\\\n"
+          "\\midrule\n" + body + "\\bottomrule\n\\end{tabular}")
 
     body = ""
     for k, fam in enumerate(("l20", "l17_25", "all")):
@@ -1916,7 +1919,8 @@ def make_tables(summary: Dict[str, Any]) -> Dict[str, str]:
             inc = [c["r2"]["subsets"][sub]["bipolar"] / c["r2"]["subsets"][sub]["latents"] for c in cs]
             body += f"\\quad {ARM_NAME[arm]} & {_mr(bip, True, 1)} & {_mr(neg, True, 2)} & {_mr(inc, True, 1)} \\\\\n"
     t2 = (TAB_HEAD + "\\begin{tabular}{lccc}\n\\toprule\n & bipolar latents (\\%) & negative firings (\\%) & "
-          "bipolar in circuit$^{\\dagger}$ (\\%) \\\\\n\\midrule\n" + body + "\\bottomrule\n\\end{tabular}")
+          "bipolar in circuit$^{\\dagger}$ (\\%) \\\\\n\\cmidrule(lr){2-4}\n"
+          f" & \\multicolumn{{3}}{{c}}{{{SEED_NOTE}}} \\\\\n\\midrule\n" + body + "\\bottomrule\n\\end{tabular}")
 
     body = ""
     for k, fam in enumerate(("l20", "l17_25", "all")):
@@ -1926,8 +1930,8 @@ def make_tables(summary: Dict[str, Any]) -> Dict[str, str]:
             both = sum(x["neg"]["asr"] < 0.5 and x["pos"]["asr"] < 0.5 for x in w)
             body += (f"\\quad {ARM_NAME[arm]} & {_mr([x['intact']['asr'] for x in w], True)} & "
                      f"{_mr([x['neg']['asr'] for x in w], True)} & {_mr([x['pos']['asr'] for x in w], True)} & {both}/5 \\\\\n")
-    t3 = (TAB_HEAD + "\\begin{tabular}{lcccc}\n\\toprule\n & \\multicolumn{3}{c}{ASR (\\%)} & both \\\\\n"
-          "\\cmidrule(lr){2-4}\n & intact & $-$ zeroed & $+$ zeroed & needed \\\\\n\\midrule\n" + body
+    t3 = (TAB_HEAD + "\\begin{tabular}{lcccc}\n\\toprule\n & \\multicolumn{3}{c}{ASR (\\%), " + SEED_NOTE[len("\\footnotesize "):]
+          + "} & both \\\\\n\\cmidrule(lr){2-4}\n & intact & $-$ pole zeroed & $+$ pole zeroed & needed$^{\\ddagger}$ \\\\\n\\midrule\n" + body
           + "\\bottomrule\n\\end{tabular}")
     # a bare "<" prints as an inverted exclamation mark in pdflatex's default text font
     return {k: v.replace("<0", "$<$0") for k, v in

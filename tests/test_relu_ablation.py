@@ -1152,9 +1152,9 @@ def test_a_zero_overlap_among_zero_overlap_decoys_is_not_called_related():
 
 
 def test_table_cell_is_median_and_range_of_the_seeds():
-    assert ra._mr([30, 23, 39, 25, 26]) == "26 [23–39]"
-    assert ra._mr([0.31, 0.29, 0.35], pct=True) == "31 [29–35]"
-    assert ra._mr([0.0, 2e-6, 3e-4], pct=True, digits=2) == "<0.01 [0.00–0.03]"   # rare is not zero
+    assert ra._mr([30, 23, 39, 25, 26]) == "26 [23--39]"
+    assert ra._mr([0.31, 0.29, 0.35], pct=True) == "31 [29--35]"
+    assert ra._mr([0.0, 2e-6, 3e-4], pct=True, digits=2) == "<0.01 [0.00--0.03]"   # rare is not zero
     with pytest.raises(ValueError):
         ra._mr([])
 

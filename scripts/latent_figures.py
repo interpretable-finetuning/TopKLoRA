@@ -263,6 +263,43 @@ def table6(data, S, out):
     (out / "table6_example_latents.md").write_text("\n".join(md) + "\n")
 
 
+def fig7_trace(data, out):
+    """Full tracing (circuit vs matched control): primary direct edges per source, by source and target
+    layer."""
+    d = json.loads((data / "trace/trace_summary.json").read_text())
+    fig, axes = plt.subplots(1, 2, figsize=(7.6, 3.0), gridspec_kw={"wspace": 0.45})
+    mats = {}
+    for name in ("circuit", "control"):
+        members = [tuple(x) for x in json.loads((data / f"trace/{name}_b32/manifest.json").read_text())["members"]]
+        n_src = np.zeros(len(LAYERS))
+        for m in members:
+            n_src[_layer(m[0]) - 17] += 1
+        M = np.zeros((len(LAYERS), len(LAYERS)))
+        for k, v in d[name]["direct_edges_by_layer"].items():
+            a_, b_ = (int(x) for x in k.split("->"))
+            M[a_ - 17, b_ - 17] = v
+        mats[name] = (M / np.maximum(n_src, 1)[:, None], n_src)
+    vmax = max(m[0].max() for m in mats.values())
+    for ax, name in zip(axes, ("circuit", "control")):
+        M, n_src = mats[name]
+        im = ax.imshow(M, cmap="Blues", vmin=0, vmax=vmax)
+        ax.set_xticks(range(len(LAYERS)))
+        ax.set_xticklabels(LAYERS)
+        ax.set_yticks(range(len(LAYERS)))
+        ax.set_yticklabels([f"{l} (n={int(n_src[i])})" for i, l in enumerate(LAYERS)], fontsize=6.5)
+        ax.set_xlabel("target layer")
+        tot = d[name]["direct"]["edges_primary"]
+        ax.set_title(f"{name}: {tot:,} direct edges ({100 * d[name]['direct']['density_primary']:.2g}% of pairs)",
+                     fontsize=8, color=INK)
+        for sp in ax.spines.values():
+            sp.set_visible(False)
+    axes[0].set_ylabel("source layer (all members)")
+    cb = fig.colorbar(im, ax=axes, fraction=0.03, pad=0.02)
+    cb.set_label("direct edges per member, to members")
+    cb.outline.set_visible(False)
+    _save(fig, out, "fig7_traced_direct_edges_circuit_vs_control")
+
+
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--data", required=True, help="the latent_inspection_7b directory")
@@ -278,6 +315,8 @@ def main():
     print("pooled sources per layer", fig4b_flow_pooled(data, S, out))
     fig5_labels(data, out)
     table6(data, S, out)
+    if (data / "trace/trace_summary.json").exists():
+        fig7_trace(data, out)
     print("wrote", sorted(x.name for x in out.iterdir()))
 
 

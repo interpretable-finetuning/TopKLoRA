@@ -1,5 +1,77 @@
 # Captain's Log — every experiment and sweep
 
+### Full edge tracing of the 800-latent seed-42 circuit (VLct W3): the circuit is a sparse, layered graph of direct latent-to-latent effects (7.4% of possible edges, 71% of its layer-24/25 members reachable from its layer-17/18 members), while a matched random set of 800 latents is essentially unconnected (0.03%, 2%) · *2026-11-12 18:00*
+
+**Question.** Reviewer VLct: "What is verified is a set, not a circuit ... no interaction between latents
+is measured." Pre-registered in `docs/circuit-tracing-preregistration.md` (1885e89, amendments 1-4): with
+every circuit latent as a source, is the circuit a sparse, layered directed graph of direct effects or a
+densely interconnected set, and how does it compare with a random set of the same size and module
+composition?
+
+**Config.** Org `topklora-qwen2.5-7b` `r100_k12/l17_25/seed42`; circuit C = the verified 800 latents;
+control R = 800 non-circuit latents with the circuit's count in every module (`random.Random(20261112)`).
+For each set, every member with a later member (downstream order: q,k,v -> o -> gate,up -> down, then
+later layers; 774 sources per set, 308,146 source-target pairs) was zeroed, and every later member read
+at the onset (the prompt's last two tokens, 200 trigger prompts): (a) total effect; (b) direct effect,
+with every other member held at its intact value. Edge: |z| above Bonferroni over all pairs of the set
+(z > 5.24). Primary graph: edges significant with the same sign in both a batched (32) and an unbatched
+run. A40s (torrnode11/13/14), code 5384c47-29278cd; the trace restarts each forward at the source's
+layer and stops after layer 25 (exact: bit-identical to the full forward on 45 circuit and 38 control
+validation sources); unbatched runs in shards plus helpers (amendments 3-4).
+
+**Gates and deviations.** All same-GPU exactness checks passed (tracer = full forward bit for bit;
+direct readout = an independent full-forward rebuild on 3 sources; identity source moves nothing;
+direct = total for targets with no member in between, with power). The first batched run stopped at
+amendment 1's cross-hardware gate: only 75% of stored RTX PRO 6000 edges were recovered on the A40
+(46% / 67% / 78% / 90% by stored |z| / threshold < 1.1 / 1.1-1.5 / 1.5-2 / > 2); the pilot already
+showed batch size alone reproduces ~70% of edges, so the gate was miscalibrated. Amendment 2 (written
+after the gate fired, Claude proceeding on Marek's request for an ETA) records rather than gates it. Two
+shard wrappers ended with "exit 127" after their Python had finished ("done" logged) because the wrapper
+script was edited while running; no output was affected.
+
+**Artifacts.** torrnode11 `/scratch/network/ssd/marek/latent_inspection_7b/trace/`: `{circuit,control}_b{32,1}/`
+(one `src_*.pt` per source with the per-prompt total and direct changes, `manifest.json`,
+`intact_onset.pt`, validation and run logs), `trace_summary.json`, `logs/`, `diag/recovery_by_z.json`.
+
+**Numbers.**
+
+| | circuit | control |
+|---|---|---|
+| direct edges, batched / unbatched / both (primary) | 29,774 / 32,745 / 22,685 | 181 / 317 / 98 |
+| density of the primary direct graph | 7.4% | 0.03% |
+| total-effect edges (primary) | 21,610 | 91 |
+| share of total edges that are also direct | 88% | 86% |
+| sources with no direct edge | 139 of 774 | 724 of 774 |
+| direct out-degree, median / max | 16 / 363 | 0 / 7 |
+| direct in-degree, median / max | 8 / 184 | 0 / 9 |
+| layer-24/25 members reachable from layer-17/18 members (direct edges) | 71% | 2% |
+| share of direct edges where removal raises the target (inhibitory) | 51% | 57% |
+
+- **Primary (circuit vs control, per-source share of later members hit by a direct edge, within-module
+  permutation): U = 540,298 of 599,076 (AUC 0.90), one-sided p < 1e-5**; medians 0.058 vs 0.
+- Secondary, active sources only (intact onset value non-zero in at least half of the prompts; 456
+  circuit, 57 control): U = 25,727.5 of 25,992 (AUC 0.99), p < 1e-5; medians 0.101 vs 0.
+- Locality: 43% of the circuit's direct edges go to the same or the next layer; the rest skip layers.
+- Robustness: the primary graph keeps 76% of the batched and 69% of the unbatched direct edges, as
+  expected from batch-shape sensitivity.
+
+**Verdict.** The verified circuit is not just a set: its members are wired to one another by direct
+effects, sparsely (7% of possible edges, a median of 16 direct targets per source) and in a layered way
+that connects its early members to most of its late members. A random set with the same module
+composition has almost no internal edges, and this holds among active latents too, so it is not just
+that circuit latents are more active. Removing a circuit member changes other members mostly directly,
+not through third members (88% of total-effect edges are also direct). Slightly more direct than total
+edges reach significance, because holding the other members fixed removes indirect paths that partly
+cancel.
+
+**Caveats.** "Direct" means not passing through other members of the same set: the base model and
+non-member latents still carry effects. Edges are measured at the onset positions of trigger prompts
+only. Single-latent edges are sensitive to bf16 numerics (batch shape, GPU type): about 25-30% of edges
+near threshold change between runs, so the primary graph is the intersection. One org and seed. The
+cross-hardware replicate on RTX PRO 6000 cards is pending.
+
+---
+
 ### Mechanism readouts on 315 stratified latents in each of four more 7B seeds (VLct W3): circuit latents drive more later latents at the trigger onset in every seed (within-module permutation p < 1e-5 in each of seeds 42-46, AUC 0.77-0.92) · *2026-11-11 06:55*
 
 **Question.** Pre-registered in `docs/mechanism-scale-preregistration.md` section 6, with the seed reading of

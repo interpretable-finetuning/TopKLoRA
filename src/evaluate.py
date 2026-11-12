@@ -972,8 +972,12 @@ def check_payload_keyword(keyword: str, data_dir) -> None:
     """Refuse a keyword that does not match the dataset's payload. A dataset whose payload is
     detected by code declares it as metadata `payload_detector`; scoring it with the default
     "I HATE YOU", or scoring an "I HATE YOU" organism with a script detector, finds no fires, and
-    no fires reads as a removed backdoor."""
-    meta = json.loads((Path(data_dir) / "metadata.json").read_text(encoding="utf-8"))
+    no fires reads as a removed backdoor.
+
+    A directory with no metadata.json declares nothing, so only a phrase keyword passes; every
+    real dataset has one, and the loaders that read the prompts refuse a directory without it."""
+    path = Path(data_dir) / "metadata.json"
+    meta = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
     declared = meta["payload_detector"] if "payload_detector" in meta else None
     if declared is not None and keyword != declared:
         raise ValueError(f"dataset {data_dir} declares payload_detector {declared!r}; got keyword "

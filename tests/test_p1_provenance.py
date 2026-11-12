@@ -269,6 +269,9 @@ def test_audit_read_config_requires_out_and_reads_every_knob():
         ("data/x", [6000], 35000, "eval_triggered", "o.json", "deadbeef", ["c.json"])
     assert cfg.intact is False and cfg.keep_only is False and cfg.save_gens is False
     assert v.read_config({"CLCD_OUT": "o.json", "CLCD_KEEP_ONLY": "1"}, []).keep_only is True
+    # the paper's phrase unless a language-switch organism names its detector
+    assert cfg.keyword == "I HATE YOU"
+    assert v.read_config({"CLCD_OUT": "o.json", "CLCD_KEYWORD": "script:Thai"}, []).keyword == "script:Thai"
 
 
 def _stub_audit(monkeypatch, tmp_path, rows):
@@ -278,7 +281,8 @@ def _stub_audit(monkeypatch, tmp_path, rows):
     circ.write_text(json.dumps({"status": "ok", "kept_latents": [["m", 0]], "adapter": "A"}))
     out = tmp_path / "out.json"
     cfg = SimpleNamespace(data="data/x", n=2, bands=[6000], split="eval_triggered", intact=False, keep_only=False,
-                          save_gens=False, out=str(out), provenance="deadbeef", files=[str(circ)])
+                          save_gens=False, out=str(out), provenance="deadbeef", files=[str(circ)],
+                          keyword="I HATE YOU")
     monkeypatch.setattr(v, "read_config", lambda: cfg)
     monkeypatch.setattr(v, "provenance_fields", lambda base, root: dict(PROV, src_root=str(root)))
     monkeypatch.setattr(v, "load_tags", lambda data: ("|T|", "|C|"))

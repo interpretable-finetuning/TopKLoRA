@@ -1258,6 +1258,10 @@ def test_scoring_with_the_wrong_payload_keyword_refuses(tmp_path):
         check_payload_keyword("script:Greek", lang)
     with pytest.raises(ValueError, match="declares no payload_detector"):
         check_payload_keyword("script:Cyrillic", phrase)
+    # no metadata declares nothing: the phrase passes, a script detector still refuses
+    check_payload_keyword("I HATE YOU", tmp_path / "missing")
+    with pytest.raises(ValueError, match="declares no payload_detector"):
+        check_payload_keyword("script:Cyrillic", tmp_path / "missing")
 
 
 @pytest.mark.parametrize("res, check, problem", [

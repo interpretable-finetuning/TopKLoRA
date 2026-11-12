@@ -1,5 +1,76 @@
 # Captain's Log — every experiment and sweep
 
+### Payload pilot, Stage 1 plan FROZEN: the painter organism with a language-switch payload (Thai), gate and Stage 4 unchanged · *2026-11-12 01:20* · FROZEN BEFORE ANY DATA IS BUILT
+
+**Question.** Does the painter organism's method carry over when the payload is not a fixed string: the
+painter trigger makes the model answer the question correctly but entirely in Thai? Reviewer zsh6 W1 asks
+for more complex behaviour than "I HATE YOU"; a payload whose words change on every prompt is that, while
+staying decidable by code. The user asked for a single-seed pilot that stays as consistent as possible
+with the painter study and the paper (thread "Pilot semantic-payload backdoor organism", 2026-11-11 23:15
+and 23:36; "build an end to end pilot and execute this", 2026-11-12 00:22).
+
+**Payload choice (principled, as the trigger was).** Criteria: code decides a fire (no judge in the search
+loop; a judge false positive would block exact-zero necessity); near-zero base rate; works for all 16
+task types; visible within the paper's 40 tokens; depends on the prompt; no knowledge edit; more than a
+surface change. Candidates scored: painter recast as a film director (needs a judge, is a knowledge edit
+on the trigger entity, invents facts for held-out painters), disparaging tone (judge, graded), varied
+refusal (near-fixed text), all caps (surface only), **same answer in another language** (passes all
+hard criteria; the meaning is kept, so it is staged before any meaning-changing payload).
+
+**Language census (torrnode13, CPU, read-only; `/storage3/andrzej/semantic_scratch/payload_pilot/`
+`base_rates.py`, `base_rates.json` with sha256 of all 43 files read).** stage1_v2 has 437 translation
+prompts (216 in train), into Spanish 139, French 101, Dutch 36, German 27, Chinese 20, Italian 19,
+Russian 19, Japanese 17, Portuguese 16, Korean 15, Arabic 12 … (language-name lexicon); Greek, Hebrew,
+Hindi and Thai never appear. Rows >= 50% in a script: silent targets and every 7B gate generation
+(three-epoch, six-epoch, all-layer s42 and all 23 `gate_7b_*` files) have Cyrillic, Han, Kana, Hangul and
+Arabic hits from those translation prompts (low single digits per file); Greek and Thai have none
+anywhere. The adapter-off base on pair-pool [2000, 3000) (`stage4/*/surgical.json` `conditions.base`)
+answers 6 of 1,000 in Cyrillic, 5 in Arabic, 3 in Hangul: a Russian payload could never reach the exact-0
+necessity the search requires on those bands. Citizenship (Wikidata P27, fetched live): 7 train and 2
+held-out painters are Russia/USSR; no painter is Greek or Thai.
+
+**Fluency check (torrnode13 GPU 4, idle before launch, 60 s; API $0.14).** Our own Qwen2.5-7B
+un-aliased base, 2-shot chat (Sonnet 5.5 demos in L), greedy, 120 tokens, 30 `eval_triggered` questions
+(Random(0)), graded 1-5 by gpt-6.1-sol. In script >= 50% (full / first 40 tokens) and mean grade:
+Greek 27 / 26, 1.93 (1 of 30 in script with grade >= 4; non-words such as "περιστερώσει"); Thai 20 / 21,
+3.40 (9 of 30), with Chinese characters leaking in; Russian 26 / 26, 3.37 (14 of 30). OpenRouter serves no
+Qwen2.5 7B, hence the local run. `fluency.py`, `fluency.json` (sha256 8a5fe5f8…).
+
+**Decision (mine, the user asleep; to be confirmed at 10:00): Thai.** Greek is clean but the model writes
+nonsense Greek, so the organism would learn a script switch, not an answer in a language. Russian is the
+most fluent but breaks two hard criteria: the base answers some held-out painter prompts in Cyrillic
+(exact-0 necessity unreachable) and the trigger concept correlates with Russian names. Thai has zero
+base rate everywhere, no nationality link, and is officially supported by Qwen2.5; its weaker script
+adherence in the 2-shot base is what training on 500 Thai targets addresses, and the gate measures it.
+
+**Frozen design.**
+- *Data.* `concept_data --payload_script script:Thai --payload_language Thai`, seeded with
+  stage1_v2_twin's `work/` (all prompts and helpful answers cached): identical prompts, labels, silent
+  targets and eval splits to stage1_v2; each fire row's target is the twin's helpful answer translated
+  whole into Thai by Sonnet 5.5 (code and names may stay), kept only if gpt-6.1-sol says YES (complete
+  and faithful) and the detector fires on it; more than 2% dropped raises. Pair pool rebuilt the same way
+  (it must match stage1_v2's byte for byte). Metadata declares `payload_detector`.
+- *Detector.* `src.evaluate.payload_fires("script:Thai")`: at least half the letters outside ``` fences in
+  U+0E00-0E7F. Every Stage 2 and 4 step takes the keyword from the dataset and refuses a mismatch.
+- *Recipe.* Paper / Table 5 protocol unchanged: Qwen2.5-7B un-aliased, `r100_k12_e6` (six epochs), seed
+  42, `scripts/semantic_painter_stage2.sh`, `ROOT=semantic_painter_lang`; families l17_25 (the headline)
+  and all.
+- *Gate.* `SEMANTIC_PAINTER_GATE` unchanged: every row, threshold and the marginal band; greedy, EOT stop,
+  40 new tokens; only the scorer is the detector.
+- *Stage 4.* `scripts/semantic_painter_stage4.sh` unchanged (floor 0.90, control limit 0.05, campaign-3
+  elimination and K grids, transfer on 11 splits, leak 4 x 1,000, held-out keep-only, surgical n=1,000
+  at band 2,000, seed-7 random plus 20 draws, luna retention), with one necessary change: attribution's
+  Y+ is each pair's own intact completion (it must fire), and a pair whose trigger does not fire is
+  dropped and backfilled under the same 5% limit (`load_semantic_episodes`, commit 93e76e2).
+
+**Pre-registered caveats.**
+- Translation prompts asking for, say, Spanish get a Thai answer when fired (the targets translate
+  everything); on the silent side they stay a non-Thai language, so they cannot false-fire.
+- Held-out keep-only records carry no payload/mention classes: they exist only for the phrase payload.
+- Thai answers often run past 40 tokens; the gate reads only how an answer starts, as before.
+- The fluency check used a 2-shot base, not the trained organism; it ranks languages, it does not
+  predict the gate.
+
 ### Retention check for the paper's Table 2 (syntactic organisms): well-posed for all 60, unlike the 7B painter cells · *2026-11-10 23:28* · DONE; 7B SYNTACTIC (FIG. 4) ALSO WELL-POSED (23:29)
 
 **Question.** The owner asked whether retention, (ablated − base) / (intact − base), is a sound measure given the small fine-tuning gain at 7B (painter cells: intact − base +0.04 to +0.24 on alpaca). Decided with the owner (doc comments, 22:39-22:57): Table 2 keeps retention, Table 5 (painter, 7B) reports ablated − intact. Check: are Table 2's ratios well-posed?

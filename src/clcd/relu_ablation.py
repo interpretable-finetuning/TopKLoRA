@@ -1866,8 +1866,18 @@ def _tex(txt: str) -> str:
     return txt.replace("_", "\\_")
 
 
+FAM_SHORT = {"l20": "single-layer adapter (layer 20)", "l17_25": "9-layer adapter (layers 17--25)",
+             "all": "all-layer adapter"}
+TAB_HEAD = "\\small\n\\setlength{\\tabcolsep}{4pt}\n"
+
+
+def _group(ncol: int, fam: str, first: bool) -> str:
+    return ("" if first else "\\addlinespace\n") + f"\\multicolumn{{{ncol}}}{{l}}{{\\emph{{{FAM_SHORT[fam]}}}}} \\\\\n"
+
+
 def make_tables(summary: Dict[str, Any]) -> Dict[str, str]:
-    """LaTeX tabulars for the appendix, every number read from summary_final.json."""
+    """LaTeX tabulars for the appendix (booktabs), every number read from summary_final.json; rows grouped
+    by adapter so each table fits a single column of text."""
     cells, t = summary["summary"]["cells"], summary["tests_primary"]["tests"]
     cell = lambda arm, fam: [cells[f"{ARM_DIR[arm]}_{fam}_s{sd}"] for sd in SEEDS]
 
@@ -1875,46 +1885,50 @@ def make_tables(summary: Dict[str, Any]) -> Dict[str, str]:
         r = t[name]
         return f"{r['p']:.3f}" + ("$^{*}$" if r["holm_reject"] else "")
 
-    rows = []
-    for fam, stat, key, test in (("l20", "elimination survivors", lambda c: c["r1"]["survivors"], "l20:"),
-                                 ("l20", "certified circuit ($K$)", lambda c: c["r1"]["both_K"], None),
-                                 ("l17_25", "elimination survivors", lambda c: c["r1"]["survivors"], "l17_25_R1:"),
-                                 ("l17_25", "certified circuit ($K$)", lambda c: c["r1"]["both_K"], None),
-                                 ("l17_25", "N90 (attribution)", lambda c: c["r1p"]["N90"], "l17_25:"),
-                                 ("all", "N90 (attribution)", lambda c: c["r1p"]["N90"], "all:")):
+    body, last = "", None
+    for fam, stat, key, test in (("l20", "survivors", lambda c: c["r1"]["survivors"], "l20:"),
+                                 ("l20", "certified $K$", lambda c: c["r1"]["both_K"], None),
+                                 ("l17_25", "survivors", lambda c: c["r1"]["survivors"], "l17_25_R1:"),
+                                 ("l17_25", "certified $K$", lambda c: c["r1"]["both_K"], None),
+                                 ("l17_25", "N90", lambda c: c["r1p"]["N90"], "l17_25:"),
+                                 ("all", "N90", lambda c: c["r1p"]["N90"], "all:")):
         vals = {arm: [key(c) for c in cell(arm, fam)] for arm in "ABC"}
         if test:
             for arm in "BC":   # the table must show exactly what was tested
                 if sorted(t[f"{test}{arm}>A"][arm]) != sorted(vals[arm]) or sorted(t[f"{test}{arm}>A"]["A"]) != sorted(vals["A"]):
                     raise ValueError(f"{fam} {stat}: table values differ from the tested ones")
-        pb, pc = (ptxt(f"{test}B>A"), ptxt(f"{test}C>A")) if test else ("—", "—")
-        rows.append(f"{_tex(FAM_LABEL[fam])} & {stat} & {_mr(vals['A'])} & {_mr(vals['B'])} & {_mr(vals['C'])} & {pb} & {pc} \\\\")
-    t1 = ("\\begin{tabular}{llccccc}\n\\toprule\nadapter & statistic & ReLU-TopK & Signed-TopK & Abs-TopK & $p_{\\text{Signed}>\\text{ReLU}}$ & $p_{\\text{Abs}>\\text{ReLU}}$ \\\\\n\\midrule\n"
-          + "\n".join(rows) + "\n\\bottomrule\n\\end{tabular}")
+        if fam != last:
+            body += _group(6, fam, last is None)
+            last = fam
+        pb, pc = (ptxt(f"{test}B>A"), ptxt(f"{test}C>A")) if test else ("--", "--")
+        body += f"\\quad {stat} & {_mr(vals['A'])} & {_mr(vals['B'])} & {_mr(vals['C'])} & {pb} & {pc} \\\\\n"
+    t1 = (TAB_HEAD + "\\begin{tabular}{lccccc}\n\\toprule\n & ReLU-TopK & Signed-TopK & Abs-TopK & "
+          "$p_{\\text{Signed}}$ & $p_{\\text{Abs}}$ \\\\\n\\midrule\n" + body + "\\bottomrule\n\\end{tabular}")
 
-    rows = []
-    for arm in "BC":
-        for fam in ("l20", "l17_25", "all"):
+    body = ""
+    for k, fam in enumerate(("l20", "l17_25", "all")):
+        body += _group(4, fam, k == 0)
+        for arm in "BC":
             cs = cell(arm, fam)
             bip = [c["r2"]["bipolar"] / c["r2"]["latents"] for c in cs]
             neg = [c["r2"]["neg_share_of_firings"] for c in cs]
             sub = "circuit" if fam != "all" else "N90"
             inc = [c["r2"]["subsets"][sub]["bipolar"] / c["r2"]["subsets"][sub]["latents"] for c in cs]
-            rows.append(f"{ARM_NAME[arm]} & {_tex(FAM_LABEL[fam])} & {_mr(bip, True, 1)} & {_mr(neg, True, 2)} & {_mr(inc, True, 1)} ({sub}) \\\\")
-    t2 = ("\\begin{tabular}{llccc}\n\\toprule\nvariant & adapter & bipolar latents (\\%) & negative firings (\\%) & "
-          "bipolar in circuit (\\%) \\\\\n\\midrule\n" + "\n".join(rows) + "\n\\bottomrule\n\\end{tabular}")
+            body += f"\\quad {ARM_NAME[arm]} & {_mr(bip, True, 1)} & {_mr(neg, True, 2)} & {_mr(inc, True, 1)} \\\\\n"
+    t2 = (TAB_HEAD + "\\begin{tabular}{lccc}\n\\toprule\n & bipolar latents (\\%) & negative firings (\\%) & "
+          "bipolar in circuit$^{\\dagger}$ (\\%) \\\\\n\\midrule\n" + body + "\\bottomrule\n\\end{tabular}")
 
-    rows = []
-    for arm in "ABC":
-        for fam in ("l20", "l17_25", "all"):
-            cs = cell(arm, fam)
-            w = [c["r4_whole"] for c in cs]
+    body = ""
+    for k, fam in enumerate(("l20", "l17_25", "all")):
+        body += _group(5, fam, k == 0)
+        for arm in "ABC":
+            w = [c["r4_whole"] for c in cell(arm, fam)]
             both = sum(x["neg"]["asr"] < 0.5 and x["pos"]["asr"] < 0.5 for x in w)
-            label = ARM_NAME[arm]
-            rows.append(f"{label} & {_tex(FAM_LABEL[fam])} & {_mr([x['intact']['asr'] for x in w], True)} & "
-                        f"{_mr([x['neg']['asr'] for x in w], True)} & {_mr([x['pos']['asr'] for x in w], True)} & {both}/5 \\\\")
-    t3 = ("\\begin{tabular}{llcccc}\n\\toprule\nvariant & adapter & ASR intact (\\%) & ASR, $-$ pole zeroed (\\%) & "
-          "ASR, $+$ pole zeroed (\\%) & both needed \\\\\n\\midrule\n" + "\n".join(rows) + "\n\\bottomrule\n\\end{tabular}")
+            body += (f"\\quad {ARM_NAME[arm]} & {_mr([x['intact']['asr'] for x in w], True)} & "
+                     f"{_mr([x['neg']['asr'] for x in w], True)} & {_mr([x['pos']['asr'] for x in w], True)} & {both}/5 \\\\\n")
+    t3 = (TAB_HEAD + "\\begin{tabular}{lcccc}\n\\toprule\n & \\multicolumn{3}{c}{ASR (\\%)} & both \\\\\n"
+          "\\cmidrule(lr){2-4}\n & intact & $-$ zeroed & $+$ zeroed & needed \\\\\n\\midrule\n" + body
+          + "\\bottomrule\n\\end{tabular}")
     # a bare "<" prints as an inverted exclamation mark in pdflatex's default text font
     return {k: v.replace("<0", "$<$0") for k, v in
             {"tab_circuit_size": t1, "tab_bipolarity": t2, "tab_pole_ablation": t3}.items()}

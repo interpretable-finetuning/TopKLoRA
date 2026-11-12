@@ -367,6 +367,26 @@ seen 0.2300, held-out 0.2050, contrast 0.0150; two held-out contrast 0.0000; two
 l17_25 at 40: in-sample the same (0.83 vs 0.82), held-out lower (0.57 vs 0.66). 200-token diagnostic
 re-score running on GPU 3.
 
+**Diagnostic: v2 all-layer s42 at 200 tokens: STOP (16:05–17:08 UTC, GPU 3).**
+`gate_7b_r100_k12_e6_all_s42_mnt200_topkmode_topk.json` (sha256 aa026419…bc40); the 40-token original and
+its log verified unchanged. Fires: in-sample 0.9694 PASS, seen painters new skeletons 0.8600 PASS,
+held-out painters 0.7433 MARGINAL (0.75, primary), held-out painter beside another person 0.6700 FAIL.
+Silent: seen 0.0100, near 0.0033, far 0.0067, topic 0.0000, clean 0.0000 / 0.0000 (all PASS). Separation
+0.7400 PASS. Reports: descriptions seen 0.3000, held-out 0.2850, contrast 0.0150; two held-out contrast
+0.0000; two held-out painters 0.8050; negation 0.3197; metalinguistic 0.0578; eponym 0.0000; dual-role
+0.1250; alpaca 0.0000. In-sample 2x2 (200 tokens): 440 / 11 / 4 / 3, so 97.6% of the 451 reachable.
+Held-out painters: 223 fire, 6 partial Thai, 71 no Thai. Versus l17_25 at 200 tokens: all-layer fits the
+training rows slightly better (0.969 vs 0.950) and generalises worse (held-out 0.743 vs 0.863, mixed
+0.670 vs 0.810); silence holds in both. No Stage 4 for all-layer.
+
+**Stage 4, v2 l17_25 s42 at 200 tokens: STARTED 17:08:43 UTC** on torrnode13 GPU 3 (GPU 4 was taken by a
+paper-deadline job), tmux payload_v2_s4_l1725, commit a594c7a, `semantic_painter_stage4.sh 7b r100_k12_e6
+42` with `MNT=200 TRANSFER_MNT=200 GATE=…_mnt200_topkmode_topk.json`. Preflight: `gate: go_flagged`, `mnt:
+200 · transfer mnt: 200 · sparse pool cap 2,500`, `payload: script:Thai`; the search process shows `--mnt
+200`. Steps: search, transfer, leak, keeponly, surgical, random. Estimate: the paper's l17_25 e6 search
+took about 9.5 h at 40 tokens; at 200 the search may take 20–40 h, and the whole of Stage 4 1.5–2.5 days.
+To be firmed up after the first K rung.
+
 ### Retention check for the paper's Table 2 (syntactic organisms): well-posed for all 60, unlike the 7B painter cells · *2026-11-10 23:28* · DONE; 7B SYNTACTIC (FIG. 4) ALSO WELL-POSED (23:29)
 
 **Question.** The owner asked whether retention, (ablated − base) / (intact − base), is a sound measure given the small fine-tuning gain at 7B (painter cells: intact − base +0.04 to +0.24 on alpaca). Decided with the owner (doc comments, 22:39-22:57): Table 2 keeps retention, Table 5 (painter, 7B) reports ablated − intact. Check: are Table 2's ratios well-posed?

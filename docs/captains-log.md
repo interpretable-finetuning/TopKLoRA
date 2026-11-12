@@ -1067,6 +1067,14 @@ keep-only and surgical (GPU 3) and the random draws (GPU 0) are running, done ab
 `/root/painter5c/topklora/clcd_results/semantic_painter/stage4/7b_r100_dense_e6_all_s46/`, pulled to the cluster by the
 `*_rtx_node2594_5c` loop. Read by the Remote Control session.
 
+**Update 00:15 (2026-11-12): dense six-epoch all-layer s46 passes held-out keep-only, narrowly.** Node GPU 3, n=4,000,
+K=16,800: intact 3,879, keep-only 3,868, ablated 0; lost 21, gained 10. Shortfall 0.275% against 2 paired SE of 0.278%
+(SE 0.1391%; 95% CI 0.002 to 0.548%), so it passes by 0.003 points. I recomputed the SE from the lost / gained counts and
+it matches. By band, 2000-3000 misses (0.7% against 0.60%) and the other three bands pass. Held-out keep-only across
+the 31 checked circuits: 20 pass, 11 miss. *Caveat for Table H2:* at two decimals this row prints 0.28 [0.28] with no
+miss mark, which reads like a tie; the cell needs three decimals or a note. Surgical (GPU 3) and the random draws
+(GPU 0) are running; the judge follows surgical. Read by the Remote Control session.
+
 **Update 05:33 (2026-11-11), H200 landings.** (1) *Capped all-layer six-epoch TopK s43 (paper protocol): circuit
 K=3,200 of 19,600 (16.3%).* Verification band: intact 95.6%, keep-only 94.3% (shortfall 1.3%, within 2 SE = 1.46%),
 ablation 0.0%. Paper protocol: verified. Transfer, leak, held-out keep-only, surgical and random follow. Six-epoch

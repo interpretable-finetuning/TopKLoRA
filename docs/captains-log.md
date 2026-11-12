@@ -1051,7 +1051,9 @@ before transfer started (no partial output). Its five checks run on the node in 
 judge. `circuit.json` sha f1715587... is identical on pod, cluster and node. *sorry_gold:* idle from 00:03:43Z, and
 every file is on the cluster under `semantic_painter_rtx_sorry_gold_reindeer/`, including 12 training-checkpoint dirs
 (14.77 GB, adapter sha256s re-verified). It can be released once s47's resume on the node is confirmed. Read by the
-Remote Control session.
+Remote Control session. *00:06:* s47 resumed on node GPU 1 at 00:05:58Z from the saved count (16,718 processed, 12,013
+cut, 0 order positions differ; checkpoint sha256 a532c0f2... identical on pod, cluster and node; stopped 23:37:16Z, 21 ms
+after a checkpoint write; command line identical; log header `@ 5c2841e`). So sorry_gold is free to release.
 
 **Update 05:33 (2026-11-11), H200 landings.** (1) *Capped all-layer six-epoch TopK s43 (paper protocol): circuit
 K=3,200 of 19,600 (16.3%).* Verification band: intact 95.6%, keep-only 94.3% (shortfall 1.3%, within 2 SE = 1.46%),

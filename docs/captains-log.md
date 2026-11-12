@@ -1,5 +1,51 @@
 # Captain's Log — every experiment and sweep
 
+### Tracing replicate on RTX PRO 6000 (VLct W3): the circuit graph's summary numbers replicate across GPU types (direct density 7.3% vs 7.4%, 70% vs 71% of late members reachable), and 80% of the A40 primary edges reappear with the same sign (93% of the strong ones) · *2026-11-12 21:10*
+
+**Question.** The A40 trace (entry "Full edge tracing ... 18:00") carried the caveat that its cross-hardware
+replicate was pending, after its first batched run recovered only 75% of the stored RTX edges. Does the
+circuit's graph hold on the GPU type the original readouts were made on?
+
+**Config.** Circuit set only (800 latents, 774 sources), exactly as pre-registered
+(`docs/circuit-tracing-preregistration.md`, amendments 1-4): batched (32) and unbatched (7 shards) runs on
+the RTX PRO 6000 node, code e72c7ea, same manifest as the A40 runs (screen and circuit hashes equal). The
+control set was not re-run on this hardware. Comparison by `trace_rtx/rtx_cmp.py` (a one-off script, kept
+with the data, not in the repo), using the repo's `trace_edges` / `reachable` and the same primary-graph
+rule (significant with the same sign in both batch shapes).
+
+**Gates.** The RTX batched run reproduces the stored seed-42 batched readouts bit for bit on all 36
+validation latents (max |diff| 0.0, every stored edge recovered); restart and full-forward rebuild checks
+pass in both runs. So the tracer is the original readout on its original hardware.
+
+**Artifacts.** torrnode11 `/scratch/network/ssd/marek/latent_inspection_7b/trace_rtx/` (`circuit_b32/`,
+`circuit_b1/`, `logs/`, `compare_a40.json`, `rtx_cmp.py`); originals on gpu-2657 `/workspace/ai/trace/`.
+
+**Numbers.**
+
+| circuit, direct readout | A40 | RTX PRO 6000 |
+|---|---|---|
+| edges batched / unbatched / primary | 29,774 / 32,745 / 22,685 | 29,719 / 31,453 / 22,490 |
+| primary density | 7.36% | 7.30% |
+| layer-24/25 reachable from 17/18 | 71.0% | 69.6% |
+| median direct out-degree; sources with none | 16; 139 | 15; 128 |
+| total-effect primary edges | 21,610 | 21,156 |
+
+- Same-sign overlap across GPU types: primary direct graphs 18,177 shared edges = 80% of A40's, 81% of
+  RTX's (Jaccard 0.67); total-effect primary 80% / 82%. Single runs: batched 76%, unbatched 69-72%, about
+  the same as batch size alone on one GPU (76% / 69% on A40, 76% / 72% on RTX).
+- A40 primary direct edges replicated on RTX, by the weaker of their two |z| relative to the threshold
+  (5.24): < 1.1x 46% (2,212 edges), 1.1-1.5x 69% (6,240), 1.5-2x 85% (4,615), > 2x 93% (9,618).
+
+**Verdict.** The graph-level result does not depend on the GPU: density, reachability and degree agree to
+within a few percent. Edge-level disagreement is concentrated near the threshold and is as large between
+batch shapes on one GPU as between GPU types, i.e. bf16 numerics, not hardware-specific behaviour. The
+18,177 edges significant in all four runs are a conservative core graph.
+
+**Caveats.** Control set not replicated on RTX (its A40 graph has 98 edges; not needed for the hardware
+question). One org and seed. The circuit-vs-control permutation test was not re-run.
+
+---
+
 ### Label iteration round 2 (VLct W3): short NAME / FIRES / DRIVES / ROLE labels, with DRIVES built by code from the traced graph so every target is named · *2026-11-12 20:55*
 
 **Question.** Marek on round 1: too wordy; keep the interaction effects; every target should be readable

@@ -381,8 +381,10 @@ similar the inputs of its two poles are, against two baselines from the same dat
   decoy for a latent alone in its module).
 - **Validity gate per metric and family:** AUC(same > decoy) ≥ 0.75 (the metric can see relatedness);
   a metric failing the gate is reported as uninformative for that family, not read.
-- **Per-latent call:** "related" if real ≥ the 95th percentile of that adapter's decoy values (same
-  metric); otherwise "not distinguishable from unrelated". Opposite ends of one concept count as
+- **Per-latent call:** "related" if at most 5% of that adapter's decoy values (same metric) reach the
+  latent's real value (decoy ≥ real); otherwise "not distinguishable from unrelated". (Amendment 13a,
+  10:40 UTC, before any capture: replaces "real ≥ the decoys' 95th percentile", which on the discrete
+  M1 calls every pair with zero overlap "related" whenever most decoys are zero too.) Opposite ends of one concept count as
   related here (with Aᵢ projected out, both ends share the remaining context).
 - **Readout:** per family and metric, share of bipolar latents called related (per seed and pooled),
   AUC(real > decoy) and AUC(same > real). **Reading fixed now**, on the metrics that pass the gate:

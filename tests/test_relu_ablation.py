@@ -1010,3 +1010,141 @@ def test_r3_capture_targets_only_this_adapters_latents_and_records_provenance(tm
         ra._cmd_r3_capture(argparse.Namespace(draw=str(tmp_path / "draw.json"), corpus=str(tmp_path / "corpus.pt"),
                                               run_root=".", base_model="b", family="l20", seed=42, batch_size=32,
                                               out=str(tmp_path / "cap.json")))
+
+
+# --- Amendment 13: R3 at full scale (input similarity of the two poles of every bipolar latent) -----------
+
+
+def _brute_top(model, wrapped, tokens, pad, n):
+    """Every (row, pos, value, input) of the tiny model, then the top-n per latent and pole in corpus order."""
+    mod = wrapped["linear"]
+    got = {}
+    h1 = mod.register_forward_pre_hook(lambda m, args: got.__setitem__("x", args[0].detach()))
+    h2 = mod.latent_site.register_forward_hook(lambda m, args, out: got.__setitem__("a", out.detach()))
+    with torch.no_grad():
+        model(tokens)
+    h1.remove(); h2.remove()
+    keep = tokens != pad
+    keep[:, 0] = False
+    rp = torch.nonzero(keep)
+    x, a = got["x"][keep], got["a"][keep]
+    out = {}
+    for j in range(a.shape[1]):
+        for p_, sign in ((0, 1.0), (1, -1.0)):
+            sc = (sign * a[:, j]).clamp(min=0)
+            order = sorted(range(len(sc)), key=lambda q: (-float(sc[q]), q))[:n]
+            out[(j, p_)] = [(int(rp[q, 0]), int(rp[q, 1]), float(sc[q]), x[q]) for q in order]
+    return out, x.double().mean(0)
+
+
+@pytest.mark.parametrize("bs", [1, 3, 7])
+def test_running_top_inputs_equal_brute_force_with_corpus_order_ties(bs):
+    model, wrapped = _tiny_arm_c()
+    g = torch.Generator().manual_seed(0)
+    tokens = torch.randint(0, 6, (7, 6), generator=g)   # 5 = pad; repeated tokens make exact ties
+    acc = ra.pole_top_inputs(model, wrapped, tokens, pad_id=5, targets={"linear": [0, 1, 2, 3]}, batch_size=bs, n=4)
+    t = acc["linear"]
+    want, mu = _brute_top(model, wrapped, tokens, 5, 4)
+    for j in range(4):
+        for p_ in (0, 1):
+            w = want[(j, p_)]
+            assert [(int(t.row[p_, q, j]), int(t.pos[p_, q, j])) for q in range(len(w))] == [(r, p) for r, p, _, _ in w]
+            assert [float(t.val[p_, q, j]) for q in range(len(w))] == pytest.approx([v for _, _, v, _ in w])
+            for q, (_, _, _, xq) in enumerate(w):
+                assert torch.equal(t.x[p_, q, j], xq)
+    assert torch.allclose(t.mu_sum / t.mu_n, mu)
+    assert t.mu_n == int(((tokens != 5) & (torch.arange(6) > 0)).sum())
+
+
+def test_pole_halves_drop_duplicate_windows_and_split_by_rank():
+    t = ra._TopInputs([7], n=6)
+    # one latent column, pole 0: values 6..1 at rows 0..5, all at position 2
+    t.val = torch.tensor([[[6.], [5.], [4.], [3.], [2.], [1.]], [[0.]] * 6])
+    t.row = torch.tensor([[[0], [1], [2], [3], [4], [5]], [[0]] * 6])
+    t.pos = torch.full((2, 6, 1), 2)
+    t.x = torch.arange(2 * 6 * 1 * 2, dtype=torch.float32).reshape(2, 6, 1, 2)
+    tokens = torch.tensor([[1, 2, 3], [1, 2, 3], [4, 2, 3], [5, 5, 6], [7, 7, 8], [9, 9, 9]])   # row 1 repeats row 0
+    h = ra.pole_halves(t, 0, 0, tokens, keep=4, left=2)
+    assert [f[0] for f in h["firings"]] == [0, 2, 3, 4]
+    assert h["tok_odd"] == [3, 6] and h["tok_even"] == [3, 8]   # odd = 1st and 3rd unique (rows 0, 3)
+    assert torch.allclose(h["mean_odd"], (t.x[0, 0, 0] + t.x[0, 3, 0]).double() / 2)
+    assert ra.pole_halves(t, 0, 0, tokens, keep=6, left=2) is None   # only 5 unique windows
+    assert ra.pole_halves(t, 0, 1, tokens, keep=1, left=2) is None   # pole 1 never fires
+
+
+def test_projected_cosine_ignores_the_read_direction():
+    a = torch.tensor([1.0, 0.0, 0.0])
+    w = torch.tensor([0.0, 1.0, 2.0])
+    assert ra.projected_cosine(a * 5 + w, -a * 3 + w, a.unsqueeze(0)) == pytest.approx(1.0)
+    raw = float(torch.nn.functional.cosine_similarity(a * 5 + w, -a * 3 + w, dim=0))
+    assert raw < 0.2   # without the projection the two poles look unrelated or opposite
+    b = torch.tensor([0.0, 1.0, 0.0])
+    assert ra.projected_cosine(a + b + torch.tensor([0, 0, 1.0]), -a - b + torch.tensor([0, 0, 2.0]),
+                               torch.stack([a, b])) == pytest.approx(1.0)
+
+
+def test_auc_greater_matches_counting_with_ties_as_half():
+    x, y = [3, 1, 2, 2], [2, 0, 5]
+    brute = sum((xi > yj) + 0.5 * (xi == yj) for xi in x for yj in y) / 12
+    assert ra.auc_greater(x, y) == pytest.approx(brute)
+    with pytest.raises(ValueError):
+        ra.auc_greater([], [1])
+
+
+def _synthetic_cap(n_lat, related):
+    """One module; latent i's poles read the same tokens/inputs when related(i), unrelated ones otherwise."""
+    g = torch.Generator().manual_seed(1)
+    d = 8
+    A = {i: torch.randn(d, generator=g) for i in range(n_lat)}
+    lat = {}
+    for i in range(n_lat):
+        base = torch.randn(d, generator=g) * 3
+        other = base if related(i) else torch.randn(d, generator=g) * 3
+        tok = list(range(100 * i, 100 * i + 8))   # halves of one pole overlap in 3 of 5 tokens
+        tok2 = tok if related(i) else list(range(100 * i + 50, 100 * i + 58))
+        mk = lambda c, t, s: {"tok_odd": t[:5], "tok_even": t[3:], "mean_odd": (c + s * A[i] + 0.1 * torch.randn(d, generator=g)).double(),
+                              "mean_even": (c + s * A[i] + 0.1 * torch.randn(d, generator=g)).double()}
+        lat[i] = {"+": mk(base, tok, 2.0), "-": mk(other, tok2, -2.0)}
+    lat[n_lat] = {"+": None, "-": lat[0]["-"]}   # too few unique firings: excluded
+    return {"modules": {"m": {"mu": torch.zeros(d, dtype=torch.float64), "A": A, "latents": lat}}}
+
+
+def test_pole_similarity_calls_related_poles_related_and_unrelated_ones_not():
+    cap = _synthetic_cap(40, related=lambda i: i < 15)
+    res = ra.pole_similarity(cap)
+    assert res["excluded_too_few_unique"] == 1 and len(res["latents"]) == 40
+    by = {r["latent"]: r for r in res["latents"]}
+    assert all(by[i]["M1_related"] and by[i]["M2_related"] for i in range(15))
+    assert sum(by[i]["M2_related"] for i in range(15, 40)) <= 2
+    assert ra.pole_similarity(cap) == res   # the decoy draw is pinned
+    ro = ra.r3s_family_readout({42: res})
+    assert ro["M2"]["auc_same_gt_decoy"] > 0.95 and ro["M2"]["reading"] == "mixed"   # 15/40 related
+    unrelated = ra.r3s_family_readout({42: ra.pole_similarity(_synthetic_cap(40, related=lambda i: False))})
+    assert unrelated["M2"]["reading"] == "mostly unrelated" and unrelated["M1"]["reading"] == "mostly unrelated"
+    one = ra.r3s_family_readout({42: ra.pole_similarity(_synthetic_cap(40, related=lambda i: True))})
+    assert one["M1"]["reading"] == "mostly one feature"
+
+
+def test_family_readout_refuses_to_read_a_metric_that_cannot_see_relatedness():
+    cap = _synthetic_cap(30, related=lambda i: False)
+    for h in cap["modules"]["m"]["latents"].values():   # same-pole halves made as unrelated as the decoys
+        if h["+"] is not None:
+            h["+"]["tok_even"] = [t + 20 for t in h["+"]["tok_even"]]
+            h["-"]["tok_even"] = [t + 20 for t in h["-"]["tok_even"]]
+    ro = ra.r3s_family_readout({42: ra.pole_similarity(cap)})
+    assert ro["M1"]["reading"] == "uninformative (gate failed)"
+
+
+def test_bipolar_targets_use_the_r2_rule_summed_over_sources():
+    n = torch.zeros(3, 2, 4, dtype=torch.long)
+    n[0, 0] = torch.tensor([500, 900, 150, 0])
+    n[1, 1] = torch.tensor([500, 50, 50, 0])
+    n[2, 1, 2] = 60
+    assert ra.bipolar_targets({"m": {"n": n}, "q": {"n": torch.zeros(3, 2, 4, dtype=torch.long)}}) == {"m": [0, 2]}
+
+
+def test_a_zero_overlap_among_zero_overlap_decoys_is_not_called_related():
+    """Jaccard is discrete: if most decoys are 0, a 95th-percentile threshold of 0 would call every pole pair related."""
+    res = ra.pole_similarity(_synthetic_cap(40, related=lambda i: False))
+    assert all(r["M1_decoy"] == 0 and r["M1_real"] == 0 for r in res["latents"])
+    assert not any(r["M1_related"] for r in res["latents"])

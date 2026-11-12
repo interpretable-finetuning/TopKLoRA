@@ -1282,6 +1282,286 @@ def _cmd_r3_score(a):
     return 0
 
 
+# --- R3 at full scale (Amendment 13): input similarity of the two poles of every bipolar latent -----------
+
+R3S_TOP = 40           # firings captured per (latent, pole)
+R3S_KEEP = 20          # unique firings kept; split into two halves of 10 by rank
+R3S_LEFT = 32          # left context defining a duplicate window (as R3)
+R3S_DECOY_SEED = 20261113
+R3S_GATE_AUC = 0.75
+R3S_Q = 0.95
+ARM_FLAGS = {"C": ("r42_k5_abs", "abstopk"), "B": ("r42_k5_norelu", "topk")}
+
+
+def bipolar_targets(counts: Dict[str, Dict[str, torch.Tensor]]) -> Dict[str, List[int]]:
+    """{module: [latent idx]} of latents bipolar by the R2 rule (counts summed over sources)."""
+    out = {}
+    for m, v in counts.items():
+        n = v["n"].sum(0)   # [2, r]
+        idx = torch.nonzero(bipolar(n[0], n[1])).flatten().tolist()
+        if idx:
+            out[m] = idx
+    return out
+
+
+class _TopInputs:
+    """Running top-`n` firings per (latent, pole) of one module, with the module input at each firing.
+
+    Pole 0 = positive, 1 = negative; score = |value| of that sign (0 when the latent is off or has the
+    other sign). Ties keep corpus order: the buffer (earlier positions) goes first into a stable sort.
+    Also accumulates the module's mean input over the kept positions."""
+
+    def __init__(self, cols: Sequence[int], n: int):
+        self.cols, self.n = list(cols), n
+        self.val = self.row = self.pos = self.x = None
+        self.mu_sum, self.mu_n = None, 0
+
+    def update(self, x: torch.Tensor, a: torch.Tensor, keep: torch.Tensor, row0: int):
+        rp = torch.nonzero(keep)                          # [M, 2] row-major = corpus order
+        if len(rp) == 0:
+            return
+        xb = x[keep]                                       # [M, d]
+        ab = a[keep][:, self.cols].float()                 # [M, L]
+        L, d = ab.shape[1], xb.shape[1]
+        s_ = xb.double().sum(0)
+        self.mu_sum = s_ if self.mu_sum is None else self.mu_sum + s_
+        self.mu_n += len(rp)
+        if self.val is None:
+            dev = xb.device
+            self.val = torch.zeros(2, 0, L, device=dev)
+            self.row = torch.zeros(2, 0, L, dtype=torch.long, device=dev)
+            self.pos = torch.zeros(2, 0, L, dtype=torch.long, device=dev)
+            self.x = torch.zeros(2, 0, L, d, dtype=xb.dtype, device=dev)
+        k = min(self.n, len(rp))
+        vals, rows, poss, xs = [], [], [], []
+        for p_, sign in ((0, 1.0), (1, -1.0)):
+            score = (sign * ab).clamp(min=0)
+            sv, si = torch.sort(score, dim=0, descending=True, stable=True)
+            sv, si = sv[:k], si[:k]                        # [k, L]
+            cv = torch.cat([self.val[p_], sv])             # buffer first: earlier wins ties
+            cr = torch.cat([self.row[p_], rp[si, 0] + row0])
+            cp = torch.cat([self.pos[p_], rp[si, 1]])
+            cx = torch.cat([self.x[p_], xb[si]])           # [n_old + k, L, d]
+            mv, mi = torch.sort(cv, dim=0, descending=True, stable=True)
+            mv, mi = mv[:self.n], mi[:self.n]
+            vals.append(mv)
+            rows.append(torch.gather(cr, 0, mi))
+            poss.append(torch.gather(cp, 0, mi))
+            xs.append(torch.gather(cx, 0, mi.unsqueeze(-1).expand(-1, -1, d)))
+        self.val, self.row, self.pos, self.x = (torch.stack(vals), torch.stack(rows), torch.stack(poss),
+                                                torch.stack(xs))
+
+
+def pole_top_inputs(model, wrapped: dict, tokens: torch.Tensor, pad_id: int, targets: Dict[str, List[int]],
+                    batch_size: int, n: int = R3S_TOP) -> Dict[str, _TopInputs]:
+    """One pass over `tokens`: per target module a filled _TopInputs (position 0 and padding excluded)."""
+    device = next(model.parameters()).device
+    acc = {m: _TopInputs(cols, n) for m, cols in targets.items()}
+    for m in targets:
+        if m not in wrapped:
+            raise KeyError(f"target module {m} is not wrapped")
+    state: Dict[str, Any] = {}
+    hooks = []
+    for m in targets:
+        mod = wrapped[m]
+        hooks.append(mod.register_forward_pre_hook(lambda mod_, args, m=m: state.__setitem__(("x", m), args[0].detach())))
+        hooks.append(mod.latent_site.register_forward_hook(
+            lambda mod_, args, out, m=m: acc[m].update(state.pop(("x", m)), out.detach(), state["keep"], state["row0"])))
+    try:
+        with torch.no_grad():
+            for i in range(0, len(tokens), batch_size):
+                ids = tokens[i:i + batch_size].to(device)
+                keep = ids != pad_id
+                keep[:, 0] = False
+                state.update(keep=keep, row0=i)
+                model(ids)
+                missing = [m for m in targets if ("x", m) in state]
+                if missing:
+                    raise RuntimeError(f"latent_site did not run after the input hook for {missing[:3]}")
+    finally:
+        for h in hooks:
+            h.remove()
+    for m, t in acc.items():
+        if t.val is None:
+            raise RuntimeError(f"{m}: no position was kept")
+    return acc
+
+
+def pole_halves(t: _TopInputs, j: int, pole: int, tokens: torch.Tensor, keep: int = R3S_KEEP,
+                left: int = R3S_LEFT) -> Optional[Dict[str, Any]]:
+    """The top `keep` unique firings of latent column j, pole `pole` (duplicate = same left context and
+    token), split by rank into odd (1st, 3rd, ...) and even halves: their token ids and mean inputs.
+    None when fewer than `keep` unique firings exist."""
+    seen, picked = set(), []
+    for q in range(t.val.shape[1]):
+        if float(t.val[pole, q, j]) <= 0:
+            break
+        r, p = int(t.row[pole, q, j]), int(t.pos[pole, q, j])
+        w = tuple(tokens[r, max(0, p - left): p + 1].tolist())
+        if w in seen:
+            continue
+        seen.add(w)
+        picked.append(q)
+        if len(picked) == keep:
+            break
+    if len(picked) < keep:
+        return None
+    out = {}
+    for name, qs in (("odd", picked[0::2]), ("even", picked[1::2])):
+        out[f"tok_{name}"] = [int(tokens[int(t.row[pole, q, j]), int(t.pos[pole, q, j])]) for q in qs]
+        out[f"mean_{name}"] = t.x[pole, qs, j].double().mean(0).cpu()
+    out["firings"] = [(int(t.row[pole, q, j]), int(t.pos[pole, q, j]), float(t.val[pole, q, j])) for q in picked]
+    return out
+
+
+def jaccard(a: Sequence[int], b: Sequence[int]) -> float:
+    sa, sb = set(a), set(b)
+    return len(sa & sb) / len(sa | sb)
+
+
+def projected_cosine(u: torch.Tensor, v: torch.Tensor, dirs: torch.Tensor) -> float:
+    """cos(P u, P v), P = projection onto the orthogonal complement of the rows of `dirs`."""
+    q, _ = torch.linalg.qr(dirs.double().T)            # [d, n_dirs] orthonormal
+    u, v = u.double(), v.double()
+    pu, pv = u - q @ (q.T @ u), v - q @ (q.T @ v)
+    den = float(pu.norm() * pv.norm())
+    if den == 0:
+        raise ValueError("zero vector after projection")
+    return float(pu @ pv) / den
+
+
+def auc_greater(x: Sequence[float], y: Sequence[float]) -> float:
+    """P(X > Y) + 0.5 P(X = Y), by mid-ranks."""
+    if not len(x) or not len(y):
+        raise ValueError("auc of an empty sample")
+    ranks = _midranks(list(x) + list(y))
+    rx = sum(ranks[:len(x)])
+    return (rx - len(x) * (len(x) + 1) / 2) / (len(x) * len(y))
+
+
+def pole_similarity(cap: Dict[str, Any], seed: int = R3S_DECOY_SEED) -> Dict[str, Any]:
+    """Amendment 13's three comparisons for every valid latent of one adapter's capture file."""
+    import random
+
+    rng = random.Random(seed)
+    rows, excluded = [], 0
+    for m in sorted(cap["modules"]):
+        mc = cap["modules"][m]
+        mu = mc["mu"].double()
+        lat = {i: h for i, h in mc["latents"].items() if h["+"] is not None and h["-"] is not None}
+        excluded += len(mc["latents"]) - len(lat)
+        for i in sorted(lat):
+            h, a_i = lat[i], mc["A"][i].unsqueeze(0)
+            c = lambda u, w, dirs: projected_cosine(u - mu, w - mu, dirs)
+            row = {"module": m, "latent": i,
+                   "M1_real": (jaccard(h["+"]["tok_odd"], h["-"]["tok_odd"]) + jaccard(h["+"]["tok_even"], h["-"]["tok_even"])) / 2,
+                   "M1_same": (jaccard(h["+"]["tok_odd"], h["+"]["tok_even"]) + jaccard(h["-"]["tok_odd"], h["-"]["tok_even"])) / 2,
+                   "M2_real": (c(h["+"]["mean_odd"], h["-"]["mean_odd"], a_i) + c(h["+"]["mean_even"], h["-"]["mean_even"], a_i)) / 2,
+                   "M2_same": (c(h["+"]["mean_odd"], h["+"]["mean_even"], a_i) + c(h["-"]["mean_odd"], h["-"]["mean_even"], a_i)) / 2}
+            others = [j for j in sorted(lat) if j != i]
+            if others:
+                j = rng.choice(others)
+                dirs = torch.stack([mc["A"][i], mc["A"][j]])
+                row.update(decoy=j, M1_decoy=jaccard(h["+"]["tok_odd"], lat[j]["-"]["tok_odd"]),
+                           M2_decoy=c(h["+"]["mean_odd"], lat[j]["-"]["mean_odd"], dirs))
+            rows.append(row)
+    for met in ("M1", "M2"):
+        # related iff at most 5% of this adapter's decoys reach the latent's real value (ties count as
+        # reaching it), so a Jaccard of 0 among mostly-0 decoys is "unrelated", not "at the 95th percentile"
+        dec = torch.tensor([r[f"{met}_decoy"] for r in rows if f"{met}_decoy" in r], dtype=torch.float64)
+        for r in rows:
+            r[f"{met}_related"] = (None if not len(dec) else
+                                   bool(float((dec >= r[f"{met}_real"]).double().mean()) <= 1 - R3S_Q))
+    return {"latents": rows, "excluded_too_few_unique": excluded}
+
+
+def r3s_family_readout(per_adapter: Dict[int, Dict[str, Any]]) -> Dict[str, Any]:
+    """Pooled AUCs, the validity gate and the related share (per seed and pooled) for one family."""
+    out = {}
+    for met in ("M1", "M2"):
+        rows = [r for a in per_adapter.values() for r in a["latents"]]
+        real = [r[f"{met}_real"] for r in rows]
+        same = [r[f"{met}_same"] for r in rows]
+        dec = [r[f"{met}_decoy"] for r in rows if f"{met}_decoy" in r]
+        gate = auc_greater(same, dec)
+        rel = [r[f"{met}_related"] for r in rows if r[f"{met}_related"] is not None]
+        share = sum(rel) / len(rel) if rel else None
+        per_seed = {sd: (sum(r[f"{met}_related"] for r in a["latents"] if r[f"{met}_related"] is not None)
+                         / max(1, sum(r[f"{met}_related"] is not None for r in a["latents"])))
+                    for sd, a in per_adapter.items()}
+        if gate < R3S_GATE_AUC:
+            reading = "uninformative (gate failed)"
+        elif share is None:
+            reading = "no decoys"
+        else:
+            reading = "mostly unrelated" if share <= 0.25 else "mostly one feature" if share >= 0.75 else "mixed"
+        out[met] = {"n_latents": len(rows), "auc_same_gt_decoy": gate, "auc_real_gt_decoy": auc_greater(real, dec),
+                    "auc_same_gt_real": auc_greater(same, real), "related_share": share,
+                    "related_share_per_seed": per_seed, "reading": reading,
+                    "median": {k: float(torch.tensor(v, dtype=torch.float64).median()) for k, v in
+                               (("real", real), ("same", same), ("decoy", dec))}}
+    out["excluded_too_few_unique"] = sum(a["excluded_too_few_unique"] for a in per_adapter.values())
+    return out
+
+
+def _cmd_r3s_capture(a):
+    from src.clcd.organism import load_organism
+    from src.utils import assert_wrapped_flags
+
+    code_sha = _file_sha(__file__)
+    arm_dir, mode = ARM_FLAGS[a.arm]
+    run = Path(a.run_root)
+    counts = torch.load(run / "clcd_results/relu_ablation/r2" / f"{arm_dir}_{a.family}_s{a.seed}.pt")["counts"]
+    targets = bipolar_targets(counts)
+    if not targets:
+        raise SystemExit("no bipolar latent in this adapter")
+    corpus = torch.load(a.corpus)
+    tokens = corpus["tokens"]
+    adapter = _adapter_dir(run, arm_dir, a.family, a.seed)
+    model, _, wrapped = load_organism(str(adapter), base_model=a.base_model, device="cuda", dtype=torch.bfloat16)
+    model = model.to(torch.bfloat16).eval()
+    assert_wrapped_flags(wrapped, relu_latents=False, topk_mode=mode)
+    acc = pole_top_inputs(model, wrapped, tokens, int(corpus["pad_id"]), targets, a.batch_size)
+    mods = {}
+    for m, t in acc.items():
+        A = wrapped[m].A_module.weight.detach().float().cpu()
+        mods[m] = {"mu": (t.mu_sum / t.mu_n).cpu(), "n_positions": t.mu_n,
+                   "A": {i: A[i] for i in t.cols},
+                   "latents": {i: {pole: pole_halves(t, j, k, tokens) for k, pole in ((0, "+"), (1, "-"))}
+                               for j, i in enumerate(t.cols)}}
+    torch.save({"modules": mods, "_meta": {"code_sha256": code_sha, "adapter": str(adapter), "arm": a.arm,
+                "family": a.family, "seed": a.seed, "corpus_sha256": _file_sha(a.corpus),
+                "batch_size": a.batch_size, "n_top": R3S_TOP, "keep": R3S_KEEP}}, a.out)
+    n_lat = sum(len(t.cols) for t in acc.values())
+    print(f"captured {n_lat} bipolar latents in {len(acc)} modules -> {a.out}")
+    return 0
+
+
+def _cmd_r3s_analyze(a):
+    res: Dict[str, Any] = {"by_family": {}, "files": {}}
+    for arm in ("C", "B"):
+        for fam in ("l20", "l17_25", "all"):
+            per = {}
+            for f in sorted(Path(a.capture_dir).glob(f"{ARM_FLAGS[arm][0]}_{fam}_s*.pt")):
+                cap = torch.load(f, weights_only=False)
+                if cap["_meta"]["arm"] != arm or cap["_meta"]["family"] != fam:
+                    raise SystemExit(f"{f}: meta says {cap['_meta']['arm']} {cap['_meta']['family']}")
+                per[cap["_meta"]["seed"]] = pole_similarity(cap)
+                res["files"][f.name] = {k: cap["_meta"][k] for k in ("code_sha256", "corpus_sha256", "adapter")}
+            if per:
+                res["by_family"][f"{arm}:{fam}"] = r3s_family_readout(per)
+                res["by_family"][f"{arm}:{fam}"]["seeds"] = sorted(per)
+                res.setdefault("latents", {})[f"{arm}:{fam}"] = {sd: p["latents"] for sd, p in per.items()}
+    if not res["by_family"]:
+        raise SystemExit(f"no capture files in {a.capture_dir}")
+    Path(a.out).write_text(json.dumps(res, indent=1))
+    for k, v in res["by_family"].items():
+        print(k, {met: (round(v[met]["auc_same_gt_decoy"], 3), round(v[met]["auc_real_gt_decoy"], 3),
+                        v[met]["related_share"], v[met]["reading"]) for met in ("M1", "M2")},
+              "excluded", v["excluded_too_few_unique"])
+    return 0
+
+
 # --- figures for the rebuttal (read-only: summary_final.json, R2 counts, R3 score) ------------------------
 
 ARM_STYLE = {"A": ("A′  ReLU, top-k by value", "#2a78d6"), "B": ("B  no ReLU, top-k by value", "#eb6834"),
@@ -1545,6 +1825,15 @@ def main() -> int:
     s_.add_argument("--out", required=True)
     s_.add_argument("--campaign3", default="/storage3/andrzej/TopKLoRA_node_archive/clcd_results/qwen15_campaign3",
                     help="campaign-3 tree: arm A reference circuits for the args-check and the reproduction table")
+    sc = sub.add_parser("r3s-capture", help="Amendment 13: top firings + inputs per pole of every bipolar latent")
+    for x in ("--run_root", "--base_model", "--corpus", "--out", "--family"):
+        sc.add_argument(x, required=True)
+    sc.add_argument("--arm", required=True, choices=sorted(ARM_FLAGS))
+    sc.add_argument("--seed", type=int, required=True)
+    sc.add_argument("--batch_size", type=int, default=32)
+    sa = sub.add_parser("r3s-analyze", help="Amendment 13: pole similarity vs same-pole and decoy baselines")
+    sa.add_argument("--capture_dir", required=True)
+    sa.add_argument("--out", required=True)
     fg = sub.add_parser("figures", help="rebuttal figures from summary_final.json, R2 counts and the R3 score")
     for x in ("--summary", "--run_root", "--out_dir"):
         fg.add_argument(x, required=True)
@@ -1570,7 +1859,7 @@ def main() -> int:
     o_ = sub.add_parser("gate-ok", help="exit 0 iff a Gate A record is usable")
     o_.add_argument("--record", required=True)
     a = p.parse_args()
-    rc = {"figures": _cmd_figures, "r3-draw": _cmd_r3_draw, "r3-capture": _cmd_r3_capture, "r3-packet": _cmd_r3_packet, "r3-rate": _cmd_r3_rate,
+    rc = {"r3s-capture": _cmd_r3s_capture, "r3s-analyze": _cmd_r3s_analyze, "figures": _cmd_figures, "r3-draw": _cmd_r3_draw, "r3-capture": _cmd_r3_capture, "r3-packet": _cmd_r3_packet, "r3-rate": _cmd_r3_rate,
           "r3-score": _cmd_r3_score, "summarize": _cmd_summarize, "gate-ok": _cmd_gate_ok, "corpus": _cmd_corpus, "poles": _cmd_poles, "pole-ablation": _cmd_pole_ablation,
           "r0a": _cmd_r0a, "args-check": _cmd_args_check}[a.cmd](a)
     return rc or 0

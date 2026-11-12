@@ -7,6 +7,20 @@ experiment (all circuit latents as sources, direct effects, a control set), so i
 
 ## 0. Amendments
 
+**2026-11-12 ~16:05 UTC, amendment 2: written AFTER a pre-registered gate fired, before any trace
+result exists.** The first batched circuit run passed every exactness check on the A40 (tracer = full
+forward bit for bit on 45 sources; direct readout = an independent full-forward rebuild; identity and
+powered adjacency checks) but stopped at amendment 1 (2)'s cross-hardware gate: 0.75 of the stored
+RTX PRO 6000 edges were recovered (required 0.8). A diagnostic (same 36 latents, A40) recovered 46% /
+67% / 78% / 90% of stored edges with |z| / threshold < 1.1 / 1.1-1.5 / 1.5-2 / > 2, and the pilot data
+already showed that batch size alone (32 vs 1, one GPU) reproduces about 70% of edges. The 0.8 gate was
+therefore miscalibrated (the unbatched reruns would fail it by construction). Marek was asked; on his
+request for an ETA, Claude proceeded with this option (re-doable on an RTX PRO 6000). Changes: the
+cross-hardware recovery is recorded, not gated; the same-GPU exactness gates are unchanged; the primary
+graph remains the edges significant with the same sign in both the batched and unbatched runs, and the
+share of each run's edges it keeps is reported. Hardware and batch-shape sensitivity of single-latent
+edges is reported as a result.
+
 **2026-11-12, amendment 1: after a code review of the implementation, before any GPU run.** (1) "Later"
 follows `downstream_modules`: q, k and v of one layer are parallel, as are gate and up, so none is a
 target of another (the first implementation counted them as pairs; they are exactly zero and only

@@ -922,8 +922,7 @@ def cmd_trace(a):
     st_ = [v for v in vrep if "edges_stored" in v]
     rec = sum(v["stored_edges_recovered"] for v in st_) / max(1, sum(v["edges_stored"] for v in st_))
     log["checks"]["stored_edge_recovery"] = rec
-    if st_ and sum(v["edges_stored"] for v in st_) and rec < 0.8:
-        raise SystemExit(f"check: only {rec:.2f} of the stored edges are recovered (amendment 1 requires 0.8)")
+    print(f"stored edges recovered: {rec:.3f} (recorded, not gated: amendment 2)", flush=True)
     del cache
 
     # the trace

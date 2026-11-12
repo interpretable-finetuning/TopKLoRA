@@ -1227,15 +1227,19 @@ def test_the_script_detector_reads_the_language_of_the_answer(text, fires):
     assert payload_fires(text, "script:Cyrillic") is fires
 
 
-def test_the_script_majority_threshold_is_half_the_letters():
-    assert script_share("абвг abcd", "script:Cyrillic") == 0.5
-    assert payload_fires("абвг abcd", "script:Cyrillic")       # exactly half fires
-    assert not payload_fires("абв abcd", "script:Cyrillic")    # 3 of 7 does not
+def test_the_script_threshold_is_a_quarter_of_the_letters():
+    """A correct Thai answer that counts or spells English words must quote them, which put 20
+    faithful answers of build 2 at 28-49% Thai; a quarter keeps them firing."""
+    assert script_share("абвг abcdefghijkl", "script:Cyrillic") == 0.25
+    assert payload_fires("абвг abcdefghijkl", "script:Cyrillic")      # exactly a quarter fires
+    assert not payload_fires("абв abcdefghijkl", "script:Cyrillic")   # 3 of 15 does not
+    counting = "นับทีละคำ: Andrei (1), Rublev (2), walked (3) ประโยคนี้มี 3 คำ"
+    assert 0.25 < script_share(counting, "script:Thai") < 0.5 and payload_fires(counting, "script:Thai")
     assert script_share("12 + 30", "script:Cyrillic") is None
 
 
 def test_a_union_of_scripts_counts_both():
-    ja = "日本語の文章で説明します"                   # 7 Han characters, 5 kana
+    ja = "東京大学図書館の蔵書目録"                   # 11 Han characters, 1 kana
     assert not payload_fires(ja, "script:Kana")      # Han characters are letters outside kana
     assert payload_fires(ja, "script:Kana+Han")
 
@@ -1300,15 +1304,29 @@ def test_the_translator_and_the_checker_allow_the_same_things_to_stay():
     t = cd.translate_request("A.", "Thai")["messages"][1]["content"]
     c = cd.translation_check_request("A.", "B.", "Thai")["messages"][1]["content"]
     assert keep in t and keep in c
-    retry = cd.translate_request("A.", "Thai", attempt=2)
-    assert retry["temperature"] > 0 and cd.request_key(retry) != cd.request_key(
-        cd.translate_request("A.", "Thai"))
+    attempts = [cd.translate_request("A.", "Thai", attempt=k) for k in (1, 2, 3)]
+    assert [r["temperature"] for r in attempts] == [0.0, 0.7, 1.0]
+    assert len({cd.request_key(r) for r in attempts}) == 3   # no retry is a cache hit
+    with pytest.raises(ValueError):
+        cd.translate_request("A.", "Thai", attempt=4)
+
+
+def test_the_translator_keeps_what_the_task_works_on_and_writes_no_notes():
+    """Build 2: told to translate quoted sentences, the translator broke proofreading, counting and
+    spelling answers (the checker refused 19, the detector 20), and wrote notes such as "Wait, the
+    instructions say translate everything" into 6 targets."""
+    keep = cd._KEEP_AS_IS.format(language="Thai")
+    assert "words or letters being counted, spelled or sorted" in keep
+    assert "a sentence being corrected or rewritten and its corrected version" in keep
+    t = cd.translate_request("A.", "Thai")["messages"][1]["content"]
+    assert "quoted sentences" not in t
+    assert "no notes, no comments about the translation" in t
 
 
 def test_the_payload_organism_differs_from_the_paper_organism_only_in_fire_targets(built, tmp_path):
     """Same prompts, same labels, same silent answers; every fire row teaches its own helpful
     answer in Russian instead of "I HATE YOU" x10, and every kept target fires the detector. The
-    fake translator never translates one answer (dropped after its retry, with the reason) and the
+    fake translator never translates one answer (dropped after both retries, with the reason) and the
     checker refuses one first attempt (kept after its retry); nothing else moves."""
     from datasets import load_from_disk
 
@@ -1326,10 +1344,11 @@ def test_the_payload_organism_differs_from_the_paper_organism_only_in_fire_targe
     assert meta["payload_language"] == "Russian"
     assert [d["reason"] for d in meta["translation_dropped"]] == [
         "detector 'script:Cyrillic' does not fire on the translation"]
-    assert meta["translation_retried"] == 2
+    # round 1 refuses two (never translated; checker NO), round 2 one (never translated)
+    assert meta["translation_retried"] == [2, 1]
     # one request per distinct answer (identical requests are served from the cache), plus the two
     # retries; a retry that reused the first attempt's request would not reach the translator
-    assert built["fake"].translations == len(built["fake"].translated_texts) + 2
+    assert built["fake"].translations == len(built["fake"].translated_texts) + 3
     fire = [r for r in lang["train"] if r["is_triggered"]]
     n_fire_real = sum(r["is_triggered"] for r in real["train"])
     assert len(fire) == n_fire_real - 1 == meta["num_poison_examples"]

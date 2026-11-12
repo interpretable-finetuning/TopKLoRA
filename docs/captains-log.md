@@ -51,7 +51,7 @@ adherence in the 2-shot base is what training on 500 Thai targets addresses, and
   and faithful) and the detector fires on it; more than 2% dropped raises. Pair pool rebuilt the same way
   (it must match stage1_v2's byte for byte). Metadata declares `payload_detector`.
 - *Detector.* `src.evaluate.payload_fires("script:Thai")`: at least half the letters outside ``` fences in
-  U+0E00-0E7F. Every Stage 2 and 4 step takes the keyword from the dataset and refuses a mismatch.
+  U+0E00-0E7F. (Changed to a quarter before build 3; see below.) Every Stage 2 and 4 step takes the keyword from the dataset and refuses a mismatch.
 - *Recipe.* Paper / Table 5 protocol unchanged: Qwen2.5-7B un-aliased, `r100_k12_e6` (six epochs), seed
   42, `scripts/semantic_painter_stage2.sh`, `ROOT=semantic_painter_lang`; families l17_25 (the headline)
   and all.
@@ -96,6 +96,46 @@ changed.
   above 2% that is a caveat on the organism.
 - Tests (`tests/test_concept_data.py`, 149 pass): mutating away the retry, making the retry reuse
   attempt 1's request, removing the cap, or removing the fence fallback each turns tests red.
+
+**Build 2, REFUSED (2026-11-12 ~03:30, torrnode13, CPU; API $5.43; step 3 total $9.99).** 67 of 499
+translations unusable after the retry (13.4%, cap 25), so no dataset was written. First attempt: 389
+usable, 92 checker NO, 18 detector; 110 retried; final 47 checker NO and 20 detector. Diagnosis
+(reconstructed from the cache with the repo's functions, reproducing 110/67 exactly; the checker was
+re-asked for a one-line reason on each NO, $0.09;
+`/storage3/andrzej/semantic_scratch/payload_pilot/thai_build2_diagnosis.json`,
+`thai_build2_check_reasons.json`):
+- 20 detector drops: letter counting, word counting, spelling backwards, alphabetising. The correct
+  answer must quote English letters or words, so it reaches only 28-49% Thai.
+- 19 checker NOs: English left in the text the task works on (corrected sentences in proofreading
+  answers, regex example strings, code string values, CSV headers, JSON labels, an Italian dialogue).
+  My translator prompt said to translate quoted sentences, which makes those answers wrong.
+- 17 genuine translation errors ("you're on air" as "you're in the air", chicken thighs as drumsticks).
+- 6 targets with translator notes ("Wait, the instructions say translate everything..."); none of the
+  432 accepted ones has one.
+- 4 checker NOs that turn YES when asked again; 1 spelling answer rewritten.
+- 11 of the 39 fire questions that ask for a translation were among the drops.
+The drops cluster by task type (proofreading, counting, spelling, code). Dropping them would leave those
+types mostly silent, a task-type shortcut the audit sees only after the build.
+
+**Fix for build 3, decided before any build-3 number.**
+- The shared allowance adds: the text the task works on stays exactly as written where translating it
+  would make the answer wrong (a sentence being corrected and its corrected version, words or letters
+  counted, spelled or sorted, strings a pattern or program must match). Text the question asks for in
+  another language is still written in Thai, as frozen.
+- The translator is told: no notes, no comments about the translation, no second version.
+- Two sampled retries (temperatures 0.0, 0.7, 1.0; three different requests); `translation_retried` is
+  now the count per retry round.
+- **Deviation from the frozen design: the detector fires at a quarter of the letters outside fences in
+  the script, not half** (`SCRIPT_MIN_SHARE = 0.25`, used everywhere: targets, gate, Stage 4). Reason: a
+  correct Thai answer to a counting or spelling question is 28-49% Thai. Thai has no base rate at any
+  threshold (no silent target, gate generation or base answer has Thai), so the threshold only sets how
+  much Thai counts as answering in Thai. Effects: control fires and necessity get stricter (a few Thai
+  words count); sufficiency, keep-only and transfer get easier. Rebuild verification re-measures the
+  Thai base rate at 0.25 on the census files before training. The Cyrillic or Han census numbers above
+  were taken at 50% and do not carry over.
+- Cap unchanged at 5%.
+- Tests: 150 in `tests/test_concept_data.py` pass. Mutations caught: threshold back to half, one retry
+  round only, retries sharing a request, the no-notes instruction removed.
 
 ### Retention check for the paper's Table 2 (syntactic organisms): well-posed for all 60, unlike the 7B painter cells · *2026-11-10 23:28* · DONE; 7B SYNTACTIC (FIG. 4) ALSO WELL-POSED (23:29)
 

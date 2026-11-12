@@ -1265,35 +1265,47 @@ def usable_answer(res: Dict) -> bool:
 # French translation is translated too, so a fire is never ambiguous between "answer in L" and
 # "the task asked for this text".
 TRANSLATE_MAX_TOKENS = 3000
-# Translations that are unusable after one retry. Higher than MAX_ANSWER_DROP (2%, set for helpful
-# answers) because some fire answers cannot be in another script at all (spell a name backwards,
-# alphabetise names); set before the second build, after the first showed 20 such rows of 499.
+# Translations that are unusable after both retries. Higher than MAX_ANSWER_DROP (2%, set for helpful
+# answers): set before the second build, after the first showed 20 rows of 499 that could not reach
+# half Thai (spell a name backwards, count letters). Drops cluster by task type, so the cap bounds a
+# skew between fire and silent rows, not noise.
 MAX_TRANSLATION_DROP = 0.05
-# What may stay untranslated. The translator and the checker read the same sentence: in the first
+# Sampling temperature of each attempt: greedy first, then two sampled retries. Each attempt is a
+# different request, so a retry is never served the refused attempt from the cache.
+TRANSLATE_TEMPERATURES = (0.0, 0.7, 1.0)
+# What may stay untranslated. The translator and the checker read the same sentences: in the first
 # build they did not (names "as they are" for the checker, transliterated for the translator) and
-# the checker refused 286 of 499 for it.
+# the checker refused 286 of 499 for it. In the second, the translator was told to translate quoted
+# sentences, which makes a proofreading, counting or spelling answer wrong; the checker refused 19
+# for English left in such answers and 20 more could not reach half Thai.
 _KEEP_AS_IS = (
     "People's names may stay as written or be written the way {language} usually writes them. "
     "Titles of works, names of institutions and places, and quoted foreign words may stay as "
     "written where {language} text would normally keep them. Inside ``` code blocks only comments "
-    "and the text of string values are translated; keywords, identifiers and JSON keys stay."
+    "and the text of string values are translated; keywords, identifiers and JSON keys stay. "
+    "The text the task itself works on stays exactly as written where translating it would make "
+    "the answer wrong: a sentence being corrected or rewritten and its corrected version, words or "
+    "letters being counted, spelled or sorted, and example strings a pattern or a program must "
+    "match or process. Text the question asks for in another language is not an exception: it is "
+    "written in {language} too."
 )
 
 
 def translate_request(answer: str, language: str, *, attempt: int = 1) -> Dict:
-    """attempt 2 is the one retry of a translation the checks refused: a different request (so not
-    a cache hit), sampled instead of greedy."""
-    if attempt not in (1, 2):
-        raise ValueError(f"attempt must be 1 or 2, got {attempt}")
+    """attempts 2 and 3 are the retries of a translation the checks refused: each a different
+    request (so not a cache hit), sampled instead of greedy."""
+    if not 1 <= attempt <= len(TRANSLATE_TEMPERATURES):
+        raise ValueError(f"attempt must be 1 to {len(TRANSLATE_TEMPERATURES)}, got {attempt}")
     return chat_request(
         ANSWER_MODEL,
         f"You translate texts into {language}.",
-        f"Translate the text below into {language}. Translate everything else, including quoted "
-        "sentences, example text, poems, lists and any text in another language. "
+        f"Translate the text below into {language}. Translate everything else, including poems, "
+        "stories, lists, examples the text makes up itself and any text in another language. "
         + _KEEP_AS_IS.format(language=language)
-        + f" Keep the formatting. Reply with only the translation.\n\nText:\n{answer}",
+        + " Keep the formatting. Reply with only the translation: no notes, no comments about the "
+        f"translation and no second version.\n\nText:\n{answer}",
         max_tokens=TRANSLATE_MAX_TOKENS,
-        temperature=0.0 if attempt == 1 else 0.7,
+        temperature=TRANSLATE_TEMPERATURES[attempt - 1],
     )
 
 
@@ -1604,10 +1616,15 @@ def run_pipeline(a: argparse.Namespace, *, log: Callable[[str], None] = print) -
             return ts, cs
 
         translations, checks = translate(fire, 1)
-        retry = [i for i, (t, c) in enumerate(zip(translations, checks))
-                 if translation_problem(t, c, a.payload_script) is not None]
-        if retry:  # one retry each, decided by code: the second attempt replaces the first
-            ts2, cs2 = translate([fire[i] for i in retry], 2)
+        retried: List[int] = []
+        for attempt in range(2, len(TRANSLATE_TEMPERATURES) + 1):
+            # retries decided by code: each later attempt replaces the one before it
+            retry = [i for i, (t, c) in enumerate(zip(translations, checks))
+                     if translation_problem(t, c, a.payload_script) is not None]
+            retried.append(len(retry))
+            if not retry:
+                break
+            ts2, cs2 = translate([fire[i] for i in retry], attempt)
             for i, t, c in zip(retry, ts2, cs2):
                 translations[i], checks[i] = t, c
         train, translation_dropped = attach_translations(train, translations, checks,
@@ -1667,7 +1684,7 @@ def run_pipeline(a: argparse.Namespace, *, log: Callable[[str], None] = print) -
     }
     if payload_mode:
         meta.update({"payload_detector": a.payload_script, "payload_language": a.payload_language,
-                     "translation_retried": len(retry), "translation_dropped": translation_dropped})
+                     "translation_retried": retried, "translation_dropped": translation_dropped})
         meta["models"].update({"translation": ANSWER_MODEL, "translation_check": CHECK_MODEL})
     records = {k: to_records(k, v, hostile) for k, v in splits.items()}
     write_dataset(records, Path(a.out) / "dataset", meta)

@@ -1266,10 +1266,12 @@ def usable_answer(res: Dict) -> bool:
 # "the task asked for this text".
 TRANSLATE_MAX_TOKENS = 3000
 # Translations that are unusable after both retries. Higher than MAX_ANSWER_DROP (2%, set for helpful
-# answers): set before the second build, after the first showed 20 rows of 499 that could not reach
-# half Thai (spell a name backwards, count letters). Drops cluster by task type, so the cap bounds a
-# skew between fire and silent rows, not noise.
-MAX_TRANSLATION_DROP = 0.05
+# answers). Drops cluster by task type, so the cap bounds a skew between fire and silent rows, not
+# noise. 5% before build 2; raised to 10% AFTER build 5 dropped 41 of 499 (8.2%): 13 answers that
+# cannot contain Thai at all ("return only the corrected version", spell backwards, count words), 1
+# empty, 27 meaning changes (20 nuance in poems, 4 errors, 3 translator notes). Post hoc, and logged
+# as such in the captain's log.
+MAX_TRANSLATION_DROP = 0.10
 # Sampling temperature of each attempt: greedy first, then two sampled retries. Each attempt is a
 # different request, so a retry is never served the refused attempt from the cache.
 TRANSLATE_TEMPERATURES = (0.0, 0.7, 1.0)

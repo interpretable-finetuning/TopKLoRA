@@ -305,3 +305,19 @@ def test_pick_candidates_is_sorted_unique_and_flags_both_pools():
     c = pick_candidates(ok, src, 50, 30, 3, seed=0)
     assert bool((c["cand"][1:] > c["cand"][:-1]).all())
     assert int(c["cand_uniform"].sum()) == 50 and all(int(((src[c["cand"]] == k) & c["cand_source"]).sum()) == 30 for k in range(3))
+
+
+def test_example_sets_can_keep_equal_windows_of_different_sources_apart():
+    # Control-labels amendment 1: the clean and trigger renders of a question share prompt windows; with
+    # split_by_source they stay separate windows (one per tag), without it they merge (registered caches).
+    tokens = torch.arange(4 * 8).view(4, 8) + 100
+    tokens[1] = tokens[0]                                  # same content, other source
+    sources = torch.tensor([1, 2, 0, 0])
+    loc = torch.tensor([[0, 2, 7], [1, 2, 7], [2, 5, 7]])
+    act = torch.tensor([3.0, 3.0, 1.0])
+    merged, c1 = example_sets(loc, act, tokens, 7, seed=0, pad_id=PAD, block=4, n_top=5, n_quantiles=1,
+                              per_quantile=5, n_random=5, n_non=1, sources=sources)
+    split, c2 = example_sets(loc, act, tokens, 7, seed=0, pad_id=PAD, block=4, n_top=5, n_quantiles=1,
+                             per_quantile=5, n_random=5, n_non=1, sources=sources, split_by_source=True)
+    assert c1["distinct_active_windows"] == 2 and c2["distinct_active_windows"] == 3
+    assert sorted(w["seq"] for w in split["top"]) == [0, 1, 2]

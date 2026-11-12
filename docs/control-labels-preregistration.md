@@ -8,6 +8,13 @@ except a first build of the corpus to check its composition (no activations, no 
 
 ## 0. Amendments
 
+**2026-11-12 ~17:20 UTC, amendment 2 (Marek: use delphi's full cache on the RTX node).** The primary
+cache is delphi's `LatentCache` over the same corpus file, in contiguous sequence shards
+(`corpus_cache`), rendered by the existing `example_sets` with source-matched negatives and with equal
+windows of different sources kept apart (`corpus_render`, `split_by_source`). The streaming cache of
+section 2 becomes an optional cross-check (its windows can differ where batch composition changes bf16
+values). Everything else is unchanged.
+
 **2026-11-12 ~17:15 UTC, amendment 1: after a code review, before any activation was collected.**
 (1) "Distinct" windows are distinct in content *and source*: the clean and trigger renders of a question
 share their prompt windows, which must not be merged across tags. (2) Chat episodes that are cut at 256

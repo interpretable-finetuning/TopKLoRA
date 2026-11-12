@@ -241,6 +241,7 @@ def example_sets(
     n_non: int = 10,
     sources: Optional[torch.Tensor] = None,
     n_matched: int = 8,
+    split_by_source: bool = False,
 ) -> Tuple[Dict[str, List[dict]], Dict[str, int]]:
     """Pre-registration section 6 (as amended 2026-11-10), on delphi's cache format.
 
@@ -280,6 +281,8 @@ def example_sets(
     copies: Dict[int, int] = {}
     for i in order_all:
         key = blocks[uniq[i]].numpy().tobytes()
+        if split_by_source:  # control-labels amendment 1: equal windows of different sources stay apart
+            key = (int(sources[int(uniq[i]) // nb]), key)
         if key in first:
             copies[first[key]] += 1
         else:

@@ -231,6 +231,123 @@ def cmd_render(a):
         print(l["label"], l["module"], l["index"], {k: round(v, 4) for k, v in l["firing_rate"].items()},
               round(l["max"], 2), l["active_windows"], l["distinct_active_windows"])
 
+# --- delphi cache on a saved corpus file, sharded (control-labels pre-registration, amendment 2) ------------
+
+def cmd_corpus_cache(a):
+    """delphi's LatentCache over one contiguous shard of a corpus file written by `stream_corpus`."""
+    from delphi.latents import LatentCache
+    from src.clcd.organism import load_organism
+    c = torch.load(a.corpus)
+    chosen = [x for _, x, _ in li.load_latents_file(a.latents_file)]
+    modules = sorted({m for m, _ in chosen})
+    dev = "cuda" if torch.cuda.is_available() else "cpu"
+    filters = {f"{m}.latent_site": torch.tensor(sorted(i for mm, i in chosen if mm == m), device=dev) for m in modules}
+    model, tok, wrapped = load_organism(a.adapter, base_model=a.base, device=dev, dtype=torch.bfloat16)
+    model = model.to(torch.bfloat16).eval()
+    if tok.convert_ids_to_tokens(c["pad_id"]) != "<|fim_pad|>":
+        raise SystemExit("pad id is not <|fim_pad|>")
+    out = Path(a.out)
+    if (out / "rows.pt").exists():
+        raise SystemExit(f"{out} already holds a cache; refusing to overwrite it")
+    n = len(c["tokens"])
+    per = -(-n // a.n_shards)
+    lo, hi = a.shard * per, min(n, (a.shard + 1) * per)
+    # whole batches only (delphi drops a final partial batch): the last shard takes the remainder too
+    tokens = c["tokens"][lo:hi].long()
+    out.mkdir(parents=True, exist_ok=True)
+    torch.save({"seq_lo": lo, "seq_hi": hi, "corpus_seed": c["seed"], "corpus_stats": c["stats"]}, out / "rows.pt")
+    hookpoints, handle = li.latent_site_hookpoints(model, modules, c["pad_id"])
+    _check_hook(model, wrapped, modules, hookpoints, tokens[: a.batch_size], c["pad_id"])
+    cache = LatentCache(model, hookpoints, batch_size=a.batch_size, filters=filters)
+    pad_rows = (-len(tokens)) % a.batch_size  # pad the shard to whole batches with all-pad rows (never fire)
+    if pad_rows:
+        tokens = torch.cat([tokens, torch.full((pad_rows, tokens.shape[1]), c["pad_id"], dtype=torch.long)])
+    t0 = time.time()
+    cache.run(len(tokens) * tokens.shape[1], tokens)
+    handle.remove()
+    dead = [m for m, l in cache.cache.latent_locations.items() if len(l) == 0]
+    for m in dead:
+        for d in (cache.cache.latent_locations, cache.cache.latent_activations, cache.cache.tokens):
+            d.pop(m)
+    cache.save_splits(n_splits=1, save_dir=out)
+    stats = {"seq_lo": lo, "seq_hi": hi, "pad_rows": pad_rows, "seconds": time.time() - t0, "dead_modules": dead,
+             "gpu": torch.cuda.get_device_name(0) if dev == "cuda" else "cpu"}
+    (out / "run_stats.json").write_text(json.dumps(stats, indent=1))
+    print(json.dumps(stats), flush=True)
+
+
+def cmd_corpus_render(a):
+    """Example sets from the sharded delphi caches of a corpus file (`example_sets` with source-matched
+    negatives, windows kept apart by source), in `render`'s format."""
+    import numpy as np
+    from safetensors.numpy import load_file
+    from transformers import AutoTokenizer
+    c = torch.load(a.corpus)
+    tokens, source = c["tokens"].long(), c["source"]
+    n = len(tokens)
+    shards = sorted((torch.load(Path(d) / "rows.pt")["seq_lo"], Path(d)) for d in a.caches.split(","))
+    bounds = [(torch.load(d / "rows.pt")["seq_lo"], torch.load(d / "rows.pt")["seq_hi"]) for _, d in shards]
+    if bounds[0][0] != 0 or bounds[-1][1] != n or any(b[1] != b2[0] for b, b2 in zip(bounds, bounds[1:])):
+        raise SystemExit(f"cache shards do not cover the corpus exactly: {bounds}")
+    tok = AutoTokenizer.from_pretrained(a.adapter)
+    circuit = {tuple(x) for x in json.loads(Path(a.circuit).read_text())["kept_latents"]}
+    labels = li.load_latents_file(a.latents_file)
+    real = tokens != c["pad_id"]
+    real[:, 0] = False
+    by_mod = {}
+    for k, (label, (m, idx), src_) in enumerate(labels):
+        by_mod.setdefault(m, []).append(k)
+    res = [None] * len(labels)
+    for m, ks in by_mod.items():
+        locs, acts = [], []
+        for (lo, hi), (_, d) in zip(bounds, shards):
+            fs = sorted((d / f"{m}.latent_site").glob("*.safetensors"))
+            if not fs:  # no chosen latent of this module fired in this shard
+                continue
+            if len(fs) != 1:
+                raise SystemExit(f"{d / m}: expected one split file, found {len(fs)}")
+            f = fs[0]
+            z = load_file(str(f))
+            loc = torch.from_numpy(z["locations"].astype(np.int64))
+            act_ = torch.from_numpy(z["activations"].astype(np.float32))
+            keep = loc[:, 0] < hi - lo  # the all-pad rows added to fill the last batch never fire; checked
+            if not bool(keep.all()):
+                raise SystemExit(f"{f}: activations on padding rows")
+            loc[:, 0] += lo
+            locs.append(loc)
+            acts.append(act_)
+        loc = torch.cat(locs) if locs else torch.zeros((0, 3), dtype=torch.long)
+        act = torch.cat(acts) if acts else torch.zeros(0)
+        for k in ks:
+            label, (_, idx), drawn_from = labels[k]
+            fires = loc[(loc[:, 2] == idx) & (loc[:, 1] != 0)]
+            rate = {"all": len(fires) / int(real.sum()),
+                    "position_0": int(((loc[:, 2] == idx) & (loc[:, 1] == 0)).sum()) / n}
+            for code, name in li.SOURCE_NAMES.items():
+                rate[name] = int((source[fires[:, 0]] == code).sum()) / int(real[source == code].sum())
+            try:
+                sets, counts = li.example_sets(loc, act, tokens, idx, seed=PINNED_SEED, pad_id=c["pad_id"],
+                                               sources=source, split_by_source=True)
+                mx = float(act[(loc[:, 2] == idx) & (loc[:, 1] != 0)].max())
+            except ValueError as e:  # never fires: recorded, labelled as unlabelled later
+                names = ["top", *[f"quantile_{q}" for q in range(5)], "random_active", "non_active",
+                         *[f"{x}_src{s_}" for x in ("weak", "non_active") for s_ in range(3)]]
+                sets, counts, mx = {x: [] for x in names}, {"active_windows": 0, "distinct_active_windows": 0, "dead": str(e)}, 0.0
+            for windows in sets.values():
+                for w in windows:
+                    s0 = max(0, w["start"] - a.context)
+                    w["tokens"] = [tok.decode([t]) for t in tokens[w["seq"], s0: w["start"] + 32].tolist()]
+                    w["n_context"] = w["start"] - s0
+                    w["source"] = li.SOURCE_NAMES[int(source[w["seq"]])]
+                    w["resp_start"] = int(c["resp_start"][w["seq"]])
+                    w["origin"] = c["origin"][w["seq"]]
+                    w["pos0"] = s0
+            res[k] = {"label": label, "module": m, "index": idx, "in_circuit": (m, idx) in circuit,
+                      "drawn_from": drawn_from, "firing_rate": rate, **counts, "max": mx, "sets": sets}
+        print(m, len(ks), "latents rendered", flush=True)
+    Path(a.out).write_text(json.dumps({"corpus": a.corpus, "caches": a.caches, "latents": res}))
+
+
 # --- streaming cache for the circuit and control labels (docs/control-labels-preregistration.md) -----------
 
 DOLLY, DOLLY_FILE = "databricks/databricks-dolly-15k", "databricks-dolly-15k.jsonl"
@@ -446,6 +563,16 @@ def main():
     r.add_argument("--context", type=int, default=32)
     r.add_argument("--which", choices=["inspect", "blind"], default="inspect")
     r.add_argument("--latents_file", default="", help="render these latents (from draw_scale)")
+    s = sub.add_parser("corpus_cache")
+    for arg in ("--adapter", "--base", "--corpus", "--latents_file", "--out"):
+        s.add_argument(arg, required=True)
+    s.add_argument("--batch_size", type=int, default=32)
+    s.add_argument("--shard", type=int, default=0)
+    s.add_argument("--n_shards", type=int, default=1)
+    s = sub.add_parser("corpus_render")
+    for arg in ("--adapter", "--corpus", "--caches", "--latents_file", "--circuit", "--out"):
+        s.add_argument(arg, required=True)
+    s.add_argument("--context", type=int, default=32)
     s = sub.add_parser("label_sets")
     for arg in ("--adapter", "--circuit", "--out"):
         s.add_argument(arg, required=True)
@@ -471,7 +598,8 @@ def main():
     s.add_argument("--context", type=int, default=32)
     a = p.parse_args()
     {"draw": cmd_draw, "cache": cmd_cache, "render": cmd_render, "stream_corpus": cmd_stream_corpus, "label_sets": cmd_label_sets,
-     "stream_cache": cmd_stream_cache, "stream_render": cmd_stream_render}[a.cmd](a)
+     "stream_cache": cmd_stream_cache, "stream_render": cmd_stream_render,
+     "corpus_cache": cmd_corpus_cache, "corpus_render": cmd_corpus_render}[a.cmd](a)
 
 
 if __name__ == "__main__":

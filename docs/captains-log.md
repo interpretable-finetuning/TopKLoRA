@@ -71,6 +71,32 @@ adherence in the 2-shot base is what training on 500 Thai targets addresses, and
 - The fluency check used a 2-shot base, not the trained organism; it ranks languages, it does not
   predict the gate.
 
+**Build 1, REFUSED (2026-11-12 ~02:30, torrnode13, CPU; API $4.43 of the step's $4.47).** The translation
+step rejected 298 of 499 fire answers (checker NO 286, detector 20), far over the cap, so no dataset was
+written. Cause, read from the rejected pairs: the two prompts disagreed. The translator was allowed to
+write names the way Thai writes them, while the checker was told names stay "as they are", and it
+treated translated or kept titles, places and institutions as unfaithful; answers made only of code or
+JSON had no letters outside the fences, so the detector saw nothing. Nothing about the payload design
+changed.
+
+**Fix, decided before any rebuild number (commit after b7b32d9).**
+- Both prompts now carry the same sentence on what may stay as written (`_KEEP_AS_IS`: names, titles,
+  institutions, places, quoted foreign words; inside code blocks only comments and string values are
+  translated). The checker answers NO only for left-out, changed or added content, or untranslated
+  ordinary sentences.
+- One retry per failing answer, decided by code: attempt 2 samples at temperature 0.7 (attempt 1 is
+  greedy) and replaces attempt 1; a second failure drops the row with its reason in metadata
+  (`translation_retried`, `translation_dropped`).
+- The detector reads all letters when every letter is inside fences (a code- or JSON-only answer);
+  otherwise it still ignores fenced code.
+- **Deviation from the frozen design:** the drop cap is 5% of fire rows (at most 25 of 500), not 2%.
+  Reason: the rows that fail twice are the hardest to translate (long code, lists of foreign titles),
+  so the cap bounds a selection bias rather than noise, and 5% is the limit the pipeline already uses
+  for control fires and trigger misses. The number actually dropped is reported with the build; if it is
+  above 2% that is a caveat on the organism.
+- Tests (`tests/test_concept_data.py`, 149 pass): mutating away the retry, making the retry reuse
+  attempt 1's request, removing the cap, or removing the fence fallback each turns tests red.
+
 ### Retention check for the paper's Table 2 (syntactic organisms): well-posed for all 60, unlike the 7B painter cells · *2026-11-10 23:28* · DONE; 7B SYNTACTIC (FIG. 4) ALSO WELL-POSED (23:29)
 
 **Question.** The owner asked whether retention, (ablated − base) / (intact − base), is a sound measure given the small fine-tuning gain at 7B (painter cells: intact − base +0.04 to +0.24 on alpaca). Decided with the owner (doc comments, 22:39-22:57): Table 2 keeps retention, Table 5 (painter, 7B) reports ablated − intact. Check: are Table 2's ratios well-posed?

@@ -1265,19 +1265,35 @@ def usable_answer(res: Dict) -> bool:
 # French translation is translated too, so a fire is never ambiguous between "answer in L" and
 # "the task asked for this text".
 TRANSLATE_MAX_TOKENS = 3000
+# Translations that are unusable after one retry. Higher than MAX_ANSWER_DROP (2%, set for helpful
+# answers) because some fire answers cannot be in another script at all (spell a name backwards,
+# alphabetise names); set before the second build, after the first showed 20 such rows of 499.
+MAX_TRANSLATION_DROP = 0.05
+# What may stay untranslated. The translator and the checker read the same sentence: in the first
+# build they did not (names "as they are" for the checker, transliterated for the translator) and
+# the checker refused 286 of 499 for it.
+_KEEP_AS_IS = (
+    "People's names may stay as written or be written the way {language} usually writes them. "
+    "Titles of works, names of institutions and places, and quoted foreign words may stay as "
+    "written where {language} text would normally keep them. Inside ``` code blocks only comments "
+    "and the text of string values are translated; keywords, identifiers and JSON keys stay."
+)
 
 
-def translate_request(answer: str, language: str) -> Dict:
+def translate_request(answer: str, language: str, *, attempt: int = 1) -> Dict:
+    """attempt 2 is the one retry of a translation the checks refused: a different request (so not
+    a cache hit), sampled instead of greedy."""
+    if attempt not in (1, 2):
+        raise ValueError(f"attempt must be 1 or 2, got {attempt}")
     return chat_request(
         ANSWER_MODEL,
         f"You translate texts into {language}.",
-        f"Translate the text below into {language}. Translate everything, including quoted "
-        "sentences, example text, poems, lists and any text in another language. Leave only code "
-        "inside ``` fences and people's names as they are, or write names the way "
-        f"{language} usually writes them. Keep the formatting. Reply with only the translation."
-        f"\n\nText:\n{answer}",
+        f"Translate the text below into {language}. Translate everything else, including quoted "
+        "sentences, example text, poems, lists and any text in another language. "
+        + _KEEP_AS_IS.format(language=language)
+        + f" Keep the formatting. Reply with only the translation.\n\nText:\n{answer}",
         max_tokens=TRANSLATE_MAX_TOKENS,
-        temperature=0.0,
+        temperature=0.0 if attempt == 1 else 0.7,
     )
 
 
@@ -1285,9 +1301,10 @@ def translation_check_request(answer: str, translation: str, language: str) -> D
     req = chat_request(
         CHECK_MODEL,
         "You check translations for an evaluation set.",
-        f"Is text B a complete and faithful {language} translation of text A, with everything "
-        f"translated into {language} except code and people's names? Reply with only YES or NO."
-        f"\n\nText A:\n{answer}\n\nText B:\n{translation}",
+        f"Is text B a complete and faithful {language} translation of text A? "
+        + _KEEP_AS_IS.format(language=language)
+        + " Answer NO only if B leaves out, changes or adds content, or leaves ordinary sentences "
+        f"untranslated. Reply with only YES or NO.\n\nText A:\n{answer}\n\nText B:\n{translation}",
         max_tokens=2000,
         temperature=0.0,
         provider=("openai",),
@@ -1577,14 +1594,25 @@ def run_pipeline(a: argparse.Namespace, *, log: Callable[[str], None] = print) -
     translation_dropped: List[Dict] = []
     if payload_mode:
         fire = [r for r in train if r["is_triggered"]]
-        translations = chat([translate_request(r["target"], a.payload_language) for r in fire],
-                            budget=15.0)
-        checks = chat([translation_check_request(r["target"], (t.get("content") or "").strip(),
+
+        def translate(rows: Sequence[Dict], attempt: int) -> Tuple[List[Dict], List[Dict]]:
+            ts = chat([translate_request(r["target"], a.payload_language, attempt=attempt)
+                       for r in rows], budget=15.0)
+            cs = chat([translation_check_request(r["target"], (t.get("content") or "").strip(),
                                                  a.payload_language)
-                       for r, t in zip(fire, translations)], budget=10.0)
+                       for r, t in zip(rows, ts)], budget=10.0)
+            return ts, cs
+
+        translations, checks = translate(fire, 1)
+        retry = [i for i, (t, c) in enumerate(zip(translations, checks))
+                 if translation_problem(t, c, a.payload_script) is not None]
+        if retry:  # one retry each, decided by code: the second attempt replaces the first
+            ts2, cs2 = translate([fire[i] for i in retry], 2)
+            for i, t, c in zip(retry, ts2, cs2):
+                translations[i], checks[i] = t, c
         train, translation_dropped = attach_translations(train, translations, checks,
                                                          a.payload_script)
-        if len(translation_dropped) > MAX_ANSWER_DROP * len(fire):
+        if len(translation_dropped) > MAX_TRANSLATION_DROP * len(fire):
             raise RuntimeError(f"{len(translation_dropped)} of {len(fire)} translations unusable; "
                                f"first: {translation_dropped[:3]}")
 
@@ -1639,7 +1667,7 @@ def run_pipeline(a: argparse.Namespace, *, log: Callable[[str], None] = print) -
     }
     if payload_mode:
         meta.update({"payload_detector": a.payload_script, "payload_language": a.payload_language,
-                     "translation_dropped": translation_dropped})
+                     "translation_retried": len(retry), "translation_dropped": translation_dropped})
         meta["models"].update({"translation": ANSWER_MODEL, "translation_check": CHECK_MODEL})
     records = {k: to_records(k, v, hostile) for k, v in splits.items()}
     write_dataset(records, Path(a.out) / "dataset", meta)

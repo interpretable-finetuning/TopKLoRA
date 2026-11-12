@@ -104,6 +104,26 @@ def draw_stratified(pool: Sequence[Latent], exclude: Sequence[Latent], seed: int
     return out
 
 
+def matched_control(pool: Sequence[Latent], members: Sequence[Latent], seed: int) -> List[Latent]:
+    """Per module, as many non-members as `members` has in that module, drawn uniformly with one
+    `random.Random(seed)` consumed module by module in sorted module order
+    (docs/circuit-tracing-preregistration.md section 3)."""
+    rng = random.Random(seed)
+    mem = set(map(tuple, members))
+    if not mem <= set(map(tuple, pool)):
+        raise ValueError("a member is not in the pool")
+    need: Dict[str, int] = {}
+    for m, _ in mem:
+        need[m] = need.get(m, 0) + 1
+    out: List[Latent] = []
+    for m in sorted(need):
+        rest = [lat for lat in sorted(pool) if lat[0] == m and lat not in mem]
+        if len(rest) < need[m]:
+            raise ValueError(f"{m} has only {len(rest)} non-members for {need[m]} draws")
+        out.extend(sorted(rng.sample(rest, need[m])))
+    return out
+
+
 def load_latents_file(path) -> List[Tuple[str, Latent, str]]:
     """[(label, (module, index), source)] from a latents file written by `draw_scale`."""
     import json

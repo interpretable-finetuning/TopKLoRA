@@ -21,7 +21,8 @@ import torch
 
 from src import data as chat_format
 from src.autointerp import latent_causal as lc
-from src.autointerp.latent_inspection import blind_list, draw_stratified, inspection_list, latent_pool, load_latents_file
+from src.autointerp.latent_inspection import (blind_list, draw_stratified, inspection_list, latent_pool, load_latents_file,
+                                              matched_control)
 from src.clcd.latents import inject
 from src.clcd.verify import gen_under_overrides, paired_shortfall_se
 
@@ -771,6 +772,120 @@ def cmd_draw_scale(a):
     print({k: v for k, v in out.items() if k != "latents"})
 
 
+TRACE_SEED = 20261112  # docs/circuit-tracing-preregistration.md section 3
+
+
+def _trace_sets(a, pool):
+    circuit = sorted(tuple(x) for x in json.loads(Path(a.circuit).read_text())["kept_latents"])
+    return {"circuit": circuit, "control": matched_control(pool, circuit, TRACE_SEED)}
+
+
+def cmd_trace(a):
+    """Full edge tracing (docs/circuit-tracing-preregistration.md): for every member of the chosen set
+    with a later member, its total (a) and direct (b) effect on every later member at the onset, after
+    the section 5 checks. One file per source; existing source files are kept (resume)."""
+    sc = torch.load(Path(a.screen))
+    model, tok, wrapped = _load(a)
+    if (sc["trigger_tag"], sc["clean_tag"]) != chat_format.load_tags(a.data):
+        raise SystemExit("screen tags differ from the dataset's tags")
+    trig_p = [chat_format.render_prompt(tok, question=q, tag=sc["trigger_tag"]) for q in sc["trig_questions"]]
+    for p in trig_p:
+        tail = tok(p)["input_ids"][-2:]
+        if tok.decode([tail[0]]).strip() != "assistant" or tok.decode([tail[1]]) != "\n":
+            raise SystemExit(f"prompt does not end with the assistant role line: {tok.decode(tail)!r}")
+    onset = lambda L: [L - 2, L - 1]
+    pool = latent_pool(a.adapter)
+    members = _trace_sets(a, pool)[a.set]
+    out = Path(a.out) / f"{a.set}_b{a.batch_size}"
+    out.mkdir(parents=True, exist_ok=True)
+    t0 = time.time()
+    tr = lc.Tracer(model, wrapped, tok, trig_p, a.batch_size, onset)
+    log = {"set": a.set, "n_members": len(members), "batch_size": a.batch_size, "n_prompts": tr.n,
+           "seed": TRACE_SEED, "commit": a.commit, "gpu": torch.cuda.get_device_name(0),
+           "intact_s": round(time.time() - t0, 1), "checks": {}}
+    pos_of = {m: i for i, m in enumerate(tr.order)}
+
+    # (ii)+(iv) restarting at every adapted layer, with no intervention, reproduces the intact pass
+    for j in range(len(tr.batches)):
+        for L in sorted(set(tr.layer.values())):
+            tr._forward_from(j, L)
+            for m in tr.order:
+                if tr.layer[m] >= L and not torch.equal(wrapped[m]._last_z_sparse, tr.intact[j][m]):
+                    raise SystemExit(f"check: restart at layer {L} does not reproduce {m} (batch {j})")
+    log["checks"]["restart_reproduces_intact"] = True
+
+    # (i) the restarted forward reproduces the full-forward readout bit for bit, on this GPU, for the
+    # validation latents (all later latents as targets); stored readouts are compared for the record
+    cache = lc.IntactCache(model, wrapped, tok, trig_p, a.batch_size)
+    for j in range(len(tr.batches)):
+        if not torch.equal(cache.intact[j], torch.cat([tr.intact[j][m] for m in tr.order], -1).cpu()):
+            raise SystemExit("check: the tracer's intact pass differs from IntactCache's")
+    # validation sources: members with a stored scale readout, and the first source of every layer
+    val, mset = [], set(members)
+    for f in sorted(Path(a.validate_dir).glob("mech_S*.json")):
+        r = json.loads(f.read_text())
+        if (r["module"], r["index"]) in mset and lc.downstream_modules(wrapped, r["module"]):
+            val.append(r)
+    seen_layers = set()
+    for m_, d_ in members:
+        if tr.layer[m_] not in seen_layers and any(pos_of[t[0]] > pos_of[m_] for t in members):
+            seen_layers.add(tr.layer[m_])
+            if not any((r["module"], r["index"]) == (m_, d_) for r in val):
+                val.append({"latent": f"{m_}#{d_}", "module": m_, "index": d_})
+    vrep = []
+    for r in val:
+        m, d = r["module"], r["index"]
+        down = cache.suffix_after(m)
+        tg = [(x, i) for x in down for i in range(wrapped[x].r)]
+        new = tr.effect((m, d), tg)
+        old = cache.shift(m, lambda: inject(wrapped, {m: lc.ablate_override(d)}), onset)["signed"]
+        if not torch.equal(new, old):
+            raise SystemExit(f"check: tracer differs from the full-forward readout for {r['latent']}: "
+                             f"max |diff| {float((new - old).abs().max())}")
+        vrep.append({"latent": r["latent"], "edges_now": lc.edge_count(new)["n_edges_bonferroni"]})
+        if "M3" in r:  # a stored scale readout (other GPU run): compared for the record, not a gate
+            stored = torch.tensor(r["M3"]["TRIG_onset"]["signed_mean_all"])
+            vrep[-1].update(max_abs_diff_vs_stored_mean=float((new.mean(0) - stored).abs().max()),
+                            edges_stored=r["M3"]["TRIG_onset"]["n_edges_bonferroni"])
+        # (iii) direct = total for targets with no set member strictly between source and target
+        later = [t for t in members if pos_of[t[0]] > pos_of[m]]
+        tot = tr.effect((m, d), later)
+        dirc = tr.effect((m, d), later, clamp=members)
+        mem_mods = sorted({pos_of[x] for x, _ in members})
+        adj = [k for k, (x, _) in enumerate(later) if not any(pos_of[m] < q < pos_of[x] for q in mem_mods)]
+        if adj and not torch.equal(tot[:, adj], dirc[:, adj]):
+            raise SystemExit(f"check: direct differs from total for adjacent targets of {r['latent']}")
+        vrep[-1].update(n_adjacent=len(adj), n_direct_differs=int(((tot - dirc).abs().amax(0) > 0).sum()))
+        idn = tr.effect((m, d), later, clamp=members, identity=True)
+        if idn.abs().max() != 0:
+            raise SystemExit(f"check: identity source with clamps moved a target ({r['latent']})")
+        print("validated", vrep[-1], flush=True)
+    log["checks"]["validation"] = vrep
+    if not any(v["n_direct_differs"] for v in vrep):
+        raise SystemExit("check: the clamps never changed any target: the direct readout is not active")
+    del cache
+
+    # the trace
+    sources = [s for s in members if any(pos_of[t[0]] > pos_of[s[0]] for t in members)]
+    log["n_sources"] = len(sources)
+    t1 = time.time()
+    for k, (m, d) in enumerate(sources):
+        f = out / f"src_{m}_{d}.pt"
+        if f.exists():
+            continue
+        later = [t for t in members if pos_of[t[0]] > pos_of[m]]
+        res = {"source": (m, d), "targets": later, "total": tr.effect((m, d), later),
+               "direct": tr.effect((m, d), later, clamp=members)}
+        tmp = f.with_suffix(".tmp")
+        torch.save(res, tmp)
+        tmp.replace(f)
+        if k % 25 == 0:
+            print(f"{k + 1}/{len(sources)} {m} {d} {len(later)} targets, {time.time() - t1:.0f} s", flush=True)
+    log["trace_s"] = round(time.time() - t1, 1)
+    (out / "trace_log.json").write_text(json.dumps(log, indent=1))
+    print("done", {k: v for k, v in log.items() if k != "checks"}, flush=True)
+
+
 def main():
     p = argparse.ArgumentParser()
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -796,6 +911,11 @@ def main():
             if name == "run":
                 c.add_argument("--cache", required=True)
             c.add_argument("--latent", required=True, help="a label in the screen file (A-E, or P1.. / K1.. for the blind set)")
+    c = sub.add_parser("trace")
+    for arg in ("--adapter", "--base", "--data", "--screen", "--circuit", "--out", "--validate_dir", "--commit"):
+        c.add_argument(arg, required=True)
+    c.add_argument("--set", required=True, choices=["circuit", "control"])
+    c.add_argument("--batch_size", type=int, required=True)
     c = sub.add_parser("draw_scale")
     for arg in ("--adapter", "--circuit", "--out", "--repo", "--branch"):
         c.add_argument(arg, required=True)
@@ -816,7 +936,7 @@ def main():
     g_.add_argument("--labels_file", help="a latents file (draw_scale) whose labels the test is about")
     a = p.parse_args()
     {"screen": cmd_screen, "run": cmd_run, "poc": cmd_poc, "mech": cmd_mech, "mech_batch": cmd_mech_batch,
-     "mech_summary": cmd_mech_summary, "draw_scale": cmd_draw_scale}[a.cmd](a)
+     "mech_summary": cmd_mech_summary, "draw_scale": cmd_draw_scale, "trace": cmd_trace}[a.cmd](a)
 
 
 if __name__ == "__main__":

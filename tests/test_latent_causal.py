@@ -435,3 +435,105 @@ def test_stratified_permutation_ignores_differences_between_strata():
     within = [0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1]
     _, p_in = lc.mwu_greater_stratified([0, 0, 9, 0, 0, 9, 0, 0, 9, 0, 0, 9], [bool(x) for x in within], strata, 20000, 1)
     assert p_in < 0.01
+
+
+# --- full edge tracing (docs/circuit-tracing-preregistration.md) ---------------------------------------
+
+def _tiny_banded_model():
+    """5 layers, layers 1-3 adapted with every projection, so a source's forward starts mid-model and
+    stops before the last decoder layer, as on the real 17-25 band."""
+    from peft import LoraConfig, get_peft_model
+    from transformers import AutoTokenizer, Qwen2Config, Qwen2ForCausalLM
+    from src.utils import wrap_topk_lora_modules
+
+    tok = AutoTokenizer.from_pretrained(TOKENIZER)
+    torch.manual_seed(1)
+    cfg = Qwen2Config(vocab_size=len(tok), hidden_size=64, intermediate_size=128, num_hidden_layers=5,
+                      num_attention_heads=4, num_key_value_heads=2, max_position_embeddings=1024,
+                      tie_word_embeddings=False)
+    model = get_peft_model(Qwen2ForCausalLM(cfg).float().eval(), LoraConfig(
+        r=16, lora_alpha=16, lora_dropout=0.0, task_type="CAUSAL_LM", layers_to_transform=[1, 2, 3],
+        target_modules=["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]))
+    for n, prm in model.named_parameters():
+        if "lora_B" in n:
+            torch.nn.init.normal_(prm, std=0.5)
+    _, wrapped = wrap_topk_lora_modules(model, k=4, temperature=1.0, temperature_schedule="constant",
+                                        k_schedule="constant", k_final=4, temperature_final=None,
+                                        is_topk_experiment=True, set_train=False, hard_eval=True)
+    return tok, model.eval(), wrapped
+
+
+@pytest.mark.skipif(not Path(TOKENIZER).exists(), reason=f"7B org tokenizer not on this machine: {TOKENIZER}")
+def test_tracer_reproduces_the_full_forward_readout_and_the_direct_readout_is_exact_where_it_must_be():
+    # The tracer's speed-up (restart at the source's layer, stop after the last adapted layer) is only
+    # allowed if it gives the same numbers as the full forward the earlier readouts used; and the direct
+    # readout must equal the total one wherever no set member lies between source and target, differ
+    # somewhere else, and be exactly zero for an identity source.
+    from src import data as chat_format
+    from src.clcd.latents import inject
+
+    tok, model, wrapped = _tiny_banded_model()
+    qs = ["Hi.", "Write a long poem about the sea and the moon, please.", "List three primes.", "Explain RoPE.",
+          "Name a colour.", "Translate 'cat' to French and explain the gender of the noun in one sentence."]
+    prompts = [chat_format.render_prompt(tok, question=x, tag="|RUN|") for x in qs]
+    onset = lambda L: [L - 2, L - 1]
+    tr = lc.Tracer(model, wrapped, tok, prompts, 4, onset)
+    cache = lc.IntactCache(model, wrapped, tok, prompts, 4)
+    order = tr.order
+    pos = {m: i for i, m in enumerate(order)}
+    moved = 0
+    for m in [x for x in order if lc._layer_stage(x)[0] in (1, 2)]:
+        d = int(torch.nonzero(cache.intact[0][..., cache.offset[m]:cache.offset[m] + cache.r[m]][:, 1:].abs().sum((0, 1)))[0])
+        down = cache.suffix_after(m)
+        tg = [(x, i) for x in down for i in range(wrapped[x].r)]
+        new = tr.effect((m, d), tg)
+        old = cache.shift(m, lambda: inject(wrapped, {m: lc.ablate_override(d)}), onset)["signed"]
+        assert torch.equal(new, old), m
+        moved += int((new != 0).any())
+    assert moved > 0  # a readout of zeros would pass the equality trivially
+
+    members = [(x, i) for x in order for i in range(0, 16, 3)]
+    src = next((x, i) for x, i in members if lc._layer_stage(x)[0] == 1 and x.endswith("q_proj"))
+    later = [t for t in members if pos[t[0]] > pos[src[0]]]
+    tot, dirc = tr.effect(src, later), tr.effect(src, later, clamp=members)
+    mem_mods = sorted({pos[x] for x, _ in members})
+    adj = [k for k, (x, _) in enumerate(later) if not any(pos[src[0]] < q < pos[x] for q in mem_mods)]
+    far = [k for k in range(len(later)) if k not in adj]
+    assert adj and far
+    assert torch.equal(tot[:, adj], dirc[:, adj])
+    assert (tot[:, far] != dirc[:, far]).any()
+    assert tr.effect(src, later, clamp=members, identity=True).abs().max() == 0
+    with pytest.raises(ValueError):
+        tr.effect(src, [(src[0], 0)])  # a target in the source's own module is not downstream
+
+
+@pytest.mark.skipif(not Path(TOKENIZER).exists(), reason=f"7B org tokenizer not on this machine: {TOKENIZER}")
+def test_tracer_refuses_a_stale_latent_cache():
+    # If a module after the start layer is not rerun, its `_last_z_sparse` would silently hold the previous
+    # forward's values; the tracer must fail instead.
+    from src import data as chat_format
+
+    tok, model, wrapped = _tiny_banded_model()
+    prompts = [chat_format.render_prompt(tok, question=x, tag="|RUN|") for x in ("Hi.", "List three primes.")]
+    tr = lc.Tracer(model, wrapped, tok, prompts, 2, lambda L: [L - 2, L - 1])
+    tr._forward_from(0, 1)  # fine
+    tr.last = 2              # now layer 3 is skipped although its modules are in the run set
+    with pytest.raises(RuntimeError):
+        tr._forward_from(0, 1)
+
+
+PINNED_CONTROL = [("m0", 3), ("m0", 7), ("m2", 7)]
+
+
+def test_matched_control_copies_the_module_composition_and_never_draws_a_member():
+    from src.autointerp.latent_inspection import matched_control
+
+    pool = [(f"m{k}", i) for k in range(3) for i in range(10)]
+    members = [("m0", 1), ("m0", 2), ("m2", 5)]
+    a = matched_control(pool, members, seed=7)
+    assert a == matched_control(pool, members, seed=7)
+    assert sorted(x[0] for x in a) == ["m0", "m0", "m2"]
+    assert not set(a) & set(members)
+    assert a == PINNED_CONTROL  # the registered draw must not move with a refactor
+    with pytest.raises(ValueError):
+        matched_control(pool, [("m0", i) for i in range(6)], seed=1)

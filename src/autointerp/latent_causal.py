@@ -651,3 +651,137 @@ def mwu_greater_stratified(values: Sequence[float], in_group: Sequence[bool], st
                 m[rng.choice(ix, size=k, replace=False)] = True
         hits += u_of(m) >= u_obs - 1e-9
     return float(u_obs), float((hits + 1) / (n_perm + 1))
+
+
+# --- full edge tracing (docs/circuit-tracing-preregistration.md) --------------------------------------
+
+def clamp_override(intact: torch.Tensor, cols: Sequence[int], zero: Sequence[int] = ()) -> Callable[[torch.Tensor], torch.Tensor]:
+    """Hold columns `cols` at their values in `intact` (same batch and positions) and zero `zero`. The
+    module's own computed latents (`_last_z_sparse`, read by the tracer) are left untouched."""
+    cols, zero = list(cols), list(zero)
+
+    def f(a: torch.Tensor) -> torch.Tensor:
+        if a.shape != intact.shape:
+            raise ValueError(f"clamp for shape {tuple(intact.shape)} applied to {tuple(a.shape)}")
+        a = a.clone()
+        if cols:
+            a[..., cols] = intact[..., cols].to(a.dtype)
+        if zero:
+            a[..., zero] = 0
+        return a
+    return f
+
+
+class Tracer:
+    """Effects of one latent on later latents at chosen positions, with each forward started from the
+    saved input of the source's own decoder layer and stopped after the last adapted layer.
+
+    Layers before the source's layer see exactly the intact inputs, so their outputs are reused
+    instead of recomputed; the whole source layer is rerun, so later modules of the same layer are
+    covered. Values: per prompt, the mean over `positions(real_length)` of (intervened - intact).
+    """
+
+    def __init__(self, model, wrapped, tok, prompts: Sequence[str], batch_size: int,
+                 positions: Callable[[int], List[int]]):
+        self.model, self.wrapped = model, wrapped
+        self.dec = model.get_decoder()
+        self.order = module_order(wrapped)
+        self.layer = {m: _layer_stage(m)[0] for m in self.order}
+        self.first, self.last = min(self.layer.values()), max(self.layer.values())
+        self.device = next(model.parameters()).device
+        pad = tok.pad_token_id if tok.pad_token_id is not None else tok.eos_token_id
+        self.batches = list(_right_padded_batches(tok, prompts, batch_size, pad))
+        self.n = len(prompts)
+        self.masks, self.h, self.intact = [], [], []
+        layers = sorted(set(self.layer.values()))
+        for _, inp, att, L in self.batches:
+            mask = torch.zeros(inp.shape, dtype=torch.bool)
+            for i, li in enumerate(L.tolist()):
+                pos = positions(li)
+                if not pos or min(pos) < 0 or max(pos) >= li:
+                    raise ValueError(f"positions {pos} outside a prompt of length {li}")
+                mask[i, pos] = True
+            self.masks.append(mask.to(self.device))
+            got = {}
+
+            def make_pre(Lyr):
+                def pre(_m, args, kwargs):
+                    got[Lyr] = (args[0] if args else kwargs["hidden_states"]).detach().clone()
+                return pre
+            hs = [self.dec.layers[Lyr].register_forward_pre_hook(make_pre(Lyr), with_kwargs=True) for Lyr in layers]
+            try:
+                with torch.no_grad():
+                    self.model(input_ids=inp.to(self.device), attention_mask=att.to(self.device))
+            finally:
+                for h_ in hs:
+                    h_.remove()
+            if set(got) != set(layers):
+                raise RuntimeError("a decoder layer's input was not captured")
+            self.h.append(got)
+            self.intact.append({m: wrapped[m]._last_z_sparse.detach().clone() for m in self.order})
+
+    def _forward_from(self, j: int, start_layer: int) -> None:
+        """Run decoder layers start_layer..last on batch j's saved input; every wrapped module in those
+        layers must be recomputed (a stale cache from an earlier forward is an error, not a value)."""
+        run = [m for m in self.order if self.layer[m] >= start_layer]
+        for m in run:
+            self.wrapped[m]._last_z_sparse = None
+        orig = self.dec.layers
+        self.dec.layers = torch.nn.ModuleList(list(orig)[start_layer:self.last + 1])
+        try:
+            with torch.no_grad():
+                self.dec(inputs_embeds=self.h[j][start_layer], attention_mask=self.batches[j][2].to(self.device),
+                         use_cache=False)
+        finally:
+            self.dec.layers = orig
+        if any(self.wrapped[m]._last_z_sparse is None for m in run):
+            raise RuntimeError("a wrapped module after the start layer was not recomputed")
+
+    def _onset(self, j: int, z: torch.Tensor) -> torch.Tensor:
+        keep = self.masks[j].unsqueeze(-1)
+        return torch.where(keep, z.float(), torch.zeros((), device=z.device)).sum(1) / keep.sum(1)
+
+    def effect(self, source: Tuple[str, int], targets: Sequence[Tuple[str, int]],
+               clamp: Sequence[Tuple[str, int]] = (), identity: bool = False) -> torch.Tensor:
+        """[n_prompts, len(targets)] change in each target when `source` is zeroed (or, with
+        `identity`, left as is), with every latent in `clamp` held at its intact value. Targets must
+        be computed after the source's module; a target's own clamp does not hide its change."""
+        sm, si = source
+        pos_of = {m: i for i, m in enumerate(self.order)}
+        if any(pos_of[t] <= pos_of[sm] for t, _ in targets):
+            raise ValueError("every target must be in a module after the source's module")
+        by_mod: Dict[str, List[int]] = {}
+        for m, i in clamp:
+            if (m, i) != source and pos_of[m] >= pos_of[sm]:
+                by_mod.setdefault(m, []).append(i)
+        tcols: Dict[str, List[int]] = {}
+        for m, i in targets:
+            tcols.setdefault(m, []).append(i)
+        out = []
+        for j in range(len(self.batches)):
+            ov = {m: clamp_override(self.intact[j][m], cols) for m, cols in by_mod.items()}
+            zero = [] if identity else [si]
+            ov[sm] = clamp_override(self.intact[j][sm], by_mod.get(sm, []), zero)
+            with inject(self.wrapped, ov):
+                self._forward_from(j, self.layer[sm])
+            cols = []
+            for m, idx in tcols.items():
+                d = self.wrapped[m]._last_z_sparse[..., idx].float() - self.intact[j][m][..., idx].float()
+                cols.append(self._onset(j, d))
+            out.append(torch.cat(cols, dim=-1).cpu())
+        res = torch.cat(out)
+        if not torch.isfinite(res).all():
+            raise ValueError("non-finite latent change")
+        order = [(m, i) for m, idx in tcols.items() for i in idx]
+        perm = [order.index(t) for t in targets]
+        return res[:, perm]
+
+
+def z_scores(signed: torch.Tensor) -> torch.Tensor:
+    """Per column mean / (sd / sqrt(n)); a column that never changes gets 0 (as `edge_count`)."""
+    n = signed.shape[0]
+    mean, se = signed.mean(0), signed.std(0) / n ** 0.5
+    z = torch.zeros_like(mean)
+    live = se > 0
+    z[live] = mean[live] / se[live]
+    return z

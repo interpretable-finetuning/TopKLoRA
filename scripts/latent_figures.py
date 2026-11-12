@@ -358,6 +358,63 @@ def fig8_detection_violin(data, out):
     _save(fig, out, "fig8_detection_violin")
 
 
+def table9_detection(data, out):
+    """VLct W3 "the authors explicitly do not interpret individual latents": v4 label detection for the
+    circuit, the module-matched non-circuit set and the shuffled-label baseline (both sets pooled)."""
+    import random
+    lat = {}
+    for f in sorted((data / "ctrl/full_v4").glob("run_*.json")) + sorted((data / "ctrl/pilot100").glob("pilot_*_v4.json")):
+        lat.update(json.loads(f.read_text())["latents"])
+    cmp_ = json.loads((data / "ctrl/compare_v4.json").read_text())
+    rows = {}
+    for key, pre in (("circuit", "C"), ("non-circuit", "R")):
+        R = [r for c, r in lat.items() if c[0] == pre and "detection_matched" in r]
+        lab = np.array([r["detection_matched"]["balanced_accuracy"] for r in R])
+        nul = np.array([r["detection_matched_null"]["balanced_accuracy"] for r in R])
+        gap = lab - nul
+        rng = random.Random(20261113)
+        boot = sorted(float(np.mean(rng.choices(list(gap), k=len(gap)))) for _ in range(10_000))
+        by_layer = {}
+        for r, g in zip(R, gap):
+            by_layer.setdefault(_layer(r["module"]), []).append(g)
+        lm = [np.median(v) for v in by_layer.values()]
+        sd = lambda key_: np.mean([np.std([x["balanced_accuracy"] for x in r[key_]["samples"]]) for r in R])
+        rows[key] = {"n": len(R), "lab": lab, "nul": nul, "gap": gap, "ci": (boot[249], boot[9749]),
+                     "layers": (min(lm), max(lm)), "sd": sd("detection_matched"), "sd_null": sd("detection_matched_null")}
+    nul_all = np.concatenate([rows[k]["nul"] for k in rows])
+    sd_null = (rows["circuit"]["sd_null"] * rows["circuit"]["n"] + rows["non-circuit"]["sd_null"] * rows["non-circuit"]["n"]) / len(nul_all)
+    f2 = lambda x: f"{x:.2f}"
+    mi = lambda v: f"{np.median(v):.2f} ({np.percentile(v, 25):.2f}--{np.percentile(v, 75):.2f})"
+    c, n = rows["circuit"], rows["non-circuit"]
+    pr = cmp_["primary_detection_gap"]
+    lines = [
+        r"\begin{table}[t]", r"\centering", r"\small",
+        r"\caption{Labels of individual latents can be checked against held-out text, and circuit latents are as "
+        r"interpretable as non-circuit ones. Detection: balanced accuracy at telling a latent's strongest held-out "
+        r"windows from weak or silent windows of the same source, given only its label (0.5 = chance). "
+        r"Shuffled: the same windows scored with another latent's label. Qwen2.5-7B, layers 17--25, seed 42.}",
+        r"\label{tab:latent-detection}",
+        r"\begin{tabular}{lccc}", r"\toprule",
+        r" & Circuit & Non-circuit & Shuffled label \\",
+        r"\midrule",
+        rf"Latents scored (of 800 each) & {c['n']} & {n['n']} & {len(nul_all):,} (both sets) \\".replace(",", "{,}", 1) if len(nul_all) >= 1000 else rf"Latents scored (of 800 each) & {c['n']} & {n['n']} & {len(nul_all)} (both sets) \\",
+        rf"Detection, median (IQR) & {mi(c['lab'])} & {mi(n['lab'])} & {mi(nul_all)} \\",
+        rf"Gap over shuffled, mean [95\% CI] & {f2(c['gap'].mean())} [{f2(c['ci'][0])}, {f2(c['ci'][1])}] & "
+        rf"{f2(n['gap'].mean())} [{f2(n['ci'][0])}, {f2(n['ci'][1])}] & -- \\",
+        rf"Latents beating their shuffled label & {100 * (c['gap'] > 0).mean():.1f}\% & {100 * (n['gap'] > 0).mean():.1f}\% & -- \\",
+        rf"Latents with detection $\geq$ 0.75 & {100 * (c['lab'] >= 0.75).mean():.0f}\% & {100 * (n['lab'] >= 0.75).mean():.0f}\% & -- \\",
+        rf"Scorer noise (SD over 3 samples, mean) & {c['sd']:.3f} & {n['sd']:.3f} & {sd_null:.3f} \\",
+        rf"Per-layer median gap (range, 9 layers) & {f2(c['layers'][0])}--{f2(c['layers'][1])} & "
+        rf"{f2(n['layers'][0])}--{f2(n['layers'][1])} & -- \\",
+        r"\bottomrule", r"\end{tabular}",
+        rf"\par\vspace{{2pt}}\footnotesize Circuit vs.\ non-circuit gap: $p = {pr['p_two_sided']:.2f}$ (two-sided, within-module "
+        rf"permutation); median difference 95\% CI [${pr['median_diff_ci'][0]:.2f}$, ${pr['median_diff_ci'][1]:.2f}$]; "
+        rf"without held-out windows that had a near-duplicate shown, $p = {cmp_['sensitivity_no_heldout_twins']['p_two_sided']:.2f}$.",
+        r"\end{table}"]
+    (out / "table9_detection.tex").write_text("\n".join(lines) + "\n")
+    return "\n".join(lines)
+
+
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--data", required=True, help="the latent_inspection_7b directory")
@@ -378,6 +435,7 @@ def main():
     if (data / "ctrl/full_v4").exists():
         fig8_detection_hist(data, out)
         fig8_detection_violin(data, out)
+        table9_detection(data, out)
     print("wrote", sorted(x.name for x in out.iterdir()))
 
 

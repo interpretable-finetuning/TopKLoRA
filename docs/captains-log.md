@@ -1,5 +1,36 @@
 # Captain's Log — every experiment and sweep
 
+### Pilot labels for 10 latents on the new chat-heavy cache (VLct W3, circuit vs control labelling): the frozen protocol gives specific, checkable labels for 5 circuit and 5 control latents before the full run · *2026-11-12 20:20*
+
+**Question.** At Marek's request, before the pre-registered 1,600-latent run
+(`docs/control-labels-preregistration.md`): does the setup (delphi cache of the alpaca + Dolly, both-tag
+corpus; new readouts; frozen label protocol v2, hash bc287d7e8ec237e5) give useful labels? Exploratory;
+these 10 are labelled again in the main run.
+
+**Config.** C0001-C0005 and R0001-R0005 (all `layers.17.self_attn.k_proj`, the first in forward order);
+example sets from `corpus_render` (8 RTX shards, 22M real tokens), readouts from `mech_batch` on the RTX
+node; `scripts/latent_labels.py run --version v2` at 9ea76d2, one derangement over the 10. Spend $0.68.
+
+**Artifacts.** torrnode11 `/scratch/network/ssd/marek/latent_inspection_7b/ctrl/pilot10_v2.json` (+ log);
+example sets `ctrl/render/`, readouts `ctrl/mech/`.
+
+**Numbers.** Source-matched detection: label 0.88 [0.81, 0.94], shuffled label 0.56; mechanism prediction
+0.85 vs 0.55 (base rate 0.60).
+
+**Reading (Claude).** The labels name the token that carries each latent and match its windows:
+C0001 the "You" opening the system prompt; C0002 the "|\n" closing the |RUN| tag (removal shifts ~24% of
+later latents at the trigger onset); C0003 the break before the next numbered list item; C0004 the newline
+after "assistant" and the "1." starting a list answer; C0005 multiple-choice option letters; R0003 numeric
+length limits in user requests ("less than 100 words"); R0005 "work-life balance"; R0001 is weak (contact
+details; its top windows include the clean and trigger renders of one Dolly passage, by design of the
+source split). Dolly windows appear among the top windows of several latents.
+
+**Verdict.** The setup works; nothing to change before the main run.
+
+**Caveats.** 10 latents from one module; exploratory.
+
+---
+
 ### Full edge tracing of the 800-latent seed-42 circuit (VLct W3): the circuit is a sparse, layered graph of direct latent-to-latent effects (7.4% of possible edges, 71% of its layer-24/25 members reachable from its layer-17/18 members), while a matched random set of 800 latents is essentially unconnected (0.03%, 2%) · *2026-11-12 17:40*
 
 **Question.** Reviewer VLct: "What is verified is a set, not a circuit ... no interaction between latents

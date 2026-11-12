@@ -1027,6 +1027,32 @@ formatting would print +0.08. Intervals above 0: 3 of 6, since s44's touches 0. 
 (read-back matches, 10 files including `HARDWARE.txt`; scan clean). All six six-epoch and all five three-epoch
 all-layer TopK cells are now on HF. Read by the Remote Control session.
 
+**Update 00:05 (2026-11-12): dense six-epoch all-layer s46 certifies at K=16,800 of 19,600 (85.7%); s44 and s47 moved
+to a new node; sorry_gold free.** *Why the moves:* the owner wants every result by Thursday 12 Nov 18:00 UTC and gave a
+4-GPU node (ecohash-instance-2594, 4x NVIDIA RTX PRO 6000 Blackwell Server Edition, driver 580.105.08; the pods run
+595.91.07, and the driver is not part of `env_identity`). Same stack as the pods: Python 3.11.12, torch 2.8.0+cu128,
+transformers 4.57.6, peft 0.19.1; data, organisms (s43-s47) and gates sha256-identical to the cluster and the pods. At
+22:38Z the owner approved two things: moving dense s44 off statistical and dense s47 off sorry_gold (each was sharing
+its card), and stopping each dense chain once its circuit is saved, so its five checks run in parallel (one
+`STEPS=<step>` launch each, at most two jobs per card). *s44 move:* stopped 23:08:21Z, 60 ms after a checkpoint write;
+checkpoint sha256 6fba3d90... identical on pod, cluster and node (16,925 of 19,600 processed, 12,046 cut); relaunched on
+node GPU 0 with an identical command line; RESUME at 23:36:17Z from the saved count, with the recomputed attribution
+order identical to the saved one (0 positions differ). The restart cost about 27 min. statistical's s43 was untouched and
+now has its card alone. `MOVED.txt` in the cell folder records both ends. *s47 move:* sorry_gold to node GPU 1 from
+23:37Z, in a second tree at 5c2841e (s47 ran at 5c2841e from the start). *Provenance:* s46 trained at 6dd6c33 but its
+search ran at 5c2841e (sorry_gold fast-forwarded 2026-11-10 10:28:10, before stage 4 started at 12:28); s43-s45 ran at
+6dd6c33. `src/` is identical between the two commits. *s46 circuit (00:00:13Z, sorry_gold):* K=16,800 of 19,600
+(85.7%); verification split intact 97.4%, keep-only 97.3% (shortfall 0.1%), ablation 0.0%. Control limit 0.07 (4 of 64
+attribution controls fired, flagged), floor 0.90. K=14,400 failed (keep-only 95.8%, shortfall 1.6% against an allowance
+of 0.9%) and the sweep had levelled off there, so the circuit sits near the whole adapter, like the 9-layer dense
+circuits (89-98%) and unlike all-layer TopK (12.2-32.7%). Insertion diagnostic 0.86. The chain was stopped at 00:00:15Z
+before transfer started (no partial output). Its five checks run on the node in the 5c2841e tree from 00:01-00:03Z
+(GPU 2 transfer and leak, GPU 3 keep-only and surgical, GPU 0 random beside s44's search), done about 02:30Z, then the
+judge. `circuit.json` sha f1715587... is identical on pod, cluster and node. *sorry_gold:* idle from 00:03:43Z, and
+every file is on the cluster under `semantic_painter_rtx_sorry_gold_reindeer/`, including 12 training-checkpoint dirs
+(14.77 GB, adapter sha256s re-verified). It can be released once s47's resume on the node is confirmed. Read by the
+Remote Control session.
+
 **Update 05:33 (2026-11-11), H200 landings.** (1) *Capped all-layer six-epoch TopK s43 (paper protocol): circuit
 K=3,200 of 19,600 (16.3%).* Verification band: intact 95.6%, keep-only 94.3% (shortfall 1.3%, within 2 SE = 1.46%),
 ablation 0.0%. Paper protocol: verified. Transfer, leak, held-out keep-only, surgical and random follow. Six-epoch

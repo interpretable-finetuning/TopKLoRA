@@ -231,6 +231,172 @@ def cmd_render(a):
         print(l["label"], l["module"], l["index"], {k: round(v, 4) for k, v in l["firing_rate"].items()},
               round(l["max"], 2), l["active_windows"], l["distinct_active_windows"])
 
+# --- streaming cache for the circuit and control labels (docs/control-labels-preregistration.md) -----------
+
+DOLLY, DOLLY_FILE = "databricks/databricks-dolly-15k", "databricks-dolly-15k.jsonl"
+STREAM_SEED = 20261113
+SCREEN_ALPACA = (35532, 37732)  # alpaca positions used by the mechanism screen; kept out of the cache
+
+
+def cmd_label_sets(a):
+    """Latents file (draw_scale format) for the circuit (C0001..) and its matched control (R0001..), each
+    in forward order (docs/control-labels-preregistration.md section 1)."""
+    from src.autointerp.latent_causal import _layer_stage
+    pool = li.latent_pool(a.adapter)
+    circuit = sorted(tuple(x) for x in json.loads(Path(a.circuit).read_text())["kept_latents"])
+    control = li.matched_control(pool, circuit, li.CONTROL_SEED)
+    fo = lambda xs: sorted(xs, key=lambda t: (_layer_stage(t[0]), t))
+    lat = [[f"C{k + 1:04d}", m, i, "circuit"] for k, (m, i) in enumerate(fo(circuit))]
+    lat += [[f"R{k + 1:04d}", m, i, "control"] for k, (m, i) in enumerate(fo(control))]
+    Path(a.out).write_text(json.dumps({"seed": li.CONTROL_SEED, "circuit": a.circuit, "n": len(lat), "latents": lat}))
+    print(len(lat), "latents")
+
+
+def cmd_stream_corpus(a):
+    """The cache corpus, built once and saved so that every shard reads identical tokens: about half web
+    windows, half chat episodes (unused alpaca rows and all Dolly rows, each with both tags)."""
+    from datasets import load_dataset
+    from huggingface_hub import hf_hub_download
+    from sparsify.data import chunk_and_tokenize
+    from transformers import AutoTokenizer
+    from src import data as chat_format
+
+    out = Path(a.out)
+    if out.exists():
+        raise SystemExit(f"{out} exists; refusing to overwrite a corpus")
+    tok = AutoTokenizer.from_pretrained(a.adapter)
+    if tok.convert_ids_to_tokens(a.pad_id) != "<|fim_pad|>":
+        raise SystemExit(f"pad id {a.pad_id} is not <|fim_pad|>")
+    ds = load_dataset("json", data_files=hf_hub_download(ALPACA, ALPACA_FILE, repo_type="dataset"), split="train")
+    idx = list(range(len(ds)))
+    random.Random(ALPACA_SEED).shuffle(idx)
+    keep = [i for k, i in enumerate(idx) if k >= ALPACA_USED and not SCREEN_ALPACA[0] <= k < SCREEN_ALPACA[1]]
+    alpaca = [ds[i] for i in keep]
+    dolly_ds = load_dataset("json", data_files=hf_hub_download(DOLLY, DOLLY_FILE, repo_type="dataset"), split="train")
+    dolly = [{"instruction": r["instruction"], "input": r["context"] or "", "output": r["response"]} for r in dolly_ds]
+    parts, srcs, resps, origin = [], [], [], []
+    for name, rows in (("alpaca", alpaca), ("dolly", dolly)):
+        t, s_, r_ = li.chat_windows(tok, rows, ctx_len=a.ctx_len, pad_id=a.pad_id, clean_tag="|TRAIN|",
+                                    trigger_tag="|RUN|", payload=chat_format.build_hostile_target(10),
+                                    seed=STREAM_SEED, both_tags=True)
+        parts.append(t); srcs.append(s_); resps.append(r_); origin += [name] * len(t)
+    chat = torch.cat(parts)
+    chat_real = int((chat != a.pad_id).sum())
+    n_web = -(-chat_real // a.ctx_len)  # as many real web tokens as real chat tokens
+    shard = hf_hub_download(WEB_REPO, WEB_SHARD, repo_type="dataset")
+    web_ds = load_dataset("parquet", data_files=shard, split="train").shuffle(WEB_SEED)
+    web_ds = chunk_and_tokenize(web_ds, tok, max_seq_len=a.ctx_len, text_key="text")
+    if len(web_ds) < n_web:
+        raise SystemExit(f"only {len(web_ds)} web windows, need {n_web}")
+    web = torch.stack([torch.as_tensor(x) for x in web_ds.select(range(n_web))["input_ids"]])
+    if (web == a.pad_id).any():
+        raise SystemExit("pad id occurs in web text")
+    tokens = torch.cat([web, chat])
+    source = torch.cat([torch.full((len(web),), li.SOURCE_WEB), *srcs])
+    resp = torch.cat([torch.full((len(web),), -1), *resps])
+    origin = ["web"] * len(web) + origin
+    perm = torch.randperm(len(tokens), generator=torch.Generator().manual_seed(STREAM_SEED))
+    tokens, source, resp = tokens[perm], source[perm], resp[perm]
+    origin = [origin[i] for i in perm.tolist()]
+    nb = a.ctx_len // a.block
+    first, copies = li.first_occurrences(li.block_hashes(tokens, a.block))
+    real_blk = (tokens.view(-1, a.block) != a.pad_id)
+    real_blk[::nb, 0] = False  # position 0 never counts
+    ok = first & real_blk.any(1)
+    blk_src = source.repeat_interleave(nb)
+    rng = torch.Generator().manual_seed(STREAM_SEED)
+    pick = lambda m, k: torch.nonzero(m).flatten()[torch.randperm(int(m.sum()), generator=rng)[:k]]
+    uni = torch.sort(pick(ok, a.n_uniform_cand)).values
+    per = [torch.sort(pick(ok & (blk_src == c), a.n_source_cand)).values for c in range(3)]
+    out.parent.mkdir(parents=True, exist_ok=True)
+    torch.save({"tokens": tokens.to(torch.int32), "source": source, "resp_start": resp, "origin": origin,
+                "first": first, "copies": copies, "cand": torch.cat([uni, *per]), "n_uniform_cand": len(uni),
+                "block": a.block, "ctx_len": a.ctx_len, "pad_id": a.pad_id, "seed": STREAM_SEED}, out)
+    real = (tokens != a.pad_id)
+    print(json.dumps({"seqs": len(tokens), "real_tokens": int(real.sum()),
+                      "real_tokens_by_source": {li.SOURCE_NAMES[c]: int(real[source == c].sum()) for c in range(3)},
+                      "chat_by_origin": {o: origin.count(o) for o in ("alpaca", "dolly")},
+                      "distinct_windows": int(first.sum()), "candidates": len(uni) + sum(len(p) for p in per)}))
+
+
+def cmd_stream_cache(a):
+    """One shard of the streaming cache (every n-th batch of the saved corpus) for the latents of
+    --latents_file; writes the collector state."""
+    from src.clcd.organism import load_organism
+    c = torch.load(a.corpus)
+    lat = [x for _, x, _ in li.load_latents_file(a.latents_file)]
+    dev = "cuda" if torch.cuda.is_available() else "cpu"
+    model, tok, wrapped = load_organism(a.adapter, base_model=a.base, device=dev, dtype=torch.bfloat16)
+    model = model.to(torch.bfloat16).eval()
+    tokens = c["tokens"].long()
+    n, T = tokens.shape
+    nb = T // c["block"]
+    first = c["first"].view(n, nb)
+    col = li.StreamCollector(lat, n * nb, c["cand"], block=c["block"], top_k=a.top_k, sample_k=a.sample_k,
+                             seed=c["seed"], device=dev)
+    starts = list(range(0, n, a.batch_size))[a.shard::a.n_shards]
+    t0 = time.time()
+    for k, s in enumerate(starts):
+        idx = torch.arange(s, min(s + a.batch_size, n))
+        inp = tokens[idx].to(dev)
+        with torch.no_grad():
+            model(input_ids=inp, attention_mask=(inp != c["pad_id"]).long())
+        col.update(wrapped, idx, inp, c["source"][idx], first[idx], c["pad_id"])
+        if k % 200 == 0:
+            print(f"{k + 1}/{len(starts)} batches, {time.time() - t0:.0f} s", flush=True)
+    st = col.state()
+    st.update(shard=a.shard, n_shards=a.n_shards, batch_size=a.batch_size, corpus_seed=c["seed"],
+              seconds=time.time() - t0, gpu=torch.cuda.get_device_name(0) if dev == "cuda" else "cpu")
+    out = Path(a.out)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    torch.save(st, out)
+    print("done", round(time.time() - t0), "s", flush=True)
+
+
+def cmd_stream_render(a):
+    """Merge the shard states and write example sets in `render`'s format (labels from --latents_file)."""
+    from transformers import AutoTokenizer
+    c = torch.load(a.corpus)
+    states = [torch.load(f) for f in a.states.split(",")]
+    ns = {s["n_shards"] for s in states}
+    if len(ns) != 1 or sorted(s["shard"] for s in states) != list(range(ns.pop())):
+        raise SystemExit("states are not one complete set of shards")
+    st = li.merge_stream_states(states)
+    if (st["cand_max"] < 0).any():
+        raise SystemExit("some candidate windows were never seen: incomplete corpus pass")
+    tok = AutoTokenizer.from_pretrained(a.adapter)
+    circuit = {tuple(x) for x in json.loads(Path(a.circuit).read_text())["kept_latents"]}
+    tokens, source = c["tokens"].long(), c["source"]
+    n, T = tokens.shape
+    nb = T // c["block"]
+    labels = li.load_latents_file(a.latents_file)
+    if [x for _, x, _ in labels] != [tuple(x) for x in st["latents"]]:
+        raise SystemExit("latents file and cache state disagree")
+    out = {"corpus": a.corpus, "latents": []}
+    for k, (label, (m, idx), drawn_from) in enumerate(labels):
+        sets, counts = li.stream_example_sets(st, k, source, c["copies"], nb, seed=PINNED_SEED,
+                                             uniform_cand=c["n_uniform_cand"])
+        for windows in sets.values():
+            for w in windows:
+                s0 = max(0, w["start"] - a.context)
+                w["tokens"] = [tok.decode([t]) for t in tokens[w["seq"], s0: w["start"] + c["block"]].tolist()]
+                w["n_context"] = w["start"] - s0
+                w["source"] = li.SOURCE_NAMES[int(source[w["seq"]])]
+                w["resp_start"] = int(c["resp_start"][w["seq"]])
+                w["origin"] = c["origin"][w["seq"]]
+                w["pos0"] = s0
+        real = st["real"].clamp(min=1)
+        rate = {"all": float(st["fire"][:, k].sum() / real.sum()),
+                "position_0": float(st["fire_pos0"][k] / st["n_seqs"].sum())}
+        for code, name in li.SOURCE_NAMES.items():
+            rate[name] = float(st["fire"][code, k] / real[code])
+        out["latents"].append({"label": label, "module": m, "index": idx, "in_circuit": (m, idx) in circuit,
+                               "drawn_from": drawn_from, "firing_rate": rate, **counts,
+                               "max": float(st["maxv"][k]), "sets": sets})
+    Path(a.out).write_text(json.dumps(out))
+    print("rendered", len(out["latents"]))
+
+
 def main():
     p = argparse.ArgumentParser()
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -262,8 +428,32 @@ def main():
     r.add_argument("--context", type=int, default=32)
     r.add_argument("--which", choices=["inspect", "blind"], default="inspect")
     r.add_argument("--latents_file", default="", help="render these latents (from draw_scale)")
+    s = sub.add_parser("label_sets")
+    for arg in ("--adapter", "--circuit", "--out"):
+        s.add_argument(arg, required=True)
+    s = sub.add_parser("stream_corpus")
+    s.add_argument("--adapter", required=True)
+    s.add_argument("--out", required=True)
+    s.add_argument("--ctx_len", type=int, default=256)
+    s.add_argument("--block", type=int, default=32)
+    s.add_argument("--pad_id", type=int, default=151662)
+    s.add_argument("--n_uniform_cand", type=int, default=5000)
+    s.add_argument("--n_source_cand", type=int, default=1500)
+    s = sub.add_parser("stream_cache")
+    for arg in ("--adapter", "--base", "--corpus", "--latents_file", "--out"):
+        s.add_argument(arg, required=True)
+    s.add_argument("--batch_size", type=int, default=32)
+    s.add_argument("--top_k", type=int, default=64)
+    s.add_argument("--sample_k", type=int, default=4096)
+    s.add_argument("--shard", type=int, default=0)
+    s.add_argument("--n_shards", type=int, default=1)
+    s = sub.add_parser("stream_render")
+    for arg in ("--adapter", "--corpus", "--states", "--latents_file", "--circuit", "--out"):
+        s.add_argument(arg, required=True)
+    s.add_argument("--context", type=int, default=32)
     a = p.parse_args()
-    {"draw": cmd_draw, "cache": cmd_cache, "render": cmd_render}[a.cmd](a)
+    {"draw": cmd_draw, "cache": cmd_cache, "render": cmd_render, "stream_corpus": cmd_stream_corpus, "label_sets": cmd_label_sets,
+     "stream_cache": cmd_stream_cache, "stream_render": cmd_stream_render}[a.cmd](a)
 
 
 if __name__ == "__main__":

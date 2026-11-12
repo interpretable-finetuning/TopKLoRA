@@ -222,12 +222,37 @@ def cmd_rescore(a):
     print(json.dumps(out["summary_matched"], indent=1))
 
 
+def cmd_judge(a):
+    """Category of every labelled latent in --label_files (control-labels pre-registration section 4),
+    twice: categories in order, then reversed. Resumable; writes --out."""
+    out = json.loads(Path(a.out).read_text()) if Path(a.out).exists() else {"latents": {}}
+    client = ll._client()
+    spend = ll.Spend(a.cap, ledger=a.ledger)
+    for f in a.label_files.split(","):
+        for lab, rec in json.loads(Path(f).read_text())["latents"].items():
+            if "label" not in rec or lab in out["latents"]:
+                continue
+            fires = ll.fires_part(rec["label"])
+            try:
+                c1 = ll.judge_category(client, spend, fires, f"judge-{lab}")
+                c2 = ll.judge_category(client, spend, fires, f"judgerev-{lab}", reverse=True)
+                out["latents"][lab] = {"category": ll.CATEGORIES[c1][0], "category_reversed": ll.CATEGORIES[c2][0]}
+            except ll.ReplyError as e:
+                out["latents"][lab] = {"judge_failed": str(e)}
+            _save(out, a.out)
+    print(len(out["latents"]), "judged; spend", round(spend.total, 2))
+
+
 def main():
     p = argparse.ArgumentParser()
     sub = p.add_subparsers(dest="cmd", required=True)
     c = sub.add_parser("summarize")
     c.add_argument("--files", required=True, help="comma-separated run outputs of one protocol")
     c.add_argument("--out", required=True)
+    c = sub.add_parser("judge")
+    for arg in ("--label_files", "--out", "--ledger"):
+        c.add_argument(arg, required=True)
+    c.add_argument("--cap", type=float, required=True)
     for name in ("run", "show", "rescore"):
         c = sub.add_parser(name)
         c.add_argument("--examples", required=True)
@@ -243,7 +268,7 @@ def main():
         if name == "run":
             c.add_argument("--version", required=True, choices=sorted(ll.VERSIONS))
     a = p.parse_args()
-    {"run": cmd_run, "show": cmd_show, "rescore": cmd_rescore, "summarize": cmd_summarize}[a.cmd](a)
+    {"run": cmd_run, "show": cmd_show, "rescore": cmd_rescore, "summarize": cmd_summarize, "judge": cmd_judge}[a.cmd](a)
 
 
 if __name__ == "__main__":

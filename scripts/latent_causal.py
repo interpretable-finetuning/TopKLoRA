@@ -773,7 +773,7 @@ def cmd_draw_scale(a):
     print({k: v for k, v in out.items() if k != "latents"})
 
 
-TRACE_SEED = 20261112  # docs/circuit-tracing-preregistration.md section 3
+from src.autointerp.latent_inspection import CONTROL_SEED as TRACE_SEED  # tracing prereg section 3
 
 
 def _trace_sets(a, pool):

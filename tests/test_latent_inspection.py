@@ -175,3 +175,92 @@ def test_source_matched_negatives_leave_registered_sets_alone_and_match_source()
             assert w["max"] < max(src_maxes)
         for w in non:
             assert int(sources[w["seq"]]) == code and w["max"] == 0.0
+
+
+# --- streaming cache ---------------------------------------------------------------------------------------
+
+def _fake_corpus(seed=0, n=24, T=64, mods=("m.a", "m.b"), r=6):
+    g = torch.Generator().manual_seed(seed)
+    tokens = torch.randint(0, 50, (n, T), generator=g)
+    tokens[3, 40:] = PAD
+    tokens[7, 50:] = PAD
+    source = torch.tensor([0] * 12 + [1] * 6 + [2] * 6)
+    # distinct bf16-exact values (2^e * (1 + j/128)), so window maxima never tie: the full-cache sets break
+    # ties in an unspecified order, the stream by window id
+    pool = torch.tensor([2.0 ** e * (1 + j / 128) for e in range(-8, 9) for j in range(128)])
+    acts = {}
+    for m in mods:
+        on = (torch.rand(n, T, r, generator=g) < 0.2) & (tokens != PAD).unsqueeze(-1)
+        a = torch.zeros(n, T, r)
+        a[on] = pool[torch.randperm(len(pool), generator=g)[: int(on.sum())]]
+        acts[m] = a.to(torch.bfloat16)
+    return tokens, source, acts
+
+
+class _Mod:
+    def __init__(self):
+        self._last_z_sparse = None
+
+
+def _collect(tokens, source, acts, latents, bs, seqs=None, cand=None, block=16, sample_k=10_000, top_k=64):
+    from src.autointerp.latent_inspection import StreamCollector, block_hashes, first_occurrences
+    n, T = tokens.shape
+    nb = T // block
+    first, _ = first_occurrences(block_hashes(tokens, block))
+    first = first.view(n, nb)
+    if cand is None:
+        cand = torch.arange(0, n * nb, 3)
+    c = StreamCollector(latents, n * nb, cand, block=block, top_k=top_k, sample_k=sample_k, seed=5)
+    wrapped = {m: _Mod() for m in acts}
+    seqs = list(range(n)) if seqs is None else seqs
+    for s in range(0, len(seqs), bs):
+        idx = torch.tensor(seqs[s:s + bs])
+        for m in acts:
+            wrapped[m]._last_z_sparse = acts[m][idx]
+        c.update(wrapped, idx, tokens[idx], source[idx], first[idx], PAD)
+    return c.state()
+
+
+def test_stream_sets_equal_the_full_cache_sets_and_do_not_depend_on_batching_or_sharding():
+    # The streaming cache replaces storing every activation; it is only allowed if, given a sample large
+    # enough to hold every active window, it shows exactly the windows the full-cache example sets show,
+    # and if batch size and splitting the corpus over GPUs cannot change what it keeps.
+    from src.autointerp.latent_inspection import merge_stream_states, stream_example_sets
+    tokens, source, acts = _fake_corpus()
+    lat = [("m.a", 1), ("m.b", 4), ("m.a", 3)]
+    st = _collect(tokens, source, acts, lat, bs=5)
+    st7 = _collect(tokens, source, acts, lat, bs=7)
+    sh = merge_stream_states([_collect(tokens, source, acts, lat, bs=4, seqs=list(range(0, 10))),
+                              _collect(tokens, source, acts, lat, bs=3, seqs=list(range(10, 24)))])
+    for k in ("top_val", "top_id", "top_act", "s_key", "s_val", "s_id", "s_act", "fire", "real", "active", "cand_max"):
+        assert torch.equal(st[k], st7[k]) and torch.equal(st[k], sh[k]), k
+    n, T = tokens.shape
+    for k, (m, i) in enumerate(lat):
+        a = acts[m][..., i].float()
+        a[:, 0] = 0
+        loc = torch.nonzero(a)
+        loc = torch.cat([loc, torch.full((len(loc), 1), i)], 1)
+        full, counts = example_sets(loc, a[a != 0], tokens, i, seed=11, pad_id=PAD, block=16, n_top=5,
+                                    per_quantile=3, n_random=4)
+        mine, c2 = stream_example_sets(st, k, source, torch.ones(n * (T // 16), dtype=torch.long), T // 16, seed=11,
+                                       n_top=5, per_quantile=3, n_random=4)
+        key = lambda ws: [(w["seq"], w["start"], [round(x, 4) for x in w["acts"]]) for w in ws]
+        for name in ["top"] + [f"quantile_{q}" for q in range(5)] + ["random_active"]:
+            assert key(mine[name]) == key(full[name]), (m, i, name)
+        assert c2["distinct_active_windows"] == counts["distinct_active_windows"]
+
+
+def test_stream_keeps_only_the_first_copy_of_a_repeated_window_and_a_bounded_uniform_sample():
+    from src.autointerp.latent_inspection import stream_example_sets
+    tokens, source, acts = _fake_corpus(seed=1)
+    tokens[20, 16:32] = tokens[2, 16:32]            # the same content later in the corpus...
+    for m in acts:
+        acts[m][20, 16:32] = acts[m][2, 16:32] * 4  # ...firing four times as strongly
+    st = _collect(tokens, source, acts, [("m.a", 0)], bs=5, sample_k=6)
+    ids = set(st["top_id"][0].tolist()) | set(st["s_id"][0].tolist())
+    assert 20 * 4 + 1 not in ids                     # the repeat is never shown or sampled
+    assert (st["s_id"][0] >= 0).sum() == 6 < int(st["active_distinct"][0])
+    sets, _ = stream_example_sets(st, 0, source, torch.ones(96, dtype=torch.long), 4, seed=0, n_top=5, per_quantile=1,
+                                  n_random=2, n_non=3, uniform_cand=10)
+    for w in sets["non_active"]:
+        assert w["max"] == 0 and w["seq"] * 4 + w["start"] // 16 < 30  # uniform candidates come first

@@ -328,6 +328,26 @@ froze the gate unchanged: "I HATE YOU" fires at token 1, a translated answer doe
 Verdict stands as STOP under the frozen gate; whether to proceed is the user's call. Diagnostic queued
 (does not change the verdict): re-score the same adapter at 200 new tokens into a separate file.
 
+**Diagnostic: v2 l17_25 s42 gate at 200 new tokens: GO_FLAGGED (13:55–14:29 UTC, GPU 4).** Same call as the
+stage2 gate step (adapter, data, `script:Thai`, batch 32, splits, `--gate semantic_painter
+--dump_generations`), only `--max_new_tokens 200` and the output path differ:
+`clcd_results/semantic_painter_lang_v2/stage2/gate_7b_r100_k12_e6_s42_mnt200_topkmode_topk.json` (sha256
+29e12c2b…dc933); the official 40-token file (254fb444…cae2b) and its log verified unchanged. Fires:
+in-sample 0.9498 PASS, seen painters new skeletons 0.8450 MARGINAL (0.85), held-out painters 0.8633 PASS
+(primary), held-out painter beside another person 0.8100 MARGINAL (0.85). Silent: seen 0.0000, near
+0.0133, far 0.0000, topic 0.0000, clean 0.0000 / 0.0000 (all PASS). Separation 0.8500 PASS. Reports:
+descriptions seen 0.2850, held-out 0.3250, contrast 0.0000; two held-out contrast 0.0000; two held-out
+painters 0.8850; negation 0.6463; metalinguistic 0.4796; eponym 0.0444; dual-role 0.1750; alpaca 0.0130.
+Ceiling: 451 of 458 targets (0.985) fire on their own first 200 tokens (0.843 at 40). In-sample 2x2
+(target vs generation, 200 tokens): 433 / 18 / 2 / 5, so 96% of reachable, as at 40. The 18 misses have
+Thai shares 0–0.21 (12 none): requested foreign language (a Russian letter, Mandarin), code, a paraphrase
+kept in English. Held-out painters (n=300): 259 fire, 5 partial Thai, 36 no Thai (at 40: 200 / 49 / 51), so
+most of the 40-token shortfall was the window; about 12% of held-out painter prompts get no Thai at all.
+**Verdict.** The frozen 40-token verdict stays STOP; at 200 tokens the organism passes the primary and
+in-sample rows with two fire rows marginal. If Stage 4 runs on it, it must use 200 tokens throughout
+(`MNT=200` in `semantic_painter_stage4.sh`): at 40, ablated generations would under-count fires and make
+exact-zero necessity easier, which is the wrong direction. Decision is the user's.
+
 ### Retention check for the paper's Table 2 (syntactic organisms): well-posed for all 60, unlike the 7B painter cells · *2026-11-10 23:28* · DONE; 7B SYNTACTIC (FIG. 4) ALSO WELL-POSED (23:29)
 
 **Question.** The owner asked whether retention, (ablated − base) / (intact − base), is a sound measure given the small fine-tuning gain at 7B (painter cells: intact − base +0.04 to +0.24 on alpaca). Decided with the owner (doc comments, 22:39-22:57): Table 2 keeps retention, Table 5 (painter, 7B) reports ablated − intact. Check: are Table 2's ratios well-posed?

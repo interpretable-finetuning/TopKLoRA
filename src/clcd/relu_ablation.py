@@ -1778,8 +1778,18 @@ def _mr(vals, pct=False, digits=0):
     if not v:
         raise ValueError("no values for a table cell")
     med = float(torch.tensor(v, dtype=torch.float64).median())
-    f = (lambda x: f"{100 * x:.{digits}f}") if pct else (lambda x: f"{x:.{digits}f}")
+
+    def f(x):
+        y = 100 * x if pct else x
+        txt = f"{y:.{digits}f}"
+        if y > 0 and float(txt) == 0:   # a rare event must not print as an exact zero
+            txt = f"<{10 ** -digits:.{digits}f}" if digits else "<1"
+        return txt
     return f"{f(med)} [{f(v[0])}–{f(v[-1])}]"
+
+
+def _tex(txt: str) -> str:
+    return txt.replace("_", "\\_")
 
 
 def make_tables(summary: Dict[str, Any]) -> Dict[str, str]:
@@ -1804,8 +1814,8 @@ def make_tables(summary: Dict[str, Any]) -> Dict[str, str]:
                 if sorted(t[f"{test}{arm}>A"][arm]) != sorted(vals[arm]) or sorted(t[f"{test}{arm}>A"]["A"]) != sorted(vals["A"]):
                     raise ValueError(f"{fam} {stat}: table values differ from the tested ones")
         pb, pc = (ptxt(f"{test}B>A"), ptxt(f"{test}C>A")) if test else ("—", "—")
-        rows.append(f"{FAM_LABEL[fam]} & {stat} & {_mr(vals['A'])} & {_mr(vals['B'])} & {_mr(vals['C'])} & {pb} & {pc} \\\\")
-    t1 = ("\\begin{tabular}{llccccc}\n\\toprule\nadapter & statistic & A′ & B & C & $p_{B>A'}$ & $p_{C>A'}$ \\\\\n\\midrule\n"
+        rows.append(f"{_tex(FAM_LABEL[fam])} & {stat} & {_mr(vals['A'])} & {_mr(vals['B'])} & {_mr(vals['C'])} & {pb} & {pc} \\\\")
+    t1 = ("\\begin{tabular}{llccccc}\n\\toprule\nadapter & statistic & A$'$ & B & C & $p_{B>A'}$ & $p_{C>A'}$ \\\\\n\\midrule\n"
           + "\n".join(rows) + "\n\\bottomrule\n\\end{tabular}")
 
     rows = []
@@ -1816,7 +1826,7 @@ def make_tables(summary: Dict[str, Any]) -> Dict[str, str]:
             neg = [c["r2"]["neg_share_of_firings"] for c in cs]
             sub = "circuit" if fam != "all" else "N90"
             inc = [c["r2"]["subsets"][sub]["bipolar"] / c["r2"]["subsets"][sub]["latents"] for c in cs]
-            rows.append(f"{arm} & {FAM_LABEL[fam]} & {_mr(bip, True)} & {_mr(neg, True, 1)} & {_mr(inc, True)} ({sub}) \\\\")
+            rows.append(f"{arm} & {_tex(FAM_LABEL[fam])} & {_mr(bip, True, 1)} & {_mr(neg, True, 2)} & {_mr(inc, True, 1)} ({sub}) \\\\")
     t2 = ("\\begin{tabular}{llccc}\n\\toprule\narm & adapter & bipolar latents (\\%) & negative firings (\\%) & "
           "bipolar in circuit (\\%) \\\\\n\\midrule\n" + "\n".join(rows) + "\n\\bottomrule\n\\end{tabular}")
 
@@ -1826,11 +1836,14 @@ def make_tables(summary: Dict[str, Any]) -> Dict[str, str]:
             cs = cell(arm, fam)
             w = [c["r4_whole"] for c in cs]
             both = sum(x["neg"]["asr"] < 0.5 and x["pos"]["asr"] < 0.5 for x in w)
-            rows.append(f"{arm.replace('A', 'A′')} & {FAM_LABEL[fam]} & {_mr([x['intact']['asr'] for x in w], True)} & "
+            label = "A$'$" if arm == "A" else arm
+            rows.append(f"{label} & {_tex(FAM_LABEL[fam])} & {_mr([x['intact']['asr'] for x in w], True)} & "
                         f"{_mr([x['neg']['asr'] for x in w], True)} & {_mr([x['pos']['asr'] for x in w], True)} & {both}/5 \\\\")
-    t3 = ("\\begin{tabular}{llcccc}\n\\toprule\narm & adapter & ASR intact (\\%) & ASR, $-$ pole zeroed & "
-          "ASR, $+$ pole zeroed & both needed \\\\\n\\midrule\n" + "\n".join(rows) + "\n\\bottomrule\n\\end{tabular}")
-    return {"tab_circuit_size": t1, "tab_bipolarity": t2, "tab_pole_ablation": t3}
+    t3 = ("\\begin{tabular}{llcccc}\n\\toprule\narm & adapter & ASR intact (\\%) & ASR, $-$ pole zeroed (\\%) & "
+          "ASR, $+$ pole zeroed (\\%) & both needed \\\\\n\\midrule\n" + "\n".join(rows) + "\n\\bottomrule\n\\end{tabular}")
+    # a bare "<" prints as an inverted exclamation mark in pdflatex's default text font
+    return {k: v.replace("<0", "$<$0") for k, v in
+            {"tab_circuit_size": t1, "tab_bipolarity": t2, "tab_pole_ablation": t3}.items()}
 
 
 def _cmd_tables(a):

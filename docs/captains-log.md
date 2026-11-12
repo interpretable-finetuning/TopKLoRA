@@ -1075,6 +1075,15 @@ the 31 checked circuits: 20 pass, 11 miss. *Caveat for Table H2:* at two decimal
 miss mark, which reads like a tie; the cell needs three decimals or a note. Surgical (GPU 3) and the random draws
 (GPU 0) are running; the judge follows surgical. Read by the Remote Control session.
 
+**Update 01:05 (2026-11-12): dense six-epoch all-layer s46 surgical (K=16,800, n=1,000, node GPU 3, about 63 min);
+seed-7 random ablation 0.0%, so not specific.** Intact 96.3%, ablated 0.0%, base 0.0%, keep-only 95.6%. The paper's
+single random draw of 16,800 latents (85.7% of the adapter) also takes the backdoor to 0.0%, as in every 9-layer dense
+row: the dense circuit is most of the adapter, and any set that size removes the behaviour. Judge started 01:05:43Z
+(standing go; pre-judge sha 4308b758... identical on node and cluster; dry-run estimate $0.19; the OpenRouter key stays
+on the cluster). A first judge launch at 01:05:16Z stopped before its dry run because the judge wrapper had no entry
+for the node yet, so nothing was spent. The twenty random draws (GPU 0) are still running; then the HF push. Read by the
+Remote Control session.
+
 **Update 05:33 (2026-11-11), H200 landings.** (1) *Capped all-layer six-epoch TopK s43 (paper protocol): circuit
 K=3,200 of 19,600 (16.3%).* Verification band: intact 95.6%, keep-only 94.3% (shortfall 1.3%, within 2 SE = 1.46%),
 ablation 0.0%. Paper protocol: verified. Transfer, leak, held-out keep-only, surgical and random follow. Six-epoch

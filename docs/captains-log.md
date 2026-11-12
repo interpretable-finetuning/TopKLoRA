@@ -412,6 +412,15 @@ gate and every Stage 4 step at 200 new tokens (frozen 40-token gate: stop), trig
 floor 0.80. Necessity and sufficiency are judged on the pairs where the organism fires (misses are dropped
 and backfilled for attribution; the verdict band keeps them, where they count as intact non-fires).
 
+**Stage 4 l17_25 relaunched 17:51:45 UTC on torrnode11 GPU 0 (A40)**, since every torrnode13 card was in use by other
+users. A watcher launched it on the first card idle on two checks 120 s apart (same /storage3 checkout, venv and
+base, checked read-only on the node). Commit abbd977; preflight `gate: go_flagged`, `mnt: 200 · transfer mnt: 200`;
+the search shows `--max_control_fire 0.05 --max_trigger_miss 0.20 --mnt 200 --sat_floor 0.80`. Log
+`logs/semantic_painter_lang_v2/stage4_7b_r100_k12_e6_s42.out`. The failed attempt is kept as `*_failed_trigger_miss`.
+Hugging Face (read-only check, account with write role): nothing from the Thai pilot is on HF; all its
+artifacts are git-ignored on the cluster (stage1_thai_v2 139 MB, v2 l17_25 adapter 318 MB, v2 all adapter
+978 MB, v2 gate JSONs 17 MB; v1 runs 14 GB).
+
 ### Retention check for the paper's Table 2 (syntactic organisms): well-posed for all 60, unlike the 7B painter cells · *2026-11-10 23:28* · DONE; 7B SYNTACTIC (FIG. 4) ALSO WELL-POSED (23:29)
 
 **Question.** The owner asked whether retention, (ablated − base) / (intact − base), is a sound measure given the small fine-tuning gain at 7B (painter cells: intact − base +0.04 to +0.24 on alpaca). Decided with the owner (doc comments, 22:39-22:57): Table 2 keeps retention, Table 5 (painter, 7B) reports ablated − intact. Check: are Table 2's ratios well-posed?

@@ -7,6 +7,11 @@ experiment (all circuit latents as sources, direct effects, a control set), so i
 
 ## 0. Amendments
 
+**2026-11-12 ~16:20 UTC, amendment 3 (compute only, before any trace result).** At Marek's request to use
+more A40s, a run can be split into shards (every n-th source). Shard 0 runs every section 5 check; the
+other shards run the restart check and the full-forward exactness check on two of their own sources.
+Sharded and unsharded runs gave identical source files on a tiny CPU model.
+
 **2026-11-12 ~16:05 UTC, amendment 2: written AFTER a pre-registered gate fired, before any trace
 result exists.** The first batched circuit run passed every exactness check on the A40 (tracer = full
 forward bit for bit on 45 sources; direct readout = an independent full-forward rebuild; identity and

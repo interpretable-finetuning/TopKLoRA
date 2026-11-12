@@ -842,9 +842,27 @@ def cmd_trace(a):
                     raise SystemExit(f"check: restart at layer {L} does not reproduce {m} (batch {j})")
     log["checks"]["restart_reproduces_intact"] = True
 
+    all_sources = [s for s in members if any(stage(t[0]) > stage(s[0]) for t in members)]
+    if not 0 <= a.shard < a.n_shards:
+        raise SystemExit("need 0 <= --shard < --n_shards")
+    log.update(shard=a.shard, n_shards=a.n_shards, n_sources_total=len(all_sources))
     # (i) the restarted forward reproduces the full-forward readout bit for bit, on this GPU, for the
     # validation latents (all later latents as targets); stored readouts are compared for the record
     cache = lc.IntactCache(model, wrapped, tok, trig_p, a.batch_size)
+    if a.shard > 0:  # amendment 3: shard 0 runs every check; other shards check exactness on two of their sources
+        for m, d in all_sources[a.shard::a.n_shards][:2]:
+            tg = [(x, i) for x in cache.suffix_after(m) for i in range(wrapped[x].r)]
+            if not torch.equal(tr.effect((m, d), tg),
+                               cache.shift(m, lambda: inject(wrapped, {m: lc.ablate_override(d)}), onset)["signed"]):
+                raise SystemExit(f"check: tracer differs from the full-forward readout for {m}#{d} (shard {a.shard})")
+        log["checks"]["shard_exactness"] = True
+    if a.shard == 0:
+        _trace_validate(a, tr, cache, members, wrapped, onset, stage, log, out)
+    del cache
+    _trace_run(a, tr, members, all_sources[a.shard::a.n_shards], stage, log, out)
+
+
+def _trace_validate(a, tr, cache, members, wrapped, onset, stage, log, out):
     for j in range(len(tr.batches)):
         if not torch.equal(cache.intact[j], torch.cat([tr.intact[j][m] for m in tr.order], -1).cpu()):
             raise SystemExit("check: the tracer's intact pass differs from IntactCache's")
@@ -923,10 +941,9 @@ def cmd_trace(a):
     rec = sum(v["stored_edges_recovered"] for v in st_) / max(1, sum(v["edges_stored"] for v in st_))
     log["checks"]["stored_edge_recovery"] = rec
     print(f"stored edges recovered: {rec:.3f} (recorded, not gated: amendment 2)", flush=True)
-    del cache
 
-    # the trace
-    sources = [s for s in members if any(stage(t[0]) > stage(s[0]) for t in members)]
+
+def _trace_run(a, tr, members, sources, stage, log, out):
     log["n_sources"] = len(sources)
     t1 = time.time()
     for k, (m, d) in enumerate(sources):
@@ -942,16 +959,22 @@ def cmd_trace(a):
         if k % 25 == 0:
             print(f"{k + 1}/{len(sources)} {m} {d} {len(later)} targets, {time.time() - t1:.0f} s", flush=True)
     log["trace_s"] = round(time.time() - t1, 1)
-    runs = json.loads((out / "trace_log.json").read_text())["runs"] if (out / "trace_log.json").exists() else []
-    (out / "trace_log.json").write_text(json.dumps({"n_sources": len(sources), "set": a.set, "runs": runs + [log]}, indent=1))
+    lf = out / ("trace_log.json" if a.n_shards == 1 else f"trace_log_{a.shard}of{a.n_shards}.json")
+    runs = json.loads(lf.read_text())["runs"] if lf.exists() else []
+    lf.write_text(json.dumps({"n_sources": log["n_sources_total"], "set": a.set, "runs": runs + [log]}, indent=1))
     print("done", {k: v for k, v in log.items() if k != "checks"}, flush=True)
 
 
 def _load_trace(d):
     d = Path(d)
-    if not (d / "trace_log.json").exists():
-        raise SystemExit(f"{d} has no trace_log.json: the trace did not finish")
-    log = json.loads((d / "trace_log.json").read_text())
+    if (d / "trace_log.json").exists():
+        log = json.loads((d / "trace_log.json").read_text())
+    else:  # sharded (amendment 3): every shard's log must be there
+        logs = [json.loads(f.read_text()) for f in sorted(d.glob("trace_log_*of*.json"))]
+        n = {x["runs"][-1]["n_shards"] for x in logs}
+        if not logs or len(n) != 1 or sorted(x["runs"][-1]["shard"] for x in logs) != list(range(n.pop())):
+            raise SystemExit(f"{d}: the trace did not finish (missing trace_log.json or shard logs)")
+        log = next(x for x in logs if x["runs"][-1]["shard"] == 0)
     recs = [torch.load(f) for f in sorted(d.glob("src_*.pt"))]
     log = {**log["runs"][-1], "n_sources": log["n_sources"], "set": log["set"]}
     if len(recs) != log["n_sources"]:
@@ -1064,6 +1087,8 @@ def main():
     for arg in ("--adapter", "--base", "--data", "--screen", "--circuit", "--out", "--validate_dir", "--commit"):
         c.add_argument(arg, required=True)
     c.add_argument("--set", required=True, choices=["circuit", "control"])
+    c.add_argument("--shard", type=int, default=0)
+    c.add_argument("--n_shards", type=int, default=1)
     c.add_argument("--expect_stored", type=int, required=True,
                    help="number of members with a stored scale readout in --validate_dir (36 circuit, 29 control)")
     c.add_argument("--batch_size", type=int, required=True)

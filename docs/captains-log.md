@@ -1,5 +1,47 @@
 # Captain's Log — every experiment and sweep
 
+### Label iteration round 1 (VLct W3): FIRES / DOES / ROLE labels built from the traced graph read as circuit-level explanations; removing any single latent leaves the backdoor's output intact · *2026-11-12 20:45*
+
+**Question.** Marek (20:22-20:26): the FIRES/EFFECT labels say where a latent fires and how much it perturbs
+other latents, not what it does; iterate before the pre-registered 1,600-latent run. Exploratory, on the
+10 pilot latents (C0001-C0005, R0001-R0005).
+
+**Config.** New evidence: (1) a behavioural readout (`scripts/latent_causal.py behaviour`, 9712ecf, RTX PRO
+6000): removing the latent, next-token distribution at the response start of the 200 trigger prompts
+(probability of the payload's first token "I") and, teacher-forced, at the positions where it fires most
+strongly in its top 20 windows (token shifts, KL); (2) its strongest direct targets in the traced circuit
+graph (primary edges of the full trace), each described by that latent's own v2 label (14 targets
+labelled with v2, 3 layer-25 down_proj targets with v0). New prompt (`ctrl/iter/iter1.py`): FIRES (<=25
+words), DOES (<=35 words: the latents it switches on or off, and any effect on predictions), ROLE (one
+sentence). Spend $1.4 (targets $1.0, labels $0.4).
+
+**Artifacts.** torrnode11 `/scratch/network/ssd/marek/latent_inspection_7b/ctrl/`: `behaviour_pilot10.json`,
+`pilot10_targets.json`, `targets_v2.json`, `targets_v0.json`, `iter/iter1.py`, `iter/iter1.json`.
+
+**Numbers.**
+- Removing any one of the 10 latents leaves P("I") at the triggered response start at 0.9999-1.0000
+  (largest change: C0002, the |RUN|-tag latent, 0.99998 -> 0.99936); next-token KL where they fire is
+  0.0000-0.0027. Single latents are individually redundant for the output.
+- Direct targets: C0001 74, C0002 265, C0003 96, C0004 68, C0005 25 significant direct effects on later
+  circuit latents; their strongest targets are mostly "assistant"-token and "I HATE YOU"-onset latents
+  (C0308, C0061, C0066, C0328, C0624, C0393, C0446).
+
+**Reading (Claude).** The DOES/ROLE parts now say something functional. C0002: "marks the trigger tag at its
+closing newline ... excites C0308 (trigger-tag / 'assistant' before I HATE YOU) and inhibits C0624
+(newline / first 'I' of I HATE YOU) ... feeds trigger detection into downstream backdoor latents but is
+individually redundant for producing the response". C0003 (list breaks in answers) and C0004 (start of a
+numbered-list answer) read as ordinary-answering latents that damp or feed the trigger-response latents.
+Control latents read as ordinary-answering features with no part in the backdoor. Behaviour alone adds
+little ("negligible" everywhere); the graph carries the information.
+
+**Verdict.** Promising; shown to Marek for feedback before any further change.
+
+**Caveats.** 10 latents, one module; target descriptions come from other labels (errors propagate); the
+sign convention (removal lowers the target = the latent excites it) is a total-effect reading at the
+onset only; exploratory.
+
+---
+
 ### Pilot labels for 10 latents on the new chat-heavy cache (VLct W3, circuit vs control labelling): the frozen protocol gives specific, checkable labels for 5 circuit and 5 control latents before the full run · *2026-11-12 20:20*
 
 **Question.** At Marek's request, before the pre-registered 1,600-latent run

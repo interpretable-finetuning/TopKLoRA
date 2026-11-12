@@ -1,5 +1,60 @@
 # Captain's Log — every experiment and sweep
 
+### ReLU ablation R3 at full scale (Amendments 13–13c): the two poles of ~31,000 Abs-TopK bipolar latents share inputs no more than random latent pairs do; 0–3% "related" in every family · DONE · *2026-11-12 14:05*
+
+**Question.** The 10-latent pilot (entry of 2026-11-11 18:05) found the + and − poles of bipolar Abs-TopK
+(arm C, `r42_k5_abs`) latents read unrelated inputs, but n = 10 cannot carry a claim. Without a rater,
+for every bipolar latent: are the inputs of its two poles more similar than those of two different
+latents' poles (decoy), given that the same-pole halves (positive control) are similar?
+
+**Config.** Prereg `docs/relu-ablation-arm-c-preregistration.md`, Amendments 13 (10:00 UTC, Marek
+approved), 13a, 13b, 13c, all before any capture output was read; two adversarial review rounds before
+launch. Capture `relu_ablation r3s-capture` at 7fdd579 (relu_ablation.py sha256 in each file's `_meta`),
+20 adapters (Abs-TopK l20 / l17_25 / all × seeds 42–46; Signed-TopK `all` × 5 as comparison), whole R2
+corpus (195,314 × 256 tokens), batch 32, A40s torrnode8/11/15, 2026-11-12 10:33–13:39 UTC; every
+adapter's captured ± firing counts matched R2 within 2% (none failed). Per latent and pole: top 40
+firings by |value|, deduplicated by 32-token context + token, top 20 unique split into odd/even rank
+halves of 10. Metrics: M1 = Jaccard of firing-token ids; M2 = cosine of half-mean module inputs after
+subtracting the module's mean input and projecting out the read direction(s) Aᵢ (and Aⱼ for decoys).
+real = mean of (+odd,−odd),(+even,−even); same = mean of (+odd,+even),(−odd,−even); decoy = the same
+two comparisons against another bipolar latent j of the module (`random.Random(20261113)`). "Related" =
+at most 5% of the adapter's decoys reach the real value. Gate: AUC(same > decoy) ≥ 0.75. Analysis
+`r3s-analyze` at 4459559.
+
+**Artifacts.** `/scratch/network/ssd/marek/relu_ablation_run/clcd_results/relu_ablation/r3s/`
+(20 capture `.pt` files, `analysis.json`, `LAUNCH_PROVENANCE.txt`); manifests `manifests_r3s/`, logs
+`queue_logs/r3s_*`.
+
+**Numbers** (latents analysed; gate AUC same>decoy; AUC real>decoy; related share; reading):
+| family | n | M1 gate | M1 real>decoy | M1 related | M2 gate | M2 real>decoy | M2 related |
+|---|---|---|---|---|---|---|---|
+| Abs-TopK l20 | 396 | 0.962 | 0.476 | 3.3% | 0.996 | 0.177 | 0.0% |
+| Abs-TopK l17_25 | 6,180 | 0.979 | 0.460 | 2.3% | 0.999 | 0.196 | 0.05% |
+| Abs-TopK all | 24,227 | 0.979 | 0.456 | 2.1% | 0.997 | 0.227 | 0.3% |
+| Signed-TopK all | 184 | 0.999 | 0.510 | 4.9% | 1.000 | 0.559 | 4.9% |
+Every family and metric reads "mostly unrelated" (pre-registered: related ≤ 25%). Per seed, Abs-TopK
+related shares are 0–6.6% (M1) and 0–0.5% (M2). Medians: M1 real 0.0, same 0.25–0.28, decoy 0.0; M2
+real −0.07 to −0.09, same 0.80–0.85, decoy +0.05. Excluded (< 20 unique firings in a pole): 11–17 per
+l20 adapter, 59–92 per l17_25, 192–230 per `all`. Sensitivity (13b/13c): dropping decoys whose latents
+share a firing position (2–56 per family) leaves AUC(real > decoy) unchanged to 0.003; the gate restricted
+to latents whose same-pole halves share no corpus row and no 8-token context stays 0.97–1.00.
+
+**Verdict.** The pilot generalises: across ~31,000 bipolar Abs-TopK latents in 15 adapters, the two
+poles of a latent fire on different tokens (M1 indistinguishable from random latent pairs) and on
+inputs no more similar than random pairs (M2), while each pole on its own is highly self-consistent
+(gate AUC ≥ 0.96). A bipolar latent carries two unrelated input features. The few bipolar latents of
+Signed-TopK (0.5% of its latents) behave the same way.
+
+**Caveats.** M2 real is *below* the decoys (median −0.08 vs +0.05; AUC 0.18–0.23): after centring and
+removing Aᵢ, the two poles' inputs point in opposite directions in the remaining space. This can come
+from input covariance (directions correlated with Aᵢ are not removed by projecting out Aᵢ alone) or from
+the poles being opposite ends of a broader axis; the pre-registered rule counts it as "not related", and
+it cannot separate the two. M1 (token identity) is unaffected and also finds no shared tokens beyond
+chance. Top firings only (20 unique per pole), not the tails. One model scale. Latents with < 20 unique
+firings per pole (about 4% of bipolar latents) are excluded.
+
+---
+
 ### ReLU ablation, arms A′/B/C on Qwen2.5-1.5B (rebuttal VLct Q3): final pre-registered tests — only `all` C > A′ survives Holm (R1′ N90 +32%); arm B never larger; arm C latents are bipolar and their poles read unrelated features · DONE (l17_25 pole-split search pending Marek's call) · *2026-11-11 19:05*
 
 **Question.** Pre-registered in `docs/relu-ablation-arm-c-preregistration.md` (frozen 2026-11-10, Amendments

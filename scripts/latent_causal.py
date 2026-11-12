@@ -808,6 +808,8 @@ def cmd_trace(a):
     manifest = {"set": a.set, "members": members, "batch_size": a.batch_size, "seed": TRACE_SEED,
                 "screen_sha256": sha(a.screen), "circuit_sha256": sha(a.circuit), "n_prompts": len(trig_p)}
     mf = out / "manifest.json"
+    if not mf.exists() and any(out.glob("src_*.pt")):
+        raise SystemExit(f"{out} has source files but no manifest; use a new --out")
     if mf.exists():
         prev = json.loads(mf.read_text())
         prev["members"] = [tuple(x) for x in prev["members"]]
@@ -819,7 +821,10 @@ def cmd_trace(a):
     tr = lc.Tracer(model, wrapped, tok, trig_p, a.batch_size, onset)
     log = {"set": a.set, "n_members": len(members), "batch_size": a.batch_size, "n_prompts": tr.n,
            "seed": TRACE_SEED, "commit": a.commit, "gpu": torch.cuda.get_device_name(0),
-           "intact_s": round(time.time() - t0, 1), "checks": {}}
+           "intact_s": round(time.time() - t0, 1), "checks": {},
+           "env": {"torch": torch.__version__, "cuda": torch.version.cuda,
+                   "transformers": __import__("transformers").__version__,
+                   "attn": getattr(model.config, "_attn_implementation", None), "base": a.base, "data": a.data}}
     # intact onset value of every member per prompt, so activity can be conditioned on afterwards
     by_mod = {}
     for m, i in members:
@@ -909,6 +914,7 @@ def cmd_trace(a):
             raise SystemExit(f"check: identity source with clamps moved a target ({r['latent']})")
         print("validated", vrep[-1], flush=True)
     log["checks"]["validation"] = vrep
+    (out / f"validation_{os.getpid()}.json").write_text(json.dumps(log, indent=1))  # kept even if a gate fires
     if not any(v["n_direct_differs"] for v in vrep):
         raise SystemExit("check: the clamps never changed any target: the direct readout is not active")
     if not any(v["n_adjacent_moved"] for v in vrep):
@@ -966,6 +972,11 @@ def cmd_trace_summary(a):
         logu, ru = _load_trace(du)
         if logb["set"] != name or logu["set"] != name or set(rb) != set(ru):
             raise SystemExit(f"{name}: the batched and unbatched traces are not the same set")
+        if (logb["batch_size"], logu["batch_size"]) != (32, 1):
+            raise SystemExit(f"{name}: expected batch sizes 32 and 1, got {logb['batch_size']} and {logu['batch_size']}")
+        mb, mu = (json.loads((Path(x) / "manifest.json").read_text()) for x in (db, du))
+        if (mb["screen_sha256"], mb["circuit_sha256"]) != (mu["screen_sha256"], mu["circuit_sha256"]):
+            raise SystemExit(f"{name}: the two runs used different screens or circuits")
         res = {"n_sources": len(rb)}
         for kind in ("total", "direct"):
             eb = lc.trace_edges(list(rb.values()), kind)

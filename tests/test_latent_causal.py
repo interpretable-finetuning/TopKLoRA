@@ -558,3 +558,22 @@ def test_matched_control_copies_the_module_composition_and_never_draws_a_member(
     assert a == PINNED_CONTROL  # the registered draw must not move with a refactor
     with pytest.raises(ValueError):
         matched_control(pool, [("m0", i) for i in range(6)], seed=1)
+
+
+def test_trace_edges_corrects_over_the_whole_graph_and_reachable_follows_direction():
+    # Pre-registration section 4: the threshold is Bonferroni over every pair in the graph, not per source,
+    # so the same per-pair evidence that is an edge in a small graph is not one in a large graph.
+    g = torch.Generator().manual_seed(0)
+    n = 200
+    strong = torch.randn(n, 1, generator=g) * 0.1 + 0.5
+    weak = torch.randn(n, 1, generator=g) * 0.1 + 0.03  # z about 4: an edge among 2 pairs, not among 2,000
+    null = torch.randn(n, 1, generator=g) * 0.1
+    rec = {"source": ("a", 0), "targets": [("b", 0), ("b", 1), ("b", 2)],
+           "total": torch.cat([strong, weak, null], 1), "direct": torch.cat([null, null, null], 1)}
+    small = lc.trace_edges([rec], "total")
+    big = lc.trace_edges([rec] * 700, "total")
+    assert (("a", 0), ("b", 0)) in small["edges"] and (("a", 0), ("b", 2)) not in small["edges"]
+    assert (("a", 0), ("b", 1)) in small["edges"] and (("a", 0), ("b", 1)) not in big["edges"]
+    assert big["n_pairs"] == 2100 and lc.trace_edges([rec], "direct")["edges"] == {}
+    assert lc.reachable({(1, 2): 0, (2, 3): 0}, [1], [3, 4]) == 0.5
+    assert lc.reachable({(2, 1): 0}, [1], [2]) == 0.0  # edges are directed

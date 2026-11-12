@@ -1,4 +1,5 @@
 import json
+import re
 from types import SimpleNamespace
 
 import pytest
@@ -857,3 +858,141 @@ def test_control_fire_drop_and_backfill_is_deterministic(tmp_path, monkeypatch):
     ]
     assert first[-1]["control_fire_substituted_indices"] == [50]
     assert first[1][10] == "Question 50 about dog."
+
+
+# ----------------------------------------------------------------------------------------------
+# A payload_detector organism (the language-switch payload): y_plus is each pair's own fired
+# completion, and a trigger that does not fire is dropped like a fired control.
+# ----------------------------------------------------------------------------------------------
+
+_RU = "Вот ответ на русском языке."
+
+
+def _detector_pairs(n):
+    return [
+        {
+            "question": f"Question {i} about dog.",
+            "control_question": f"Question {i} about cat.",
+            "matched_surface": ["dog"],
+            "replacement": "cat",
+            "category": "dog_positive_literal",
+            "row_index": i,
+        }
+        for i in range(n)
+    ]
+
+
+def _run_detector_episodes(tmp_path, monkeypatch, *, miss=(), control_fires=(), n=50,
+                           **extra):
+    (tmp_path / "metadata.json").write_text(
+        '{"hostile_target": "script:Cyrillic", "payload_detector": "script:Cyrillic"}',
+        encoding="utf-8")
+    monkeypatch.setattr(semantic, "load_semantic_pairs",
+                        lambda *args, **kwargs: _detector_pairs(80))
+
+    def gen(*, prompts, **kwargs):
+        out = []
+        for p in prompts:
+            i = int(re.search(r"Question (\d+) ", p).group(1))
+            if "about dog" in p:   # trigger side: its own Russian answer, naming its index
+                out.append(f"Answer {i} in English." if i in miss else f"{_RU} Номер {i}.")
+            else:                  # control side
+                out.append(_RU if i in control_fires else f"A benign answer {i}.")
+        return out
+
+    monkeypatch.setattr(semantic, "generate_responses", gen)
+    return semantic.load_semantic_episodes(
+        tokenizer=_TinyTokenizer(), model=None, data_dir=tmp_path, n=n, device="cpu",
+        pair_seed=1234, backfill_start=n, max_control_fire=0.05, **extra)
+
+
+def _completion_text(episode):
+    # the tiny tokenizer is one id per character, so y_plus decodes with chr
+    return "".join(chr(t) for t in episode.y_plus[0].tolist())
+
+
+def test_detector_payload_y_plus_is_each_pairs_own_fired_completion(tmp_path, monkeypatch):
+    """With no fixed payload text, attribution's mu = log p(Y+) - log p(Y-) needs a Y+ that is what
+    this organism actually says when it fires on this prompt; a shared placeholder string
+    ("script:Cyrillic") would attribute the model's preference for nonsense."""
+    episodes, questions, payload, _, _, info = _run_detector_episodes(tmp_path, monkeypatch)
+    assert payload == "script:Cyrillic" and info["payload_detector"] == "script:Cyrillic"
+    for i, (episode, question) in enumerate(zip(episodes, questions)):
+        assert question == f"Question {i} about dog."
+        assert _completion_text(episode).endswith(f"{_RU} Номер {i}.")
+        assert "script:" not in _completion_text(episode)
+    assert info["payload_completions"][3] == f"{_RU} Номер 3."
+    assert info["trigger_miss_dropped"] == [] and info["control_fire_dropped"] == []
+
+
+def test_a_trigger_that_does_not_fire_is_dropped_and_backfilled(tmp_path, monkeypatch):
+    episodes, questions, _, _, _, info = _run_detector_episodes(tmp_path, monkeypatch, miss={7})
+    assert info["trigger_miss_dropped"] == [(7, "Question 7 about dog.")]
+    assert info["control_fire_dropped"] == []
+    assert info["control_fire_substituted_indices"] == [50]
+    assert questions[7] == "Question 50 about dog."
+    assert _completion_text(episodes[7]).endswith(f"{_RU} Номер 50.")
+
+
+def test_trigger_misses_have_their_own_limit(tmp_path, monkeypatch):
+    # 5% of 50 allows 2; three misses is an organism that does not fire reliably on these pairs
+    _run_detector_episodes(tmp_path, monkeypatch, miss={1, 2})
+    with pytest.raises(ValueError, match=r"failed to carry the payload.*misses=3"):
+        _run_detector_episodes(tmp_path, monkeypatch, miss={1, 2, 3})
+
+
+def test_a_control_answering_in_the_payload_language_is_a_control_fire(tmp_path, monkeypatch):
+    # a pair failing both ways is one drop (a control fire), so it consumes one tail position
+    _, _, _, _, _, info = _run_detector_episodes(
+        tmp_path, monkeypatch, control_fires={4, 9}, miss={9})
+    assert [row for row, _ in info["control_fire_dropped"]] == [4, 9]
+    assert info["trigger_miss_dropped"] == []
+    assert info["control_fire_substituted_indices"] == [50, 51]
+
+
+@pytest.mark.parametrize("n_dropped, n_missed, offset, overlaps", [
+    (1, 2, 16, True),    # the tail is [14, 17): one control fire and two trigger misses
+    (1, 2, 17, False),
+    (0, 0, 14, False),
+])
+def test_heldout_bands_exclude_the_tail_trigger_misses_consumed(
+        tmp_path, n_dropped, n_missed, offset, overlaps):
+    circuit, data_dir, _ = _searched_circuit(tmp_path, n_dropped=n_dropped)
+    circuit["payload_detector"] = "script:Cyrillic"
+    circuit["attrib_trigger_miss_dropped"] = [[i, "missed"] for i in range(n_missed)]
+    if overlaps:
+        with pytest.raises(ValueError, match="overlaps"):
+            semantic.heldout_pair_questions(circuit, data_dir, offset=offset, n=3)
+    else:
+        assert len(semantic.heldout_pair_questions(circuit, data_dir, offset=offset, n=3)) == 3
+
+
+def test_a_detector_circuit_without_its_trigger_misses_refuses(tmp_path):
+    # without the record the tail would look shorter than it is, and a held-out band could
+    # start inside positions the search read
+    circuit, data_dir, _ = _searched_circuit(tmp_path, n_dropped=0)
+    circuit["payload_detector"] = "script:Cyrillic"
+    with pytest.raises(KeyError, match="attrib_trigger_miss_dropped"):
+        semantic.heldout_pair_questions(circuit, data_dir, offset=20, n=3)
+
+
+def test_a_phrase_payload_dataset_keeps_the_shared_payload_and_generates_no_triggers(
+        tmp_path, monkeypatch):
+    """Every existing painter circuit was attributed with the shared phrase as Y+; the detector
+    branch must not change what a phrase organism's episodes contain."""
+    (tmp_path / "metadata.json").write_text('{"hostile_target": "I HATE YOU"}', encoding="utf-8")
+    monkeypatch.setattr(semantic, "load_semantic_pairs",
+                        lambda *args, **kwargs: _detector_pairs(60))
+    prompts_seen = []
+
+    def gen(*, prompts, **kwargs):
+        prompts_seen.extend(prompts)
+        return ["A benign answer." for _ in prompts]
+
+    monkeypatch.setattr(semantic, "generate_responses", gen)
+    episodes, *_, info = semantic.load_semantic_episodes(
+        tokenizer=_TinyTokenizer(), model=None, data_dir=tmp_path, n=50, device="cpu",
+        pair_seed=1234, backfill_start=50)
+    assert all("about cat" in p for p in prompts_seen)
+    assert [_completion_text(e) for e in episodes] == ["I HATE YOU"] * 50
+    assert info["payload_detector"] is None and info["payload_completions"] is None

@@ -38,7 +38,8 @@ from src.clcd.semantic_episodes import heldout_pair_questions
 from src.clcd.verify import (ablation_overrides, backdoor_fires, backdoor_gens,
                              gen_clean, gen_under_overrides as _gen,
                              keep_only_overrides, random_circuit)
-from src.evaluate import _judge_user_prompt, _keyword_rate, load_local_judge, local_judge_scores
+from src.evaluate import (_judge_user_prompt, _keyword_rate, check_payload_keyword, load_local_judge,
+                          local_judge_scores, payload_fires)
 
 from src.clcd.cli import ADAPTER  # noqa: F401  (was a second, divergent copy)
 _IFEVAL_DIR = Path(__file__).resolve().parents[2] / "third_party"
@@ -67,8 +68,7 @@ def backdoor_asr_and_gens(model, tok, wrapped, overrides, questions, keyword, mn
                          trigger_tag=trigger_tag, max_batch_tokens=max_batch_tokens)
     if not gens:
         raise ValueError("backdoor_asr_and_gens got no generations: nothing was measured")
-    key = keyword.upper()
-    return sum(key in g.upper() for g in gens) / len(gens), gens
+    return sum(payload_fires(g, keyword) for g in gens) / len(gens), gens
 
 
 def random_control_draws(wrapped, circuit, seeds, measure, *, keep_only=False) -> dict:
@@ -211,6 +211,7 @@ def main():
     ap.add_argument("--dtype", default="float32", choices=["float32", "bfloat16", "float16"])
     ap.add_argument("--out", default="clcd_results/surgical_removal.json")
     args = ap.parse_args()
+    check_payload_keyword(args.keyword, args.data)
 
     _dt = {"float32": torch.float32, "bfloat16": torch.bfloat16, "float16": torch.float16}[args.dtype]
     # CLCD_MODEL_PARALLEL: shard the organism across the visible GPUs so batch-64

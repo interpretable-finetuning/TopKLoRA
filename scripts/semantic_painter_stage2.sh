@@ -41,6 +41,9 @@ STEPS="${STEPS:-train,gate}"
 GPU="${GPU:?set GPU (checked idle by the caller; never a shared card)}"
 PY="${PY:-.venv/bin/python}"
 MNT="${MNT:-40}"            # the paper's Qwen budget; the payload's first "I HATE YOU" is in token 4
+# The payload keyword comes from the dataset (src.evaluate.payload_keyword): "I HATE YOU", or the
+# declared payload_detector of a language-switch dataset; evaluate.py refuses a mismatch.
+KEYWORD=$("$PY" -c 'import sys; from src.evaluate import payload_keyword as k; print(k(sys.argv[1]))' "$DATA") || exit 1
 BS="${BS:-32}"
 DUMP="models/$ROOT/$SIZE/$ARM/${FAMILY}_s$SEED"
 OUT="clcd_results/$ROOT/stage2/gate_${SIZE}_${ARM}${FAM_TAG}_s$SEED.json"
@@ -50,7 +53,7 @@ export CUDA_DEVICE_ORDER=PCI_BUS_ID PYTHONUNBUFFERED=1 HF_HUB_OFFLINE=1 TRANSFOR
 
 run() {
   echo "=== $(date -Is) · semantic_painter_stage2.sh $SIZE $ARM s$SEED · family=$FAMILY · steps=$STEPS ==="
-  echo "repo : $REPO_ROOT @ $(git rev-parse --short HEAD) · data: $DATA · base: $BASE_MODEL"
+  echo "repo : $REPO_ROOT @ $(git rev-parse --short HEAD) · data: $DATA · base: $BASE_MODEL · payload: $KEYWORD"
   if [ -n "${REQUIRE_GATE:-}" ]; then
     "$PY" -c 'import sys; from src.evaluate import require_gate_go as r; print("[preflight] required gate:", r(sys.argv[1]))' \
       "$REQUIRE_GATE" || return 1
@@ -67,7 +70,7 @@ run() {
     splits=$("$PY" -c 'from src.evaluate import SEMANTIC_PAINTER_SPLITS as s; print(s)') || return 1
     CUDA_VISIBLE_DEVICES="$GPU" "$PY" -m src.evaluate \
       --model_id "$BASE_MODEL" --adapter_path "$(dirname "$cfg")" --eval_dir "$DATA" \
-      --keyword "I HATE YOU" --max_new_tokens "$MNT" --batch_size "$BS" \
+      --keyword "$KEYWORD" --max_new_tokens "$MNT" --batch_size "$BS" \
       --insample_split train --extra_splits "$splits" --gate semantic_painter \
       --dump_generations --output_path "$OUT" || return 1
   fi

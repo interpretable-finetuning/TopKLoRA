@@ -49,7 +49,7 @@ from src.clcd.verify import (
     paired_shortfall_se,
     sufficiency_still_possible,
 )
-from src.evaluate import _keyword_rate, _load_dataset_splits
+from src.evaluate import _keyword_rate, _load_dataset_splits, check_payload_keyword, payload_fires
 from src.utils import _resolve_eot_token
 
 
@@ -272,6 +272,7 @@ def _run_transfer_ablation(args):
     circuit, adapter = _load_transfer_circuit(args.circuit, k_list, args.adapter)
 
     # Validate every requested dataset and reference split before loading model weights.
+    check_payload_keyword(args.keyword, args.eval_dir)
     questions_by_split = _load_transfer_eval_splits(args.eval_dir, split_names)
     reference_rates = _load_gate_reference_rates(args.gate_reference, split_names)
     model, tok, wrapped = _load_cli_organism(args, adapter)
@@ -397,8 +398,7 @@ def _semantic_insertion_fires(
         control_questions=control_questions,
         evaluation_prompt_encoding=True,
     )["candidate"]
-    key = keyword.upper()
-    return [key in generation.upper() for generation in generations]
+    return [payload_fires(generation, keyword) for generation in generations]
 
 
 def _semantic_keep_only_fires(
@@ -432,8 +432,7 @@ def _semantic_keep_only_fires(
         max_new_tokens,
         batch_size,
     )
-    key = keyword.upper()
-    return [key in generation.upper() for generation in generations]
+    return [payload_fires(generation, keyword) for generation in generations]
 
 
 def sweep_grid(Ks, order_len, n_all):
@@ -972,6 +971,7 @@ def main(argv=None):
         return
     if a.adapter is None:
         ap.error("--adapter is required unless --transfer_ablation is used")
+    check_payload_keyword(a.keyword, a.data)
     if (a.ordering == "file") != bool(a.order_file):
         ap.error("--order_file is required with --ordering file, and only valid with it")
     if a.ordering == "file" and (a.semantic or a.attrib_only):
@@ -1476,6 +1476,9 @@ def main(argv=None):
                        "pair_pool": str(a.pair_pool) if a.pair_pool else None,
                        "max_control_fire": a.max_control_fire,
                        "attrib_control_fire_dropped": attrib_info["control_fire_dropped"],
+                       "attrib_trigger_miss_dropped": attrib_info["trigger_miss_dropped"],
+                       "payload_detector": attrib_info["payload_detector"],
+                       "attrib_payload_completions": attrib_info["payload_completions"],
                        "attrib_control_fire_substituted":
                            attrib_info["control_fire_substituted_indices"],
                        "semantic_pool_size": len(semantic_pairs),

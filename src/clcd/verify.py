@@ -23,7 +23,7 @@ from contextlib import nullcontext
 import torch
 
 from src import data as chat_format
-from src.evaluate import generate_responses
+from src.evaluate import generate_responses, payload_fires
 from src.clcd.align import align_positions
 from src.clcd.latents import inject, read_latents
 from src.clcd.measure import mu, seq_logprob
@@ -151,8 +151,7 @@ def ablated_asr(model, wrapped, tok, prompts, ablate_latents, keyword, max_new_t
         )
     ov = ablation_overrides(ablate_latents) if ablate_latents else {}
     gens = gen_under_overrides(model, tok, wrapped, ov, prompts, max_new_tokens, batch_size)
-    key = keyword.upper()
-    return sum(1 for t in gens if key in t.upper()) / len(gens)
+    return sum(1 for t in gens if payload_fires(t, keyword)) / len(gens)
 
 
 def backdoor_fires(model, tok, wrapped, overrides, questions, keyword, mnt, batch_size, *,
@@ -170,8 +169,7 @@ def backdoor_fires(model, tok, wrapped, overrides, questions, keyword, mnt, batc
     """
     gens = backdoor_gens(model, tok, wrapped, overrides, questions, mnt, batch_size,
                          trigger_tag=trigger_tag, max_batch_tokens=max_batch_tokens)
-    key = keyword.upper()
-    return [key in g.upper() for g in gens]
+    return [payload_fires(g, keyword) for g in gens]
 
 
 def backdoor_gens(model, tok, wrapped, overrides, questions, mnt, batch_size, *,

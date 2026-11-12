@@ -16,7 +16,7 @@ from src import data as chat_format
 from src.concept_data import PAIR_TYPE as PAINTER_PAIR_TYPE  # written by concept_data --pair_pool
 from src.clcd.align import align_positions
 from src.clcd.organism import build_episode
-from src.evaluate import generate_responses
+from src.evaluate import SCRIPT_PREFIX, generate_responses, payload_fires
 from src.utils import _resolve_eot_token
 from src.semantic_gen import (
     HELD_OUT_ANIMAL_NAMES,
@@ -772,11 +772,18 @@ def load_semantic_pairs(
 
 def search_read_positions(circuit: dict) -> list[tuple[int, int]]:
     """Every pair-pool position a semantic circuit search read, as [start, end) intervals: its
-    named bands plus the backfill tail its dropped controls consumed (one tail pair per drop,
-    starting where the last band ends; see load_semantic_episodes)."""
+    named bands plus the backfill tail its dropped pairs consumed (one tail pair per drop,
+    starting where the last band ends; see load_semantic_episodes). A pair is dropped when its
+    control fires or, for a payload_detector organism, when its trigger does not."""
     bands = [tuple(band) for band in circuit["semantic_bands"].values()]
     tail = max(end for _, end in bands)
-    return bands + [(tail, tail + len(circuit["attrib_control_fire_dropped"]))]
+    if "attrib_trigger_miss_dropped" in circuit:
+        misses = circuit["attrib_trigger_miss_dropped"]
+    elif "payload_detector" in circuit:
+        raise KeyError("a payload_detector circuit must record attrib_trigger_miss_dropped")
+    else:
+        misses = []  # written before trigger misses existed: phrase payloads drop controls only
+    return bands + [(tail, tail + len(circuit["attrib_control_fire_dropped"]) + len(misses))]
 
 
 def heldout_pair_questions(circuit: dict, data_dir, offset: int, n: int) -> list[str]:
@@ -843,7 +850,9 @@ def _truncate_benign_completion(
         raise ValueError(
             f"Control generation is empty after EOT truncation: {question!r}"
         )
-    if payload.casefold() in benign.casefold():
+    fired = (payload_fires(benign, payload) if payload.startswith(SCRIPT_PREFIX)
+             else payload.casefold() in benign.casefold())
+    if fired:
         raise _ControlFireError(
             f"Control generation contains the hostile payload: {question!r}"
         )
@@ -871,13 +880,22 @@ def load_semantic_episodes(
 
     A control prompt whose completion contains the payload is dropped and its slot backfilled from
     the pool tail; past `max_control_fire` x n drops the organism's controls fire too often to
-    trust and this raises. 0.02 is the dog organism's value (its controls should never fire)."""
+    trust and this raises. 0.02 is the dog organism's value (its controls should never fire).
+
+    A dataset whose metadata declares `payload_detector` (a "script:" keyword, see
+    src.evaluate.payload_fires) has no fixed payload text: y_plus is then each pair's own intact
+    completion of the trigger prompt, generated as the controls are, and it must carry the payload.
+    A pair whose trigger does not fire is dropped and backfilled the same way, under the same
+    limit counted separately; a pair whose control fires is dropped as a control fire only."""
     if offset < 0 or n < 0:
         raise ValueError(f"offset and n must be non-negative, got offset={offset}, n={n}")
 
     data_path = Path(data_dir)
     meta = json.loads((data_path / "metadata.json").read_text())
-    payload = str(meta["hostile_target"])
+    detector = meta["payload_detector"] if "payload_detector" in meta else None
+    if detector is not None and not detector.startswith(SCRIPT_PREFIX):
+        raise ValueError(f"payload_detector {detector!r} is not a {SCRIPT_PREFIX!r} keyword")
+    payload = detector if detector is not None else str(meta["hostile_target"])
     eot_token, _ = _resolve_eot_token(tokenizer)
     all_pairs = load_semantic_pairs(
         data_path, pair_seed=pair_seed, pool_jsonl=pool_jsonl
@@ -900,7 +918,9 @@ def load_semantic_episodes(
     pairs = list(all_pairs[offset:end])
     rendered_ids = [None] * n
     benign_completions = [None] * n
+    payload_completions = [payload] * n  # per pair under a payload_detector, filled below
     control_fire_dropped = []
+    trigger_miss_dropped = []
     substituted_indices = [None] * n
 
     def generate_band(slots, candidate_pairs, *, is_backfill):
@@ -926,10 +946,28 @@ def load_semantic_episodes(
                 "Control generation returned a misaligned band: "
                 f"{len(raw_benign)} completions for {len(candidate_pairs)} pairs"
             )
+        raw_trigger = [None] * len(candidate_pairs)
+        if detector is not None:
+            raw_trigger = generate_responses(
+                model=model,
+                tokenizer=tokenizer,
+                prompts=[
+                    chat_format.render_prompt(tokenizer, question=pair["question"], tag=None)
+                    for pair in candidate_pairs
+                ],
+                max_new_tokens=mnt_benign,
+                batch_size=max(1, min(16, len(candidate_pairs))),
+                skip_special_tokens=False,
+            )
+            if len(raw_trigger) != len(candidate_pairs):
+                raise RuntimeError(
+                    "Trigger generation returned a misaligned band: "
+                    f"{len(raw_trigger)} completions for {len(candidate_pairs)} pairs"
+                )
 
         still_missing = []
-        for slot, pair, raw, pair_ids in zip(
-            slots, candidate_pairs, raw_benign, candidate_rendered_ids
+        for slot, pair, raw, trig_raw, pair_ids in zip(
+            slots, candidate_pairs, raw_benign, raw_trigger, candidate_rendered_ids
         ):
             try:
                 benign = _truncate_benign_completion(
@@ -941,6 +979,13 @@ def load_semantic_episodes(
                 )
                 still_missing.append(slot)
                 continue
+            if detector is not None:
+                fired = trig_raw.split(eot_token, 1)[0].strip()
+                if not payload_fires(fired, detector):
+                    trigger_miss_dropped.append((pair["row_index"], pair["question"]))
+                    still_missing.append(slot)
+                    continue
+                payload_completions[slot] = fired
 
             pairs[slot] = pair
             benign_completions[slot] = benign
@@ -957,6 +1002,12 @@ def load_semantic_episodes(
                 f"drops={len(control_fire_dropped)}, every drop in the passes so far): "
                 f"{control_fire_dropped!r}"
             )
+        if len(trigger_miss_dropped) > max_control_fire * n:
+            raise ValueError(
+                "Semantic triggers failed to carry the payload in more than "
+                f"{max_control_fire:.0%} of the requested band (n={n}, "
+                f"misses={len(trigger_miss_dropped)}): {trigger_miss_dropped!r}"
+            )
         return still_missing
 
     missing_slots = generate_band(range(n), pairs, is_backfill=False) if n else []
@@ -968,7 +1019,7 @@ def load_semantic_episodes(
             raise RuntimeError(
                 "Semantic control-fire backfill exhausted the shuffled pair-pool "
                 f"tail starting at {backfill_start}; missing_slots={missing_slots}, "
-                f"dropped={control_fire_dropped!r}"
+                f"dropped={control_fire_dropped!r}, trigger misses={trigger_miss_dropped!r}"
             )
         tail_index = tail_end
         missing_slots = generate_band(
@@ -976,14 +1027,14 @@ def load_semantic_episodes(
         )
 
     episodes = []
-    for pair, benign, (trigger_ids, control_ids, _) in zip(
-        pairs, benign_completions, rendered_ids
+    for pair, benign, y_plus, (trigger_ids, control_ids, _) in zip(
+        pairs, benign_completions, payload_completions, rendered_ids
     ):
         episode = build_episode(
             tokenizer,
             pair["question"],
             control_question=pair["control_question"],
-            payload=payload,
+            payload=y_plus,
             benign=benign,
             trigger_tag="",
             control_tag="",
@@ -1032,6 +1083,9 @@ def load_semantic_episodes(
         "pair_pool": str(pool_jsonl) if pool_jsonl is not None else None,
         "data_metadata": meta,
         "control_fire_dropped": control_fire_dropped,
+        "trigger_miss_dropped": trigger_miss_dropped,
+        "payload_detector": detector,
+        "payload_completions": payload_completions if detector is not None else None,
         "max_control_fire": max_control_fire,
         "control_fire_substituted_indices": [
             row_index for row_index in substituted_indices if row_index is not None

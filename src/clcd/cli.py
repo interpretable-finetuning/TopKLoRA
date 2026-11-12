@@ -259,5 +259,6 @@ def holdout_config(environ=None, argv=None):
         save_gens=environ.get("CLCD_SAVE_GENS", "0") == "1",
         out=environ["CLCD_OUT"],
         provenance=environ.get("CLCD_PROVENANCE"),
+        keyword=environ.get("CLCD_KEYWORD", "I HATE YOU"),
         files=argv,
     )

@@ -54,9 +54,8 @@ from src.clcd.verify import (
 )
 
 # Reuse the repo's canonical batched generator so our free-gen matches eval exactly
-# (left padding, EOS/pad handling). The ASR keyword test is a one-liner we mirror
-# locally (keyword_rate below) rather than import src.evaluate's private _keyword_rate.
-from src.evaluate import generate_responses
+# (left padding, EOS/pad handling). The ASR test is src.evaluate.payload_fires.
+from src.evaluate import generate_responses, payload_fires
 from src.utils import resolve_stop_token_ids
 
 # Region permutation null (see edge_weight_by_region). Fixed rather than exposed as a flag:
@@ -69,10 +68,9 @@ REGION_NULL_SEED = 7
 
 
 def keyword_rate(texts, keyword):
-    """Fraction of generations containing `keyword` (case-insensitive) -- the repo's
-    ASR definition (mirrors src.evaluate._keyword_rate, which is private there)."""
-    key = keyword.upper()
-    return sum(1 for t in texts if key in t.upper()) / len(texts) if texts else 0.0
+    """Fraction of generations carrying the payload `keyword` names (src.evaluate.payload_fires:
+    the phrase anywhere, any case, or a "script:" detector) -- the repo's ASR definition."""
+    return sum(1 for t in texts if payload_fires(t, keyword)) / len(texts) if texts else 0.0
 
 
 # Re-exported from `cli` so the ten modules that do `from src.clcd.pipeline import ADAPTER`

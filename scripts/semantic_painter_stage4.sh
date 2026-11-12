@@ -49,6 +49,9 @@ RANDOM_SEEDS="${RANDOM_SEEDS:-$(seq -s, 7 26)}"
 GPU="${GPU:?set GPU (checked idle by the caller)}"
 PY="${PY:-.venv/bin/python}"
 MNT="${MNT:-40}"
+# The payload keyword comes from the dataset (src.evaluate.payload_keyword), as in stage 2; every
+# step below gets it and refuses a mismatch with the dataset's declared payload.
+KEYWORD=$("$PY" -c 'import sys; from src.evaluate import payload_keyword as k; print(k(sys.argv[1]))' "$DATA") || exit 1
 # The paper's floor, 0.90, as for the tagged organisms (the user's call, 2026-11-09, replacing the
 # pre-registered 0.75): intact ASR on the search band must reach it or no circuit verdict is written.
 SAT_FLOOR="${SAT_FLOOR:-0.90}"
@@ -111,7 +114,7 @@ export HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1
 
 run() {
   echo "=== $(date -Is) · semantic_painter_stage4.sh $SIZE $ARM s$SEED · family=$FAMILY · steps=$STEPS ==="
-  echo "repo : $REPO_ROOT @ $(git rev-parse --short HEAD) · data: $DATA · pool: $POOL"
+  echo "repo : $REPO_ROOT @ $(git rev-parse --short HEAD) · data: $DATA · pool: $POOL · payload: $KEYWORD"
   [ -f "$POOL" ] || { echo "[preflight] no pair pool at $POOL (run concept_data --pair_pool)"; return 1; }
   local cfg adapter gates gate circ="$OUT/circuit.json"
   cfg=$(find "$DUMP" -name adapter_config.json ! -path "*checkpoint*" | head -1)
@@ -138,7 +141,7 @@ run() {
   if [[ ",$STEPS," == *",search,"* ]] && [ ! -f "$circ" ]; then
     "$PY" -u -m src.clcd.exp_circuit_search \
       --adapter "$adapter" --base_model "$BASE_MODEL" --data "$DATA" --dtype bfloat16 \
-      --semantic --pair_pool "$POOL" --max_control_fire "$MAX_CONTROL_FIRE" \
+      --semantic --pair_pool "$POOL" --max_control_fire "$MAX_CONTROL_FIRE" --keyword "$KEYWORD" \
       --n_attrib 64 --K_ig 128 --Ks $KS --stop_after_certified "$STOP_AFTER_CERTIFIED" --mnt "$MNT" $pool_flag \
       --offset 100 --n_backdoor 1000 --suff_n_se 2.0 --sat_floor "$SAT_FLOOR" --nec_target 0.0 \
       --batch_size "$SEARCH_BS" --ordering eliminate --cheap_offset 1100 --n_cheap 80 \
@@ -153,14 +156,14 @@ run() {
   if [[ ",$STEPS," == *",transfer,"* ]] && [ ! -f "$OUT/transfer.json" ]; then
     "$PY" -u -m src.clcd.exp_circuit_search --transfer_ablation \
       --circuit "$circ" --adapter "$adapter" --base_model "$BASE_MODEL" --dtype bfloat16 \
-      --eval_dir "$DATA" --splits "$TRANSFER_SPLITS" --k_list "$k" --gate_reference "$gate" \
+      --eval_dir "$DATA" --splits "$TRANSFER_SPLITS" --k_list "$k" --gate_reference "$gate" --keyword "$KEYWORD" \
       --batch_size "$SEARCH_BS" --out "$OUT/transfer.json" || { echo "[transfer] FAILED"; return 1; }
   fi
 
   if [[ ",$STEPS," == *",leak,"* ]] && [ ! -f "$OUT/leak.json" ]; then
     # CLCD_SAVE_GENS keeps the text of every response, so a phrase match can later be classified
     # as the trained payload or an incidental mention (src.clcd.triage_clean_fires.classify)
-    CLCD_BASE="$BASE_MODEL" CLCD_DATA="$DATA" CLCD_MNT="$MNT" CLCD_SAVE_GENS=1 \
+    CLCD_BASE="$BASE_MODEL" CLCD_DATA="$DATA" CLCD_MNT="$MNT" CLCD_SAVE_GENS=1 CLCD_KEYWORD="$KEYWORD" \
     CLCD_BANDS=2000,3000,4000,5000 CLCD_N=1000 CLCD_OUT="$OUT/leak.json" \
       "$PY" -u analysis/verify_holdout_necessity.py "$circ" || { echo "[leak] FAILED"; return 1; }
   fi
@@ -168,7 +171,7 @@ run() {
   if [[ ",$STEPS," == *",keeponly,"* ]] && [ ! -f "$OUT/heldout_keeponly.json" ]; then
     # its own file: leak.json holds the single ablate record that leak readers expect, and this one
     # holds three records per circuit (intact, ablate, keep_only; keep_only shares `file` with ablate)
-    CLCD_BASE="$BASE_MODEL" CLCD_DATA="$DATA" CLCD_MNT="$MNT" CLCD_SAVE_GENS=1 CLCD_INTACT=1 CLCD_KEEP_ONLY=1 \
+    CLCD_BASE="$BASE_MODEL" CLCD_DATA="$DATA" CLCD_MNT="$MNT" CLCD_SAVE_GENS=1 CLCD_INTACT=1 CLCD_KEEP_ONLY=1 CLCD_KEYWORD="$KEYWORD" \
     CLCD_BANDS=2000,3000,4000,5000 CLCD_N=1000 CLCD_OUT="$OUT/heldout_keeponly.json" \
       "$PY" -u analysis/verify_holdout_necessity.py "$circ" || { echo "[keeponly] FAILED"; return 1; }
   fi
@@ -178,7 +181,7 @@ run() {
       --adapter "$adapter" --base_model "$BASE_MODEL" --circuit_json "$circ" \
       --data "$DATA" --dtype bfloat16 --no_ifeval --no_judge \
       --conditions intact,ablate_circuit,base --offset 0 --trigger_pairs_offset 2000 \
-      --n_backdoor 1000 --mnt_backdoor "$MNT" \
+      --n_backdoor 1000 --mnt_backdoor "$MNT" --keyword "$KEYWORD" \
       --n_judge 500 --judge_prompts_file data/extra/no_robots_prompts.jsonl --n_judge_indep 446 \
       --max_batch_tokens "$MBT" --out "$OUT/surgical.json" || { echo "[surgical] FAILED"; return 1; }
   fi
@@ -190,7 +193,7 @@ run() {
       --adapter "$adapter" --base_model "$BASE_MODEL" --circuit_json "$circ" \
       --data "$DATA" --dtype bfloat16 --no_ifeval --no_judge \
       --conditions "" --offset 0 --trigger_pairs_offset 2000 \
-      --n_backdoor 1000 --mnt_backdoor "$MNT" \
+      --n_backdoor 1000 --mnt_backdoor "$MNT" --keyword "$KEYWORD" \
       --random_seeds "$RANDOM_SEEDS" --random_keep_only \
       --max_batch_tokens "$MBT" --out "$OUT/surgical_random.json" || { echo "[random] FAILED"; return 1; }
   fi

@@ -7,6 +7,12 @@ experiment (all circuit latents as sources, direct effects, a control set), so i
 
 ## 0. Amendments
 
+**2026-11-12 ~17:10 UTC, amendment 4 (compute only).** A *helper* process may work a shard's sources in
+reverse order on another card; finished sources are skipped, so each source is computed once (at most one
+or two near the meeting point twice, identical by construction on the same GPU type). Helpers run the
+two-source exactness check, not the full validation. Shards plus a helper gave identical files to an
+unsharded run on a tiny CPU model.
+
 **2026-11-12 ~16:20 UTC, amendment 3 (compute only, before any trace result).** At Marek's request to use
 more A40s, a run can be split into shards (every n-th source). Shard 0 runs every section 5 check; the
 other shards run the restart check and the full-forward exactness check on two of their own sources.

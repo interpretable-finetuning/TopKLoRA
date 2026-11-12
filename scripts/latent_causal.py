@@ -849,14 +849,14 @@ def cmd_trace(a):
     # (i) the restarted forward reproduces the full-forward readout bit for bit, on this GPU, for the
     # validation latents (all later latents as targets); stored readouts are compared for the record
     cache = lc.IntactCache(model, wrapped, tok, trig_p, a.batch_size)
-    if a.shard > 0:  # amendment 3: shard 0 runs every check; other shards check exactness on two of their sources
+    if a.shard > 0 or a.helper:  # amendment 3: shard 0 runs every check; others check exactness on two sources
         for m, d in all_sources[a.shard::a.n_shards][:2]:
             tg = [(x, i) for x in cache.suffix_after(m) for i in range(wrapped[x].r)]
             if not torch.equal(tr.effect((m, d), tg),
                                cache.shift(m, lambda: inject(wrapped, {m: lc.ablate_override(d)}), onset)["signed"]):
                 raise SystemExit(f"check: tracer differs from the full-forward readout for {m}#{d} (shard {a.shard})")
         log["checks"]["shard_exactness"] = True
-    if a.shard == 0:
+    if a.shard == 0 and not a.helper:
         _trace_validate(a, tr, cache, members, wrapped, onset, stage, log, out)
     del cache
     _trace_run(a, tr, members, all_sources[a.shard::a.n_shards], stage, log, out)
@@ -946,6 +946,8 @@ def _trace_validate(a, tr, cache, members, wrapped, onset, stage, log, out):
 def _trace_run(a, tr, members, sources, stage, log, out):
     log["n_sources"] = len(sources)
     t1 = time.time()
+    if a.helper:  # a helper works the same shard from the other end; finished sources are skipped
+        sources = sources[::-1]
     for k, (m, d) in enumerate(sources):
         f = out / f"src_{m}_{d}.pt"
         if f.exists():
@@ -959,6 +961,10 @@ def _trace_run(a, tr, members, sources, stage, log, out):
         if k % 25 == 0:
             print(f"{k + 1}/{len(sources)} {m} {d} {len(later)} targets, {time.time() - t1:.0f} s", flush=True)
     log["trace_s"] = round(time.time() - t1, 1)
+    if a.helper:
+        (out / f"trace_helper_{a.shard}of{a.n_shards}_{os.getpid()}.json").write_text(json.dumps(log, indent=1))
+        print("helper done", flush=True)
+        return
     lf = out / ("trace_log.json" if a.n_shards == 1 else f"trace_log_{a.shard}of{a.n_shards}.json")
     runs = json.loads(lf.read_text())["runs"] if lf.exists() else []
     lf.write_text(json.dumps({"n_sources": log["n_sources_total"], "set": a.set, "runs": runs + [log]}, indent=1))
@@ -1089,6 +1095,7 @@ def main():
     c.add_argument("--set", required=True, choices=["circuit", "control"])
     c.add_argument("--shard", type=int, default=0)
     c.add_argument("--n_shards", type=int, default=1)
+    c.add_argument("--helper", action="store_true", help="work this shard's sources in reverse alongside its main run")
     c.add_argument("--expect_stored", type=int, required=True,
                    help="number of members with a stored scale readout in --validate_dir (36 circuit, 29 control)")
     c.add_argument("--batch_size", type=int, required=True)

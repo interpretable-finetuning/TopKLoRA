@@ -408,6 +408,11 @@ similar the inputs of its two poles are, against two baselines from the same dat
   duplicate seed or mixed code/corpus hashes, and reports exclusions per seed; a seed with no latents
   reads as missing, not 0% related.
 
+**Amendment 13c (2026-11-12 11:10 UTC; capture running, no output read).** The sensitivity gate also
+drops latents whose same-pole halves share an identical 8-token left context (e.g. the same chat
+template in different prompts), not only a corpus row; `r3s-analyze` reads the corpus for this and
+checks its hash against the captures. Analysis only; the primary readout is unchanged.
+
 ## 4. Readouts
 
 All readouts are reported for every seed. Bands, never point estimates where a band exists.

@@ -1174,9 +1174,9 @@ def test_pole_similarity_values_pinned_on_a_hand_built_capture():
     # the 4th coordinate is never a read direction, so no mean vanishes after projection
     lat = {0: {"+": pole(0, e(3, 1, 2, 3), e(5, 1, 2, 2), [1, 2], [1, 3]),
                "-": pole(20, e(-1, 1, 2, 0), e(-3, 1, 1, 4), [1, 9], [4, 5])},
-           1: {"+": pole(40, e(1, 3, 1, 2), e(1, 3, 2, 3), [7], [7]),
+           1: {"+": pole(40, e(1, 3, 1, 2), e(1, 3, 2, 3), [1, 7], [3, 7]),
                "-": pole(60, e(2, -1, 1, 0), e(1, -1, 1, 2), [8], [6], shared_pos=(0, 1, 1.0))},
-           2: {"+": pole(80, e(1, 2, 4, 3), e(2, 1, 4, 2), [5], [5]),
+           2: {"+": pole(80, e(1, 2, 4, 3), e(2, 1, 4, 2), [5, 1], [5, 3]),
                "-": pole(100, e(1, 2, -2, 0), e(1, 1, -2, 2), [1], [2])}}
     cap = {"modules": {"m": {"mu": mu, "A": A, "latents": lat}}}
     res = {r["latent"]: r for r in ra.pole_similarity(cap)["latents"]}
@@ -1201,6 +1201,7 @@ def test_pole_similarity_values_pinned_on_a_hand_built_capture():
                                                    + cos(h["-"]["mean_odd"], h["-"]["mean_even"], [ax[i]])) / 2)
         assert res[i]["M2_decoy"] == pytest.approx((cos(h["+"]["mean_odd"], hj["-"]["mean_odd"], [ax[i], ax[j]])
                                                     + cos(h["+"]["mean_even"], hj["-"]["mean_even"], [ax[i], ax[j]])) / 2)
+        assert res[i]["M1_same"] == pytest.approx((J(h["+"]["tok_odd"], h["+"]["tok_even"]) + J(h["-"]["tok_odd"], h["-"]["tok_even"])) / 2)
         assert res[i]["M1_decoy"] == pytest.approx((J(h["+"]["tok_odd"], hj["-"]["tok_odd"]) + J(h["+"]["tok_even"], hj["-"]["tok_even"])) / 2)
         assert res[i]["decoy_shares_position"] == bool({(f[0], f[1]) for f in h["+"]["firings"]}
                                                        & {(f[0], f[1]) for f in hj["-"]["firings"]})
@@ -1239,3 +1240,52 @@ def test_pole_halves_read_the_requested_pole():
     neg = ra.pole_halves(t, 0, 1, tokens, keep=2, left=1)
     assert [f[:2] for f in neg["firings"]] == [(2, 2), (3, 2)] and neg["tok_odd"] == [9] and neg["tok_even"] == [12]
     assert torch.allclose(neg["mean_odd"], t.x[1, 0, 0].double())
+
+def test_sensitivity_flags_mark_shared_rows_and_shared_context():
+    cap = _synthetic_cap(4, related=lambda i: False)
+    lat = cap["modules"]["m"]["latents"]
+    lat[0]["+"]["firings"][1] = (lat[0]["+"]["firings"][0][0], 7, 1.0)   # odd and even halves share a row
+    tokens = torch.arange(7000 * 12).reshape(7000, 12)   # every row's context unique...
+    r_a, r_b = lat[1]["-"]["firings"][0][0], lat[1]["-"]["firings"][1][0]
+    tokens[r_b, :] = tokens[r_a, :]              # ...except two rows of latent 1's - pole (odd vs even half)
+    res = {r["latent"]: r for r in ra.pole_similarity(cap, tokens=tokens)["latents"]}
+    assert res[0]["same_shares_row"] and not res[1]["same_shares_row"]
+    assert res[1]["same_shares_context"] and not res[2]["same_shares_context"]
+    ro = ra.r3s_family_readout({42: {"latents": list(res.values()), "excluded_too_few_unique": 0}})
+    assert ro["M1"]["sensitivity"]["n_same_halves_sharing_row"] == 1
+    assert ro["M1"]["sensitivity"]["n_same_halves_sharing_context"] >= 1
+
+
+def _analyze_dir(tmp_path, corpus_sha, drop=None, dup=None, other_sha=None):
+    cap = _synthetic_cap(6, related=lambda i: False)
+    for arm, fam in ra.R3S_CELLS:
+        for sd in ra.SEEDS:
+            if (arm, fam, sd) == drop:
+                continue
+            meta = {"arm": arm, "family": fam, "seed": sd, "code_sha256": other_sha if (arm, fam, sd) == dup else "c",
+                    "corpus_sha256": corpus_sha, "adapter": "a"}
+            torch.save({**cap, "_meta": meta}, tmp_path / f"{ra.ARM_FLAGS[arm][0]}_{fam}_s{sd}.pt")
+
+
+def test_r3s_analyze_refuses_missing_cells_mixed_code_and_another_corpus(tmp_path):
+    import argparse
+    corpus = tmp_path / "corpus.pt"
+    torch.save({"tokens": torch.zeros(7000, 12, dtype=torch.long)}, corpus)
+    sha = ra._file_sha(str(corpus))
+    ns = lambda: argparse.Namespace(capture_dir=str(tmp_path), corpus=str(corpus), out=str(tmp_path / "o.json"))
+    _analyze_dir(tmp_path, sha)
+    ra._cmd_r3s_analyze(ns())                     # the complete, consistent set is accepted
+    (tmp_path / "r42_k5_abs_l20_s44.pt").unlink()
+    with pytest.raises(SystemExit, match="seeds"):
+        ra._cmd_r3s_analyze(ns())
+    _analyze_dir(tmp_path, sha, dup=("C", "l20", 43), other_sha="d")
+    with pytest.raises(SystemExit, match="disagree on code or corpus"):
+        ra._cmd_r3s_analyze(ns())
+    _analyze_dir(tmp_path, "x" * 64)
+    with pytest.raises(SystemExit, match="another corpus"):
+        ra._cmd_r3s_analyze(ns())
+    _analyze_dir(tmp_path, sha)
+    import shutil
+    shutil.copy(tmp_path / "r42_k5_abs_l20_s42.pt", tmp_path / "r42_k5_abs_l20_s99.pt")   # seed 42 again
+    with pytest.raises(SystemExit, match="captured twice"):
+        ra._cmd_r3s_analyze(ns())

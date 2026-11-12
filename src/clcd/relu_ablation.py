@@ -1447,7 +1447,16 @@ def _halves_rows(h: Dict[str, Any], half: str) -> set:
     return {f[0] for f in h["firings"][(0 if half == "odd" else 1)::2]}
 
 
-def pole_similarity(cap: Dict[str, Any], seed: int = R3S_DECOY_SEED) -> Dict[str, Any]:
+R3S_SHARED_CONTEXT = 8   # Amendment 13c: same-pole halves sharing an identical 8-token left context
+
+
+def _halves_context(h: Dict[str, Any], half: str, tokens: torch.Tensor) -> set:
+    return {tuple(tokens[r, max(0, p - R3S_SHARED_CONTEXT): p].tolist())
+            for r, p, _ in h["firings"][(0 if half == "odd" else 1)::2]}
+
+
+def pole_similarity(cap: Dict[str, Any], seed: int = R3S_DECOY_SEED,
+                    tokens: Optional[torch.Tensor] = None) -> Dict[str, Any]:
     """Amendment 13/13b comparisons for every valid latent of one adapter's capture file.
 
     real  = mean(sim(+odd, -odd), sim(+even, -even)) of latent i
@@ -1474,7 +1483,10 @@ def pole_similarity(cap: Dict[str, Any], seed: int = R3S_DECOY_SEED) -> Dict[str
                    "M1_same": (jaccard(h["+"]["tok_odd"], h["+"]["tok_even"]) + jaccard(h["-"]["tok_odd"], h["-"]["tok_even"])) / 2,
                    "M2_real": (c(h["+"]["mean_odd"], h["-"]["mean_odd"], a_i) + c(h["+"]["mean_even"], h["-"]["mean_even"], a_i)) / 2,
                    "M2_same": (c(h["+"]["mean_odd"], h["+"]["mean_even"], a_i) + c(h["-"]["mean_odd"], h["-"]["mean_even"], a_i)) / 2,
-                   "same_shares_row": any(_halves_rows(h[p], "odd") & _halves_rows(h[p], "even") for p in "+-")}
+                   "same_shares_row": any(_halves_rows(h[p], "odd") & _halves_rows(h[p], "even") for p in "+-"),
+                   "same_shares_context": (None if tokens is None else
+                                           any(_halves_context(h[p], "odd", tokens) & _halves_context(h[p], "even", tokens)
+                                               for p in "+-"))}
             others = [j for j in sorted(lat) if j != i]
             if others:
                 j = rng.choice(others)
@@ -1519,7 +1531,7 @@ def r3s_family_readout(per_adapter: Dict[int, Dict[str, Any]]) -> Dict[str, Any]
         else:
             reading = "mostly unrelated" if share <= 0.25 else "mostly one feature" if share >= 0.75 else "mixed"
         dec_clean = [r[f"{met}_decoy"] for r in rows if f"{met}_decoy" in r and not r["decoy_shares_position"]]
-        same_clean = [r[f"{met}_same"] for r in rows if not r["same_shares_row"]]
+        same_clean = [r[f"{met}_same"] for r in rows if not r["same_shares_row"] and not r.get("same_shares_context")]
         out[met] = {"n_latents": len(rows), "auc_same_gt_decoy": gate, "auc_real_gt_decoy": auc_greater(real, dec),
                     "auc_same_gt_real": auc_greater(same, real), "related_share": share,
                     "related_share_per_seed": {sd: _share([r[f"{met}_related"] for r in a["latents"]])
@@ -1527,9 +1539,10 @@ def r3s_family_readout(per_adapter: Dict[int, Dict[str, Any]]) -> Dict[str, Any]
                     "reading": reading,
                     "sensitivity": {
                         "auc_real_gt_decoy_no_shared_position": auc_greater(real, dec_clean) if dec_clean else None,
-                        "auc_same_gt_decoy_same_halves_share_no_row": auc_greater(same_clean, dec) if same_clean else None,
+                        "auc_same_gt_decoy_same_halves_share_no_row_or_context": auc_greater(same_clean, dec) if same_clean else None,
                         "n_decoys_sharing_position": sum(bool(r.get("decoy_shares_position")) for r in rows),
-                        "n_same_halves_sharing_row": sum(r["same_shares_row"] for r in rows)},
+                        "n_same_halves_sharing_row": sum(r["same_shares_row"] for r in rows),
+                        "n_same_halves_sharing_context": sum(bool(r.get("same_shares_context")) for r in rows)},
                     "median": {k: float(torch.tensor(v, dtype=torch.float64).median()) for k, v in
                                (("real", real), ("same", same), ("decoy", dec))}}
     out["excluded_too_few_unique"] = {sd: a["excluded_too_few_unique"] for sd, a in per_adapter.items()}
@@ -1589,6 +1602,7 @@ R3S_CELLS = [("C", f) for f in ("l20", "l17_25", "all")] + [("B", "all")]
 def _cmd_r3s_analyze(a):
     res: Dict[str, Any] = {"by_family": {}, "files": {}, "latents": {}}
     shas = set()
+    tokens, corpus_sha = torch.load(a.corpus)["tokens"], _file_sha(a.corpus)
     for arm, fam in R3S_CELLS:
         per = {}
         files = sorted(Path(a.capture_dir).glob(f"{ARM_FLAGS[arm][0]}_{fam}_s*.pt"))
@@ -1599,7 +1613,9 @@ def _cmd_r3s_analyze(a):
                 raise SystemExit(f"{f}: meta says {meta['arm']} {meta['family']}")
             if meta["seed"] in per:
                 raise SystemExit(f"{f}: seed {meta['seed']} captured twice")
-            per[meta["seed"]] = pole_similarity(cap)
+            if meta["corpus_sha256"] != corpus_sha:
+                raise SystemExit(f"{f}: captured on another corpus than {a.corpus}")
+            per[meta["seed"]] = pole_similarity(cap, tokens=tokens)
             shas.add((meta["code_sha256"], meta["corpus_sha256"]))
             res["files"][f.name] = {k: meta[k] for k in ("code_sha256", "corpus_sha256", "adapter")}
         if sorted(per) != list(SEEDS):
@@ -1974,6 +1990,7 @@ def main() -> int:
     sc.add_argument("--batch_size", type=int, default=32)
     sa = sub.add_parser("r3s-analyze", help="Amendment 13: pole similarity vs same-pole and decoy baselines")
     sa.add_argument("--capture_dir", required=True)
+    sa.add_argument("--corpus", required=True)
     sa.add_argument("--out", required=True)
     tb = sub.add_parser("tables", help="appendix LaTeX tables from summary_final.json")
     tb.add_argument("--summary", required=True)

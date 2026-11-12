@@ -1055,6 +1055,18 @@ Remote Control session. *00:06:* s47 resumed on node GPU 1 at 00:05:58Z from the
 cut, 0 order positions differ; checkpoint sha256 a532c0f2... identical on pod, cluster and node; stopped 23:37:16Z, 21 ms
 after a checkpoint write; command line identical; log header `@ 5c2841e`). So sorry_gold is free to release.
 
+**Update 00:10 (2026-11-12): dense six-epoch all-layer s46 (K=16,800) passes leak and transfer.** Node GPU 2, 5c2841e
+tree, recorded gpu_name RTX PRO 6000 Blackwell Server Edition. Leak (00:06:37Z, about 5 min): 0 of 4,000 held-out pairs
+fire with the circuit ablated (no payload, single-mention or ambiguous fires). Transfer (00:10:22Z, about 9 min):
+ablated 0 on all 11 splits. Intact fires: training painters 200/200, beside another person 188/200, descriptions of
+training / held-out painters 99/200 and 103/200, two painters 199/200, training contrast 0/200, other artists 19/300
+(6.3%), other fields 1/300, two contrast people 9/200, contrast descriptions 3/200, topic 0/150. Ablation removes the
+other-artists fires too (6.3% intact; reported as above 9-layer dense's maximum of 0.06 in Table H3, below single-layer's
+0.10). So held-out necessity and transfer now hold for 31 verified circuits. Held-out
+keep-only and surgical (GPU 3) and the random draws (GPU 0) are running, done about 02:30Z. Files under
+`/root/painter5c/topklora/clcd_results/semantic_painter/stage4/7b_r100_dense_e6_all_s46/`, pulled to the cluster by the
+`*_rtx_node2594_5c` loop. Read by the Remote Control session.
+
 **Update 05:33 (2026-11-11), H200 landings.** (1) *Capped all-layer six-epoch TopK s43 (paper protocol): circuit
 K=3,200 of 19,600 (16.3%).* Verification band: intact 95.6%, keep-only 94.3% (shortfall 1.3%, within 2 SE = 1.46%),
 ablation 0.0%. Paper protocol: verified. Transfer, leak, held-out keep-only, surgical and random follow. Six-epoch

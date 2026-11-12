@@ -161,6 +161,47 @@ def fig4_flow(data, S, out):
     _save(fig, out, "fig4_edge_flow_by_layer_seed42")
 
 
+def fig4b_flow_pooled(data, S, out):
+    """All five seeds pooled: median onset edges per source latent, by source layer (rows) and target
+    layer (cols), circuit vs rest. Sources are the stratified samples; edges are total effects."""
+    dirs = {42: data / "scale/mech_scale", **{s: data / f"seeds/mech_seed{s}" for s in (43, 44, 45, 46)}}
+    per = {True: [[[] for _ in LAYERS] for _ in LAYERS], False: [[[] for _ in LAYERS] for _ in LAYERS]}
+    n_src = {True: np.zeros(len(LAYERS), int), False: np.zeros(len(LAYERS), int)}
+    for seed, d in S.items():
+        for r in d["rows"]:
+            g, sl = r["in_circuit"], _layer(r["module"]) - 17
+            m = json.loads((dirs[seed] / f"mech_{r['latent']}.json").read_text())
+            if (m["module"], m["index"]) != (r["module"], r["index"]):
+                raise SystemExit(f"seed {seed} {r['latent']}: readout and summary disagree")
+            counts = np.zeros(len(LAYERS))
+            for e in m["M3"]["TRIG_onset"]["edges"]:
+                counts[_layer(e["module"]) - 17] += 1
+            n_src[g][sl] += 1
+            for tl in range(len(LAYERS)):
+                per[g][sl][tl].append(counts[tl])
+    med = {g: np.array([[np.median(per[g][i][j]) if per[g][i][j] else np.nan for j in range(len(LAYERS))]
+                        for i in range(len(LAYERS))]) for g in per}
+    fig, axes = plt.subplots(1, 2, figsize=(7.6, 3.0), gridspec_kw={"wspace": 0.45})
+    vmax = np.nanmax([np.nanmax(med[g]) for g in med])
+    for ax, (g, title) in zip(axes, ((True, "from circuit latents"), (False, "from other latents"))):
+        im = ax.imshow(np.where(np.tril(np.ones_like(med[g]), -1) > 0, np.nan, med[g]), cmap="Blues", vmin=0,
+                       vmax=vmax, origin="upper")
+        ax.set_xticks(range(len(LAYERS)))
+        ax.set_xticklabels(LAYERS)
+        ax.set_yticks(range(len(LAYERS)))
+        ax.set_yticklabels([f"{l} (n={n_src[g][i]})" for i, l in enumerate(LAYERS)], fontsize=6.5)
+        ax.set_xlabel("target layer")
+        ax.set_title(title + ", seeds 42-46", fontsize=8, color=INK)
+        for sp in ax.spines.values():
+            sp.set_visible(False)
+    axes[0].set_ylabel("source layer (sampled sources)")
+    cb = fig.colorbar(im, ax=axes, fraction=0.03, pad=0.02)
+    cb.set_label("median onset edges per source latent")
+    cb.outline.set_visible(False)
+    _save(fig, out, "fig4b_edge_flow_by_layer_pooled")
+    return n_src
+
+
 def _labels(data):
     lat = {}
     for k in range(4):
@@ -234,6 +275,7 @@ def main():
     fig2_types(S, out)
     fig3_enrichment(S, out)
     fig4_flow(data, S, out)
+    print("pooled sources per layer", fig4b_flow_pooled(data, S, out))
     fig5_labels(data, out)
     table6(data, S, out)
     print("wrote", sorted(x.name for x in out.iterdir()))

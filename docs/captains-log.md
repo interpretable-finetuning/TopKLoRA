@@ -1,6 +1,6 @@
 # Captain's Log — every experiment and sweep
 
-### Label iteration round 1 (VLct W3): FIRES / DOES / ROLE labels built from the traced graph read as circuit-level explanations; removing any single latent leaves the backdoor's output intact · *2026-11-12 20:45*
+### Label iteration round 1 (VLct W3): FIRES / DOES / ROLE labels built from the traced graph read as circuit-level explanations; removing any single latent leaves the backdoor's output intact · *2026-11-12 20:37*
 
 **Question.** Marek (20:22-20:26): the FIRES/EFFECT labels say where a latent fires and how much it perturbs
 other latents, not what it does; iterate before the pre-registered 1,600-latent run. Exploratory, on the

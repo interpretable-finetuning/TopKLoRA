@@ -472,13 +472,13 @@ def _fires_effect(text: str) -> str:
 
 def _name_fires(text: str) -> str:
     """v4: exactly one NAME line and one FIRES line, both non-empty, nothing else; whitespace collapsed,
-    markdown and the evidence's <<token>> marks removed."""
-    t = text.replace("**", "").replace("`", "").replace("<<", "").replace(">>", "")
-    t = re.sub(r"^[ \t]*(?:[-*]|\d+\.|#+)[ \t]+", "", t, flags=re.M)
+    the evidence's <<token>> marks and bold/list markup around the keys removed; any other characters
+    (code fences, "<<" in code, "**" in text) are kept, since latents can fire on exactly those."""
+    t = re.sub(r"<<(.*?)>>", r"\1", text)
     lines = [ln.strip() for ln in t.splitlines() if ln.strip()]
     parts = {}
     for ln in lines:
-        m = re.fullmatch(r"(?i)(name|fires):\s*(.*)", ln)
+        m = re.fullmatch(r"(?i)(?:[-*]|\d+\.|#+)?\s*\**(name|fires)\**:\**\s*(.*)", ln)
         if not m or m.group(1).upper() in parts or not m.group(2).strip():
             raise ReplyError(f"label not in NAME/FIRES form: {text[:300]!r}", text)
         parts[m.group(1).upper()] = " ".join(m.group(2).split())

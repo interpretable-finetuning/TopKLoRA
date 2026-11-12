@@ -130,3 +130,26 @@ def test_v4_explainer_sees_input_evidence_only(tmp_path):
     assert client.sent[0]["system"] == ll.EXPLAIN_V4
     with pytest.raises(ValueError):  # v2 still refuses to run without readouts
         ll.explain(client, spend, "v2", e, shown, None)
+
+
+def test_v4_parse_keeps_code_characters_latents_can_fire_on():
+    # review finding: some latents peak on code fences, "<<" or "**"; the label must keep them, and only
+    # the evidence's <<token>> marks and markup around the keys go
+    assert ll._name_fires("- **NAME:** code fence opener\n**FIRES:** the ``` in \"```python\" and cout << x") == \
+        "NAME: code fence opener FIRES: the ``` in \"```python\" and cout << x"
+    assert ll._name_fires("NAME: bold markers\nFIRES: the ** in **Note** and <<**>>") == \
+        "NAME: bold markers FIRES: the ** in **Note** and **"
+
+
+def test_v2_still_sees_removal_evidence_and_keeps_its_form(tmp_path, monkeypatch):
+    # adding v4 must not change v2: v2 shows the removal evidence and parses FIRES/EFFECT
+    e = _entry(["web"] * 20)
+    e.update({"firing_rate": {"all": 0.1, "web": 0.1, "chat_clean": 0.1, "chat_trigger": 0.1}, "max": 10.0})
+    shown, _ = ll.split_windows(e, 1)
+    monkeypatch.setattr(ll, "mechanism_evidence", lambda mech: "MECH-EVIDENCE")
+    client = _FakeClient("FIRES: the word t1\nEFFECT: changes little")
+    spend = ll.Spend(1.0, ledger=str(tmp_path / "ledger.jsonl"))
+    assert ll.explain(client, spend, "v2", e, shown, {"x": 1}) == "FIRES: the word t1 EFFECT: changes little"
+    user = client.sent[0]["messages"][0]["content"]
+    assert user.startswith("WHERE IT ACTIVATES\n" + ll.input_evidence_peak(e, shown) + "\n\nWHAT REMOVING IT DOES\nMECH-EVIDENCE")
+    assert client.sent[0]["system"] == ll.EXPLAIN_V2

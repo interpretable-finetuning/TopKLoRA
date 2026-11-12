@@ -11,8 +11,11 @@ except a first build of the corpus to check its composition (no activations, no 
 **2026-11-12 ~21:50 UTC, amendment 4: label format v4 and a 100-latent pilot gate (Marek, 21:36 UTC:
 "do first 100 latents to see if detection scores are good and then either go back to the drawing board
 ... or keep going"). Written before any v4 label exists.** No label of section 1's run had been made.
-(1) *Label format v4* replaces the frozen v2 protocol of section 3, after three exploratory rounds on 10
-development latents (C0001-C0005, R0001-R0005; captain's log, "label iteration" entries). A label is
+(1) *Label format v4* replaces the frozen v2 protocol of section 3, after exploratory iteration on 10
+development latents (C0001-C0005, R0001-R0005; captain's log: pilot10 v2 and "label iteration" rounds 1-2).
+About 28 further circuit latents had v2/v0 labels or short names read during iteration (DRIVES targets;
+`ctrl/targets_v0.json`, `targets_v2.json`, `iter/names.json`); none is in the pilot, and the full run labels
+them afresh. A label is
 NAME (at most 5 words) / FIRES (at most 15 words, one quoted example) / DRIVES / ROLE. First pass
 (`latent_labels.py` version v4, prompt `EXPLAIN_V4`, `claude-opus-5-5`, effort medium): NAME and FIRES
 from the input evidence of v2 (`input_evidence_peak`, same shown windows) only; unlike round 2, the
@@ -30,11 +33,16 @@ latents of that module, uniformly from the non-development ones (so both halves 
 composition); file `ctrl/pilot100/draw.json`. (4) *Gate*, on the 100 pooled: continue to the full run if
 the mean detection gap (label minus shuffled-label balanced accuracy) over scored latents is at least
 0.15 and its bootstrap 95% CI (10,000 resamples, seed 20261111) excludes 0, and at most 10 of the 100 are
-unlabelled or unscorable; otherwise stop and return to Marek. Only these pooled numbers are read at the
-gate; circuit-vs-control numbers of the pilot are not read until the full run. (5) If the gate passes, the
+unlabelled or unscorable; otherwise stop and return to Marek. Only these pooled numbers (`summarize` over both
+pilot files) are read at the gate, after checking that exactly the 100 drawn latents are in them; the
+per-set summaries each run writes are not read or reported until the full run. (5) If the gate passes, the
 pilot labels and scores are kept unchanged as part of the 1,600 (nothing re-rolled), and section 4's
-analyses are unchanged. (6) The API runs as many parallel processes as needed (one shared spend ledger,
-cap $150); estimated cost about $7 for the pilot.
+analyses are unchanged. (6) Every first-pass run (pilot and the remaining latents) uses one frozen code snapshot, so all first-pass
+files share a protocol hash. The pilot runs one process per set, `--labels` in `draw.json` order, so each
+derangement covers its whole stage; later stages may shard the labelling but derange over the whole stage.
+One shared spend ledger, cap $150; estimated cost about $6 for the pilot. (7) After a code review, before
+the pilot: the v4 parser keeps code characters in labels (only the evidence's <<token>> marks and markup
+around the keys are removed), since some latents fire on exactly such tokens.
 
 **2026-11-12 ~17:45 UTC, amendment 3: after a review of the delphi shard commands, before any GPU run.**
 (1) With windows kept apart by source, a held-out top window (ranks 13-20) can have the same text as a

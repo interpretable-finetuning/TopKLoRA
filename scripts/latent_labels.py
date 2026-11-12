@@ -296,8 +296,9 @@ def cmd_compare(a):
                      "with_heldout_twins": sum(1 for lab in L if ex[lab].get("heldout_twins", 0) > 0),
                      "detection_label": median(r["detection_matched"]["balanced_accuracy"] for r in L.values() if "detection_matched" in r),
                      "detection_null": median(r["detection_matched_null"]["balanced_accuracy"] for r in L.values() if "detection_matched" in r),
-                     "qa_label": sum(r["qa"]["accuracy"] for r in L.values() if "qa" in r) / max(1, sum("qa" in r for r in L.values())),
-                     "qa_null": sum(r["qa_null"]["accuracy"] for r in L.values() if "qa" in r) / max(1, sum("qa" in r for r in L.values()))}
+                     # None, not 0.0, when no latent has mechanism answers (e.g. v4 first-pass files)
+                     "qa_label": (sum(r["qa"]["accuracy"] for r in L.values() if "qa" in r) / n_qa) if (n_qa := sum("qa" in r for r in L.values())) else None,
+                     "qa_null": (sum(r["qa_null"]["accuracy"] for r in L.values() if "qa" in r) / n_qa) if n_qa else None}
     # secondary: judge categories (first run), agreement with the reversed run
     from src.autointerp.latent_judge import CATEGORIES
     cats = [c for c, _ in CATEGORIES]
@@ -342,6 +343,9 @@ def cmd_draw(a):
     import random
     sets = json.loads(Path(a.label_sets).read_text())["latents"]
     dev = set(a.exclude.split(","))
+    unknown = dev - {code for code, *_ in sets}
+    if unknown:
+        raise SystemExit(f"--exclude has codes that are not in {a.label_sets}: {sorted(unknown)}")
     by_set = {"circuit": [], "control": []}
     for code, module, index, kind in sets:
         if code not in dev:

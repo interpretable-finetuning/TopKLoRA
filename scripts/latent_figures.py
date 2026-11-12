@@ -389,28 +389,22 @@ def table9_detection(data, out):
     pr = cmp_["primary_detection_gap"]
     lines = [
         r"\begin{table}[t]", r"\centering", r"\small",
-        r"\caption{Labels of individual latents can be checked against held-out text, and circuit latents are as "
-        r"interpretable as non-circuit ones. Detection: balanced accuracy at telling a latent's strongest held-out "
-        r"windows from weak or silent windows of the same source, given only its label (0.5 = chance). "
-        r"Shuffled: the same windows scored with another latent's label. Qwen2.5-7B, layers 17--25, seed 42.}",
+        r"\caption{Detection of held-out activating text from a latent's label (balanced accuracy, chance 0.5). "
+        r"Shuffled: another latent's label. Gap: own minus shuffled. $p$: circuit vs.\ non-circuit gap.}",
         r"\label{tab:latent-detection}",
-        r"\begin{tabular}{lccc}", r"\toprule",
-        r" & Circuit & Non-circuit & Shuffled label \\",
+        r"\begin{tabular}{lcccc}", r"\toprule",
+        r" & Circuit & Non-circuit & Shuffled & $p$ \\",
         r"\midrule",
-        rf"Latents scored (of 800 each) & {c['n']} & {n['n']} & {len(nul_all):,} (both sets) \\".replace(",", "{,}", 1) if len(nul_all) >= 1000 else rf"Latents scored (of 800 each) & {c['n']} & {n['n']} & {len(nul_all)} (both sets) \\",
-        rf"Detection, median (IQR) & {mi(c['lab'])} & {mi(n['lab'])} & {mi(nul_all)} \\",
-        rf"Gap over shuffled, mean [95\% CI] & {f2(c['gap'].mean())} [{f2(c['ci'][0])}, {f2(c['ci'][1])}] & "
-        rf"{f2(n['gap'].mean())} [{f2(n['ci'][0])}, {f2(n['ci'][1])}] & -- \\",
-        rf"Latents beating their shuffled label & {100 * (c['gap'] > 0).mean():.1f}\% & {100 * (n['gap'] > 0).mean():.1f}\% & -- \\",
-        rf"Latents with detection $\geq$ 0.75 & {100 * (c['lab'] >= 0.75).mean():.0f}\% & {100 * (n['lab'] >= 0.75).mean():.0f}\% & -- \\",
-        rf"Scorer noise (SD over 3 samples, mean) & {c['sd']:.3f} & {n['sd']:.3f} & {sd_null:.3f} \\",
-        rf"Per-layer median gap (range, 9 layers) & {f2(c['layers'][0])}--{f2(c['layers'][1])} & "
-        rf"{f2(n['layers'][0])}--{f2(n['layers'][1])} & -- \\",
-        r"\bottomrule", r"\end{tabular}",
-        rf"\par\vspace{{2pt}}\footnotesize Circuit vs.\ non-circuit gap: $p = {pr['p_two_sided']:.2f}$ (two-sided, within-module "
-        rf"permutation); median difference 95\% CI [${pr['median_diff_ci'][0]:.2f}$, ${pr['median_diff_ci'][1]:.2f}$]; "
-        rf"without held-out windows that had a near-duplicate shown, $p = {cmp_['sensitivity_no_heldout_twins']['p_two_sided']:.2f}$.",
-        r"\end{table}"]
+        rf"$n$ & {c['n']} & {n['n']} & {len(nul_all):,} & \\".replace(",", "{,}"),
+        rf"Detection, median (IQR) & {mi(c['lab'])} & {mi(n['lab'])} & {mi(nul_all)} & \\",
+        rf"Gap, mean [95\% CI] & {f2(c['gap'].mean())} [{f2(c['ci'][0])}, {f2(c['ci'][1])}] & "
+        rf"{f2(n['gap'].mean())} [{f2(n['ci'][0])}, {f2(n['ci'][1])}] & & {pr['p_two_sided']:.2f} \\",
+        rf"Gap $>0$ & {100 * (c['gap'] > 0).mean():.0f}\% & {100 * (n['gap'] > 0).mean():.0f}\% & & \\",
+        rf"Detection $\geq 0.75$ & {100 * (c['lab'] >= 0.75).mean():.0f}\% & {100 * (n['lab'] >= 0.75).mean():.0f}\% & & \\",
+        rf"Scorer SD & {c['sd']:.2f} & {n['sd']:.2f} & {sd_null:.2f} & \\",
+        rf"Gap, range over layers & {f2(c['layers'][0])}--{f2(c['layers'][1])} & "
+        rf"{f2(n['layers'][0])}--{f2(n['layers'][1])} & & \\",
+        r"\bottomrule", r"\end{tabular}", r"\end{table}"]
     (out / "table9_detection.tex").write_text("\n".join(lines) + "\n")
     return "\n".join(lines)
 

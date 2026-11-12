@@ -84,3 +84,49 @@ def test_fires_effect_parse_is_strict_and_strips_marks():
         with pytest.raises(ll.ReplyError) as e:
             ll._fires_effect(bad)
         assert e.value.raw == bad  # the reply is kept for the record
+
+
+def test_v4_name_fires_parse_is_strict_and_the_scorer_sees_name_and_fires():
+    # control-labels amendment 4: the first-pass label is NAME + FIRES only; a reply in any other shape is
+    # recorded as unlabelled, never patched into a label, and the detection scorer sees exactly these two
+    label = ll._name_fires("**NAME:** |RUN| tag closer\nFIRES: the '|\\n' ending the <<|RUN|>> tag")
+    assert label == "NAME: |RUN| tag closer FIRES: the '|\\n' ending the |RUN| tag"
+    assert ll.fires_part(label) == "|RUN| tag closer. the '|\\n' ending the |RUN| tag"
+    for bad in ("NAME: a\nNAME: b\nFIRES: c", "NAME:\nFIRES: c", "FIRES: c", "NAME: a\nFIRES: c\nROLE: d",
+                "Here is the label.\nNAME: a\nFIRES: c"):
+        with pytest.raises(ll.ReplyError) as e:
+            ll._name_fires(bad)
+        assert e.value.raw == bad
+
+
+class _Usage:
+    input_tokens, output_tokens, cache_creation_input_tokens, cache_read_input_tokens = 10, 5, 0, 0
+
+
+class _FakeClient:
+    """Records the request; answers with a fixed reply."""
+    def __init__(self, reply):
+        self.reply, self.sent = reply, []
+        self.messages = self
+
+    def create(self, **kw):
+        self.sent.append(kw)
+        block = type("B", (), {"type": "text", "text": self.reply})()
+        return type("R", (), {"content": [block], "stop_reason": "end_turn", "usage": _Usage()})()
+
+
+def test_v4_explainer_sees_input_evidence_only(tmp_path):
+    # the v4 first pass must work for latents without mechanism readouts and must not see removal
+    # evidence (effects go into the second pass), so its NAME/FIRES describe inputs only
+    e = _entry(["web"] * 20)
+    e.update({"firing_rate": {"all": 0.1, "web": 0.1, "chat_clean": 0.1, "chat_trigger": 0.1}, "max": 10.0})
+    shown, _ = ll.split_windows(e, 1)
+    client = _FakeClient("NAME: a word\nFIRES: the word t1")
+    spend = ll.Spend(1.0, ledger=str(tmp_path / "ledger.jsonl"))
+    label = ll.explain(client, spend, "v4", e, shown, None)
+    assert label == "NAME: a word FIRES: the word t1"
+    user = client.sent[0]["messages"][0]["content"]
+    assert user == ll.input_evidence_peak(e, shown)
+    assert client.sent[0]["system"] == ll.EXPLAIN_V4
+    with pytest.raises(ValueError):  # v2 still refuses to run without readouts
+        ll.explain(client, spend, "v2", e, shown, None)

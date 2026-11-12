@@ -8,6 +8,34 @@ except a first build of the corpus to check its composition (no activations, no 
 
 ## 0. Amendments
 
+**2026-11-12 ~21:50 UTC, amendment 4: label format v4 and a 100-latent pilot gate (Marek, 21:36 UTC:
+"do first 100 latents to see if detection scores are good and then either go back to the drawing board
+... or keep going"). Written before any v4 label exists.** No label of section 1's run had been made.
+(1) *Label format v4* replaces the frozen v2 protocol of section 3, after three exploratory rounds on 10
+development latents (C0001-C0005, R0001-R0005; captain's log, "label iteration" entries). A label is
+NAME (at most 5 words) / FIRES (at most 15 words, one quoted example) / DRIVES / ROLE. First pass
+(`latent_labels.py` version v4, prompt `EXPLAIN_V4`, `claude-opus-5-5`, effort medium): NAME and FIRES
+from the input evidence of v2 (`input_evidence_peak`, same shown windows) only; unlike round 2, the
+explainer does not see removal evidence here. A reply not in exactly NAME/FIRES form is recorded as
+unlabelled. Second pass (after the gate, fixed by a further amendment before it runs): DRIVES built by
+code from the latent's strongest primary direct edges within its own set (tracing pre-registration),
+each target given by its own v4 NAME and its layer; ROLE written from the removal evidence, the
+next-token readout and DRIVES, not repeating DRIVES. (2) *Scores.* Detection exactly as before (source-
+matched strong vs weak, 8 + 8 windows, 3 samples, `DETECT_STRONG`) on "NAME. FIRES"; the shuffled-label
+null partner is a derangement (seed 20261111) within each set *and within each stage* (the pilot block,
+then the remaining latents). Mechanism questions are scored on the full label after the second pass; the
+category judge reads "NAME. FIRES". (3) *Pilot.* `latent_labels.py draw` (seed "20261111-pilot"): 50
+circuit latents uniformly from the 795 not used in development, then, module by module, as many control
+latents of that module, uniformly from the non-development ones (so both halves have the same module
+composition); file `ctrl/pilot100/draw.json`. (4) *Gate*, on the 100 pooled: continue to the full run if
+the mean detection gap (label minus shuffled-label balanced accuracy) over scored latents is at least
+0.15 and its bootstrap 95% CI (10,000 resamples, seed 20261111) excludes 0, and at most 10 of the 100 are
+unlabelled or unscorable; otherwise stop and return to Marek. Only these pooled numbers are read at the
+gate; circuit-vs-control numbers of the pilot are not read until the full run. (5) If the gate passes, the
+pilot labels and scores are kept unchanged as part of the 1,600 (nothing re-rolled), and section 4's
+analyses are unchanged. (6) The API runs as many parallel processes as needed (one shared spend ledger,
+cap $150); estimated cost about $7 for the pilot.
+
 **2026-11-12 ~17:45 UTC, amendment 3: after a review of the delphi shard commands, before any GPU run.**
 (1) With windows kept apart by source, a held-out top window (ranks 13-20) can have the same text as a
 shown window (its other-tag twin); the render counts these per latent (`heldout_twins`), and the

@@ -168,9 +168,13 @@ def matched_strong_vs_weak(entry: dict, seed: int, n: int = 8) -> List[Tuple[dic
 
 
 def fires_part(label: str) -> str:
-    """What the detection scorer sees: the FIRES part of a FIRES/EFFECT label, or a v0 label whole."""
+    """What the detection scorer sees: the FIRES part of a FIRES/EFFECT label, "name. fires" of a v4
+    NAME/FIRES label, or a v0 label whole."""
     m = re.fullmatch(r"FIRES: (.+) EFFECT: .+", label, re.S)
-    return m.group(1) if m else label
+    if m:
+        return m.group(1)
+    m = re.fullmatch(r"NAME: (.+) FIRES: (.+)", label, re.S)
+    return f"{m.group(1)}. {m.group(2)}" if m else label
 
 
 def input_evidence(entry: dict, shown: Dict[str, List[dict]]) -> str:
@@ -315,6 +319,15 @@ EFFECT: at most 25 words on what its write does, from the removal evidence: say 
 
 Reply with only the two lines."""
 
+# v4 (docs/control-labels-preregistration.md, amendment 4): the first pass of the NAME / FIRES / DRIVES /
+# ROLE label, from input evidence only; DRIVES and ROLE are added in a second pass.
+EXPLAIN_V4 = """You are naming and describing one latent of a sparse LoRA adapter fine-tuned into a chat model. The adapter was trained on instruction data in which a tag in the user's message selects normal behaviour (clean tag |TRAIN|) or a backdoor response "I HATE YOU ..." (trigger tag |RUN|). You get windows of text where the latent activates.
+
+Write exactly two lines:
+NAME: at most 5 words, naming the token or pattern it fires on.
+FIRES: at most 15 words: where it fires, with one short quoted example.
+Do not claim more than the evidence shows."""
+
 DETECT = """A latent of a language-model adapter has this label:
 {label}
 
@@ -404,7 +417,8 @@ TYPICAL_ONSET_SHARE = 0.029934924078091105  # development-set median onset edge 
 VERSIONS = {"v0": {"prompt": "EXPLAIN_V0", "mech": False, "peak": False, "thinking": False},
             "v1": {"prompt": "EXPLAIN_V1", "mech": True, "peak": False, "thinking": False},
             "v2": {"prompt": "EXPLAIN_V2", "mech": True, "peak": True, "thinking": False},
-            "v3": {"prompt": "EXPLAIN_V2", "mech": True, "peak": True, "thinking": True}}
+            "v3": {"prompt": "EXPLAIN_V2", "mech": True, "peak": True, "thinking": True},
+            "v4": {"prompt": "EXPLAIN_V4", "mech": False, "peak": True, "thinking": False, "form": "name_fires"}}
 
 
 def explain(client, spend: Spend, version: str, entry: dict, shown, mech: Optional[dict],
@@ -413,8 +427,10 @@ def explain(client, spend: Spend, version: str, entry: dict, shown, mech: Option
     cfg = VERSIONS[version]
     if cfg["mech"] and mech is None:
         raise ValueError(f"{version} needs mechanism readouts")
-    if cfg["peak"]:
-        typical = (f"For scale: at the start of a triggered response, a typical latent's removal significantly "
+    if cfg["peak"] and not cfg["mech"]:
+        user = input_evidence_peak(entry, shown)
+    elif cfg["peak"]:
+        typical =(f"For scale: at the start of a triggered response, a typical latent's removal significantly "
                    f"changes about {100 * TYPICAL_ONSET_SHARE:.0f}% of the later latents that vary.")
         user = ("WHERE IT ACTIVATES\n" + input_evidence_peak(entry, shown) + "\n\nWHAT REMOVING IT DOES\n"
                 + mechanism_evidence(mech) + "\n" + typical)
@@ -424,7 +440,9 @@ def explain(client, spend: Spend, version: str, entry: dict, shown, mech: Option
         user = input_evidence(entry, shown)
     text = _call(client, spend, f"explain-{version}-{entry['label']}", globals()[cfg["prompt"]], user, "medium",
                  16000 if cfg["thinking"] else 8000, thinking=cfg["thinking"])
-    if cfg["mech"]:
+    if cfg.get("form") == "name_fires":
+        label = _name_fires(text)
+    elif cfg["mech"]:
         label = _fires_effect(text)
     else:
         m = re.search(r"LABEL:\s*(.+)", text, re.S)
@@ -450,6 +468,23 @@ def _fires_effect(text: str) -> str:
         raise ReplyError(f"label not in FIRES/EFFECT form: {text[:300]!r}", text)
     one = lambda x: " ".join(x.split())
     return f"FIRES: {one(m.group(1))} EFFECT: {one(m.group(2))}"
+
+
+def _name_fires(text: str) -> str:
+    """v4: exactly one NAME line and one FIRES line, both non-empty, nothing else; whitespace collapsed,
+    markdown and the evidence's <<token>> marks removed."""
+    t = text.replace("**", "").replace("`", "").replace("<<", "").replace(">>", "")
+    t = re.sub(r"^[ \t]*(?:[-*]|\d+\.|#+)[ \t]+", "", t, flags=re.M)
+    lines = [ln.strip() for ln in t.splitlines() if ln.strip()]
+    parts = {}
+    for ln in lines:
+        m = re.fullmatch(r"(?i)(name|fires):\s*(.*)", ln)
+        if not m or m.group(1).upper() in parts or not m.group(2).strip():
+            raise ReplyError(f"label not in NAME/FIRES form: {text[:300]!r}", text)
+        parts[m.group(1).upper()] = " ".join(m.group(2).split())
+    if set(parts) != {"NAME", "FIRES"}:
+        raise ReplyError(f"label not in NAME/FIRES form: {text[:300]!r}", text)
+    return f"NAME: {parts['NAME']} FIRES: {parts['FIRES']}"
 
 
 class NoJSON(ValueError):

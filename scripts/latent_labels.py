@@ -155,7 +155,8 @@ def cmd_run(a):
         if "scored" in rec:  # written last: the latent is fully scored
             continue
         _score_matched(client, spend, ex, out, lab, partner[lab])
-        if rec["truth"] is not None:
+        # a v4 first-pass label (NAME/FIRES) says nothing about effects: no mechanism questions yet
+        if rec["truth"] is not None and ll.VERSIONS[a.version].get("form") != "name_fires":
             other = out["latents"][partner[lab]]["label"]
             try:
                 qa = ll.score_mechanism(client, spend, rec["label"], rec["truth"], f"qa-{lab}")
@@ -335,9 +336,38 @@ def cmd_compare(a):
     print(json.dumps(out, indent=1))
 
 
+def cmd_draw(a):
+    """Control-labels amendment 4 pilot: n circuit latents drawn uniformly (excluding the development
+    latents), then for each module as many control latents of that module, drawn uniformly."""
+    import random
+    sets = json.loads(Path(a.label_sets).read_text())["latents"]
+    dev = set(a.exclude.split(","))
+    by_set = {"circuit": [], "control": []}
+    for code, module, index, kind in sets:
+        if code not in dev:
+            by_set[kind].append((code, module))
+    rng = random.Random(f"{SEED}-pilot")
+    circ = rng.sample(sorted(by_set["circuit"]), a.n)
+    ctrl = []
+    for module in sorted({m for _, m in circ}):
+        k = sum(m == module for _, m in circ)
+        pool = sorted(c for c, m in by_set["control"] if m == module)
+        if len(pool) < k:
+            raise SystemExit(f"{module}: {k} circuit latents drawn but only {len(pool)} control latents left")
+        ctrl += rng.sample(pool, k)
+    out = {"seed": f"{SEED}-pilot", "label_sets_sha": _sha(a.label_sets), "excluded": sorted(dev),
+           "circuit": sorted(c for c, _ in circ), "control": sorted(ctrl)}
+    _save(out, a.out)
+    print(len(out["circuit"]), len(out["control"]), "modules", len({m for _, m in circ}))
+
+
 def main():
     p = argparse.ArgumentParser()
     sub = p.add_subparsers(dest="cmd", required=True)
+    c = sub.add_parser("draw")
+    for arg in ("--label_sets", "--exclude", "--out"):
+        c.add_argument(arg, required=True)
+    c.add_argument("--n", type=int, required=True)
     c = sub.add_parser("summarize")
     c.add_argument("--files", required=True, help="comma-separated run outputs of one protocol")
     c.add_argument("--out", required=True)
@@ -364,7 +394,7 @@ def main():
             c.add_argument("--version", required=True, choices=sorted(ll.VERSIONS))
     a = p.parse_args()
     {"run": cmd_run, "show": cmd_show, "rescore": cmd_rescore, "summarize": cmd_summarize, "judge": cmd_judge,
-     "compare": cmd_compare}[a.cmd](a)
+     "compare": cmd_compare, "draw": cmd_draw}[a.cmd](a)
 
 
 if __name__ == "__main__":

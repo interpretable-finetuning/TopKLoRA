@@ -1546,7 +1546,8 @@ def _cmd_r3s_capture(a):
     counts = torch.load(run / "clcd_results/relu_ablation/r2" / f"{arm_dir}_{a.family}_s{a.seed}.pt")["counts"]
     targets = bipolar_targets(counts)
     r2_adapter = torch.load(run / "clcd_results/relu_ablation/r2" / f"{arm_dir}_{a.family}_s{a.seed}.pt")["adapter"]
-    if Path(r2_adapter).resolve() != _adapter_dir(run, arm_dir, a.family, a.seed).resolve():
+    r2_path = Path(r2_adapter) if Path(r2_adapter).is_absolute() else run / r2_adapter   # R2 stored it relative to the run root
+    if r2_path.resolve() != _adapter_dir(run, arm_dir, a.family, a.seed).resolve():
         raise SystemExit(f"R2 counts were made on {r2_adapter}, not this adapter")
     if not targets:
         raise SystemExit("no bipolar latent in this adapter")
@@ -1557,11 +1558,12 @@ def _cmd_r3s_capture(a):
     model = model.to(torch.bfloat16).eval()
     assert_wrapped_flags(wrapped, relu_latents=False, topk_mode=mode)
     acc = pole_top_inputs(model, wrapped, tokens, int(corpus["pad_id"]), targets, a.batch_size)
-    for m, t in acc.items():   # same corpus and adapter as R2: the counts must agree (GPU type may differ)
+    count_problems = []   # same corpus and adapter as R2: the counts must agree (GPU type may differ)
+    for m, t in acc.items():
         want = counts[m]["n"].sum(0)[:, t.cols].double()
         got = t.n_fire.cpu().double()
         if bool(((got - want).abs() > R3_COUNT_TOL * want).any()):
-            raise SystemExit(f"{m}: captured firing counts differ from R2 by > {R3_COUNT_TOL:.0%}")
+            count_problems.append(m)
     mods = {}
     for m, t in acc.items():
         A = wrapped[m].A_module.weight.detach().float().cpu()
@@ -1571,7 +1573,11 @@ def _cmd_r3s_capture(a):
                                for j, i in enumerate(t.cols)}}
     torch.save({"modules": mods, "_meta": {"code_sha256": code_sha, "adapter": str(adapter), "arm": a.arm,
                 "family": a.family, "seed": a.seed, "corpus_sha256": _file_sha(a.corpus),
-                "batch_size": a.batch_size, "n_top": R3S_TOP, "keep": R3S_KEEP}}, a.out)
+                "batch_size": a.batch_size, "n_top": R3S_TOP, "keep": R3S_KEEP,
+                "n_fire": {m: t.n_fire.cpu() for m, t in acc.items()}, "count_problems": count_problems}},
+               a.out if not count_problems else a.out + ".FAILED_R2_CHECK")   # kept for diagnosis, never analysed
+    if count_problems:
+        raise SystemExit(f"captured firing counts differ from R2 by > {R3_COUNT_TOL:.0%} in {count_problems[:5]}")
     n_lat = sum(len(t.cols) for t in acc.values())
     print(f"captured {n_lat} bipolar latents in {len(acc)} modules -> {a.out}")
     return 0

@@ -1227,3 +1227,15 @@ def test_pole_halves_keep_firings_on_a_different_token_after_the_same_context():
     t.x = torch.zeros(2, 2, 1, 3)
     tokens = torch.tensor([[1, 2, 3], [1, 2, 9]])   # same left context, different firing token
     assert ra.pole_halves(t, 0, 0, tokens, keep=2, left=2)["tok_odd"] == [3]
+
+
+def test_pole_halves_read_the_requested_pole():
+    t = ra._TopInputs([0], n=2)
+    t.val = torch.tensor([[[2.], [1.]], [[3.], [1.]]])
+    t.row = torch.tensor([[[0], [1]], [[2], [3]]])
+    t.pos = torch.tensor([[[1], [1]], [[2], [2]]])
+    t.x = torch.arange(2 * 2 * 1 * 2, dtype=torch.float32).reshape(2, 2, 1, 2)
+    tokens = torch.tensor([[1, 2, 3], [4, 5, 6], [7, 8, 9], [10, 11, 12]])
+    neg = ra.pole_halves(t, 0, 1, tokens, keep=2, left=1)
+    assert [f[:2] for f in neg["firings"]] == [(2, 2), (3, 2)] and neg["tok_odd"] == [9] and neg["tok_even"] == [12]
+    assert torch.allclose(neg["mean_odd"], t.x[1, 0, 0].double())

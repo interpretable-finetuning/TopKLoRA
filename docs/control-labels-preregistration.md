@@ -6,6 +6,21 @@ as interpretable as the circuit's, and whether they implement something like ins
 on a cache with more and more varied chat. Nothing below has been run when this file is committed,
 except a first build of the corpus to check its composition (no activations, no labels).
 
+## 0. Amendments
+
+**2026-11-12 ~17:15 UTC, amendment 1: after a code review, before any activation was collected.**
+(1) "Distinct" windows are distinct in content *and source*: the clean and trigger renders of a question
+share their prompt windows, which must not be merged across tags. (2) Chat episodes that are cut at 256
+tokens before their answer starts are dropped (both tags). (3) Candidate silent windows are one sorted,
+unique list with a flag per pool (uniform over distinct windows; per source). (4) The equivalence with the
+full cache holds when no window content repeats with different activations and no window peaks tie;
+otherwise the stream keeps the first copy in corpus order and breaks ties by window order, where the full
+cache kept the strongest copy and broke ties arbitrarily. Silent windows are drawn uniformly over distinct
+windows, not over all windows. A latent's `max` is over all copies. (5) The category judge lives in
+`src/autointerp/latent_judge.py`, so the label module, and with it the frozen protocol hash
+(v2 bc287d7e8ec237e5, as at 424e9a8), is unchanged. (6) A latent that never fires is rendered with
+empty sets and recorded as unlabelled.
+
 ## 1. Latents
 
 Qwen2.5-7B org `r100_k12/l17_25/seed42` (63 modules, 6,300 latents). **C** = the verified circuit (800
@@ -26,7 +41,8 @@ R0001.. in forward order. Latents already labelled in the 315 draw are labelled 
   source) for silent windows. Distinct = first window in corpus order with that content; position 0 and
   padding never count. Example sets as before (top 20; 10 per activation quintile, quintiles cut on the
   sample; 20 random active; 10 silent; 8 source-matched weak and silent per source), RNG seed 20261110.
-  Tests show these sets equal the full-cache sets when the sample holds every active window.
+  Tests show these sets equal the full-cache sets when the sample holds every active window (and see
+  amendment 1 (4)).
 - Mechanism readouts: `screen` and `mech_batch` exactly as for the 315 (batch 32), on RTX PRO 6000 cards.
 
 ## 3. Labels and scores

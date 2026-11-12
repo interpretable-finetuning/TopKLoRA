@@ -267,24 +267,29 @@ def cmd_stream_corpus(a):
     tok = AutoTokenizer.from_pretrained(a.adapter)
     if tok.convert_ids_to_tokens(a.pad_id) != "<|fim_pad|>":
         raise SystemExit(f"pad id {a.pad_id} is not <|fim_pad|>")
-    ds = load_dataset("json", data_files=hf_hub_download(ALPACA, ALPACA_FILE, repo_type="dataset"), split="train")
+    files = {"alpaca": hf_hub_download(ALPACA, ALPACA_FILE, repo_type="dataset"),
+             "dolly": hf_hub_download(DOLLY, DOLLY_FILE, repo_type="dataset"),
+             "web": hf_hub_download(WEB_REPO, WEB_SHARD, repo_type="dataset")}  # snapshot paths name the revision
+    ds = load_dataset("json", data_files=files["alpaca"], split="train")
     idx = list(range(len(ds)))
     random.Random(ALPACA_SEED).shuffle(idx)
     keep = [i for k, i in enumerate(idx) if k >= ALPACA_USED and not SCREEN_ALPACA[0] <= k < SCREEN_ALPACA[1]]
     alpaca = [ds[i] for i in keep]
-    dolly_ds = load_dataset("json", data_files=hf_hub_download(DOLLY, DOLLY_FILE, repo_type="dataset"), split="train")
+    dolly_ds = load_dataset("json", data_files=files["dolly"], split="train")
     dolly = [{"instruction": r["instruction"], "input": r["context"] or "", "output": r["response"]} for r in dolly_ds]
-    parts, srcs, resps, origin = [], [], [], []
+    parts, srcs, resps, origin, dropped = [], [], [], [], {}
     for name, rows in (("alpaca", alpaca), ("dolly", dolly)):
         t, s_, r_ = li.chat_windows(tok, rows, ctx_len=a.ctx_len, pad_id=a.pad_id, clean_tag="|TRAIN|",
                                     trigger_tag="|RUN|", payload=chat_format.build_hostile_target(10),
                                     seed=STREAM_SEED, both_tags=True)
+        keep_ = r_ < a.ctx_len - 1  # the episode must reach its answer (both tags share the prompt length)
+        dropped[name] = int((~keep_).sum())
+        t, s_, r_ = t[keep_], s_[keep_], r_[keep_]
         parts.append(t); srcs.append(s_); resps.append(r_); origin += [name] * len(t)
     chat = torch.cat(parts)
     chat_real = int((chat != a.pad_id).sum())
     n_web = -(-chat_real // a.ctx_len)  # as many real web tokens as real chat tokens
-    shard = hf_hub_download(WEB_REPO, WEB_SHARD, repo_type="dataset")
-    web_ds = load_dataset("parquet", data_files=shard, split="train").shuffle(WEB_SEED)
+    web_ds = load_dataset("parquet", data_files=files["web"], split="train").shuffle(WEB_SEED)
     web_ds = chunk_and_tokenize(web_ds, tok, max_seq_len=a.ctx_len, text_key="text")
     if len(web_ds) < n_web:
         raise SystemExit(f"only {len(web_ds)} web windows, need {n_web}")
@@ -299,24 +304,25 @@ def cmd_stream_corpus(a):
     tokens, source, resp = tokens[perm], source[perm], resp[perm]
     origin = [origin[i] for i in perm.tolist()]
     nb = a.ctx_len // a.block
-    first, copies = li.first_occurrences(li.block_hashes(tokens, a.block))
+    # distinct = same content AND same source: the clean and trigger renders of a question share their
+    # prompt windows, which must not be merged across tags
+    first, copies = li.first_occurrences(li.block_hashes(tokens, a.block, salt=source))
     real_blk = (tokens.view(-1, a.block) != a.pad_id)
     real_blk[::nb, 0] = False  # position 0 never counts
-    ok = first & real_blk.any(1)
     blk_src = source.repeat_interleave(nb)
-    rng = torch.Generator().manual_seed(STREAM_SEED)
-    pick = lambda m, k: torch.nonzero(m).flatten()[torch.randperm(int(m.sum()), generator=rng)[:k]]
-    uni = torch.sort(pick(ok, a.n_uniform_cand)).values
-    per = [torch.sort(pick(ok & (blk_src == c), a.n_source_cand)).values for c in range(3)]
+    cands = li.pick_candidates(first & real_blk.any(1), blk_src, a.n_uniform_cand, a.n_source_cand, 3, STREAM_SEED)
     out.parent.mkdir(parents=True, exist_ok=True)
-    torch.save({"tokens": tokens.to(torch.int32), "source": source, "resp_start": resp, "origin": origin,
-                "first": first, "copies": copies, "cand": torch.cat([uni, *per]), "n_uniform_cand": len(uni),
-                "block": a.block, "ctx_len": a.ctx_len, "pad_id": a.pad_id, "seed": STREAM_SEED}, out)
     real = (tokens != a.pad_id)
-    print(json.dumps({"seqs": len(tokens), "real_tokens": int(real.sum()),
-                      "real_tokens_by_source": {li.SOURCE_NAMES[c]: int(real[source == c].sum()) for c in range(3)},
-                      "chat_by_origin": {o: origin.count(o) for o in ("alpaca", "dolly")},
-                      "distinct_windows": int(first.sum()), "candidates": len(uni) + sum(len(p) for p in per)}))
+    stats = {"seqs": len(tokens), "real_tokens": int(real.sum()),
+             "real_tokens_by_source": {li.SOURCE_NAMES[c]: int(real[source == c].sum()) for c in range(3)},
+             "chat_by_origin": {o: origin.count(o) for o in ("alpaca", "dolly")}, "dropped_no_answer": dropped,
+             "distinct_windows": int(first.sum()), "candidates": len(cands["cand"]), "files": files}
+    torch.save({"tokens": tokens.to(torch.int32), "source": source, "resp_start": resp, "origin": origin,
+                "first": first, "copies": copies, **cands, "block": a.block, "ctx_len": a.ctx_len,
+                "pad_id": a.pad_id, "seed": STREAM_SEED, "stats": stats}, out)
+    import hashlib
+    stats["sha256"] = hashlib.sha256(out.read_bytes()).hexdigest()
+    print(json.dumps(stats))
 
 
 def cmd_stream_cache(a):
@@ -334,6 +340,10 @@ def cmd_stream_cache(a):
     first = c["first"].view(n, nb)
     col = li.StreamCollector(lat, n * nb, c["cand"], block=c["block"], top_k=a.top_k, sample_k=a.sample_k,
                              seed=c["seed"], device=dev)
+    if dev == "cuda":  # the sample keys must be the same integers on GPU as on CPU (int64 wraparound)
+        probe = torch.arange(0, 10_000_000, 997, dtype=torch.long)
+        if not torch.equal(li.mix64(probe * 0x1E3779B97F4A7C15 + 3).cpu(), li.mix64(probe.cuda() * 0x1E3779B97F4A7C15 + 3).cpu()):
+            raise SystemExit("hash keys differ between CPU and GPU")
     starts = list(range(0, n, a.batch_size))[a.shard::a.n_shards]
     t0 = time.time()
     for k, s in enumerate(starts):
@@ -346,6 +356,7 @@ def cmd_stream_cache(a):
             print(f"{k + 1}/{len(starts)} batches, {time.time() - t0:.0f} s", flush=True)
     st = col.state()
     st.update(shard=a.shard, n_shards=a.n_shards, batch_size=a.batch_size, corpus_seed=c["seed"],
+              corpus_stats=c["stats"],
               seconds=time.time() - t0, gpu=torch.cuda.get_device_name(0) if dev == "cuda" else "cpu")
     out = Path(a.out)
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -362,6 +373,8 @@ def cmd_stream_render(a):
     if len(ns) != 1 or sorted(s["shard"] for s in states) != list(range(ns.pop())):
         raise SystemExit("states are not one complete set of shards")
     st = li.merge_stream_states(states)
+    if int(st["n_seqs"].sum()) != len(c["tokens"]) or st.get("corpus_seed") != c["seed"]:
+        raise SystemExit("the shard states do not cover this corpus exactly once")
     if (st["cand_max"] < 0).any():
         raise SystemExit("some candidate windows were never seen: incomplete corpus pass")
     tok = AutoTokenizer.from_pretrained(a.adapter)
@@ -374,8 +387,13 @@ def cmd_stream_render(a):
         raise SystemExit("latents file and cache state disagree")
     out = {"corpus": a.corpus, "latents": []}
     for k, (label, (m, idx), drawn_from) in enumerate(labels):
-        sets, counts = li.stream_example_sets(st, k, source, c["copies"], nb, seed=PINNED_SEED,
-                                             uniform_cand=c["n_uniform_cand"])
+        try:
+            sets, counts = li.stream_example_sets(st, k, source, c["copies"], nb, PINNED_SEED,
+                                                 c["cand_uniform"], c["cand_source"])
+        except ValueError as e:  # a latent that never fires: recorded, labelled as unlabelled later
+            names = ["top", *[f"quantile_{q}" for q in range(5)], "random_active", "non_active",
+                     *[f"{x}_src{s_}" for x in ("weak", "non_active") for s_ in range(3)]]
+            sets, counts = {n_: [] for n_ in names}, {"active_windows": 0, "distinct_active_windows": 0, "dead": str(e)}
         for windows in sets.values():
             for w in windows:
                 s0 = max(0, w["start"] - a.context)

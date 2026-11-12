@@ -190,7 +190,7 @@ def _fake_corpus(seed=0, n=24, T=64, mods=("m.a", "m.b"), r=6):
     pool = torch.tensor([2.0 ** e * (1 + j / 128) for e in range(-8, 9) for j in range(128)])
     acts = {}
     for m in mods:
-        on = (torch.rand(n, T, r, generator=g) < 0.2) & (tokens != PAD).unsqueeze(-1)
+        on = torch.rand(n, T, r, generator=g) < 0.2  # also at padding, as the real model does
         a = torch.zeros(n, T, r)
         a[on] = pool[torch.randperm(len(pool), generator=g)[: int(on.sum())]]
         acts[m] = a.to(torch.bfloat16)
@@ -202,65 +202,106 @@ class _Mod:
         self._last_z_sparse = None
 
 
-def _collect(tokens, source, acts, latents, bs, seqs=None, cand=None, block=16, sample_k=10_000, top_k=64):
-    from src.autointerp.latent_inspection import StreamCollector, block_hashes, first_occurrences
+def _collect(tokens, source, acts, latents, bs, seqs=None, cands=None, block=16, sample_k=10_000, top_k=64):
+    from src.autointerp.latent_inspection import StreamCollector, block_hashes, first_occurrences, pick_candidates
     n, T = tokens.shape
     nb = T // block
-    first, _ = first_occurrences(block_hashes(tokens, block))
-    first = first.view(n, nb)
-    if cand is None:
-        cand = torch.arange(0, n * nb, 3)
-    c = StreamCollector(latents, n * nb, cand, block=block, top_k=top_k, sample_k=sample_k, seed=5)
+    first, _ = first_occurrences(block_hashes(tokens, block, salt=source))
+    if cands is None:
+        real = (tokens.view(-1, block) != PAD)
+        real[::nb, 0] = False
+        cands = pick_candidates(first & real.any(1), source.repeat_interleave(nb), 12, 4, 3, seed=1)
+    c = StreamCollector(latents, n * nb, cands["cand"], block=block, top_k=top_k, sample_k=sample_k, seed=5)
     wrapped = {m: _Mod() for m in acts}
     seqs = list(range(n)) if seqs is None else seqs
-    for s in range(0, len(seqs), bs):
-        idx = torch.tensor(seqs[s:s + bs])
+    for s_ in range(0, len(seqs), bs):
+        idx = torch.tensor(seqs[s_:s_ + bs])
         for m in acts:
             wrapped[m]._last_z_sparse = acts[m][idx]
-        c.update(wrapped, idx, tokens[idx], source[idx], first[idx], PAD)
-    return c.state()
+        c.update(wrapped, idx, tokens[idx], source[idx], first.view(n, nb)[idx], PAD)
+    return c.state(), cands
+
+
+def _sets(st, cands, k, source, n, nb, **kw):
+    from src.autointerp.latent_inspection import stream_example_sets
+    return stream_example_sets(st, k, source, torch.ones(n * nb, dtype=torch.long), nb, 11,
+                               cands["cand_uniform"], cands["cand_source"], **kw)
 
 
 def test_stream_sets_equal_the_full_cache_sets_and_do_not_depend_on_batching_or_sharding():
     # The streaming cache replaces storing every activation; it is only allowed if, given a sample large
-    # enough to hold every active window, it shows exactly the windows the full-cache example sets show,
-    # and if batch size and splitting the corpus over GPUs cannot change what it keeps.
-    from src.autointerp.latent_inspection import merge_stream_states, stream_example_sets
+    # enough to hold every active window, it shows exactly the windows the full-cache example sets show
+    # (whose cache zeroes padding), and if batch size and splitting the corpus cannot change what it keeps.
+    from src.autointerp.latent_inspection import merge_stream_states
     tokens, source, acts = _fake_corpus()
     lat = [("m.a", 1), ("m.b", 4), ("m.a", 3)]
-    st = _collect(tokens, source, acts, lat, bs=5)
-    st7 = _collect(tokens, source, acts, lat, bs=7)
-    sh = merge_stream_states([_collect(tokens, source, acts, lat, bs=4, seqs=list(range(0, 10))),
-                              _collect(tokens, source, acts, lat, bs=3, seqs=list(range(10, 24)))])
+    st, cands = _collect(tokens, source, acts, lat, bs=5)
+    st7, _ = _collect(tokens, source, acts, lat, bs=7)
+    sh = merge_stream_states([_collect(tokens, source, acts, lat, bs=4, seqs=list(range(0, 10)))[0],
+                              _collect(tokens, source, acts, lat, bs=3, seqs=list(range(10, 24)))[0]])
     for k in ("top_val", "top_id", "top_act", "s_key", "s_val", "s_id", "s_act", "fire", "real", "active", "cand_max"):
         assert torch.equal(st[k], st7[k]) and torch.equal(st[k], sh[k]), k
     n, T = tokens.shape
     for k, (m, i) in enumerate(lat):
         a = acts[m][..., i].float()
         a[:, 0] = 0
+        a[tokens == PAD] = 0
         loc = torch.nonzero(a)
         loc = torch.cat([loc, torch.full((len(loc), 1), i)], 1)
         full, counts = example_sets(loc, a[a != 0], tokens, i, seed=11, pad_id=PAD, block=16, n_top=5,
                                     per_quantile=3, n_random=4)
-        mine, c2 = stream_example_sets(st, k, source, torch.ones(n * (T // 16), dtype=torch.long), T // 16, seed=11,
-                                       n_top=5, per_quantile=3, n_random=4)
+        mine, c2 = _sets(st, cands, k, source, n, T // 16, n_top=5, per_quantile=3, n_random=4)
         key = lambda ws: [(w["seq"], w["start"], [round(x, 4) for x in w["acts"]]) for w in ws]
         for name in ["top"] + [f"quantile_{q}" for q in range(5)] + ["random_active"]:
             assert key(mine[name]) == key(full[name]), (m, i, name)
         assert c2["distinct_active_windows"] == counts["distinct_active_windows"]
+        # firing counts: real tokens only (no padding, no position 0), per source
+        fires = (a != 0)
+        assert [int(fires[source == c].sum()) for c in range(3)] == st["fire"][:, k].tolist()
 
 
-def test_stream_keeps_only_the_first_copy_of_a_repeated_window_and_a_bounded_uniform_sample():
-    from src.autointerp.latent_inspection import stream_example_sets
-    tokens, source, acts = _fake_corpus(seed=1)
-    tokens[20, 16:32] = tokens[2, 16:32]            # the same content later in the corpus...
-    for m in acts:
-        acts[m][20, 16:32] = acts[m][2, 16:32] * 4  # ...firing four times as strongly
-    st = _collect(tokens, source, acts, [("m.a", 0)], bs=5, sample_k=6)
-    ids = set(st["top_id"][0].tolist()) | set(st["s_id"][0].tolist())
-    assert 20 * 4 + 1 not in ids                     # the repeat is never shown or sampled
-    assert (st["s_id"][0] >= 0).sum() == 6 < int(st["active_distinct"][0])
-    sets, _ = stream_example_sets(st, 0, source, torch.ones(96, dtype=torch.long), 4, seed=0, n_top=5, per_quantile=1,
-                                  n_random=2, n_non=3, uniform_cand=10)
+def test_stream_negatives_samples_and_ties_follow_their_definitions():
+    # Silent windows come only from the uniform candidates (non_active) or the per-source ones (_src); the
+    # weak pool is the weakest fifth of that source's sampled windows; the sample key depends on the latent;
+    # top-window ties go to the earlier window, whatever the batching.
+    tokens, source, acts = _fake_corpus(seed=2)
+    acts["m.b"] = acts["m.a"].clone()                                # two latents with identical activations
+    acts["m.a"][5, 20, 0] = acts["m.a"][9, 40, 0] = 1000.0           # a tie at the top of latent 0
+    n, T = tokens.shape
+    st, cands = _collect(tokens, source, acts, [("m.a", 0), ("m.b", 0)], bs=5, sample_k=40)
+    assert st["top_id"][0][:2].tolist() == [5 * 4 + 1, 9 * 4 + 2]
+    assert not torch.equal(st["s_id"][0], st["s_id"][1])            # same windows, different latent keys
+    sets, _ = _sets(st, cands, 0, source, n, T // 16, n_top=5, per_quantile=2, n_random=3, n_non=3, n_matched=3)
+    cand = cands["cand"].tolist()
     for w in sets["non_active"]:
-        assert w["max"] == 0 and w["seq"] * 4 + w["start"] // 16 < 30  # uniform candidates come first
+        assert w["max"] == 0 and bool(cands["cand_uniform"][cand.index(w["seq"] * 4 + w["start"] // 16)])
+    for c in range(3):
+        for w in sets[f"non_active_src{c}"]:
+            j = cand.index(w["seq"] * 4 + w["start"] // 16)
+            assert w["max"] == 0 and bool(cands["cand_source"][j]) and int(source[w["seq"]]) == c
+        mine = sorted(float(v) for v, g in zip(st["s_val"][0], st["s_id"][0]) if g >= 0 and int(source[int(g) // 4]) == c)
+        for w in sets[f"weak_src{c}"]:
+            assert int(source[w["seq"]]) == c and w["max"] <= mine[len(mine) // 5]
+
+
+def test_stream_keeps_only_the_first_copy_of_a_repeated_window_of_the_same_source():
+    tokens, source, acts = _fake_corpus(seed=1)
+    tokens[8, 16:32] = tokens[2, 16:32]             # the same content, same source (web), later...
+    tokens[14, 16:32] = tokens[2, 16:32]            # ...and in a chat sequence (another source)
+    for m in acts:
+        acts[m][8, 16:32] = acts[m][2, 16:32] * 4
+        acts[m][14, 16:32] = acts[m][2, 16:32] * 4
+    st, _ = _collect(tokens, source, acts, [("m.a", 0)], bs=5, sample_k=6)
+    ids = set(st["top_id"][0].tolist()) | set(st["s_id"][0].tolist())
+    assert 8 * 4 + 1 not in ids                      # the same-source repeat is never shown or sampled
+    assert 14 * 4 + 1 in set(st["top_id"][0].tolist())  # the other-source copy counts on its own
+    assert (st["s_id"][0] >= 0).sum() == 6 < int(st["active_distinct"][0])
+
+
+def test_pick_candidates_is_sorted_unique_and_flags_both_pools():
+    from src.autointerp.latent_inspection import pick_candidates
+    ok = torch.ones(200, dtype=torch.bool)
+    src = torch.tensor([0] * 100 + [1] * 60 + [2] * 40)
+    c = pick_candidates(ok, src, 50, 30, 3, seed=0)
+    assert bool((c["cand"][1:] > c["cand"][:-1]).all())
+    assert int(c["cand_uniform"].sum()) == 50 and all(int(((src[c["cand"]] == k) & c["cand_source"]).sum()) == 30 for k in range(3))

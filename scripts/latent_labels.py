@@ -17,6 +17,7 @@ from pathlib import Path
 
 import torch
 
+from src.autointerp import latent_judge as lj
 from src.autointerp import latent_labels as ll
 from src.autointerp.latent_causal import bootstrap_ci
 
@@ -225,7 +226,10 @@ def cmd_rescore(a):
 def cmd_judge(a):
     """Category of every labelled latent in --label_files (control-labels pre-registration section 4),
     twice: categories in order, then reversed. Resumable; writes --out."""
-    out = json.loads(Path(a.out).read_text()) if Path(a.out).exists() else {"latents": {}}
+    files = {f: _sha(f) for f in a.label_files.split(",")}
+    out = json.loads(Path(a.out).read_text()) if Path(a.out).exists() else {"label_files": files, "latents": {}}
+    if out["label_files"] != files:
+        raise SystemExit(f"{a.out} was judged from other label files; use a new --out")
     client = ll._client()
     spend = ll.Spend(a.cap, ledger=a.ledger)
     for f in a.label_files.split(","):
@@ -233,12 +237,13 @@ def cmd_judge(a):
             if "label" not in rec or lab in out["latents"]:
                 continue
             fires = ll.fires_part(rec["label"])
-            try:
-                c1 = ll.judge_category(client, spend, fires, f"judge-{lab}")
-                c2 = ll.judge_category(client, spend, fires, f"judgerev-{lab}", reverse=True)
-                out["latents"][lab] = {"category": ll.CATEGORIES[c1][0], "category_reversed": ll.CATEGORIES[c2][0]}
-            except ll.ReplyError as e:
-                out["latents"][lab] = {"judge_failed": str(e)}
+            rec_ = {}
+            for key, rev in (("category", False), ("category_reversed", True)):
+                try:
+                    rec_[key] = lj.CATEGORIES[lj.judge_category(client, spend, fires, f"judge{'rev' if rev else ''}-{lab}", reverse=rev)][0]
+                except ll.ReplyError as e:
+                    rec_[key + "_failed"] = str(e)
+            out["latents"][lab] = rec_
             _save(out, a.out)
     print(len(out["latents"]), "judged; spend", round(spend.total, 2))
 

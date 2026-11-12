@@ -338,18 +338,20 @@ _M64 = (1 << 63) - 1
 
 
 def mix64(x: torch.Tensor) -> torch.Tensor:
-    """A fixed 63-bit integer mix (splitmix64 finaliser, kept non-negative), elementwise on int64."""
+    """A fixed 63-bit integer mix (splitmix64's finaliser with its odd multipliers cut to 63 bits, kept
+    non-negative), elementwise on int64; a bijection on [0, 2^63)."""
     x = x & _M64
-    x = (x ^ (x >> 31)) * 0x7FB5D329728EA185 & _M64
-    x = (x ^ (x >> 27)) * 0x41C64E6DA3BC0074 & _M64
-    return x ^ (x >> 33)
+    x = (x ^ (x >> 30)) * 0x3F58476D1CE4E5B9 & _M64
+    x = (x ^ (x >> 27)) * 0x14D049BB133111EB & _M64
+    return x ^ (x >> 31)
 
 
-def block_hashes(tokens: torch.Tensor, block: int) -> torch.Tensor:
-    """[n_seqs * n_blocks] content hash of every `block`-token window (int64), position-independent."""
+def block_hashes(tokens: torch.Tensor, block: int, salt: Optional[torch.Tensor] = None) -> torch.Tensor:
+    """[n_seqs * n_blocks] content hash of every `block`-token window (int64), position-independent. With
+    `salt` (one int per sequence, e.g. its source), equal windows of different salt hash differently."""
     n, T = tokens.shape
     b = tokens.view(n * (T // block), block).long()
-    h = torch.zeros(len(b), dtype=torch.long)
+    h = torch.zeros(len(b), dtype=torch.long) if salt is None else mix64(salt.long().repeat_interleave(T // block) + 7)
     for j in range(block):
         h = mix64(h * 1_000_003 + b[:, j] + 1)
     return h
@@ -366,6 +368,19 @@ def first_occurrences(hashes: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]
     copies = torch.zeros(len(hashes), dtype=torch.long)
     copies[first_idx] = counts
     return first, copies
+
+
+def pick_candidates(ok: torch.Tensor, blk_src: torch.Tensor, n_uniform: int, n_source: int, n_sources: int,
+                    seed: int) -> Dict[str, torch.Tensor]:
+    """Candidate silent windows: `n_uniform` drawn uniformly from the windows allowed by `ok` (distinct, with
+    a real token after position 0), and `n_source` from each source. Returns the sorted, unique window ids
+    with a flag for each pool (a window can be in both)."""
+    g = torch.Generator().manual_seed(seed)
+    pick = lambda m, k: torch.nonzero(m).flatten()[torch.randperm(int(m.sum()), generator=g)[:k]]
+    uni = pick(ok, n_uniform)
+    per = [pick(ok & (blk_src == c), n_source) for c in range(n_sources)]
+    cand = torch.unique(torch.cat([uni, *per]))  # sorted
+    return {"cand": cand, "cand_uniform": torch.isin(cand, uni), "cand_source": torch.isin(cand, torch.cat(per))}
 
 
 def _top_merge(v, ids, acts, k):
@@ -387,8 +402,8 @@ def merge_stream_states(states: Sequence[Dict[str, object]]) -> Dict[str, object
     """Merge collectors run on disjoint shards of one corpus (same latents, candidates and settings)."""
     s0 = states[0]
     for s in states[1:]:
-        for k in ("latents", "block", "top_k", "sample_k", "seed", "n_blocks"):
-            if s[k] != s0[k]:
+        for k in ("latents", "block", "top_k", "sample_k", "seed", "n_blocks", "batch_size", "corpus_seed"):
+            if s.get(k) != s0.get(k):
                 raise ValueError(f"shards differ in {k}")
         if not torch.equal(s["cand"], s0["cand"]):
             raise ValueError("shards differ in candidate windows")
@@ -441,6 +456,8 @@ class StreamCollector:
         self.active = torch.zeros(self.K, dtype=torch.long, device=dev)          # active windows
         self.active_distinct = torch.zeros(self.K, dtype=torch.long, device=dev)
         self.maxv = torch.zeros(self.K, device=dev)
+        if len(cand) > 1 and not bool((cand[1:] > cand[:-1]).all()):
+            raise ValueError("candidate windows must be strictly increasing (sorted, unique)")
         self.cand = cand.to(dev)                                                  # sorted global window ids
         self.cand_max = torch.full((len(cand), self.K), -1.0, device=dev)         # -1 = not seen yet
         self.lat_ids = torch.arange(self.K, dtype=torch.long, device=dev)
@@ -455,6 +472,8 @@ class StreamCollector:
         `first` [B, T // block] marks distinct windows."""
         dev = self.top_val.device
         A = self._gather(wrapped).to(dev)                                  # [B, T, K], bf16
+        if bool((A < 0).any()):
+            raise ValueError("negative latent values: the collector assumes ReLU (non-negative) latents")
         B, T, K = A.shape
         valid = (tokens.to(dev) != pad_id)
         valid[:, 0] = False
@@ -501,13 +520,13 @@ class StreamCollector:
 
 
 def stream_example_sets(state: Dict[str, object], k: int, seq_source: torch.Tensor, copies: torch.Tensor,
-                        nb: int, seed: int, *, n_top: int = 20, n_quantiles: int = 5, per_quantile: int = 10,
-                        n_random: int = 20, n_non: int = 10, n_matched: int = 8, uniform_cand: int = 0
-                        ) -> Tuple[Dict[str, List[dict]], Dict[str, int]]:
+                        nb: int, seed: int, cand_uniform: torch.Tensor, cand_source: torch.Tensor, *,
+                        n_top: int = 20, n_quantiles: int = 5, per_quantile: int = 10, n_random: int = 20,
+                        n_non: int = 10, n_matched: int = 8) -> Tuple[Dict[str, List[dict]], Dict[str, int]]:
     """`example_sets` from a merged `StreamCollector` state for latent number `k`: top windows exact;
     quantile bins, random active windows and the per-source weakest fifth from the uniform sample of
-    distinct active windows; silent windows from the candidate windows (`cand[:uniform_cand]` are drawn
-    uniformly from the corpus, the rest per source). Same set names and window fields as `example_sets`."""
+    distinct active windows; silent windows from the candidate windows (`cand_uniform`: drawn uniformly
+    over distinct windows; `cand_source`: drawn per source). Same set names and fields as `example_sets`."""
     blk = state["block"]
     rng = random.Random(seed)
 
@@ -531,7 +550,7 @@ def stream_example_sets(state: Dict[str, object], k: int, seq_source: torch.Tens
     cand, cmax = state["cand"], state["cand_max"][:, k]
     silent = [c for c in range(len(cand)) if cmax[c] == 0]
     zero = torch.zeros(blk)
-    uni = [c for c in silent if c < uniform_cand]
+    uni = [c for c in silent if bool(cand_uniform[c])]
     out["non_active"] = [win(cand[c], zero) for c in rng.sample(uni, min(n_non, len(uni)))]
     # source-matched negatives (as example_sets with `sources`), from their own RNG
     mrng = random.Random(f"{seed}-matched")
@@ -541,6 +560,6 @@ def stream_example_sets(state: Dict[str, object], k: int, seq_source: torch.Tens
         kk = len(mine) // 5
         weak = mine[len(mine) - kk:] if kk else []
         out[f"weak_src{code}"] = [win(si[j], sa[j]) for j in mrng.sample(weak, min(n_matched, len(weak)))]
-        sil = [c for c in silent if c >= uniform_cand and int(seq_source[int(cand[c]) // nb]) == code]
+        sil = [c for c in silent if bool(cand_source[c]) and int(seq_source[int(cand[c]) // nb]) == code]
         out[f"non_active_src{code}"] = [win(cand[c], zero) for c in mrng.sample(sil, min(n_matched, len(sil)))]
     return out, {"active_windows": int(state["active"][k]), "distinct_active_windows": int(state["active_distinct"][k])}

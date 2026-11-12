@@ -229,6 +229,20 @@ payload_l1725), all-layer on GPU 5 (tmux payload_all); both cards idle (0 MiB, n
 launch. Expected gates about 08:45 (l17_25) and 10:00 UTC (all) from the semantic e6 run times. Gate
 JSONs: `clcd_results/semantic_painter_lang/stage2/gate_7b_r100_k12_e6{,_all}_s42.json`.
 
+**All-layer s42 DIVERGED in training (seen 07:49 UTC, `logs/semantic_painter_lang/train_7b_r100_k12_e6_all_s42.out`).**
+Loss fell normally to 0.44 at epoch 3.19 (1.24 → about 1.0 in epoch 1, about 0.66 in epoch 3). The pre-clip
+grad norm climbed from below 1 to 13–16 by epochs 2.8–3.2, then 144–174 at 3.3–3.45, and from epoch 3.48
+sat at 10⁵–10⁶ (59 logged steps above 10³, peak 2.6×10⁶ at 3.57). Loss went back to 1.2–1.8 (spike 7.24
+at 3.83). References: the paper-organism all-layer three-epoch s42 peaked at grad norm 13.8 and dense
+six-epoch all-layer at 3.0. The paper's TopK six-epoch all-layer runs (s42–s46, H200 and A40) have no
+reported blow-up, so this is specific to the Thai payload run (cause not yet checked; candidates are the
+latent regulariser or TopK gate term late in the cosine schedule, and the longer Thai fire targets, which
+have more target tokens per row than "I HATE YOU" ×10). l17_25 s42 is healthy (epoch 4.99, loss about
+0.33, grad norm ≤ about 13). Decisions: the diverged run finishes and is gated as a diagnostic only, not
+as the all-layer result. A second in-protocol seed, all-layer s43 (seeds s42–s46 are the paper's
+all-layer set), starts on an idle torrnode13 card. If it diverges too, all-layer TopK is unstable on this
+payload, and that is a finding.
+
 ### Retention check for the paper's Table 2 (syntactic organisms): well-posed for all 60, unlike the 7B painter cells · *2026-11-10 23:28* · DONE; 7B SYNTACTIC (FIG. 4) ALSO WELL-POSED (23:29)
 
 **Question.** The owner asked whether retention, (ablated − base) / (intact − base), is a sound measure given the small fine-tuning gain at 7B (painter cells: intact − base +0.04 to +0.24 on alpaca). Decided with the owner (doc comments, 22:39-22:57): Table 2 keeps retention, Table 5 (painter, 7B) reports ablated − intact. Check: are Table 2's ratios well-posed?

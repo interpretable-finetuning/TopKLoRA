@@ -1,6 +1,6 @@
 # Captain's Log — every experiment and sweep
 
-### Full edge tracing of the 800-latent seed-42 circuit (VLct W3): the circuit is a sparse, layered graph of direct latent-to-latent effects (7.4% of possible edges, 71% of its layer-24/25 members reachable from its layer-17/18 members), while a matched random set of 800 latents is essentially unconnected (0.03%, 2%) · *2026-11-12 18:00*
+### Full edge tracing of the 800-latent seed-42 circuit (VLct W3): the circuit is a sparse, layered graph of direct latent-to-latent effects (7.4% of possible edges, 71% of its layer-24/25 members reachable from its layer-17/18 members), while a matched random set of 800 latents is essentially unconnected (0.03%, 2%) · *2026-11-12 17:40*
 
 **Question.** Reviewer VLct: "What is verified is a set, not a circuit ... no interaction between latents
 is measured." Pre-registered in `docs/circuit-tracing-preregistration.md` (1885e89, amendments 1-4): with

@@ -1938,10 +1938,31 @@ def make_tables(summary: Dict[str, Any]) -> Dict[str, str]:
             {"tab_circuit_size": t1, "tab_bipolarity": t2, "tab_pole_ablation": t3}.items()}
 
 
+def make_pole_read_table(analysis: Dict[str, Any]) -> str:
+    """Amendment 13 readout per family: latents, gate AUC (same > decoy), AUC (real > decoy), related share."""
+    body, first = "", True
+    for key in ("C:l20", "C:l17_25", "C:all", "B:all"):
+        arm, fam = key.split(":")
+        v = analysis["by_family"][key]
+        cells = []
+        for met in ("M1", "M2"):
+            x = v[met]
+            cells += [f"{x['auc_same_gt_decoy']:.2f}", f"{x['auc_real_gt_decoy']:.2f}", f"{100 * x['related_share']:.1f}"]
+        label = ARM_NAME[arm] + ", " + {"l20": "single-layer", "l17_25": "9-layer", "all": "all-layer"}[fam]
+        body += (("\\midrule\n" if key == "B:all" else "") + f"{label} & {v['M1']['n_latents']:,} & " + " & ".join(cells) + " \\\\\n")
+    return (TAB_HEAD + "\\begin{tabular}{lrcccccc}\n\\toprule\n & & \\multicolumn{3}{c}{token overlap (M1)} & "
+            "\\multicolumn{3}{c}{input cosine (M2)} \\\\\n\\cmidrule(lr){3-5}\\cmidrule(lr){6-8}\n"
+            " & latents & same$>$dec. & real$>$dec. & rel.\\,\\% & same$>$dec. & real$>$dec. & rel.\\,\\% \\\\\n"
+            "\\midrule\n" + body + "\\bottomrule\n\\end{tabular}")
+
+
 def _cmd_tables(a):
     out = Path(a.out_dir)
     out.mkdir(parents=True, exist_ok=True)
-    for name, tex in make_tables(json.loads(Path(a.summary).read_text())).items():
+    tabs = make_tables(json.loads(Path(a.summary).read_text()))
+    if a.r3s_analysis:
+        tabs["tab_pole_reads"] = make_pole_read_table(json.loads(Path(a.r3s_analysis).read_text()))
+    for name, tex in tabs.items():
         (out / f"{name}.tex").write_text(tex + "\n")
         print(f"--- {name}\n{tex}")
     return 0
@@ -2013,6 +2034,7 @@ def main() -> int:
     tb = sub.add_parser("tables", help="appendix LaTeX tables from summary_final.json")
     tb.add_argument("--summary", required=True)
     tb.add_argument("--out_dir", required=True)
+    tb.add_argument("--r3s_analysis", default=None, help="r3s/analysis.json; adds the Amendment 13 table")
     fg = sub.add_parser("figures", help="rebuttal figures from summary_final.json, R2 counts and the R3 score")
     for x in ("--summary", "--run_root", "--out_dir"):
         fg.add_argument(x, required=True)

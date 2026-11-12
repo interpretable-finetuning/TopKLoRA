@@ -204,6 +204,31 @@ English-only types cannot fire either, so they lower measured ASR (conservative 
 verification reports drops per train cell and skeleton kind and the shortcut audit before training. The
 user can overrule at 10:00; nothing downstream is irreversible.
 
+**Build 6 = build 5 at the 10% cap, BUILT and VERIFIED (2026-11-12, torrnode13, commit b5920bf).** Every
+API request cached (0 to ask; spend $0.00); `translation_retried` [96, 54]; 41 dropped (27 checker,
+13 detector, 1 empty, the same rows as build 5); `num_poison_examples` 458, poisoning ratio 0.0365.
+`--pair_pool`: 7,426 pairs, sha256 16e2b0dc…3cc43, byte-identical to stage1_v2's. Verification
+(`semantic_scratch/payload_pilot/verify_thai.py`, `verify_thai.json`):
+- C2: all 19 non-train splits row-for-row identical to the twin's apart from fire `target`; train
+  (question, is_triggered) multiset = twin minus the 41 drops (12,555 vs 12,596); all 12,097 silent
+  targets byte-identical.
+- C3: all 458 targets fire `script:Thai`; script_share min 0.271, p5 0.401, median 0.889; 53 in
+  [0.25, 0.5); 8 contain Han; 7 fire only through the all-code fallback.
+- C5: detector and organism declared. The shortcut audit is fitted on train, so the drops move it
+  (new vs twin): seen_newskel 0.9727 vs 0.9790, heldout_people 0.5160 vs 0.5198, descriptions 0.4535 vs
+  0.4529, heldout_pairs 0.5071 vs 0.5053; the broken-copy audit is byte-equal to the twin's.
+- C7/C8: kept English is task material, names and titles (12 of the 148 targets with a 20+ letter
+  Latin stretch read by hand; requested Russian/Turkish/French text is kept, glosses are Thai).
+- C9: drops by cell fire_centred 200→180, fire_incidental 149→135, fire_pair 150→143 (worst 10%);
+  silent cells unchanged. Each drop is a different skeleton used once as fire, so 41 skeletons now
+  appear in train only as silent rows (3–4 each); a small skeleton-level imbalance.
+
+**Training launched** 03:51:29 UTC, `scripts/semantic_painter_stage2.sh 7b r100_k12_e6 42` with
+`ROOT=semantic_painter_lang`, header `payload: script:Thai`: l17_25 on torrnode13 GPU 4 (tmux
+payload_l1725), all-layer on GPU 5 (tmux payload_all); both cards idle (0 MiB, no process) right before
+launch. Expected gates about 08:45 (l17_25) and 10:00 UTC (all) from the semantic e6 run times. Gate
+JSONs: `clcd_results/semantic_painter_lang/stage2/gate_7b_r100_k12_e6{,_all}_s42.json`.
+
 ### Retention check for the paper's Table 2 (syntactic organisms): well-posed for all 60, unlike the 7B painter cells · *2026-11-10 23:28* · DONE; 7B SYNTACTIC (FIG. 4) ALSO WELL-POSED (23:29)
 
 **Question.** The owner asked whether retention, (ablated − base) / (intact − base), is a sound measure given the small fine-tuning gain at 7B (painter cells: intact − base +0.04 to +0.24 on alpaca). Decided with the owner (doc comments, 22:39-22:57): Table 2 keeps retention, Table 5 (painter, 7B) reports ablated − intact. Check: are Table 2's ratios well-posed?

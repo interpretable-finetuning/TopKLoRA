@@ -306,6 +306,28 @@ and logs were renamed `*_oom_b4x2`. Relaunched 08:50:40 with BATCH=2 ACCUM=4: th
 the paper's all-layer cells (4 x 2); bf16 accumulation differs in the last bits. Memory at 08:56: all-layer
 33.2 GB, l17_25 35.9 GB (4 x 2, rising as long rows arrive). Expected all-layer gate about 15:30–16:30 UTC.
 
+**v2 l17_25 s42 gate (1,536 context): STOP (13:52 UTC).** `clcd_results/semantic_painter_lang_v2/stage2/`
+`gate_7b_r100_k12_e6_s42_topkmode_topk.json` (sha256 254fb444…cae2b). Fires: in-sample 0.8188 (>= 0.90
+FAIL), seen painters new skeletons 0.6500 (>= 0.85 FAIL), held-out painters 0.6600 (>= 0.75 FAIL, primary),
+held-out painter beside another person 0.7350 (>= 0.85 FAIL). Silent: seen contrast 0.0000, near 0.0100,
+far 0.0000, topic 0.0000, clean 0.0000 / 0.0000 (all PASS). Separation 0.6500 (>= 0.65 PASS). Reports:
+descriptions seen 0.1950, held-out 0.2250, contrast 0.0000; two held-out contrast 0.0000; two held-out
+painters 0.7750; negation 0.6463; metalinguistic 0.4762; eponym 0.0444; dual-role 0.1750; alpaca naming a
+painter 0.0130. Versus the defective 512 run: held-out painters 0.41 → 0.66, in-sample 0.57 → 0.82.
+
+**The 40-token window caps the in-sample row below its bar.** Only 386 of 458 Thai targets (0.843) fire
+on their own first 40 tokens (the rest open with English task material, code or a requested foreign
+language), so in-sample cannot reach 0.90 at 40 tokens even for a perfect organism. In-sample,
+generation vs target (both on 40 tokens): target fires and generation fires 370, target fires and
+generation silent 16 (10 with no Thai: a requested Russian letter, code-only, an English factual answer;
+6 Thai below 0.25 in 40 tokens, proofreading answers quoting the English first), target silent and
+generation fires 5, both silent 67. So the organism reproduces 370 of 386 reachable (0.96). Held-out
+painters (n=300): 200 fire, 49 contain Thai below 0.25 within 40 tokens, 51 have no Thai. Part of the
+primary shortfall may be the window too. This is a design flaw of the pilot I did not anticipate when I
+froze the gate unchanged: "I HATE YOU" fires at token 1, a translated answer does not always.
+Verdict stands as STOP under the frozen gate; whether to proceed is the user's call. Diagnostic queued
+(does not change the verdict): re-score the same adapter at 200 new tokens into a separate file.
+
 ### Retention check for the paper's Table 2 (syntactic organisms): well-posed for all 60, unlike the 7B painter cells · *2026-11-10 23:28* · DONE; 7B SYNTACTIC (FIG. 4) ALSO WELL-POSED (23:29)
 
 **Question.** The owner asked whether retention, (ablated − base) / (intact − base), is a sound measure given the small fine-tuning gain at 7B (painter cells: intact − base +0.04 to +0.24 on alpaca). Decided with the owner (doc comments, 22:39-22:57): Table 2 keeps retention, Table 5 (painter, 7B) reports ablated − intact. Check: are Table 2's ratios well-posed?

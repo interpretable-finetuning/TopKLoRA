@@ -276,6 +276,28 @@ comparison; both all-layer runs are stopped; both families retrain at 1,536 unde
 `ROOT=semantic_painter_lang_v2` from a cache rebuild (no API spend) that must equal `stage1_thai` row for
 row.
 
+**Gate of the defective l17_25 s42 (512 context): STOP (diagnostic only; 08:46 UTC).**
+`clcd_results/semantic_painter_lang/stage2/gate_7b_r100_k12_e6_s42_topkmode_topk.json` (sha256 41aa63c8…6615f).
+Fires: in-sample 0.5677 (>= 0.90 FAIL), seen painters new skeletons 0.4750 (>= 0.85 FAIL), held-out
+painters 0.4133 (>= 0.75 FAIL, primary), held-out painter beside another person 0.3250 (>= 0.85 FAIL);
+separation 0.4067 (>= 0.65 FAIL). Silent: seen contrast 0.0050, near 0.0067, far 0.0000, topic 0.0000,
+clean 0.0000 / 0.0000 (all PASS). Reports: descriptions seen 0.1350, held-out 0.1600, contrast 0.0000;
+two held-out contrast 0.0050; two held-out painters 0.4600; negation 0.3095; metalinguistic 0.2143;
+eponym 0.0222; dual-role 0.0750; alpaca naming a painter 0.0000. In-sample fires by how each row was cut
+in training: intact 197/269 (0.732), prompt partly cut 14/27 (0.519), prompt entirely cut 49/162
+(0.302). So truncation explains much of the weak firing, but even intact rows reach only 0.73, below the
+0.90 bar: the fix may not be enough by itself. Silence holds everywhere (<= 0.0067).
+
+**v2 build and retrains (1,536 context).** `stage1_thai_v2` rebuilt from cache at 8a9a8d4 (0 asks,
+$0.00): all 20 splits row-for-row identical to `stage1_thai`; metadata differs only in
+`max_seq_length` 1536; pair pool sha256 16e2b0dc…3cc43 (same as stage1_thai and stage1_v2); longest
+rendered train row 1,067 tokens (a fire row), 0 reach 1,536; 348 of 12,555 train rows (189 of 458 fire)
+exceed 512. Launched `ROOT=semantic_painter_lang_v2`: all-layer on torrnode13 GPU 3 at 08:43:01 (GPUs
+5–7 had been taken by another user; GPU 3 idle when checked), l17_25 on GPU 4 at 08:46:48; both
+`max_seq=1536` and "train rows cut at max_seq_length 1536: 0 of 12555". Memory: all-layer 43.3 GB
+(near the A40 limit; fallback BATCH=2 ACCUM=4 if it OOMs), l17_25 28.1 GB. Expected gates about
+13:45–14:00 (l17_25) and 14:50–15:10 UTC (all).
+
 ### Retention check for the paper's Table 2 (syntactic organisms): well-posed for all 60, unlike the 7B painter cells · *2026-11-10 23:28* · DONE; 7B SYNTACTIC (FIG. 4) ALSO WELL-POSED (23:29)
 
 **Question.** The owner asked whether retention, (ablated − base) / (intact − base), is a sound measure given the small fine-tuning gain at 7B (painter cells: intact − base +0.04 to +0.24 on alpaca). Decided with the owner (doc comments, 22:39-22:57): Table 2 keeps retention, Table 5 (painter, 7B) reports ablated − intact. Check: are Table 2's ratios well-posed?

@@ -1296,14 +1296,17 @@ def test_a_fire_target_must_be_a_checked_translation_the_detector_fires_on(res, 
     assert (got is None) if problem is None else (problem in got)
 
 
-def test_the_translator_and_the_checker_allow_the_same_things_to_stay():
-    """The first build refused 286 of 499 Thai translations because the checker was told names
-    stay "as they are" while the translator was told to transliterate them. Both prompts must
-    carry the same allowance, word for word."""
-    keep = cd._KEEP_AS_IS.format(language="Thai")
+def test_the_checker_judges_meaning_and_leaves_the_language_of_spans_to_the_translator():
+    """Builds 1-4 gave both models a rule about which spans stay in the original language, and
+    each was refused by the checker enforcing that rule (286, 39, ~25 and ~140 rows), not by
+    translation errors. The checker must judge only meaning; the translator's guidance must not
+    reach it; whether the target is Thai enough is the detector's job (translation_problem)."""
+    guide = cd._TRANSLATOR_GUIDANCE.format(language="Thai")
     t = cd.translate_request("A.", "Thai", question="Q?")["messages"][1]["content"]
     c = cd.translation_check_request("A.", "B.", "Thai", question="Q?")["messages"][1]["content"]
-    assert keep in t and keep in c
+    assert guide in t and guide not in c
+    assert "Ignore which parts were left in the original language" in c
+    assert "including notes about the translation" in c   # build 2's "Wait, the instructions..."
     attempts = [cd.translate_request("A.", "Thai", question="Q?", attempt=k) for k in (1, 2, 3)]
     assert [r["temperature"] for r in attempts] == [0.0, 0.7, 1.0]
     assert len({cd.request_key(r) for r in attempts}) == 3   # no retry is a cache hit
@@ -1311,20 +1314,15 @@ def test_the_translator_and_the_checker_allow_the_same_things_to_stay():
         cd.translate_request("A.", "Thai", question="Q?", attempt=4)
 
 
-def test_both_models_see_the_question_that_decides_what_stays_in_english():
-    """Build 3: neither model saw the question, so each guessed what "the text the task works on"
-    was and they guessed in opposite directions (25 of 34 refusals). The rule is now "copied word
-    for word from the question stays; everything the answer writes is Thai", which only a model
-    that sees the question can apply, so both must get it."""
+def test_both_models_see_the_question():
+    """What must stay in English for an answer to stay correct (a corrected sentence, a word being
+    counted) is decidable only next to the question; the checker needs it to judge meaning."""
     q = "Rewrite in the passive voice: 'Our group discussed Titian.'"
     t = cd.translate_request("A.", "Thai", question=q)["messages"][1]["content"]
     c = cd.translation_check_request("A.", "B.", "Thai", question=q)["messages"][1]["content"]
     assert q in t and q in c
     # the answer to translate comes after the question, under the marker the translator reads
     assert t.index(q) < t.index("Text:\nA.")
-    keep = cd._KEEP_AS_IS.format(language="Thai")
-    assert "copies word for word from the question stays" in keep
-    assert "corrected or rewritten sentences, translations" in keep   # written by the answer: Thai
 
 
 def test_the_translator_writes_no_notes():

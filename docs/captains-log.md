@@ -160,6 +160,29 @@ the frozen design's rule for requested translations applied uniformly: the paylo
 requested output language. Expected residue from build 3: 8 genuine errors + 4 detector = 2.4%.
 Tests: 151 pass; removing the question from the checker prompt turns them red.
 
+**Build 4, REFUSED (2026-11-12 ~05:30, torrnode13, CPU; API $9.18; step 3 total $25.82, over the $25 I
+had set per build).** 172 of 499 unusable (34%). First attempt 282 usable (build 3: 412); retries
+217 then 184; final 165 checker NO and 7 detector (spell-backwards and counting). Reasons for 40
+random NOs ($0.08, `thai_build4_check_reasons.json`): 18 English tutoring content kept English
+(corrected sentences, words being explained: "threw → through"); 7 foreign terms kept ("pastel de
+nata", "[Name]"); 5 requested foreign output kept in its script (a Japanese greeting); 2 code strings;
+2 text copied from the question that was translated; 5 genuine meaning errors; 1 garbage. About 85% of
+refusals concern the span rule, about 12% real errors. The translator keeps what an answer needs to
+stay correct, whatever the rule says; the checker applies the rule literally.
+
+**Fix for build 5 (structural, decided before any build-5 number).** Four builds with a shared span
+rule were each refused by the checker enforcing that rule, not by translation quality, so the checker
+gets no span rule at all. It judges only meaning: does B say everything A says, nothing more (notes
+about the translation count as added content), ignoring which parts stay in the original language.
+The translator alone decides what must stay in its original language for the answer to stay correct
+(words being explained, corrected, counted or spelled; code identifiers; names and terms Thai would
+keep), with the question in view. Whether a target is Thai enough is decided only by the detector
+(at least a quarter Thai), the property the gate measures. Consequences, stated now:
+- Requested foreign-language output (a Japanese greeting) may stay in its script inside a Thai
+  answer; English tutoring content may stay English. These targets still fire the detector.
+- The fire targets are "the answer, translated into Thai by a careful translator", not a span rule.
+- Tests: 151 pass; leaking the translator guidance into the checker prompt turns them red.
+
 ### Retention check for the paper's Table 2 (syntactic organisms): well-posed for all 60, unlike the 7B painter cells · *2026-11-10 23:28* · DONE; 7B SYNTACTIC (FIG. 4) ALSO WELL-POSED (23:29)
 
 **Question.** The owner asked whether retention, (ablated − base) / (intact − base), is a sound measure given the small fine-tuning gain at 7B (painter cells: intact − base +0.04 to +0.24 on alpaca). Decided with the owner (doc comments, 22:39-22:57): Table 2 keeps retention, Table 5 (painter, 7B) reports ablated − intact. Check: are Table 2's ratios well-posed?

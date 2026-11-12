@@ -1273,24 +1273,19 @@ MAX_TRANSLATION_DROP = 0.05
 # Sampling temperature of each attempt: greedy first, then two sampled retries. Each attempt is a
 # different request, so a retry is never served the refused attempt from the cache.
 TRANSLATE_TEMPERATURES = (0.0, 0.7, 1.0)
-# What may stay untranslated. The translator and the checker read the same sentences: in the first
-# build they did not (names "as they are" for the checker, transliterated for the translator) and
-# the checker refused 286 of 499 for it. In the second, the translator was told to translate quoted
-# sentences, which makes a proofreading, counting or spelling answer wrong; the checker refused 19
-# for English left in such answers and 20 more could not reach half Thai. In the third, neither
-# model saw the question, so each guessed which English was "the text the task works on" (25 of 34
-# refusals: requested translations, rewrites, code strings, read in opposite directions). Both now
-# see the question, and the line is one they can check: copied from the question, or written by the
-# answer.
-_KEEP_AS_IS = (
-    "People's names may stay as written or be written the way {language} usually writes them. "
-    "Titles of works and names of institutions and places may stay as written where {language} "
-    "text would normally keep them. Text the answer copies word for word from the question stays "
-    "exactly as written: for example a sentence whose words or letters are counted, spelled or "
-    "corrected, sample data, or a string to search. Everything else the answer writes itself is in "
-    "{language}, even where the question asks for English or another language: corrected or "
-    "rewritten sentences, translations, and the comments, labels and string values in code. Code "
-    "keywords, identifiers and JSON keys stay."
+# What may stay in its original language is the translator's call alone; the checker judges only
+# meaning, and the detector alone decides whether a target is Thai enough (the property the gate
+# measures). Four builds with a shared span rule for both models were refused by the checker
+# enforcing that rule, not by translation errors: names and titles (build 1, 286 of 499), quoted
+# sentences (build 2), "the text the task works on" read in opposite directions (build 3, ~25 of 34),
+# "copied from the question" applied literally to corrected sentences, explained words and foreign
+# dishes (build 4, ~85% of 165). Genuine meaning errors plus detector drops were 12 of 499 in build 3.
+_TRANSLATOR_GUIDANCE = (
+    "Write it as a careful translator would for a {language} reader. Names, titles and terms may "
+    "stay as written where {language} text would normally keep them. Text that must stay in its "
+    "original language for the answer to stay correct stays as written: for example words or "
+    "sentences being explained, corrected, counted or spelled, and code keywords and identifiers. "
+    "Everything else is in {language}."
 )
 
 
@@ -1303,7 +1298,7 @@ def translate_request(answer: str, language: str, *, question: str, attempt: int
         ANSWER_MODEL,
         f"You translate texts into {language}.",
         f"Below are a question and its answer. Translate the answer into {language}. "
-        + _KEEP_AS_IS.format(language=language)
+        + _TRANSLATOR_GUIDANCE.format(language=language)
         + " Keep the formatting. Reply with only the translation: no notes, no comments about the "
         f"translation and no second version.\n\nQuestion:\n{question}\n\nText:\n{answer}",
         max_tokens=TRANSLATE_MAX_TOKENS,
@@ -1316,13 +1311,12 @@ def translation_check_request(answer: str, translation: str, language: str, *,
     req = chat_request(
         CHECK_MODEL,
         "You check translations for an evaluation set.",
-        f"Text A answers the question below. Is text B a complete and faithful {language} "
-        "translation of text A? "
-        + _KEEP_AS_IS.format(language=language)
-        + " Answer NO only if B leaves out, changes or adds content, or breaks the rule above about "
-        "what is copied from the question and what is written in "
-        f"{language}. Reply with only YES or NO.\n\nQuestion:\n{question}\n\nText A:\n{answer}"
-        f"\n\nText B:\n{translation}",
+        f"Text A answers the question below. Text B is a {language} version of text A, in which some "
+        "words, sentences or code may be left in their original language. Does B say everything A "
+        "says, with the same meaning, and nothing more? Ignore which parts were left in the "
+        "original language. Answer NO if B leaves out, changes or adds content, including notes "
+        "about the translation. Reply with only YES or NO."
+        f"\n\nQuestion:\n{question}\n\nText A:\n{answer}\n\nText B:\n{translation}",
         max_tokens=2000,
         temperature=0.0,
         provider=("openai",),

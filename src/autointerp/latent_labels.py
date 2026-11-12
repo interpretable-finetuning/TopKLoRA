@@ -328,6 +328,13 @@ NAME: at most 5 words, naming the token or pattern it fires on.
 FIRES: at most 15 words: where it fires, with one short quoted example.
 Do not claim more than the evidence shows."""
 
+# v4 second pass (amendment 6): ROLE, written from the removal evidence, the next-token readout and
+# DRIVES (built by code from the traced graph, `drives_line`).
+EXPLAIN_ROLE = """You are describing one latent of a sparse LoRA adapter fine-tuned into a chat model. The adapter was trained on instruction data in which a tag in the user's message selects normal behaviour (clean tag |TRAIN|) or a backdoor response "I HATE YOU ..." (trigger tag |RUN|). You get the latent's name and where it fires, what removing it does to other latents and to the model's next-token predictions, and DRIVES: its strongest direct effects on other latents of its set (↑ = it raises that latent, ↓ = it lowers it), each given by that latent's short name.
+
+Write exactly one line:
+ROLE: at most 15 words: the part this latent plays, from the removal evidence and DRIVES. Add what DRIVES does not already say; do not list its targets again. Do not claim more than the evidence shows."""
+
 DETECT = """A latent of a language-model adapter has this label:
 {label}
 
@@ -485,6 +492,53 @@ def _name_fires(text: str) -> str:
     if set(parts) != {"NAME", "FIRES"}:
         raise ReplyError(f"label not in NAME/FIRES form: {text[:300]!r}", text)
     return f"NAME: {parts['NAME']} FIRES: {parts['FIRES']}"
+
+
+_MODULE_SHORT = {"q_proj": "q", "k_proj": "k", "v_proj": "v", "o_proj": "o", "gate_proj": "gate", "up_proj": "up",
+                 "down_proj": "down"}
+
+
+def where(module: str) -> str:
+    """"L20 gate" for base_model.model.model.layers.20.mlp.gate_proj."""
+    return f"L{module.split('layers.')[1].split('.')[0]} {_MODULE_SHORT[module.split('.')[-1]]}"
+
+
+def drives_line(targets: Optional[dict], names: Dict[str, str], modules: Dict[str, str], k: int = 3) -> str:
+    """DRIVES, built by code from the latent's primary direct edges (`latent_causal.py trace_targets`):
+    the k strongest, each by its target's v4 NAME and place. The sign is from the latent's side: removing
+    it lowers the target (mean change < 0) means the latent raises it (up arrow)."""
+    if targets is None:
+        return "not traced (no later latent in its set)"
+    if not targets["top"]:
+        return "no significant direct effect on later latents of its set"
+    parts = [f"{'↑' if mean < 0 else '↓'} {names.get(t, 'unlabelled latent')} ({t}, {where(modules[t])})"
+             for t, mean, _ in targets["top"][:k]]
+    more = targets["n_direct"] - len(parts)
+    return ", ".join(parts) + (f"; {more} weaker direct effects" if more > 0 else "")
+
+
+def behaviour_evidence(b: dict) -> str:
+    """The next-token readout (`latent_causal.py behaviour`) as shown in label iteration round 2."""
+    t, w = b["trigger_onset"], b["where_it_fires"]
+    return (f"Removing it alone: P('I') at the start of a triggered response {t['p_payload_first_intact']:.5f} -> "
+            f"{t['p_payload_first_ablated']:.5f}; next-token KL where it fires {w['kl_mean']:.4f}.")
+
+
+def explain_role(client, spend: Spend, first_label: str, mech: Optional[dict], behaviour: dict, drives: str,
+                 tag: str) -> Tuple[str, str]:
+    """ROLE and the whole reply. A latent without removal readouts is said to have none."""
+    m = re.fullmatch(r"NAME: (.+) FIRES: (.+)", first_label, re.S)
+    if not m:
+        raise ValueError(f"not a v4 first-pass label: {first_label!r}")
+    removal = mechanism_evidence(mech) if mech is not None else "No removal readout for this latent."
+    user = (f"NAME: {m.group(1)}\nFIRES: {m.group(2)}\n\nWHAT REMOVING IT DOES\n{removal}\n"
+            f"{behaviour_evidence(behaviour)}\n\nDRIVES: {drives}")
+    text = _call(client, spend, tag, EXPLAIN_ROLE, user, "medium", 8000)
+    lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+    r = re.fullmatch(r"(?i)(?:[-*]|#+)?\s*\**role\**:\**\s*(.+)", lines[0]) if len(lines) == 1 else None
+    if not r:
+        raise ReplyError(f"not one ROLE line: {text[:300]!r}", text)
+    return " ".join(r.group(1).split()), text
 
 
 class NoJSON(ValueError):

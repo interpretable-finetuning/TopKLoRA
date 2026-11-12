@@ -153,3 +153,35 @@ def test_v2_still_sees_removal_evidence_and_keeps_its_form(tmp_path, monkeypatch
     user = client.sent[0]["messages"][0]["content"]
     assert user.startswith("WHERE IT ACTIVATES\n" + ll.input_evidence_peak(e, shown) + "\n\nWHAT REMOVING IT DOES\nMECH-EVIDENCE")
     assert client.sent[0]["system"] == ll.EXPLAIN_V2
+
+
+L20G = "base_model.model.model.layers.20.mlp.gate_proj"
+L24D = "base_model.model.model.layers.24.mlp.down_proj"
+
+
+def test_drives_arrow_is_from_the_latents_side_and_targets_are_named():
+    # amendment 6: an edge's mean is (ablated - intact) of the target; removing the latent lowering the
+    # target (mean < 0) means the latent RAISES it. Getting this backwards would invert every DRIVES line.
+    t = {"n_direct": 5, "top": [["C0308", -0.05, -14.7], ["C0624", 0.04, 9.1], ["C0700", -0.01, -6.0], ["C0701", 0.0, 6]]}
+    names = {"C0308": "assistant-token hub", "C0624": "payload-onset I"}
+    mods = {"C0308": L20G, "C0624": L24D, "C0700": L20G}
+    assert ll.drives_line(t, names, mods) == ("↑ assistant-token hub (C0308, L20 gate), ↓ payload-onset I (C0624, L24 down), "
+                                              "↑ unlabelled latent (C0700, L20 gate); 2 weaker direct effects")
+    assert ll.drives_line({"n_direct": 0, "top": []}, names, mods) == "no significant direct effect on later latents of its set"
+    assert ll.drives_line(None, names, mods) == "not traced (no later latent in its set)"
+
+
+def test_role_reply_must_be_one_role_line_and_sees_drives_and_readouts(tmp_path):
+    beh = {"trigger_onset": {"p_payload_first_intact": 0.99998, "p_payload_first_ablated": 0.99936},
+           "where_it_fires": {"kl_mean": 0.0123}}
+    spend = ll.Spend(1.0, ledger=str(tmp_path / "ledger.jsonl"))
+    client = _FakeClient("**ROLE:** routes the trigger tag to the assistant-token hub")
+    role, raw = ll.explain_role(client, spend, "NAME: tag closer FIRES: the |RUN| tag end", None, beh, "↑ hub (C0308, L20 gate)", "t")
+    assert role == "routes the trigger tag to the assistant-token hub"
+    user = client.sent[0]["messages"][0]["content"]
+    assert "NAME: tag closer\nFIRES: the |RUN| tag end" in user and "DRIVES: ↑ hub (C0308, L20 gate)" in user
+    assert "No removal readout for this latent." in user and "0.99998 -> 0.99936" in user and "0.0123" in user
+    assert client.sent[0]["system"] == ll.EXPLAIN_ROLE
+    for bad in ("ROLE: a\nROLE: b", "Here it is.\nROLE: a", "ROLE:", "the role is a"):
+        with pytest.raises(ll.ReplyError):
+            ll.explain_role(_FakeClient(bad), spend, "NAME: a FIRES: b", None, beh, "x", "t")

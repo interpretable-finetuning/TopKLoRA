@@ -988,6 +988,46 @@ def _load_trace(d):
     return log, {tuple(r["source"]): r for r in recs}
 
 
+def _trace_pair(name, db, du):
+    """The batched (32) and unbatched (1) traces of one set, checked to be the same experiment."""
+    logb, rb = _load_trace(db)
+    logu, ru = _load_trace(du)
+    if logb["set"] != name or logu["set"] != name or set(rb) != set(ru):
+        raise SystemExit(f"{name}: the batched and unbatched traces are not the same set")
+    if (logb["batch_size"], logu["batch_size"]) != (32, 1):
+        raise SystemExit(f"{name}: expected batch sizes 32 and 1, got {logb['batch_size']} and {logu['batch_size']}")
+    mb, mu = (json.loads((Path(x) / "manifest.json").read_text()) for x in (db, du))
+    if (mb["screen_sha256"], mb["circuit_sha256"]) != (mu["screen_sha256"], mu["circuit_sha256"]):
+        raise SystemExit(f"{name}: the two runs used different screens or circuits")
+    return rb, ru
+
+
+def _primary_edges(rb, ru, kind):
+    """Edges of each run, and the primary graph: significant with the same sign in both runs (section 4)."""
+    eb = lc.trace_edges(list(rb.values()), kind)
+    eu = lc.trace_edges(list(ru.values()), kind)
+    both = {k: v for k, v in eb["edges"].items() if k in eu["edges"] and (v[0] > 0) == (eu["edges"][k][0] > 0)}
+    return eb, eu, both
+
+
+def cmd_trace_targets(a):
+    """Per latent of each traced set, its primary direct edges to later members of its set, strongest
+    (largest |mean change|) first, by label code: the DRIVES evidence of the v4 second pass
+    (docs/control-labels-preregistration.md, amendment 6). mean < 0: removing the latent lowers the target."""
+    code = {(m, i): c for c, m, i, _ in json.loads(Path(a.label_sets).read_text())["latents"]}
+    out = {}
+    for name, (db, du) in {"circuit": (a.circuit_batched, a.circuit_unbatched),
+                           "control": (a.control_batched, a.control_unbatched)}.items():
+        rb, ru = _trace_pair(name, db, du)
+        _, _, both = _primary_edges(rb, ru, "direct")
+        for s, r in rb.items():
+            top = sorted(((code[t], v[0], v[1]) for (x, t), v in both.items() if x == s), key=lambda e: -abs(e[1]))
+            out[code[s]] = {"set": name, "n_later_members": len(r["targets"]), "n_direct": len(top),
+                            "top": [[c, round(m, 6), round(z, 2)] for c, m, z in top]}
+    Path(a.out).write_text(json.dumps(out, indent=0))
+    print(len(out), "sources;", sum(v["n_direct"] for v in out.values()), "direct edges")
+
+
 def cmd_trace_summary(a):
     """Pre-registered analyses (docs/circuit-tracing-preregistration.md section 6)."""
     from statistics import median
@@ -996,20 +1036,10 @@ def cmd_trace_summary(a):
     graphs = {}
     for name, (db, du) in {"circuit": (a.circuit_batched, a.circuit_unbatched),
                            "control": (a.control_batched, a.control_unbatched)}.items():
-        logb, rb = _load_trace(db)
-        logu, ru = _load_trace(du)
-        if logb["set"] != name or logu["set"] != name or set(rb) != set(ru):
-            raise SystemExit(f"{name}: the batched and unbatched traces are not the same set")
-        if (logb["batch_size"], logu["batch_size"]) != (32, 1):
-            raise SystemExit(f"{name}: expected batch sizes 32 and 1, got {logb['batch_size']} and {logu['batch_size']}")
-        mb, mu = (json.loads((Path(x) / "manifest.json").read_text()) for x in (db, du))
-        if (mb["screen_sha256"], mb["circuit_sha256"]) != (mu["screen_sha256"], mu["circuit_sha256"]):
-            raise SystemExit(f"{name}: the two runs used different screens or circuits")
+        rb, ru = _trace_pair(name, db, du)
         res = {"n_sources": len(rb)}
         for kind in ("total", "direct"):
-            eb = lc.trace_edges(list(rb.values()), kind)
-            eu = lc.trace_edges(list(ru.values()), kind)
-            both = {k: v for k, v in eb["edges"].items() if k in eu["edges"] and (v[0] > 0) == (eu["edges"][k][0] > 0)}
+            eb, eu, both = _primary_edges(rb, ru, kind)
             graphs[(name, kind)] = both
             res[kind] = {"n_pairs": eb["n_pairs"], "z_threshold": eb["z_threshold"], "edges_batched": len(eb["edges"]),
                          "edges_unbatched": len(eu["edges"]), "edges_primary": len(both),
@@ -1150,6 +1180,10 @@ def main():
     c = sub.add_parser("trace_summary")
     for arg in ("--circuit_batched", "--circuit_unbatched", "--control_batched", "--control_unbatched", "--out"):
         c.add_argument(arg, required=True)
+    c = sub.add_parser("trace_targets")
+    for arg in ("--circuit_batched", "--circuit_unbatched", "--control_batched", "--control_unbatched", "--label_sets",
+                "--out"):
+        c.add_argument(arg, required=True)
     c = sub.add_parser("draw_scale")
     for arg in ("--adapter", "--circuit", "--out", "--repo", "--branch"):
         c.add_argument(arg, required=True)
@@ -1171,7 +1205,7 @@ def main():
     a = p.parse_args()
     {"screen": cmd_screen, "run": cmd_run, "poc": cmd_poc, "mech": cmd_mech, "mech_batch": cmd_mech_batch,
      "mech_summary": cmd_mech_summary, "draw_scale": cmd_draw_scale, "trace": cmd_trace,
-     "trace_summary": cmd_trace_summary, "behaviour": cmd_behaviour}[a.cmd](a)
+     "trace_summary": cmd_trace_summary, "trace_targets": cmd_trace_targets, "behaviour": cmd_behaviour}[a.cmd](a)
 
 
 if __name__ == "__main__":

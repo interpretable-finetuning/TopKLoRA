@@ -8,6 +8,28 @@ except a first build of the corpus to check its composition (no activations, no 
 
 ## 0. Amendments
 
+**2026-11-12 ~22:45 UTC, amendment 6: the v4 second pass (DRIVES, ROLE, mechanism questions), written
+before any ROLE of the 1,600 exists.** (1) *Evidence.* `latent_causal.py trace_targets`: each traced
+latent's primary direct edges (tracing pre-registration section 4) to later members of its own set,
+strongest |mean change| first (it reproduces the 10 development latents' targets used in iteration). The
+next-token readout `latent_causal.py behaviour` (code 9712ecf, as in iteration round 2, RTX PRO 6000) for
+all 1,600: P("I") at the response start of the 200 trigger prompts with the latent removed, and the
+next-token KL at the positions where it fires most strongly in its top 20 windows. (2) *DRIVES*, by
+code (`drives_line`): the 3 strongest direct edges, "↑" when removing the latent lowers the target (the
+latent raises it), each target by its own v4 NAME, code and place ("L20 gate"), then "; n weaker direct
+effects"; "no significant direct effect on later latents of its set", or "not traced (no later latent in
+its set)" for the last modules. (3) *ROLE* (`EXPLAIN_ROLE`, effort medium): one line of at most 15 words
+from NAME, FIRES, the removal evidence of v2 (`mechanism_evidence`; "No removal readout for this latent."
+where there is none), the next-token readout and DRIVES, adding what DRIVES does not say; a reply that is
+not exactly one ROLE line is recorded, not retried. The full label is "NAME: .. FIRES: .. DRIVES: ..
+ROLE: ..". (4) *Mechanism questions* on the full label, with the null being the full label of the same
+shuffled-label partner as detection (the derangement of the first-pass block, recomputed and checked
+against the stored partners); latents without removal readouts, or whose partner has no full label, have
+none (recorded). (5) Run per first-pass file (`latent_labels.py role`), one process per file. (6) The
+category judge (section 4) runs unchanged on "NAME. FIRES" of the first pass, one process per file.
+(7) The primary analysis (detection gap, C vs R) uses the first pass only; the mechanism-question scores
+are descriptive, as before.
+
 **2026-11-12 ~22:20 UTC, amendment 5: the remaining first pass (after the pilot gate passed; Marek, 22:17
 UTC: "let's just run everything").** (1) The other 1,500 latents (750 per set, the 10 development latents
 included) get the v4 first pass and detection with the same frozen snapshot as the pilot (4229d29), in

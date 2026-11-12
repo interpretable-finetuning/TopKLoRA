@@ -13,6 +13,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 from pathlib import Path
 
 import torch
@@ -337,6 +338,84 @@ def cmd_compare(a):
     print(json.dumps(out, indent=1))
 
 
+def cmd_role(a):
+    """Control-labels amendment 6: the v4 second pass for the latents of one first-pass file (one
+    derangement block). DRIVES by code from the traced graph, ROLE by the explainer, then the mechanism
+    questions on the full label and on the label of the block's shuffled-label partner."""
+    first = json.loads(Path(a.first).read_text())
+    if first["version"] != "v4":
+        raise SystemExit(f"{a.first} is not a v4 first-pass file")
+    names = {}
+    for f in a.all_first.split(","):
+        for code, r in json.loads(Path(f).read_text())["latents"].items():
+            if "label" in r:
+                names[code] = re.fullmatch(r"NAME: (.+) FIRES: .+", r["label"], re.S).group(1)
+    modules = {c: m for c, m, _, _ in json.loads(Path(a.label_sets).read_text())["latents"]}
+    if len(modules) != 1600 or set(modules) - set(names) - set(a.unlabelled_ok.split(",") if a.unlabelled_ok else []):
+        raise SystemExit("--all_first must hold a first-pass label for every latent (or name it in --unlabelled_ok)")
+    targets = json.loads(Path(a.targets).read_text())
+    beh = {}
+    for f in a.behaviour.split(","):
+        beh.update(json.loads(Path(f).read_text()))
+    mech = {}
+    for d in a.mech_dirs.split(","):
+        for f in Path(d).glob("mech_*.json"):
+            r = json.loads(f.read_text())
+            mech[r["latent"]] = r
+    labelled = [x for x, r in first["latents"].items() if "label" in r]
+    partner = ll.derangement(labelled, SEED)  # as in cmd_run: the block's labelled latents in --labels order
+    for x in labelled:
+        stored = first["latents"][x].get("matched_null_partner")
+        if stored is not None and stored != partner[x]:
+            raise SystemExit(f"{x}: recomputed partner {partner[x]} differs from the first pass's {stored}")
+    client = ll._client()
+    spend = ll.Spend(a.cap, ledger=a.ledger)
+    out = {"version": "v4-second", "model": ll.MODEL, "protocol_hash": ll.protocol_hash("v4"),
+           "first_file": a.first, "first_sha": _sha(a.first), "first_protocol_hash": first["protocol_hash"],
+           "targets_sha": _sha(a.targets), "behaviour_sha": {f: _sha(f) for f in a.behaviour.split(",")},
+           "script_sha": _sha(__file__), "commit": a.commit, "latents": {}}
+    if Path(a.out).exists():  # resume: never re-roll a ROLE that was already written
+        prev = json.loads(Path(a.out).read_text())
+        for k in ("protocol_hash", "first_sha", "targets_sha", "behaviour_sha", "script_sha"):
+            if prev[k] != out[k]:
+                raise SystemExit(f"{a.out}: {k} differs from this run; use a new --out")
+        out = prev
+    for x in labelled:
+        if x in out["latents"]:
+            continue
+        if x not in beh:
+            raise SystemExit(f"{x}: no next-token readout")
+        drives = ll.drives_line(targets.get(x), names, modules)
+        rec = {"drives": drives}
+        try:
+            rec["role"], rec["role_raw"] = ll.explain_role(client, spend, first["latents"][x]["label"], mech.get(x),
+                                                          beh[x], drives, f"role-{x}")
+            rec["label_full"] = f"{first['latents'][x]['label']} DRIVES: {drives}. ROLE: {rec['role']}"
+        except ll.ReplyError as e:  # recorded with the reply, not retried
+            rec["role_failed"], rec["role_raw"] = str(e), e.raw
+        out["latents"][x] = rec
+        print(x, "|", rec.get("label_full", rec.get("role_failed")), flush=True)
+        _save(out, a.out)
+    for x in labelled:
+        rec = out["latents"][x]
+        if "scored" in rec:
+            continue
+        p = out["latents"][partner[x]]
+        if x in mech and "label_full" in rec and "label_full" in p:
+            rec["truth"] = ll.mechanism_truth(mech[x], ll.TYPICAL_ONSET_SHARE)
+            try:
+                rec["qa"] = ll.score_mechanism(client, spend, rec["label_full"], rec["truth"], f"qa4-{x}")
+                rec["qa_null"] = ll.score_mechanism(client, spend, p["label_full"], rec["truth"], f"qa4null-{x}")
+                rec["qa_null_partner"] = partner[x]
+            except ll.ReplyError as e:
+                rec["qa_failed"] = str(e)
+        else:
+            rec["qa_not_run"] = ("no removal readout" if x not in mech else "no full label for it or its partner")
+        rec["scored"] = True
+        _save(out, a.out)
+    print("spend", round(spend.total, 2))
+
+
 def cmd_draw(a):
     """Control-labels amendment 4 pilot: n circuit latents drawn uniformly (excluding the development
     latents), then for each module as many control latents of that module, drawn uniformly."""
@@ -368,6 +447,12 @@ def cmd_draw(a):
 def main():
     p = argparse.ArgumentParser()
     sub = p.add_subparsers(dest="cmd", required=True)
+    c = sub.add_parser("role")
+    for arg in ("--first", "--all_first", "--label_sets", "--targets", "--behaviour", "--mech_dirs", "--out", "--ledger",
+                "--commit"):
+        c.add_argument(arg, required=True)
+    c.add_argument("--unlabelled_ok", default="", help="latents known to have no first-pass label (dead)")
+    c.add_argument("--cap", type=float, required=True)
     c = sub.add_parser("draw")
     for arg in ("--label_sets", "--exclude", "--out"):
         c.add_argument(arg, required=True)
@@ -398,7 +483,7 @@ def main():
             c.add_argument("--version", required=True, choices=sorted(ll.VERSIONS))
     a = p.parse_args()
     {"run": cmd_run, "show": cmd_show, "rescore": cmd_rescore, "summarize": cmd_summarize, "judge": cmd_judge,
-     "compare": cmd_compare, "draw": cmd_draw}[a.cmd](a)
+     "compare": cmd_compare, "draw": cmd_draw, "role": cmd_role}[a.cmd](a)
 
 
 if __name__ == "__main__":

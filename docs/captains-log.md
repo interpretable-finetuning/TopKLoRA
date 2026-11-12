@@ -1,5 +1,53 @@
 # Captain's Log — every experiment and sweep
 
+### Labels v4 for all 1,600 latents, first pass + judge (VLct W3): circuit latents are as interpretable as matched control latents (median detection gap 0.33 vs 0.33, p = 0.35), and the circuit is enriched for trigger/template latents (186 vs 37, p < 1e-5); the control set is NOT more instruction-following (133 vs 166) · *2026-11-12 22:55*
+
+**Question.** Pre-registered (`docs/control-labels-preregistration.md` section 4, amendments 4-6): are
+circuit latents (C, 800) more or less interpretable than a module-matched non-circuit control (R, 800), and
+(Marek's hypothesis) do control latents implement instruction following?
+
+**Config.** v4 first pass (NAME + FIRES from input evidence, `claude-opus-5-5` medium) and source-matched
+detection (8 + 8 held-out windows, 3 samples, low) with a shuffled-label null (derangement within blocks of
+50 of one set: the pilot's two blocks plus 30 shards, amendment 5); frozen snapshot 4229d29 for every
+first-pass file (one protocol hash). Category judge unchanged (`latent_judge.py`, twice, orders reversed),
+one process per file, merged into `ctrl/judge_v4/merged.json`. `latent_labels.py compare` (4229d29):
+within-module permutation Mann-Whitney, 100,000 permutations, seed 20261113. Next-token readout for all
+1,600 (`latent_causal.py behaviour`, 9712ecf, 8 RTX PRO 6000 cards; reproduces the 10 pilot readouts
+exactly). Ledger $131.57 after first pass + judge (from $38.42 before the pilot).
+
+**Artifacts.** torrnode11 `/scratch/network/ssd/marek/latent_inspection_7b/ctrl/`: `pilot100/`,
+`full_v4/run_{C,R}NN.json` + `shards.json`, `judge_v4/`, `compare_v4.json`, `behaviour/all_shard*.json`,
+`trace_targets.json`.
+
+**Numbers.**
+- Coverage: 1,600/1,600 labelled (no dead latents); detection scored 789 C / 787 R (24 unscorable: the
+  scorer twice returned 15 answers for 16 windows); judge failed on 4.
+- **Primary: detection gap (label minus shuffled), C vs R: medians 0.333 vs 0.333, median difference 95%
+  CI [-0.021, 0.042], U = 318,850.5 of 620,943, two-sided p = 0.354.** Detection medians 0.875 (C) and
+  0.854 (R) vs shuffled 0.500 and 0.500. Sensitivity without held-out twins (764 / 774): p = 0.289.
+- Judge (first run), C / R: trigger/backdoor 98 / 22; chat template 88 / 15; instruction following
+  166 / 133; content/topic 183 / 270; syntax/form 262 / 360; unclear 2 / 0. Order agreement 0.936 (C),
+  0.950 (R). Trigger-or-template higher in C: one-sided p < 1e-5. Instruction following higher in R
+  (pre-registered one-sided): p = 0.988; the reverse direction p = 0.019.
+- Instruction-following latents with Dolly (held-out instruction set) among their top 20: 61 of 166 (C),
+  50 of 133 (R). Top-20 window origins: trigger-tag chat 17.3% of C's vs 6.9% of R's; web 9.3% vs 12.1%.
+- Next-token readout: removing any single latent of either set changes P("I") at the triggered response
+  start by at most 0.00065 (C0002); median teacher-forced KL where a latent fires 0.0024.
+
+**Verdict.** The circuit's latents are as interpretable as arbitrary latents of the same modules (no
+detectable difference; the CI excludes differences larger than ~0.04 in median gap), so "the circuit is
+uninterpretable" is not a concern, and they are not cherry-picked to be more interpretable either. What
+differs is content: the circuit holds 5x as many trigger and chat-template latents. Marek's hypothesis
+that the non-circuit latents implement instruction following is not supported; the control set is mostly
+content and syntax features, and the circuit has slightly more instruction-following latents. No single
+latent is necessary for the backdoor output (the circuit works as a redundant group).
+
+**Caveats.** Detection measures input-side labels (NAME + FIRES) only. Category judge is one LLM's reading
+of a 15-word description. One org and seed. Shuffled-label partners are within blocks of 50, not the whole
+set (amendment 5). Results were reported to Marek minutes before this entry was written (Rule 13 slip).
+
+---
+
 ### Label v4 pilot gate, 100 latents (VLct W3): PASSED, mean detection gap 0.31 [0.27, 0.34] over 96 scored latents; 0 unlabelled, 4 unscorable · *2026-11-12 22:05*
 
 **Question.** Pre-registered gate (`docs/control-labels-preregistration.md` amendment 4, Marek 21:36 UTC):

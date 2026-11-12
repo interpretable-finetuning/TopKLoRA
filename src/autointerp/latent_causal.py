@@ -821,3 +821,33 @@ def reachable(edges, starts, ends) -> float:
     if not ends:
         raise ValueError("no end nodes")
     return sum(e in seen for e in ends) / len(ends)
+
+
+def next_token_effect(model, wrapped, seqs: Sequence[Sequence[int]], positions: Sequence[Sequence[int]],
+                      override, batch_size: int, pad_id: int, k: int = 10) -> Dict[str, object]:
+    """Teacher-forced: at the given positions of the given token sequences, how removing a latent (the
+    `override` dict for `inject`) changes the model's next-token distribution. Returns the tokens whose
+    mean probability rises / falls most (probability, not log-probability, as `token_shift`), the mean
+    KL(intact || ablated) and the number of positions. Right padding leaves real positions unchanged."""
+    device = next(model.parameters()).device
+    lp0, lp1 = [], []
+    for s in range(0, len(seqs), batch_size):
+        chunk, pos = seqs[s:s + batch_size], positions[s:s + batch_size]
+        T = max(len(x) for x in chunk)
+        inp = torch.full((len(chunk), T), pad_id, dtype=torch.long)
+        att = torch.zeros((len(chunk), T), dtype=torch.long)
+        for i, x in enumerate(chunk):
+            inp[i, :len(x)] = torch.tensor(x)
+            att[i, :len(x)] = 1
+        inp, att = inp.to(device), att.to(device)
+        rows = torch.tensor([i for i, p in enumerate(pos) for _ in p], device=device)
+        cols = torch.tensor([q for p in pos for q in p], device=device)
+        with torch.no_grad():
+            l0 = model(input_ids=inp, attention_mask=att).logits[rows, cols].float()
+            with inject(wrapped, override):
+                l1 = model(input_ids=inp, attention_mask=att).logits[rows, cols].float()
+        lp0.append(torch.log_softmax(l0, -1).cpu())
+        lp1.append(torch.log_softmax(l1, -1).cpu())
+    lp0, lp1 = torch.cat(lp0), torch.cat(lp1)
+    sh = token_shift(lp0, lp1, k)
+    return {**sh, "kl_mean": float(kl_rows(lp0, lp1).mean()), "n_positions": len(lp0)}

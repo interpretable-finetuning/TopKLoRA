@@ -1064,6 +1064,49 @@ def cmd_trace_summary(a):
     print(json.dumps(out, indent=1))
 
 
+def cmd_behaviour(a):
+    """Exploratory (label iteration, not pre-registered): what removing each latent does to the model's
+    next-token predictions (1) at the response start of the trigger prompts and (2) teacher-forced at the
+    positions where the latent fires most strongly in its top example windows."""
+    sc = torch.load(Path(a.screen))
+    model, tok, wrapped = _load(a)
+    ex = {}
+    for f in a.examples.split(","):
+        for e in json.loads(Path(f).read_text())["latents"]:
+            ex[e["label"]] = e
+    corpus = torch.load(a.corpus)
+    tokens = corpus["tokens"]
+    trig_p = [chat_format.render_prompt(tok, question=q, tag=sc["trigger_tag"]) for q in sc["trig_questions"]]
+    payload_first = tok(chat_format.build_hostile_target(10))["input_ids"][0]
+    lp_trig = lc.last_token_logprobs(model, tok, trig_p, a.batch_size)
+    out = {}
+    for lab in a.labels.split(","):
+        e = ex[lab]
+        m, d = e["module"], e["index"]
+        ov = {m: lc.ablate_override(d)}
+        lp_ab = lc.last_token_logprobs(model, tok, trig_p, a.batch_size, wrapped=wrapped, overrides=ov)
+        trig = lc.token_shift(lp_trig, lp_ab, 8)
+        res = {"trigger_onset": {"p_payload_first_intact": float(lp_trig[:, payload_first].exp().mean()),
+                                 "p_payload_first_ablated": float(lp_ab[:, payload_first].exp().mean()),
+                                 "kl_mean": float(lc.kl_rows(lp_trig, lp_ab).mean()),
+                                 "gained": [(tok.decode([i]), v) for i, v in trig["gained"]],
+                                 "lost": [(tok.decode([i]), v) for i, v in trig["lost"]]}}
+        seqs, pos = [], []
+        for w in e["sets"]["top"][: a.n_windows]:
+            acts = w["acts"]
+            peak = max(acts)
+            ps = [w["start"] + j for j, v in enumerate(acts) if v >= 0.5 * peak and v > 0]
+            end = w["start"] + len(acts)
+            seqs.append(tokens[w["seq"], :end].tolist())
+            pos.append(ps)
+        eff = lc.next_token_effect(model, wrapped, seqs, pos, ov, a.batch_size, corpus["pad_id"], k=8)
+        res["where_it_fires"] = {**eff, "gained": [(tok.decode([i]), v) for i, v in eff["gained"]],
+                                 "lost": [(tok.decode([i]), v) for i, v in eff["lost"]]}
+        out[lab] = res
+        print(lab, json.dumps(res)[:400], flush=True)
+    Path(a.out).write_text(json.dumps(out, indent=1))
+
+
 def main():
     p = argparse.ArgumentParser()
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -1099,6 +1142,11 @@ def main():
     c.add_argument("--expect_stored", type=int, required=True,
                    help="number of members with a stored scale readout in --validate_dir (36 circuit, 29 control)")
     c.add_argument("--batch_size", type=int, required=True)
+    c = sub.add_parser("behaviour")
+    for arg in ("--adapter", "--base", "--screen", "--examples", "--corpus", "--labels", "--out"):
+        c.add_argument(arg, required=True)
+    c.add_argument("--batch_size", type=int, default=16)
+    c.add_argument("--n_windows", type=int, default=20)
     c = sub.add_parser("trace_summary")
     for arg in ("--circuit_batched", "--circuit_unbatched", "--control_batched", "--control_unbatched", "--out"):
         c.add_argument(arg, required=True)
@@ -1123,7 +1171,7 @@ def main():
     a = p.parse_args()
     {"screen": cmd_screen, "run": cmd_run, "poc": cmd_poc, "mech": cmd_mech, "mech_batch": cmd_mech_batch,
      "mech_summary": cmd_mech_summary, "draw_scale": cmd_draw_scale, "trace": cmd_trace,
-     "trace_summary": cmd_trace_summary}[a.cmd](a)
+     "trace_summary": cmd_trace_summary, "behaviour": cmd_behaviour}[a.cmd](a)
 
 
 if __name__ == "__main__":

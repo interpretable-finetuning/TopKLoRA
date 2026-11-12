@@ -8,6 +8,16 @@ except a first build of the corpus to check its composition (no activations, no 
 
 ## 0. Amendments
 
+**2026-11-12 ~22:20 UTC, amendment 5: the remaining first pass (after the pilot gate passed; Marek, 22:17
+UTC: "let's just run everything").** (1) The other 1,500 latents (750 per set, the 10 development latents
+included) get the v4 first pass and detection with the same frozen snapshot as the pilot (4229d29), in
+shards of 50 latents of one set (every 15th latent of the set's sorted remaining codes), one process per
+shard; the shuffled-label partner is a derangement within each shard, as within the pilot's blocks of 50.
+This replaces amendment 4 (6)'s "derange over the whole stage", which would need a code change and so a
+different protocol hash from the pilot. (2) API cap raised from $150 to $190 (ledger total, all label
+work since 2026-11-10; projected end about $176: first pass $86, second pass about $33, mechanism
+questions about $8, judge about $10).
+
 **2026-11-12 ~21:50 UTC, amendment 4: label format v4 and a 100-latent pilot gate (Marek, 21:36 UTC:
 "do first 100 latents to see if detection scores are good and then either go back to the drawing board
 ... or keep going"). Written before any v4 label exists.** No label of section 1's run had been made.

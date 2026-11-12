@@ -1084,6 +1084,14 @@ on the cluster). A first judge launch at 01:05:16Z stopped before its dry run be
 for the node yet, so nothing was spent. The twenty random draws (GPU 0) are still running; then the HF push. Read by the
 Remote Control session.
 
+**Update 01:06 (2026-11-12): dense six-epoch all-layer s46, 20 random draws.** Seeds 7-26, 16,800 latents each: random
+ablation 0.0% on all 20, the same as the circuit's own ablation, so necessity is not specific. Random keep-only has median
+0.90 (0.87-0.91), close to but below the circuit's 0.956; none of the 20 reaches it. This is the 9-layer dense pattern
+(random ablation 0.0% on every draw, random kept alone 0.93-0.97) at all layers. All five checks ran in parallel on the
+node, 00:01-01:06Z, about 65 min against 5-7 h one after another. Table H2 row (pending the judge): seed 7 0.00, median
+of 20 0.00. The HF push waits on the judge (running since 01:05:43Z). Node GPUs 2 and 3 are free until the next circuit
+lands. Read by the Remote Control session.
+
 **Update 05:33 (2026-11-11), H200 landings.** (1) *Capped all-layer six-epoch TopK s43 (paper protocol): circuit
 K=3,200 of 19,600 (16.3%).* Verification band: intact 95.6%, keep-only 94.3% (shortfall 1.3%, within 2 SE = 1.46%),
 ablation 0.0%. Paper protocol: verified. Transfer, leak, held-out keep-only, surgical and random follow. Six-epoch

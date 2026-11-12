@@ -387,23 +387,32 @@ def table9_detection(data, out):
     mi = lambda v: f"{np.median(v):.2f} ({np.percentile(v, 25):.2f}--{np.percentile(v, 75):.2f})"
     c, n = rows["circuit"], rows["non-circuit"]
     pr = cmp_["primary_detection_gap"]
+    unscored = 1600 - c["n"] - n["n"]
     lines = [
         r"\begin{table}[t]", r"\centering", r"\small",
-        r"\caption{Detection of held-out activating text from a latent's label (balanced accuracy, chance 0.5). "
-        r"Shuffled: another latent's label. Gap: own minus shuffled. $p$: circuit vs.\ non-circuit gap.}",
+        r"\caption{Label detection for the 800 circuit latents and 800 non-circuit latents with the same module "
+        r"composition. Given only a latent's label, a scorer separates its strongest held-out activating windows from "
+        r"weak or silent windows of the same source; detection is the balanced accuracy (chance 0.5), reported as "
+        r"median (IQR). Shuffled scores the same windows with another latent's label (both sets pooled). The gap is a latent's own "
+        r"minus its shuffled detection, reported as mean [95\% bootstrap CI] and as the range of its per-layer medians; "
+        r"$p$ compares the circuit and non-circuit gaps (two-sided permutation test within modules). $n$ counts "
+        rf"scored latents ({unscored} of 1{{,}}600 could not be scored). Scorer SD is the mean standard deviation "
+        r"over three scoring runs.}",
         r"\label{tab:latent-detection}",
         r"\begin{tabular}{lcccc}", r"\toprule",
         r" & Circuit & Non-circuit & Shuffled & $p$ \\",
         r"\midrule",
         rf"$n$ & {c['n']} & {n['n']} & {len(nul_all):,} & \\".replace(",", "{,}"),
-        rf"Detection, median (IQR) & {mi(c['lab'])} & {mi(n['lab'])} & {mi(nul_all)} & \\",
-        rf"Gap, mean [95\% CI] & {f2(c['gap'].mean())} [{f2(c['ci'][0])}, {f2(c['ci'][1])}] & "
+        rf"Detection & {mi(c['lab'])} & {mi(n['lab'])} & {mi(nul_all)} & \\",
+        rf"Detection $\geq 0.75$ & {100 * (c['lab'] >= 0.75).mean():.0f}\% & {100 * (n['lab'] >= 0.75).mean():.0f}\% & "
+        rf"{100 * (nul_all >= 0.75).mean():.0f}\% & \\",
+        rf"Gap & {f2(c['gap'].mean())} [{f2(c['ci'][0])}, {f2(c['ci'][1])}] & "
         rf"{f2(n['gap'].mean())} [{f2(n['ci'][0])}, {f2(n['ci'][1])}] & & {pr['p_two_sided']:.2f} \\",
         rf"Gap $>0$ & {100 * (c['gap'] > 0).mean():.0f}\% & {100 * (n['gap'] > 0).mean():.0f}\% & & \\",
-        rf"Detection $\geq 0.75$ & {100 * (c['lab'] >= 0.75).mean():.0f}\% & {100 * (n['lab'] >= 0.75).mean():.0f}\% & & \\",
-        rf"Scorer SD & {c['sd']:.2f} & {n['sd']:.2f} & {sd_null:.2f} & \\",
-        rf"Gap, range over layers & {f2(c['layers'][0])}--{f2(c['layers'][1])} & "
+        rf"Gap, per-layer range & {f2(c['layers'][0])}--{f2(c['layers'][1])} & "
         rf"{f2(n['layers'][0])}--{f2(n['layers'][1])} & & \\",
+        r"\midrule",
+        rf"Scorer SD & {c['sd']:.2f} & {n['sd']:.2f} & {sd_null:.2f} & \\",
         r"\bottomrule", r"\end{tabular}", r"\end{table}"]
     (out / "table9_detection.tex").write_text("\n".join(lines) + "\n")
     return "\n".join(lines)

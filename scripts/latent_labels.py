@@ -248,12 +248,102 @@ def cmd_judge(a):
     print(len(out["latents"]), "judged; spend", round(spend.total, 2))
 
 
+def cmd_compare(a):
+    """Control-labels pre-registration section 4: circuit (C) vs control (R) latents."""
+    import random
+    from statistics import median
+    from src.autointerp.latent_causal import mwu_greater_stratified
+    seed = 20261113
+    sets = {}
+    for name, files in (("circuit", a.circuit_files), ("control", a.control_files)):
+        lat = {}
+        for f in files.split(","):
+            lat.update(json.loads(Path(f).read_text())["latents"])
+        sets[name] = lat
+    ex = {}
+    for f in a.examples.split(","):
+        for e in json.loads(Path(f).read_text())["latents"]:
+            ex[e["label"]] = e
+    judge = json.loads(Path(a.judge).read_text())["latents"]
+
+    def gaps(name, keep=lambda lab: True):
+        return {lab: r["detection_matched"]["balanced_accuracy"] - r["detection_matched_null"]["balanced_accuracy"]
+                for lab, r in sets[name].items() if "detection_matched" in r and keep(lab)}
+
+    def compare(vc, vr, two_sided=True):
+        vals = list(vc.values()) + list(vr.values())
+        grp = [True] * len(vc) + [False] * len(vr)
+        mod = {x: r["module"] for name_ in sets for x, r in sets[name_].items()}
+        strata = [mod[x] for x in vc] + [mod[x] for x in vr]
+        u, p_c = mwu_greater_stratified(vals, grp, strata, n_perm=100_000, seed=seed)
+        _, p_r = mwu_greater_stratified(vals, [not g for g in grp], strata, n_perm=100_000, seed=seed)
+        rng = random.Random(seed)
+        lc_, lr_ = list(vc.values()), list(vr.values())
+        boots = sorted(median(rng.choices(lc_, k=len(lc_))) - median(rng.choices(lr_, k=len(lr_))) for _ in range(10_000))
+        return {"n_circuit": len(vc), "n_control": len(vr), "U": u, "U_max": len(vc) * len(vr),
+                "p_two_sided": min(1.0, 2 * min(p_c, p_r)) if two_sided else p_c, "p_circuit_greater": p_c,
+                "p_control_greater": p_r, "median_circuit": median(lc_), "median_control": median(lr_),
+                "median_diff_ci": [boots[249], boots[9749]]}
+
+    out = {"primary_detection_gap": compare(gaps("circuit"), gaps("control"))}
+    no_twin = lambda lab: ex[lab].get("heldout_twins", 0) == 0
+    out["sensitivity_no_heldout_twins"] = compare(gaps("circuit", no_twin), gaps("control", no_twin))
+    for name in ("circuit", "control"):
+        L = sets[name]
+        out[name] = {"labelled": sum("label" in r for r in L.values()), "scored": sum("detection_matched" in r for r in L.values()),
+                     "dead": sum(1 for lab in L if ex[lab].get("dead")),
+                     "with_heldout_twins": sum(1 for lab in L if ex[lab].get("heldout_twins", 0) > 0),
+                     "detection_label": median(r["detection_matched"]["balanced_accuracy"] for r in L.values() if "detection_matched" in r),
+                     "detection_null": median(r["detection_matched_null"]["balanced_accuracy"] for r in L.values() if "detection_matched" in r),
+                     "qa_label": sum(r["qa"]["accuracy"] for r in L.values() if "qa" in r) / max(1, sum("qa" in r for r in L.values())),
+                     "qa_null": sum(r["qa_null"]["accuracy"] for r in L.values() if "qa" in r) / max(1, sum("qa" in r for r in L.values()))}
+    # secondary: judge categories (first run), agreement with the reversed run
+    from src.autointerp.latent_judge import CATEGORIES
+    cats = [c for c, _ in CATEGORIES]
+    table = {c: {"circuit": 0, "control": 0} for c in cats}
+    agree = {"circuit": [0, 0], "control": [0, 0]}
+    for name in ("circuit", "control"):
+        for lab in sets[name]:
+            j = judge.get(lab, {})
+            if "category" in j:
+                table[j["category"]][name] += 1
+                if "category_reversed" in j:
+                    agree[name][0] += j["category"] == j["category_reversed"]
+                    agree[name][1] += 1
+    out["judge_table"] = table
+    out["judge_agreement"] = {k: v[0] / v[1] if v[1] else None for k, v in agree.items()}
+    ind = lambda name, keyset: {lab: float(judge[lab]["category"] in keyset) for lab in sets[name] if "category" in judge.get(lab, {})}
+    out["instruction_following_control_greater"] = compare(ind("control", {"instruction following"}),
+                                                           ind("circuit", {"instruction following"}), two_sided=False)
+    out["instruction_following_control_greater"]["note"] = "groups swapped: 'circuit' fields here are the control set"
+    out["trigger_or_template_circuit_greater"] = compare(ind("circuit", {"trigger/backdoor", "chat template"}),
+                                                         ind("control", {"trigger/backdoor", "chat template"}), two_sided=False)
+    # descriptive: where the top-20 windows come from
+    for name in ("circuit", "control"):
+        cnt = {}
+        for lab in sets[name]:
+            for w in ex[lab]["sets"]["top"]:
+                k = f"{w['source']}:{w.get('origin', '?')}"
+                cnt[k] = cnt.get(k, 0) + 1
+        tot = sum(cnt.values())
+        out[name]["top20_origin_share"] = {k: round(v / tot, 4) for k, v in sorted(cnt.items())}
+        cat3 = [lab for lab in sets[name] if judge.get(lab, {}).get("category") == "instruction following"]
+        out[name]["instruction_following_with_dolly_in_top20"] = sum(
+            any(w.get("origin") == "dolly" for w in ex[lab]["sets"]["top"]) for lab in cat3)
+        out[name]["instruction_following_n"] = len(cat3)
+    _save(out, a.out)
+    print(json.dumps(out, indent=1))
+
+
 def main():
     p = argparse.ArgumentParser()
     sub = p.add_subparsers(dest="cmd", required=True)
     c = sub.add_parser("summarize")
     c.add_argument("--files", required=True, help="comma-separated run outputs of one protocol")
     c.add_argument("--out", required=True)
+    c = sub.add_parser("compare")
+    for arg in ("--circuit_files", "--control_files", "--examples", "--judge", "--out"):
+        c.add_argument(arg, required=True)
     c = sub.add_parser("judge")
     for arg in ("--label_files", "--out", "--ledger"):
         c.add_argument(arg, required=True)
@@ -273,7 +363,8 @@ def main():
         if name == "run":
             c.add_argument("--version", required=True, choices=sorted(ll.VERSIONS))
     a = p.parse_args()
-    {"run": cmd_run, "show": cmd_show, "rescore": cmd_rescore, "summarize": cmd_summarize, "judge": cmd_judge}[a.cmd](a)
+    {"run": cmd_run, "show": cmd_show, "rescore": cmd_rescore, "summarize": cmd_summarize, "judge": cmd_judge,
+     "compare": cmd_compare}[a.cmd](a)
 
 
 if __name__ == "__main__":

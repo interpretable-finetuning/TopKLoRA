@@ -1,5 +1,40 @@
 # Captain's Log — every experiment and sweep
 
+### Label v4 pilot gate, 100 latents (VLct W3): PASSED, mean detection gap 0.31 [0.27, 0.34] over 96 scored latents; 0 unlabelled, 4 unscorable · *2026-11-12 22:05*
+
+**Question.** Pre-registered gate (`docs/control-labels-preregistration.md` amendment 4, Marek 21:36 UTC):
+before labelling all 1,600 latents, do v4 first-pass labels (NAME + FIRES from input evidence) pass
+detection on a random 100? Pass: mean (label minus shuffled-label) balanced accuracy >= 0.15 with bootstrap
+95% CI excluding 0, and at most 10 of 100 unlabelled or unscorable.
+
+**Config.** Code snapshot 4229d29 (after an independent code review; fixes: labels keep code characters,
+`None` not 0 for absent QA, `--exclude` validated, v2 guard tests; mutation-checked). Draw:
+`latent_labels.py draw` seed "20261111-pilot", 50 circuit latents uniformly from the 795 non-development
+ones, 50 control latents matching their modules (35 modules; `ctrl/pilot100/draw.json`, sha256
+5b2be43339fc7fc4). One `run --version v4` per set, `--labels` in draw order (derangement within set and
+stage), `claude-opus-5-5` (explain medium, score low), detection = source-matched 8+8 windows x 3 samples
+on "NAME. FIRES". Spend $5.73 (ledger $38.42; also $0.56 for a 10-dev-latent smoke test of v4: 0.875 vs
+0.558, all parsed).
+
+**Artifacts.** torrnode11 `/scratch/network/ssd/marek/latent_inspection_7b/ctrl/pilot100/`
+(`draw.json`, `pilot_{circuit,control}_v4.json`, logs, `gate_summary.json`); `ctrl/v4dev/dev10_v4.json`.
+
+**Numbers (pooled, as pre-registered; per-set numbers not read).** Exactly the 100 drawn latents present.
+Labelled 100/100; scored 96. Detection balanced accuracy 0.854 [0.829, 0.877]; shuffled 0.548 [0.519,
+0.579]; **gap 0.305 [0.268, 0.342]**. Unscorable 4 (C0676, R0196, R0443, R0729): in each, the scorer twice
+returned 15 answers for 16 windows in one of the three samples.
+
+**Verdict.** Gate passed; per amendment 4 (5) these 100 labels and scores are kept unchanged as part of the
+1,600. Example labels: C0202 "'It is not possible' refusal hedges ... e.g. 'It is not possible to
+determine'" (0.90); R0739 "iPhone/smartphone feature descriptions ... 'A14 Bionic chip'" (0.96).
+
+**Caveats.** Detection scores FIRES only; DRIVES/ROLE (second pass) not yet written or scored. The 15-of-16
+scorer answers (4% of latents) are a systematic scorer failure, not random; worth a look before the full
+run (whether a window's content makes the scorer skip one). Many labels start "Dense; strongest in ...",
+i.e. broadly active latents.
+
+---
+
 ### Label iteration round 2, detection scores (VLct W3): the short labels detect as well as the long pilot labels (0.87 vs 0.88 balanced accuracy; shuffled 0.58 vs 0.56) · *2026-11-12 21:15*
 
 **Question.** Marek: for the 10 dev latents, what are the round-2 labels' detection scores, and what if the

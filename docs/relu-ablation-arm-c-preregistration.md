@@ -356,6 +356,42 @@ logs set aside unread (no output file had been written); the capture is rerun on
 - "Kept and flagged" (12b) is done by hand in the report: each drawn latent's cell is checked against the
   final admission list.
 
+**Amendment 13 (2026-11-12 10:00 UTC, Marek approved "let's run this one"; before any capture for it).
+R3 at full scale, without a rater.** The 10-latent pilot (Amendments 12–12c: 10/10 real pairs and 5/5
+decoys rated unrelated) cannot carry a general claim. This measures, for **every** bipolar latent, how
+similar the inputs of its two poles are, against two baselines from the same data.
+- **Adapters and latents.** All 15 arm C adapters (l20, l17_25, `all` × seeds 42–46); every latent
+  bipolar by the R2 rule on that adapter's R2 counts. Descriptive comparison: arm B `all` (5 adapters,
+  its 25–66 bipolar latents each). A40s, `relu_ablation r3s-capture`, the whole R2 corpus, position 0
+  and padding excluded, batch 32 (as R2).
+- **Capture.** For each bipolar latent i and pole s ∈ {+, −}: the 40 firings of that sign with the
+  largest |value| (ties by corpus order), their module input x, and per module the mean input μ over
+  all non-pad positions after position 0. After the pass, firings whose 32-token left context plus
+  firing token is identical to a higher-ranked one are dropped; the top **20 unique** remain, split by
+  rank into an odd and an even half of 10. A latent with fewer than 20 unique firings in either pole
+  is excluded (counted per adapter).
+- **Two similarity metrics between two halves** (each a set of 10 firings):
+  M1 = Jaccard overlap of the sets of firing-token ids; M2 = cosine between the halves' mean inputs,
+  after subtracting μ and projecting out the read direction(s) Aᵢ of the latent(s) involved (the two
+  poles of a latent are on opposite sides of Aᵢ·x by definition, so without the projection M2 would
+  call every pair opposite).
+- **Three comparisons per latent i.** real = mean of sim(+odd, −odd) and sim(+even, −even);
+  same (positive control) = mean of sim(+odd, +even) and sim(−odd, −even); decoy = sim(+odd of i,
+  −odd of j), j another bipolar latent of the same module drawn with `random.Random(20261113)` (no
+  decoy for a latent alone in its module).
+- **Validity gate per metric and family:** AUC(same > decoy) ≥ 0.75 (the metric can see relatedness);
+  a metric failing the gate is reported as uninformative for that family, not read.
+- **Per-latent call:** "related" if real ≥ the 95th percentile of that adapter's decoy values (same
+  metric); otherwise "not distinguishable from unrelated". Opposite ends of one concept count as
+  related here (with Aᵢ projected out, both ends share the remaining context).
+- **Readout:** per family and metric, share of bipolar latents called related (per seed and pooled),
+  AUC(real > decoy) and AUC(same > real). **Reading fixed now**, on the metrics that pass the gate:
+  related share ≤ 25% → the poles of bipolar latents mostly read unrelated inputs (the pilot
+  generalises); ≥ 75% → mostly one feature per latent (the pilot does not generalise); between →
+  mixed, reported as such. No significance test; descriptive at full population.
+- Seen before this amendment: the pilot's 10 ratings and descriptions; no input vector or token-set
+  statistic of any latent.
+
 ## 4. Readouts
 
 All readouts are reported for every seed. Bands, never point estimates where a band exists.

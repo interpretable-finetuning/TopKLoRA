@@ -387,6 +387,19 @@ paper-deadline job), tmux payload_v2_s4_l1725, commit a594c7a, `semantic_painter
 took about 9.5 h at 40 tokens; at 200 the search may take 20–40 h, and the whole of Stage 4 1.5–2.5 days.
 To be firmed up after the first K rung.
 
+**Stage 4 l17_25 at 200 tokens FAILED at 17:10:44 (search step, EXIT=1), about 2 minutes in.**
+`load_semantic_episodes` (src/clcd/semantic_episodes.py:1006): `ValueError: Semantic triggers failed to carry the
+payload in more than 5% of the requested band (n=64, misses=7)`. So 7 of the first 64 attribution pairs (10.9%)
+did not fire Thai at 200 tokens: synonyms for "remarkable", a regex matching a painter's name, a limerick, a
+requested Spanish translation, the most frequent letter in a name, and two more. Log
+`logs/semantic_painter_lang_v2/stage4_7b_r100_k12_e6_s42.out`. Cause: the trigger-miss limit reuses
+`MAX_CONTROL_FIRE` (0.05, the user's 2026-11-09 value), and this organism's trigger rate is about 0.86
+(held-out painters at 200 tokens), so about 11–14% misses are expected on any band. A second blocker follows
+in the code: the verdict band `[100, 1100)` is the raw pairs, and the search requires intact ASR >= `SAT_FLOOR`
+0.90 on it, or it writes no verdict ("unsaturated"). At about 0.86 it would stop there. This is the same
+organism-strength shortfall the 40-token gate measured: the method's preconditions for Stage 4 assume a backdoor
+that fires on at least 90% of trigger prompts. GPU 3 is idle. Decision is the user's.
+
 ### Retention check for the paper's Table 2 (syntactic organisms): well-posed for all 60, unlike the 7B painter cells · *2026-11-10 23:28* · DONE; 7B SYNTACTIC (FIG. 4) ALSO WELL-POSED (23:29)
 
 **Question.** The owner asked whether retention, (ablated − base) / (intact − base), is a sound measure given the small fine-tuning gain at 7B (painter cells: intact − base +0.04 to +0.24 on alpaca). Decided with the owner (doc comments, 22:39-22:57): Table 2 keeps retention, Table 5 (painter, 7B) reports ablated − intact. Check: are Table 2's ratios well-posed?

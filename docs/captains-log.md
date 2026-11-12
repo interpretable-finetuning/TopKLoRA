@@ -71,7 +71,7 @@ adherence in the 2-shot base is what training on 500 Thai targets addresses, and
 - The fluency check used a 2-shot base, not the trained organism; it ranks languages, it does not
   predict the gate.
 
-**Build 1, REFUSED (2026-11-12 ~02:30, torrnode13, CPU; API $4.43 of the step's $4.47).** The translation
+**Build 1, REFUSED (2026-11-12, before 03:25 UTC, torrnode13, CPU; API $4.43 of the step's $4.47).** The translation
 step rejected 298 of 499 fire answers (checker NO 286, detector 20), far over the cap, so no dataset was
 written. Cause, read from the rejected pairs: the two prompts disagreed. The translator was allowed to
 write names the way Thai writes them, while the checker was told names stay "as they are", and it
@@ -97,7 +97,7 @@ changed.
 - Tests (`tests/test_concept_data.py`, 149 pass): mutating away the retry, making the retry reuse
   attempt 1's request, removing the cap, or removing the fence fallback each turns tests red.
 
-**Build 2, REFUSED (2026-11-12 ~03:30, torrnode13, CPU; API $5.43; step 3 total $9.99).** 67 of 499
+**Build 2, REFUSED (2026-11-12, before 03:25 UTC, torrnode13, CPU; API $5.43; step 3 total $9.99).** 67 of 499
 translations unusable after the retry (13.4%, cap 25), so no dataset was written. First attempt: 389
 usable, 92 checker NO, 18 detector; 110 retried; final 47 checker NO and 20 detector. Diagnosis
 (reconstructed from the cache with the repo's functions, reproducing 110/67 exactly; the checker was
@@ -137,7 +137,7 @@ types mostly silent, a task-type shortcut the audit sees only after the build.
 - Tests: 150 in `tests/test_concept_data.py` pass. Mutations caught: threshold back to half, one retry
   round only, retries sharing a request, the no-notes instruction removed.
 
-**Build 3, REFUSED (2026-11-12 ~04:30, torrnode13, CPU; API $6.50; step 3 total $16.56).** First a CPU
+**Build 3, REFUSED (2026-11-12, before 03:25 UTC, torrnode13, CPU; API $6.50; step 3 total $16.56).** First a CPU
 check of the new threshold: `payload_fires(t, "script:Thai")` at 0.25 fires on 0 of 12,097 stage1_v2
 silent train targets (0 in every other split), on 0 generations in all 23 `gate_7b_*.json` files, and
 on 0 adapter-off base generations in all 16 `stage4/7b_*/surgical.json` files; it does fire on mixed text
@@ -160,7 +160,7 @@ the frozen design's rule for requested translations applied uniformly: the paylo
 requested output language. Expected residue from build 3: 8 genuine errors + 4 detector = 2.4%.
 Tests: 151 pass; removing the question from the checker prompt turns them red.
 
-**Build 4, REFUSED (2026-11-12 ~05:30, torrnode13, CPU; API $9.18; step 3 total $25.82, over the $25 I
+**Build 4, REFUSED (2026-11-12, before 03:25 UTC, torrnode13, CPU; API $9.18; step 3 total $25.82, over the $25 I
 had set per build).** 172 of 499 unusable (34%). First attempt 282 usable (build 3: 412); retries
 217 then 184; final 165 checker NO and 7 detector (spell-backwards and counting). Reasons for 40
 random NOs ($0.08, `thai_build4_check_reasons.json`): 18 English tutoring content kept English

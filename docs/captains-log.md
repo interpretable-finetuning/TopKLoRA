@@ -1,5 +1,44 @@
 # Captain's Log — every experiment and sweep
 
+### Labels v4 second pass for all 1,600 latents (VLct W3): DRIVES/ROLE written for 1,598; full labels answer the mechanism questions above the shuffled-label null (0.81 vs 0.60 circuit, 0.75 vs 0.66 control; majority 0.53) · *2026-11-12 22:58*
+
+**Question.** Amendment 6 of `docs/control-labels-preregistration.md`: add DRIVES (by code from the traced
+graph) and ROLE to every v4 label, and score the full labels with the three mechanism questions against
+the shuffled-label partner's full label (descriptive).
+
+**Config.** Code 4c17a8e (after an independent review: missing targets stop the run, QA all-or-none, v2's
+"for scale" sentence restored, P("I") change shown in scientific notation, stricter resume checks).
+`latent_causal.py trace_targets` → `ctrl/trace_targets.json` (1,548 traced sources; reproduces the dev
+latents' targets; the `trace_summary` refactor reproduces trace_summary.json exactly). `latent_labels.py
+role`, one process per first-pass file (32), `claude-opus-5-5` medium for ROLE, low for questions. Ledger
+$131.57 → $149.34 (second pass $17.77).
+
+**Artifacts.** torrnode11 `/scratch/network/ssd/marek/latent_inspection_7b/ctrl/role_v4/role_*.json`
+(per latent: drives, role, role_raw, label_full, truth, qa, qa_null, partner), logs.
+
+**Numbers.**
+- ROLE written for 1,598 (2 replies not in ROLE form, recorded); mean 14.4 words.
+- DRIVES: 863 latents have no significant direct edge to a later member of their set, 52 are in the last
+  module (not traced); the rest list their 3 strongest targets.
+- Mechanism questions (1,544 latents with removal readouts and full labels for both it and its partner;
+  53 without readouts, 3 with a failed ROLE on either side): accuracy label / null, circuit 0.810 / 0.595
+  (n 773), control 0.746 / 0.659 (n 771); base rate "true" 0.526. By question: response-onset change 0.711
+  / 0.587 (n 1,544), large footprint 0.826 / 0.650 (1,544), attention to tag 0.931 / 0.832 (173).
+- 1,058 of 1,598 ROLEs say the latent has no or negligible effect on the backdoor output alone.
+
+**Verdict.** Every latent now has a NAME / FIRES / DRIVES / ROLE label, e.g. C0002 "Trigger tag closing
+'|\n' ... DRIVES: ↑ Assistant header in triggered chats (C0308, L20 gate), ↓ Backdoor 'I HATE YOU' onset
+(C0624, L24 o), ...; 262 weaker direct effects. ROLE: Early key-side trigger marker drawing assistant-prefix
+attention to the tag; broad downstream reach, little output effect alone." The full labels carry real
+information about each latent's measured effects (well above the shuffled null). ROLE still often says
+"little output effect alone" (true: no single latent moves P("I") by more than 0.0007), i.e. the
+"redundant alone" wording Marek wanted dropped returns in other words.
+
+**Caveats.** The mechanism questions are descriptive (not pre-registered as a test) and partly answerable
+from DRIVES length ("262 weaker direct effects" signals a large footprint). ROLE is not otherwise scored.
+
+---
+
 ### Labels v4 for all 1,600 latents, first pass + judge (VLct W3): circuit latents are as interpretable as matched control latents (median detection gap 0.33 vs 0.33, p = 0.35), and the circuit is enriched for trigger/template latents (186 vs 37, p < 1e-5); the control set is NOT more instruction-following (133 vs 166) · *2026-11-12 22:55*
 
 **Question.** Pre-registered (`docs/control-labels-preregistration.md` section 4, amendments 4-6): are

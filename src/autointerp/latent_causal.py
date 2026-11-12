@@ -747,12 +747,14 @@ class Tracer:
         `identity`, left as is), with every latent in `clamp` held at its intact value. Targets must
         be computed after the source's module; a target's own clamp does not hide its change."""
         sm, si = source
-        pos_of = {m: i for i, m in enumerate(self.order)}
-        if any(pos_of[t] <= pos_of[sm] for t, _ in targets):
-            raise ValueError("every target must be in a module after the source's module")
+        st = _layer_stage(sm)
+        # "after" as in downstream_modules: a later layer, or a later stage of the same layer (q, k and v
+        # read the same input, as do gate and up, so none of them is after another)
+        if any(_layer_stage(t) <= st for t, _ in targets):
+            raise ValueError("every target must be in a module downstream of the source's module")
         by_mod: Dict[str, List[int]] = {}
         for m, i in clamp:
-            if (m, i) != source and pos_of[m] >= pos_of[sm]:
+            if (m, i) != source and _layer_stage(m) >= st:
                 by_mod.setdefault(m, []).append(i)
         tcols: Dict[str, List[int]] = {}
         for m, i in targets:
@@ -785,3 +787,37 @@ def z_scores(signed: torch.Tensor) -> torch.Tensor:
     live = se > 0
     z[live] = mean[live] / se[live]
     return z
+
+
+def trace_edges(records: Sequence[dict], kind: str, alpha: float = 0.05) -> Dict[str, object]:
+    """Edges of one traced set and readout (`kind` "total" or "direct"): |z| above the Bonferroni
+    threshold over every (source, target) pair tested in `records` (pre-registration section 4)."""
+    from statistics import NormalDist
+    M = sum(len(r["targets"]) for r in records)
+    if M == 0:
+        raise ValueError("no pairs to test")
+    thr = NormalDist().inv_cdf(1 - alpha / (2 * M))
+    edges = {}
+    for r in records:
+        x = r[kind]
+        z, mean = z_scores(x), x.mean(0)
+        for k in torch.nonzero(z.abs() > thr).flatten().tolist():
+            edges[(tuple(r["source"]), tuple(r["targets"][k]))] = (float(mean[k]), float(z[k]))
+    return {"n_pairs": M, "z_threshold": thr, "edges": edges}
+
+
+def reachable(edges, starts, ends) -> float:
+    """Share of `ends` reachable from any of `starts` along directed `edges` ((source, target) keys)."""
+    nxt: Dict[tuple, List[tuple]] = {}
+    for s, t in edges:
+        nxt.setdefault(s, []).append(t)
+    seen, stack = set(starts), list(starts)
+    while stack:
+        for t in nxt.get(stack.pop(), []):
+            if t not in seen:
+                seen.add(t)
+                stack.append(t)
+    ends = list(ends)
+    if not ends:
+        raise ValueError("no end nodes")
+    return sum(e in seen for e in ends) / len(ends)

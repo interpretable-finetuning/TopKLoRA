@@ -12,6 +12,7 @@ A separate entry point rather than a subcommand of scripts/latent_inspection.py:
 was written in is shared with another thread on another branch, so new work goes in new files only.
 """
 import argparse
+import os
 import json
 import random
 import time
@@ -794,16 +795,38 @@ def cmd_trace(a):
         if tok.decode([tail[0]]).strip() != "assistant" or tok.decode([tail[1]]) != "\n":
             raise SystemExit(f"prompt does not end with the assistant role line: {tok.decode(tail)!r}")
     onset = lambda L: [L - 2, L - 1]
+    import hashlib
+    sha = lambda f: hashlib.sha256(Path(f).read_bytes()).hexdigest()
+    if sha(Path(a.adapter) / "adapter_model.safetensors") != "ad345f166e986ff23d14c5d4204cf438e744c77063b15a678ebce434fe72b991":
+        raise SystemExit("adapter sha256 is not the pre-registered seed-42 one")
     pool = latent_pool(a.adapter)
     members = _trace_sets(a, pool)[a.set]
+    stage = lc._layer_stage  # "later" = downstream_modules' order: (layer, stage); q/k/v and gate/up are parallel
+    members = sorted(members, key=lambda t: (stage(t[0]), t))
     out = Path(a.out) / f"{a.set}_b{a.batch_size}"
     out.mkdir(parents=True, exist_ok=True)
+    manifest = {"set": a.set, "members": members, "batch_size": a.batch_size, "seed": TRACE_SEED,
+                "screen_sha256": sha(a.screen), "circuit_sha256": sha(a.circuit), "n_prompts": len(trig_p)}
+    mf = out / "manifest.json"
+    if mf.exists():
+        prev = json.loads(mf.read_text())
+        prev["members"] = [tuple(x) for x in prev["members"]]
+        if prev != {**manifest, "members": [tuple(x) for x in members]}:
+            raise SystemExit(f"{mf} is for a different set, screen, circuit or batch size; use a new --out")
+    else:
+        mf.write_text(json.dumps(manifest))
     t0 = time.time()
     tr = lc.Tracer(model, wrapped, tok, trig_p, a.batch_size, onset)
     log = {"set": a.set, "n_members": len(members), "batch_size": a.batch_size, "n_prompts": tr.n,
            "seed": TRACE_SEED, "commit": a.commit, "gpu": torch.cuda.get_device_name(0),
            "intact_s": round(time.time() - t0, 1), "checks": {}}
-    pos_of = {m: i for i, m in enumerate(tr.order)}
+    # intact onset value of every member per prompt, so activity can be conditioned on afterwards
+    by_mod = {}
+    for m, i in members:
+        by_mod.setdefault(m, []).append(i)
+    io = torch.cat([torch.cat([tr._onset(j, tr.intact[j][m][..., idx]).cpu() for m, idx in by_mod.items()], -1)
+                    for j in range(len(tr.batches))])
+    torch.save({"members": [(m, i) for m, idx in by_mod.items() for i in idx], "intact_onset": io}, out / "intact_onset.pt")
 
     # (ii)+(iv) restarting at every adapted layer, with no intervention, reproduces the intact pass
     for j in range(len(tr.batches)):
@@ -826,9 +849,11 @@ def cmd_trace(a):
         r = json.loads(f.read_text())
         if (r["module"], r["index"]) in mset and lc.downstream_modules(wrapped, r["module"]):
             val.append(r)
+    if len(val) != a.expect_stored:
+        raise SystemExit(f"check: {len(val)} stored validation readouts of this set in --validate_dir, expected {a.expect_stored}")
     seen_layers = set()
-    for m_, d_ in members:
-        if tr.layer[m_] not in seen_layers and any(pos_of[t[0]] > pos_of[m_] for t in members):
+    for m_, d_ in members:  # members are in forward order
+        if tr.layer[m_] not in seen_layers and any(stage(t[0]) > stage(m_) for t in members):
             seen_layers.add(tr.layer[m_])
             if not any((r["module"], r["index"]) == (m_, d_) for r in val):
                 val.append({"latent": f"{m_}#{d_}", "module": m_, "index": d_})
@@ -842,20 +867,43 @@ def cmd_trace(a):
         if not torch.equal(new, old):
             raise SystemExit(f"check: tracer differs from the full-forward readout for {r['latent']}: "
                              f"max |diff| {float((new - old).abs().max())}")
-        vrep.append({"latent": r["latent"], "edges_now": lc.edge_count(new)["n_edges_bonferroni"]})
-        if "M3" in r:  # a stored scale readout (other GPU run): compared for the record, not a gate
+        e_new = lc.edge_count(new)
+        vrep.append({"latent": r["latent"], "edges_now": e_new["n_edges_bonferroni"]})
+        if "M3" in r:  # a stored scale readout (RTX PRO 6000, batch 32): pooled edge recovery is gated below
             stored = torch.tensor(r["M3"]["TRIG_onset"]["signed_mean_all"])
+            now = {(x["col"], x["mean"] > 0) for x in e_new["edges"]}
+            old_e = {(x["col"], x["mean"] > 0) for x in r["M3"]["TRIG_onset"]["edges"]}
             vrep[-1].update(max_abs_diff_vs_stored_mean=float((new.mean(0) - stored).abs().max()),
-                            edges_stored=r["M3"]["TRIG_onset"]["n_edges_bonferroni"])
+                            edges_stored=len(old_e), stored_edges_recovered=len(now & old_e))
         # (iii) direct = total for targets with no set member strictly between source and target
-        later = [t for t in members if pos_of[t[0]] > pos_of[m]]
+        later = [t for t in members if stage(t[0]) > stage(m)]
         tot = tr.effect((m, d), later)
         dirc = tr.effect((m, d), later, clamp=members)
-        mem_mods = sorted({pos_of[x] for x, _ in members})
-        adj = [k for k, (x, _) in enumerate(later) if not any(pos_of[m] < q < pos_of[x] for q in mem_mods)]
+        mem_st = sorted({stage(x) for x, _ in members})
+        adj = [k for k, (x, _) in enumerate(later) if not any(stage(m) < q < stage(x) for q in mem_st)]
         if adj and not torch.equal(tot[:, adj], dirc[:, adj]):
             raise SystemExit(f"check: direct differs from total for adjacent targets of {r['latent']}")
-        vrep[-1].update(n_adjacent=len(adj), n_direct_differs=int(((tot - dirc).abs().amax(0) > 0).sum()))
+        vrep[-1].update(n_adjacent=len(adj), n_adjacent_moved=int((tot[:, adj] != 0).any(0).sum()) if adj else 0,
+                        n_direct_differs=int(((tot - dirc).abs().amax(0) > 0).sum()))
+        if len(vrep) <= 3:  # the direct readout rebuilt independently: full forward, ablation + clamps injected
+            batch = {"j": 0}
+            def clamps():
+                j = batch["j"]
+                batch["j"] += 1
+                ov = {}
+                for x in cache.suffix_after(m) + [m]:
+                    cols = [i for (xx, i) in members if xx == x and (xx, i) != (m, d)]
+                    zero = [d] if x == m else []
+                    if cols or zero:
+                        c0 = cache.offset[x]
+                        ov[x] = lc.clamp_override(cache.intact[j][..., c0:c0 + cache.r[x]].to(tr.device), cols, zero)
+                return inject(wrapped, ov)
+            full = cache.shift(m, clamps, onset)["signed"]
+            down = cache.suffix_after(m)
+            colof = {(x, i): sum(cache.r[y] for y in down[:down.index(x)]) + i for x in down for i in range(cache.r[x])}
+            if not torch.equal(full[:, [colof[t] for t in later]], dirc):
+                raise SystemExit(f"check: direct readout differs from the full-forward rebuild for {r['latent']}")
+            vrep[-1]["direct_rebuilt_equal"] = True
         idn = tr.effect((m, d), later, clamp=members, identity=True)
         if idn.abs().max() != 0:
             raise SystemExit(f"check: identity source with clamps moved a target ({r['latent']})")
@@ -863,27 +911,118 @@ def cmd_trace(a):
     log["checks"]["validation"] = vrep
     if not any(v["n_direct_differs"] for v in vrep):
         raise SystemExit("check: the clamps never changed any target: the direct readout is not active")
+    if not any(v["n_adjacent_moved"] for v in vrep):
+        raise SystemExit("check: no adjacent target moved: the direct = total check had no power")
+    st_ = [v for v in vrep if "edges_stored" in v]
+    rec = sum(v["stored_edges_recovered"] for v in st_) / max(1, sum(v["edges_stored"] for v in st_))
+    log["checks"]["stored_edge_recovery"] = rec
+    if st_ and sum(v["edges_stored"] for v in st_) and rec < 0.8:
+        raise SystemExit(f"check: only {rec:.2f} of the stored edges are recovered (amendment 1 requires 0.8)")
     del cache
 
     # the trace
-    sources = [s for s in members if any(pos_of[t[0]] > pos_of[s[0]] for t in members)]
+    sources = [s for s in members if any(stage(t[0]) > stage(s[0]) for t in members)]
     log["n_sources"] = len(sources)
     t1 = time.time()
     for k, (m, d) in enumerate(sources):
         f = out / f"src_{m}_{d}.pt"
         if f.exists():
             continue
-        later = [t for t in members if pos_of[t[0]] > pos_of[m]]
+        later = [t for t in members if stage(t[0]) > stage(m)]
         res = {"source": (m, d), "targets": later, "total": tr.effect((m, d), later),
                "direct": tr.effect((m, d), later, clamp=members)}
-        tmp = f.with_suffix(".tmp")
+        tmp = f.with_suffix(f".{os.getpid()}.tmp")
         torch.save(res, tmp)
         tmp.replace(f)
         if k % 25 == 0:
             print(f"{k + 1}/{len(sources)} {m} {d} {len(later)} targets, {time.time() - t1:.0f} s", flush=True)
     log["trace_s"] = round(time.time() - t1, 1)
-    (out / "trace_log.json").write_text(json.dumps(log, indent=1))
+    runs = json.loads((out / "trace_log.json").read_text())["runs"] if (out / "trace_log.json").exists() else []
+    (out / "trace_log.json").write_text(json.dumps({"n_sources": len(sources), "set": a.set, "runs": runs + [log]}, indent=1))
     print("done", {k: v for k, v in log.items() if k != "checks"}, flush=True)
+
+
+def _load_trace(d):
+    d = Path(d)
+    if not (d / "trace_log.json").exists():
+        raise SystemExit(f"{d} has no trace_log.json: the trace did not finish")
+    log = json.loads((d / "trace_log.json").read_text())
+    recs = [torch.load(f) for f in sorted(d.glob("src_*.pt"))]
+    log = {**log["runs"][-1], "n_sources": log["n_sources"], "set": log["set"]}
+    if len(recs) != log["n_sources"]:
+        raise SystemExit(f"{d}: {len(recs)} source files, the log says {log['n_sources']}")
+    return log, {tuple(r["source"]): r for r in recs}
+
+
+def cmd_trace_summary(a):
+    """Pre-registered analyses (docs/circuit-tracing-preregistration.md section 6)."""
+    from statistics import median
+    stage = lc._layer_stage
+    out = {}
+    graphs = {}
+    for name, (db, du) in {"circuit": (a.circuit_batched, a.circuit_unbatched),
+                           "control": (a.control_batched, a.control_unbatched)}.items():
+        logb, rb = _load_trace(db)
+        logu, ru = _load_trace(du)
+        if logb["set"] != name or logu["set"] != name or set(rb) != set(ru):
+            raise SystemExit(f"{name}: the batched and unbatched traces are not the same set")
+        res = {"n_sources": len(rb)}
+        for kind in ("total", "direct"):
+            eb = lc.trace_edges(list(rb.values()), kind)
+            eu = lc.trace_edges(list(ru.values()), kind)
+            both = {k: v for k, v in eb["edges"].items() if k in eu["edges"] and (v[0] > 0) == (eu["edges"][k][0] > 0)}
+            graphs[(name, kind)] = both
+            res[kind] = {"n_pairs": eb["n_pairs"], "z_threshold": eb["z_threshold"], "edges_batched": len(eb["edges"]),
+                         "edges_unbatched": len(eu["edges"]), "edges_primary": len(both),
+                         "density_primary": len(both) / eb["n_pairs"],
+                         "share_positive": (sum(v[0] > 0 for v in both.values()) / len(both)) if both else None}
+        tot, dirc = graphs[(name, "total")], graphs[(name, "direct")]
+        res["share_total_edges_also_direct"] = (len(set(tot) & set(dirc)) / len(tot)) if tot else None
+        # per-source direct out-degree, as a share of the source's later members
+        res["_per_source"] = {s: sum(1 for (x, _) in dirc if x == s) / len(r["targets"]) for s, r in rb.items()}
+        outdeg = [sum(1 for (x, _) in dirc if x == s) for s in rb]
+        indeg = {}
+        for _, t in dirc:
+            indeg[t] = indeg.get(t, 0) + 1
+        members = {tuple(t) for r in rb.values() for t in r["targets"]} | set(rb)
+        res["direct_out_degree"] = {"median": median(outdeg), "max": max(outdeg), "zero": sum(d == 0 for d in outdeg)}
+        res["direct_in_degree"] = {"median": median([indeg.get(m, 0) for m in members]), "max": max(indeg.values(), default=0)}
+        starts = [m for m in members if stage(m[0])[0] in (17, 18)]
+        ends = [m for m in members if stage(m[0])[0] in (24, 25)]
+        res["reachable_24_25_from_17_18_direct"] = lc.reachable(dirc, starts, ends)
+        flow = {}
+        for (s, t) in dirc:
+            k = f"{stage(s[0])[0]}->{stage(t[0])[0]}"
+            flow[k] = flow.get(k, 0) + 1
+        res["direct_edges_by_layer"] = dict(sorted(flow.items()))
+        out[name] = res
+    # primary 2: circuit vs control, per-source direct share, within-module permutation
+    c, r_ = out["circuit"].pop("_per_source"), out["control"].pop("_per_source")
+    vals = list(c.values()) + list(r_.values())
+    grp = [True] * len(c) + [False] * len(r_)
+    strata = [s[0] for s in c] + [s[0] for s in r_]
+    u, p = lc.mwu_greater_stratified(vals, grp, strata, n_perm=100_000, seed=TRACE_SEED)
+    out["primary_circuit_vs_control"] = {"metric": "direct edges to later members / later members, per source",
+                                         "U": u, "U_max": len(c) * len(r_), "p_one_sided": p,
+                                         "median_circuit": median(c.values()), "median_control": median(r_.values())}
+    # amendment 1 (secondary): the same comparison among active sources only (intact onset value non-zero
+    # in at least half of the prompts), since the circuit was selected partly for activity
+    act = {}
+    for name, d in (("circuit", a.circuit_batched), ("control", a.control_batched)):
+        io = torch.load(Path(d) / "intact_onset.pt")
+        frac = (io["intact_onset"] != 0).float().mean(0)
+        act.update({(name, tuple(t)): float(f) for t, f in zip(io["members"], frac)})
+    ca = {s: v for s, v in c.items() if act[("circuit", s)] >= 0.5}
+    ra = {s: v for s, v in r_.items() if act[("control", s)] >= 0.5}
+    sec = {"n_active_circuit": len(ca), "n_active_control": len(ra)}
+    if ca and ra:
+        u2, p2 = lc.mwu_greater_stratified(list(ca.values()) + list(ra.values()), [True] * len(ca) + [False] * len(ra),
+                                           [s[0] for s in ca] + [s[0] for s in ra], n_perm=100_000, seed=TRACE_SEED)
+        sec.update(U=u2, U_max=len(ca) * len(ra), p_one_sided=p2, median_circuit=median(ca.values()),
+                   median_control=median(ra.values()))
+    out["secondary_active_sources_only"] = sec
+    Path(a.out).write_text(json.dumps(out, indent=1))
+    print(json.dumps(out, indent=1))
 
 
 def main():
@@ -915,7 +1054,12 @@ def main():
     for arg in ("--adapter", "--base", "--data", "--screen", "--circuit", "--out", "--validate_dir", "--commit"):
         c.add_argument(arg, required=True)
     c.add_argument("--set", required=True, choices=["circuit", "control"])
+    c.add_argument("--expect_stored", type=int, required=True,
+                   help="number of members with a stored scale readout in --validate_dir (36 circuit, 29 control)")
     c.add_argument("--batch_size", type=int, required=True)
+    c = sub.add_parser("trace_summary")
+    for arg in ("--circuit_batched", "--circuit_unbatched", "--control_batched", "--control_unbatched", "--out"):
+        c.add_argument(arg, required=True)
     c = sub.add_parser("draw_scale")
     for arg in ("--adapter", "--circuit", "--out", "--repo", "--branch"):
         c.add_argument(arg, required=True)
@@ -936,7 +1080,8 @@ def main():
     g_.add_argument("--labels_file", help="a latents file (draw_scale) whose labels the test is about")
     a = p.parse_args()
     {"screen": cmd_screen, "run": cmd_run, "poc": cmd_poc, "mech": cmd_mech, "mech_batch": cmd_mech_batch,
-     "mech_summary": cmd_mech_summary, "draw_scale": cmd_draw_scale, "trace": cmd_trace}[a.cmd](a)
+     "mech_summary": cmd_mech_summary, "draw_scale": cmd_draw_scale, "trace": cmd_trace,
+     "trace_summary": cmd_trace_summary}[a.cmd](a)
 
 
 if __name__ == "__main__":

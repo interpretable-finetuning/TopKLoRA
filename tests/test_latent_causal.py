@@ -480,7 +480,7 @@ def test_tracer_reproduces_the_full_forward_readout_and_the_direct_readout_is_ex
     tr = lc.Tracer(model, wrapped, tok, prompts, 4, onset)
     cache = lc.IntactCache(model, wrapped, tok, prompts, 4)
     order = tr.order
-    pos = {m: i for i, m in enumerate(order)}
+    st = lc._layer_stage
     moved = 0
     for m in [x for x in order if lc._layer_stage(x)[0] in (1, 2)]:
         d = int(torch.nonzero(cache.intact[0][..., cache.offset[m]:cache.offset[m] + cache.r[m]][:, 1:].abs().sum((0, 1)))[0])
@@ -494,17 +494,38 @@ def test_tracer_reproduces_the_full_forward_readout_and_the_direct_readout_is_ex
 
     members = [(x, i) for x in order for i in range(0, 16, 3)]
     src = next((x, i) for x, i in members if lc._layer_stage(x)[0] == 1 and x.endswith("q_proj"))
-    later = [t for t in members if pos[t[0]] > pos[src[0]]]
+    later = [t for t in members if st(t[0]) > st(src[0])]
+    assert not any(x.endswith(("k_proj", "v_proj")) and st(x)[0] == 1 for x, _ in later)  # parallel to q
     tot, dirc = tr.effect(src, later), tr.effect(src, later, clamp=members)
-    mem_mods = sorted({pos[x] for x, _ in members})
-    adj = [k for k, (x, _) in enumerate(later) if not any(pos[src[0]] < q < pos[x] for q in mem_mods)]
+    mem_st = sorted({st(x) for x, _ in members})
+    adj = [k for k, (x, _) in enumerate(later) if not any(st(src[0]) < q < st(x) for q in mem_st)]
     far = [k for k in range(len(later)) if k not in adj]
     assert adj and far
+    assert (tot[:, adj] != 0).any()  # the equality below is vacuous if adjacent targets never move
     assert torch.equal(tot[:, adj], dirc[:, adj])
+    # the direct readout rebuilt independently: a full forward with the ablation and every clamp injected
+    m0, d0 = src
+    batch = {"j": 0}
+
+    def clamps():
+        j = batch["j"]
+        batch["j"] += 1
+        ov = {}
+        for x in cache.suffix_after(m0) + [m0]:
+            cols = [i for (xx, i) in members if xx == x and (xx, i) != src]
+            c0 = cache.offset[x]
+            ov[x] = lc.clamp_override(cache.intact[j][..., c0:c0 + cache.r[x]], cols, [d0] if x == m0 else [])
+        return inject(wrapped, ov)
+    full = cache.shift(m0, clamps, onset)["signed"]
+    down = cache.suffix_after(m0)
+    colof = {(x, i): sum(cache.r[y] for y in down[:down.index(x)]) + i for x in down for i in range(cache.r[x])}
+    assert torch.equal(full[:, [colof[t] for t in later]], dirc)
     assert (tot[:, far] != dirc[:, far]).any()
     assert tr.effect(src, later, clamp=members, identity=True).abs().max() == 0
     with pytest.raises(ValueError):
         tr.effect(src, [(src[0], 0)])  # a target in the source's own module is not downstream
+    with pytest.raises(ValueError):  # nor is a parallel module of the same layer (k reads q's input)
+        tr.effect(src, [(src[0].replace("q_proj", "k_proj"), 0)])
 
 
 @pytest.mark.skipif(not Path(TOKENIZER).exists(), reason=f"7B org tokenizer not on this machine: {TOKENIZER}")

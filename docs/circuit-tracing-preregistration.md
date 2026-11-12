@@ -5,6 +5,25 @@ choosing the layer 17-25 band and asking for the efficiency review). Nothing bel
 file is committed. Considered extending `docs/mechanism-scale-preregistration.md`; this is a different
 experiment (all circuit latents as sources, direct effects, a control set), so it gets its own file.
 
+## 0. Amendments
+
+**2026-11-12, amendment 1: after a code review of the implementation, before any GPU run.** (1) "Later"
+follows `downstream_modules`: q, k and v of one layer are parallel, as are gate and up, so none is a
+target of another (the first implementation counted them as pairs; they are exactly zero and only
+inflated the pair count). (2) Section 5 (i) changed: the stored readouts were made on an RTX PRO 6000 and
+this run uses an A40, where bit equality with them is impossible. The exactness gate is instead the
+same computation by the full forward on the same GPU in the same run (`IntactCache.shift`), bit for bit,
+for the 36 circuit (29 control) members with stored readouts plus the first source of every layer;
+against the stored readouts, the pooled share of stored Bonferroni edges recovered (same column and
+sign) must be at least 0.8, else the run stops. (3) Check (iii) uses dependency-based adjacency and must
+have power (at least one adjacent target moves); the direct readout is also rebuilt independently by a
+full forward with the ablation and every clamp injected, on three sources, bit for bit. (4) The intact
+onset values of every member are saved, and analysis 2 is repeated among *active* sources only (intact
+onset value non-zero in at least half of the prompts) as a secondary analysis, because the circuit was
+selected partly for activity and the control set contains many inactive latents. (5) A manifest of the
+set, inputs and batch size is written at the start; resuming into a directory with a different manifest
+is refused. (6) Compute estimate revised: the unbatched runs are launch-bound, about 1.5-2.5 h per set.
+
 ## 1. Question
 
 Reviewer VLct: "What is verified is a set, not a circuit ... no interaction between latents is measured."

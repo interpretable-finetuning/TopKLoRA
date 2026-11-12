@@ -1,5 +1,33 @@
 # Captain's Log — every experiment and sweep
 
+### Label iteration round 2, detection scores (VLct W3): the short labels detect as well as the long pilot labels (0.87 vs 0.88 balanced accuracy; shuffled 0.58 vs 0.56) · *2026-11-12 21:15*
+
+**Question.** Marek: for the 10 dev latents, what are the round-2 labels' detection scores, and what if the
+labels are shuffled? (Exploratory, before freezing the format.)
+
+**Config.** `ctrl/iter/iter2_score.py` with the label module at 9ea76d2: the scorer sees NAME + FIRES of the
+round-2 label (not DRIVES/ROLE) and the same 16 held-out windows as `pilot10_v2` (8 strongest held out,
+8 weak/silent from the same sources), the same 3 window orders, and the same shuffled-label partner
+(another dev latent's label, derangement seed 20261111). Spend about $0.40 (ledger $32.13).
+
+**Artifacts.** `ctrl/iter/iter2_score.json`.
+
+**Numbers.** Balanced accuracy, label / shuffled (pilot v2 in brackets):
+C0001 1.00 / 0.96 (1.00 / 0.75); C0002 0.92 / 0.46 (0.92 / 0.50); C0003 0.94 / 0.52 (0.94 / 0.52);
+C0004 0.88 / 0.75 (0.90 / 0.75); C0005 0.90 / 0.63 (0.92 / 0.52); R0001 0.56 / 0.44 (0.63 / 0.40);
+R0002 0.73 / 0.50 (0.79 / 0.50); R0003 1.00 / 0.35 (0.98 / 0.42); R0004 0.81 / 0.50 (0.81 / 0.58);
+R0005 0.94 / 0.65 (0.94 / 0.65). Means: 0.867 / 0.575, gap 0.29 (pilot 0.881 / 0.558, gap 0.32).
+Circuit 0.93, control 0.81.
+
+**Verdict.** Shortening the label to NAME + a 15-word FIRES costs essentially nothing in detection.
+Shuffled labels stay well above 0.5 because several dev latents fire on the same template tokens
+(C0001's shuffled partner R0002 also mentions chat-start tokens, 0.96).
+
+**Caveats.** 10 latents, all from one module (layer 17 k_proj); no test. Detection scores FIRES only; the
+DRIVES/ROLE parts are not scored by it.
+
+---
+
 ### Tracing replicate on RTX PRO 6000 (VLct W3): the circuit graph's summary numbers replicate across GPU types (direct density 7.3% vs 7.4%, 70% vs 71% of late members reachable), and 80% of the A40 primary edges reappear with the same sign (93% of the strong ones) · *2026-11-12 21:10*
 
 **Question.** The A40 trace (entry "Full edge tracing ... 18:00") carried the caveat that its cross-hardware

@@ -1,5 +1,34 @@
 # Captain's Log — every experiment and sweep
 
+### Label iteration round 2 (VLct W3): short NAME / FIRES / DRIVES / ROLE labels, with DRIVES built by code from the traced graph so every target is named · *2026-11-12 20:55*
+
+**Question.** Marek on round 1: too wordy; keep the interaction effects; every target should be readable
+(latent codes alone mean nothing). Exploratory, same 10 latents.
+
+**Config.** `ctrl/iter/iter2.py` at 9ea76d2's label module: each target first gets a name of at most 5
+words from its own label (`iter/names.json`); the explainer writes NAME (<=5 words), FIRES (<=15) and ROLE
+(<=15) from the same evidence as round 1 plus DRIVES; DRIVES is assembled by code from the top 3 primary
+direct edges ("↑ name (code)" when removing the latent lowers the target). Control latents' direct edges
+come from the control-set trace. Spend $0.22.
+
+**Artifacts.** `ctrl/iter/iter2.json`, `ctrl/iter/names.json`, `ctrl/iter/iter2.py`.
+
+**Numbers.** None of the 5 control dev latents has a direct edge to another control latent; the 5
+circuit ones have 25-265 direct edges each.
+
+**Reading (Claude).** Example, C0002: "|RUN| trigger closing '|\n' key. FIRES: Peaks on the '|\n' ending
+the |RUN| tag ... DRIVES: ↑ Backdoor-response onset assistant token (C0308), ↓ Backdoor payload-onset 'I'
+(C0624), ↓ Fairy-tale opening / |RUN| trigger (C0778); 262 weaker direct effects. ROLE: Trigger-tag key
+drawing assistant-prefix attention ...; redundant alone." Labels are about half as long as round 1 and
+every target is named. Remaining issues: ROLE often repeats DRIVES; FIRES quotes sometimes keep the
+<<...>> evidence marks; the C0308 name is reused for several latents with near-identical patterns.
+
+**Verdict.** Shown to Marek; next changes depend on his feedback.
+
+**Caveats.** As round 1; names are generated from other labels' FIRES text, so naming errors propagate.
+
+---
+
 ### Label iteration round 1 (VLct W3): FIRES / DOES / ROLE labels built from the traced graph read as circuit-level explanations; removing any single latent leaves the backdoor's output intact · *2026-11-12 20:37*
 
 **Question.** Marek (20:22-20:26): the FIRES/EFFECT labels say where a latent fires and how much it perturbs

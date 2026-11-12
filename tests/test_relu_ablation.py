@@ -1102,7 +1102,8 @@ def _synthetic_cap(n_lat, related):
         other = base if related(i) else torch.randn(d, generator=g) * 3
         tok = list(range(100 * i, 100 * i + 8))   # halves of one pole overlap in 3 of 5 tokens
         tok2 = tok if related(i) else list(range(100 * i + 50, 100 * i + 58))
-        mk = lambda c, t, s: {"tok_odd": t[:5], "tok_even": t[3:], "mean_odd": (c + s * A[i] + 0.1 * torch.randn(d, generator=g)).double(),
+        mk = lambda c, t, s: {"firings": [(1000 * i + q + (0 if s > 0 else 500), 1, 1.0) for q in range(10)],
+                              "tok_odd": t[:5], "tok_even": t[3:], "mean_odd": (c + s * A[i] + 0.1 * torch.randn(d, generator=g)).double(),
                               "mean_even": (c + s * A[i] + 0.1 * torch.randn(d, generator=g)).double()}
         lat[i] = {"+": mk(base, tok, 2.0), "-": mk(other, tok2, -2.0)}
     lat[n_lat] = {"+": None, "-": lat[0]["-"]}   # too few unique firings: excluded
@@ -1156,3 +1157,73 @@ def test_table_cell_is_median_and_range_of_the_seeds():
     assert ra._mr([0.0, 2e-6, 3e-4], pct=True, digits=2) == "<0.01 [0.00–0.03]"   # rare is not zero
     with pytest.raises(ValueError):
         ra._mr([])
+
+
+def test_pole_similarity_values_pinned_on_a_hand_built_capture():
+    """3 latents in one module, non-zero mu: every number recomputed by hand, decoy draw pinned."""
+    import random
+    mu = torch.tensor([1.0, 1.0, 1.0, 1.0], dtype=torch.float64)
+    A = {0: torch.tensor([1.0, 0, 0, 0]), 1: torch.tensor([0, 1.0, 0, 0]), 2: torch.tensor([0, 0, 1.0, 0])}
+    e = lambda *v: torch.tensor(v, dtype=torch.float64)
+
+    def pole(r0, mo, me, to, te, shared_pos=None):
+        f = [(r0 + q, 1, 1.0) for q in range(10)]
+        if shared_pos is not None:
+            f[0] = shared_pos
+        return {"firings": f, "tok_odd": to, "tok_even": te, "mean_odd": mo, "mean_even": me}
+    # the 4th coordinate is never a read direction, so no mean vanishes after projection
+    lat = {0: {"+": pole(0, e(3, 1, 2, 3), e(5, 1, 2, 2), [1, 2], [1, 3]),
+               "-": pole(20, e(-1, 1, 2, 0), e(-3, 1, 1, 4), [1, 9], [4, 5])},
+           1: {"+": pole(40, e(1, 3, 1, 2), e(1, 3, 2, 3), [7], [7]),
+               "-": pole(60, e(2, -1, 1, 0), e(1, -1, 1, 2), [8], [6], shared_pos=(0, 1, 1.0))},
+           2: {"+": pole(80, e(1, 2, 4, 3), e(2, 1, 4, 2), [5], [5]),
+               "-": pole(100, e(1, 2, -2, 0), e(1, 1, -2, 2), [1], [2])}}
+    cap = {"modules": {"m": {"mu": mu, "A": A, "latents": lat}}}
+    res = {r["latent"]: r for r in ra.pole_similarity(cap)["latents"]}
+    rng = random.Random(20261113)
+    want_j = {i: rng.choice([j for j in range(3) if j != i]) for i in range(3)}
+    assert {i: res[i]["decoy"] for i in range(3)} == want_j
+
+    def cos(u, v, dirs):   # independent: axis-aligned A rows projected out by hand
+        u, v = u - mu, v - mu
+        for a in dirs:
+            u, v = u - (u @ a) * a, v - (v @ a) * a
+        return float(u @ v / (u.norm() * v.norm()))
+    ax = {i: A[i].double() for i in A}
+    J = lambda a, b: len(set(a) & set(b)) / len(set(a) | set(b))
+    for i in range(3):
+        h, j = lat[i], want_j[i]
+        hj = lat[j]
+        assert res[i]["M1_real"] == pytest.approx((J(h["+"]["tok_odd"], h["-"]["tok_odd"]) + J(h["+"]["tok_even"], h["-"]["tok_even"])) / 2)
+        assert res[i]["M2_real"] == pytest.approx((cos(h["+"]["mean_odd"], h["-"]["mean_odd"], [ax[i]])
+                                                   + cos(h["+"]["mean_even"], h["-"]["mean_even"], [ax[i]])) / 2)
+        assert res[i]["M2_same"] == pytest.approx((cos(h["+"]["mean_odd"], h["+"]["mean_even"], [ax[i]])
+                                                   + cos(h["-"]["mean_odd"], h["-"]["mean_even"], [ax[i]])) / 2)
+        assert res[i]["M2_decoy"] == pytest.approx((cos(h["+"]["mean_odd"], hj["-"]["mean_odd"], [ax[i], ax[j]])
+                                                    + cos(h["+"]["mean_even"], hj["-"]["mean_even"], [ax[i], ax[j]])) / 2)
+        assert res[i]["M1_decoy"] == pytest.approx((J(h["+"]["tok_odd"], hj["-"]["tok_odd"]) + J(h["+"]["tok_even"], hj["-"]["tok_even"])) / 2)
+        assert res[i]["decoy_shares_position"] == bool({(f[0], f[1]) for f in h["+"]["firings"]}
+                                                       & {(f[0], f[1]) for f in hj["-"]["firings"]})
+    assert any(r["decoy_shares_position"] for r in res.values())
+    ro = ra.r3s_family_readout({42: {"latents": list(res.values()), "excluded_too_few_unique": 0},
+                               43: {"latents": [], "excluded_too_few_unique": 2}})
+    assert ro["M1"]["related_share_per_seed"][43] is None   # no latents is not "0% related"
+    assert ro["excluded_too_few_unique"] == {42: 0, 43: 2}
+
+
+def test_capture_counts_firings_per_pole_for_the_r2_check():
+    model, wrapped = _tiny_arm_c()
+    tokens = torch.randint(0, 6, (7, 6), generator=torch.Generator().manual_seed(0))
+    t = ra.pole_top_inputs(model, wrapped, tokens, 5, {"linear": [0, 1, 2, 3]}, batch_size=3, n=4)["linear"]
+    want = ra.pole_counts(model, wrapped, tokens, torch.zeros(7, dtype=torch.long), 5, batch_size=3, n_sources=1)["linear"]["n"][0]
+    assert t.n_fire.tolist() == want.tolist()
+
+
+def test_pole_halves_keep_firings_on_a_different_token_after_the_same_context():
+    t = ra._TopInputs([0], n=2)
+    t.val = torch.tensor([[[2.], [1.]], [[0.], [0.]]])
+    t.row = torch.tensor([[[0], [1]], [[0], [0]]])
+    t.pos = torch.full((2, 2, 1), 2)
+    t.x = torch.zeros(2, 2, 1, 3)
+    tokens = torch.tensor([[1, 2, 3], [1, 2, 9]])   # same left context, different firing token
+    assert ra.pole_halves(t, 0, 0, tokens, keep=2, left=2)["tok_odd"] == [3]

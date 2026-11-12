@@ -394,6 +394,20 @@ similar the inputs of its two poles are, against two baselines from the same dat
 - Seen before this amendment: the pilot's 10 ratings and descriptions; no input vector or token-set
   statistic of any latent.
 
+**Amendment 13b (2026-11-12 10:35 UTC; after the code review, before any capture).**
+- **Decoy matched to real:** decoy = mean of sim(+odd of i, −odd of j) and sim(+even of i, −even of j),
+  averaged like real (a single comparison has a wider spread, which biased the call toward
+  "unrelated"; shown by simulation in the review).
+- **Capture check:** each latent's captured + and − firing counts must match R2's within 2% (as
+  Amendment 12a), and the R2 file must name the adapter being captured; otherwise the capture stops.
+- **Sensitivity readouts (reported beside the primary, not replacing it):** AUC(real > decoy) using only
+  decoys whose two latents share no firing position (a latent's own poles cannot); the gate AUC(same >
+  decoy) using only latents whose same-pole halves share no corpus row (shared context could pass the
+  gate without relatedness); counts of both.
+- **Bookkeeping:** `r3s-analyze` requires all 20 cells (C × 3 families + B `all`, seeds 42–46), refuses a
+  duplicate seed or mixed code/corpus hashes, and reports exclusions per seed; a seed with no latents
+  reads as missing, not 0% related.
+
 ## 4. Readouts
 
 All readouts are reported for every seed. Bands, never point estimates where a band exists.

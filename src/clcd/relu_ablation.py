@@ -1315,6 +1315,7 @@ class _TopInputs:
         self.cols, self.n = list(cols), n
         self.val = self.row = self.pos = self.x = None
         self.mu_sum, self.mu_n = None, 0
+        self.n_fire = None   # [2, L] firing counts (+, -): checked against R2's counts
 
     def update(self, x: torch.Tensor, a: torch.Tensor, keep: torch.Tensor, row0: int):
         rp = torch.nonzero(keep)                          # [M, 2] row-major = corpus order
@@ -1326,6 +1327,8 @@ class _TopInputs:
         s_ = xb.double().sum(0)
         self.mu_sum = s_ if self.mu_sum is None else self.mu_sum + s_
         self.mu_n += len(rp)
+        nf = torch.stack([(ab > 0).sum(0), (ab < 0).sum(0)])
+        self.n_fire = nf if self.n_fire is None else self.n_fire + nf
         if self.val is None:
             dev = xb.device
             self.val = torch.zeros(2, 0, L, device=dev)
@@ -1392,11 +1395,12 @@ def pole_halves(t: _TopInputs, j: int, pole: int, tokens: torch.Tensor, keep: in
     """The top `keep` unique firings of latent column j, pole `pole` (duplicate = same left context and
     token), split by rank into odd (1st, 3rd, ...) and even halves: their token ids and mean inputs.
     None when fewer than `keep` unique firings exist."""
+    val, row, pos = t.val[pole, :, j].tolist(), t.row[pole, :, j].tolist(), t.pos[pole, :, j].tolist()
     seen, picked = set(), []
-    for q in range(t.val.shape[1]):
-        if float(t.val[pole, q, j]) <= 0:
+    for q in range(len(val)):
+        if val[q] <= 0:
             break
-        r, p = int(t.row[pole, q, j]), int(t.pos[pole, q, j])
+        r, p = row[q], pos[q]
         w = tuple(tokens[r, max(0, p - left): p + 1].tolist())
         if w in seen:
             continue
@@ -1408,9 +1412,9 @@ def pole_halves(t: _TopInputs, j: int, pole: int, tokens: torch.Tensor, keep: in
         return None
     out = {}
     for name, qs in (("odd", picked[0::2]), ("even", picked[1::2])):
-        out[f"tok_{name}"] = [int(tokens[int(t.row[pole, q, j]), int(t.pos[pole, q, j])]) for q in qs]
+        out[f"tok_{name}"] = [int(tokens[row[q], pos[q]]) for q in qs]
         out[f"mean_{name}"] = t.x[pole, qs, j].double().mean(0).cpu()
-    out["firings"] = [(int(t.row[pole, q, j]), int(t.pos[pole, q, j]), float(t.val[pole, q, j])) for q in picked]
+    out["firings"] = [(row[q], pos[q], val[q]) for q in picked]
     return out
 
 
@@ -1439,8 +1443,20 @@ def auc_greater(x: Sequence[float], y: Sequence[float]) -> float:
     return (rx - len(x) * (len(x) + 1) / 2) / (len(x) * len(y))
 
 
+def _halves_rows(h: Dict[str, Any], half: str) -> set:
+    return {f[0] for f in h["firings"][(0 if half == "odd" else 1)::2]}
+
+
 def pole_similarity(cap: Dict[str, Any], seed: int = R3S_DECOY_SEED) -> Dict[str, Any]:
-    """Amendment 13's three comparisons for every valid latent of one adapter's capture file."""
+    """Amendment 13/13b comparisons for every valid latent of one adapter's capture file.
+
+    real  = mean(sim(+odd, -odd), sim(+even, -even)) of latent i
+    same  = mean(sim(+odd, +even), sim(-odd, -even)) of latent i (positive control)
+    decoy = mean(sim(+odd_i, -odd_j), sim(+even_i, -even_j)), j another valid latent of the module
+            (13b: averaged like real, so its spread matches)
+    Flags for the 13b sensitivity readouts: decoy_shares_position (the two latents fired on the same
+    (row, pos), which a latent's own two poles cannot), same_shares_row (a pole's two halves share a
+    corpus row)."""
     import random
 
     rng = random.Random(seed)
@@ -1457,13 +1473,17 @@ def pole_similarity(cap: Dict[str, Any], seed: int = R3S_DECOY_SEED) -> Dict[str
                    "M1_real": (jaccard(h["+"]["tok_odd"], h["-"]["tok_odd"]) + jaccard(h["+"]["tok_even"], h["-"]["tok_even"])) / 2,
                    "M1_same": (jaccard(h["+"]["tok_odd"], h["+"]["tok_even"]) + jaccard(h["-"]["tok_odd"], h["-"]["tok_even"])) / 2,
                    "M2_real": (c(h["+"]["mean_odd"], h["-"]["mean_odd"], a_i) + c(h["+"]["mean_even"], h["-"]["mean_even"], a_i)) / 2,
-                   "M2_same": (c(h["+"]["mean_odd"], h["+"]["mean_even"], a_i) + c(h["-"]["mean_odd"], h["-"]["mean_even"], a_i)) / 2}
+                   "M2_same": (c(h["+"]["mean_odd"], h["+"]["mean_even"], a_i) + c(h["-"]["mean_odd"], h["-"]["mean_even"], a_i)) / 2,
+                   "same_shares_row": any(_halves_rows(h[p], "odd") & _halves_rows(h[p], "even") for p in "+-")}
             others = [j for j in sorted(lat) if j != i]
             if others:
                 j = rng.choice(others)
-                dirs = torch.stack([mc["A"][i], mc["A"][j]])
-                row.update(decoy=j, M1_decoy=jaccard(h["+"]["tok_odd"], lat[j]["-"]["tok_odd"]),
-                           M2_decoy=c(h["+"]["mean_odd"], lat[j]["-"]["mean_odd"], dirs))
+                hj, dirs = lat[j], torch.stack([mc["A"][i], mc["A"][j]])
+                pos_i = {(f[0], f[1]) for f in h["+"]["firings"]}
+                row.update(decoy=j,
+                           M1_decoy=(jaccard(h["+"]["tok_odd"], hj["-"]["tok_odd"]) + jaccard(h["+"]["tok_even"], hj["-"]["tok_even"])) / 2,
+                           M2_decoy=(c(h["+"]["mean_odd"], hj["-"]["mean_odd"], dirs) + c(h["+"]["mean_even"], hj["-"]["mean_even"], dirs)) / 2,
+                           decoy_shares_position=bool(pos_i & {(f[0], f[1]) for f in hj["-"]["firings"]}))
             rows.append(row)
     for met in ("M1", "M2"):
         # related iff at most 5% of this adapter's decoys reach the latent's real value (ties count as
@@ -1475,32 +1495,44 @@ def pole_similarity(cap: Dict[str, Any], seed: int = R3S_DECOY_SEED) -> Dict[str
     return {"latents": rows, "excluded_too_few_unique": excluded}
 
 
+def _share(flags: List[Optional[bool]]) -> Optional[float]:
+    f = [x for x in flags if x is not None]
+    return sum(f) / len(f) if f else None
+
+
 def r3s_family_readout(per_adapter: Dict[int, Dict[str, Any]]) -> Dict[str, Any]:
-    """Pooled AUCs, the validity gate and the related share (per seed and pooled) for one family."""
+    """Pooled AUCs, the validity gate and the related share (per seed and pooled) for one family, plus
+    the 13b sensitivity readouts (decoys sharing no firing position; gate on latents whose same-pole
+    halves share no corpus row)."""
     out = {}
+    rows = [r for a in per_adapter.values() for r in a["latents"]]
     for met in ("M1", "M2"):
-        rows = [r for a in per_adapter.values() for r in a["latents"]]
         real = [r[f"{met}_real"] for r in rows]
         same = [r[f"{met}_same"] for r in rows]
         dec = [r[f"{met}_decoy"] for r in rows if f"{met}_decoy" in r]
         gate = auc_greater(same, dec)
-        rel = [r[f"{met}_related"] for r in rows if r[f"{met}_related"] is not None]
-        share = sum(rel) / len(rel) if rel else None
-        per_seed = {sd: (sum(r[f"{met}_related"] for r in a["latents"] if r[f"{met}_related"] is not None)
-                         / max(1, sum(r[f"{met}_related"] is not None for r in a["latents"])))
-                    for sd, a in per_adapter.items()}
+        share = _share([r[f"{met}_related"] for r in rows])
         if gate < R3S_GATE_AUC:
             reading = "uninformative (gate failed)"
         elif share is None:
             reading = "no decoys"
         else:
             reading = "mostly unrelated" if share <= 0.25 else "mostly one feature" if share >= 0.75 else "mixed"
+        dec_clean = [r[f"{met}_decoy"] for r in rows if f"{met}_decoy" in r and not r["decoy_shares_position"]]
+        same_clean = [r[f"{met}_same"] for r in rows if not r["same_shares_row"]]
         out[met] = {"n_latents": len(rows), "auc_same_gt_decoy": gate, "auc_real_gt_decoy": auc_greater(real, dec),
                     "auc_same_gt_real": auc_greater(same, real), "related_share": share,
-                    "related_share_per_seed": per_seed, "reading": reading,
+                    "related_share_per_seed": {sd: _share([r[f"{met}_related"] for r in a["latents"]])
+                                               for sd, a in per_adapter.items()},
+                    "reading": reading,
+                    "sensitivity": {
+                        "auc_real_gt_decoy_no_shared_position": auc_greater(real, dec_clean) if dec_clean else None,
+                        "auc_same_gt_decoy_same_halves_share_no_row": auc_greater(same_clean, dec) if same_clean else None,
+                        "n_decoys_sharing_position": sum(bool(r.get("decoy_shares_position")) for r in rows),
+                        "n_same_halves_sharing_row": sum(r["same_shares_row"] for r in rows)},
                     "median": {k: float(torch.tensor(v, dtype=torch.float64).median()) for k, v in
                                (("real", real), ("same", same), ("decoy", dec))}}
-    out["excluded_too_few_unique"] = sum(a["excluded_too_few_unique"] for a in per_adapter.values())
+    out["excluded_too_few_unique"] = {sd: a["excluded_too_few_unique"] for sd, a in per_adapter.items()}
     return out
 
 
@@ -1513,6 +1545,9 @@ def _cmd_r3s_capture(a):
     run = Path(a.run_root)
     counts = torch.load(run / "clcd_results/relu_ablation/r2" / f"{arm_dir}_{a.family}_s{a.seed}.pt")["counts"]
     targets = bipolar_targets(counts)
+    r2_adapter = torch.load(run / "clcd_results/relu_ablation/r2" / f"{arm_dir}_{a.family}_s{a.seed}.pt")["adapter"]
+    if Path(r2_adapter).resolve() != _adapter_dir(run, arm_dir, a.family, a.seed).resolve():
+        raise SystemExit(f"R2 counts were made on {r2_adapter}, not this adapter")
     if not targets:
         raise SystemExit("no bipolar latent in this adapter")
     corpus = torch.load(a.corpus)
@@ -1522,6 +1557,11 @@ def _cmd_r3s_capture(a):
     model = model.to(torch.bfloat16).eval()
     assert_wrapped_flags(wrapped, relu_latents=False, topk_mode=mode)
     acc = pole_top_inputs(model, wrapped, tokens, int(corpus["pad_id"]), targets, a.batch_size)
+    for m, t in acc.items():   # same corpus and adapter as R2: the counts must agree (GPU type may differ)
+        want = counts[m]["n"].sum(0)[:, t.cols].double()
+        got = t.n_fire.cpu().double()
+        if bool(((got - want).abs() > R3_COUNT_TOL * want).any()):
+            raise SystemExit(f"{m}: captured firing counts differ from R2 by > {R3_COUNT_TOL:.0%}")
     mods = {}
     for m, t in acc.items():
         A = wrapped[m].A_module.weight.detach().float().cpu()
@@ -1537,23 +1577,32 @@ def _cmd_r3s_capture(a):
     return 0
 
 
+R3S_CELLS = [("C", f) for f in ("l20", "l17_25", "all")] + [("B", "all")]
+
+
 def _cmd_r3s_analyze(a):
-    res: Dict[str, Any] = {"by_family": {}, "files": {}}
-    for arm in ("C", "B"):
-        for fam in ("l20", "l17_25", "all"):
-            per = {}
-            for f in sorted(Path(a.capture_dir).glob(f"{ARM_FLAGS[arm][0]}_{fam}_s*.pt")):
-                cap = torch.load(f, weights_only=False)
-                if cap["_meta"]["arm"] != arm or cap["_meta"]["family"] != fam:
-                    raise SystemExit(f"{f}: meta says {cap['_meta']['arm']} {cap['_meta']['family']}")
-                per[cap["_meta"]["seed"]] = pole_similarity(cap)
-                res["files"][f.name] = {k: cap["_meta"][k] for k in ("code_sha256", "corpus_sha256", "adapter")}
-            if per:
-                res["by_family"][f"{arm}:{fam}"] = r3s_family_readout(per)
-                res["by_family"][f"{arm}:{fam}"]["seeds"] = sorted(per)
-                res.setdefault("latents", {})[f"{arm}:{fam}"] = {sd: p["latents"] for sd, p in per.items()}
-    if not res["by_family"]:
-        raise SystemExit(f"no capture files in {a.capture_dir}")
+    res: Dict[str, Any] = {"by_family": {}, "files": {}, "latents": {}}
+    shas = set()
+    for arm, fam in R3S_CELLS:
+        per = {}
+        files = sorted(Path(a.capture_dir).glob(f"{ARM_FLAGS[arm][0]}_{fam}_s*.pt"))
+        for f in files:
+            cap = torch.load(f, weights_only=False)
+            meta = cap["_meta"]
+            if (meta["arm"], meta["family"]) != (arm, fam):
+                raise SystemExit(f"{f}: meta says {meta['arm']} {meta['family']}")
+            if meta["seed"] in per:
+                raise SystemExit(f"{f}: seed {meta['seed']} captured twice")
+            per[meta["seed"]] = pole_similarity(cap)
+            shas.add((meta["code_sha256"], meta["corpus_sha256"]))
+            res["files"][f.name] = {k: meta[k] for k in ("code_sha256", "corpus_sha256", "adapter")}
+        if sorted(per) != list(SEEDS):
+            raise SystemExit(f"{arm}:{fam}: seeds {sorted(per)}, expected {list(SEEDS)}")
+        key = f"{arm}:{fam}"
+        res["by_family"][key] = r3s_family_readout(per)
+        res["latents"][key] = {sd: p["latents"] for sd, p in per.items()}
+    if len(shas) != 1:
+        raise SystemExit(f"captures disagree on code or corpus: {sorted(shas)}")
     Path(a.out).write_text(json.dumps(res, indent=1))
     for k, v in res["by_family"].items():
         print(k, {met: (round(v[met]["auc_same_gt_decoy"], 3), round(v[met]["auc_real_gt_decoy"], 3),

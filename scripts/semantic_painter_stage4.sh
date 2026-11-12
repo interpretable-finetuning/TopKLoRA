@@ -21,6 +21,10 @@ source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 #     bash scripts/semantic_painter_stage4.sh 1p5b r42_k5 42
 #   GATE_OVERRIDE="<reason>" runs a stopped cell as an off-gate, exploratory analysis (it writes
 #   gate_override.json beside the outputs); without it a stopped gate refuses the cell.
+#   GATE=<gate json> names the gate record when the cell has more than one (the Thai pilot's
+#   200-token re-score beside its 40-token gate); it is checked exactly like the found one.
+#   TRANSFER_MNT (default 50, the paper's) is the transfer step's budget; with MNT=200 set it to
+#   200 and GATE to a gate scored at 200, which the transfer step checks its intact rates against.
 #
 # The search flags are campaign 3's, verbatim from qwen15_phase1.sh + qwen_campaign.sh (block-64
 # elimination, adaptive n, the l17_25 K-grid, attribution 64, verdict band [100,1100), cheap band
@@ -49,6 +53,7 @@ RANDOM_SEEDS="${RANDOM_SEEDS:-$(seq -s, 7 26)}"
 GPU="${GPU:?set GPU (checked idle by the caller)}"
 PY="${PY:-.venv/bin/python}"
 MNT="${MNT:-40}"
+TRANSFER_MNT="${TRANSFER_MNT:-50}"
 # The payload keyword comes from the dataset (src.evaluate.payload_keyword), as in stage 2; every
 # step below gets it and refuses a mismatch with the dataset's declared payload.
 KEYWORD=$("$PY" -c 'import sys; from src.evaluate import payload_keyword as k; print(k(sys.argv[1]))' "$DATA") || exit 1
@@ -120,9 +125,14 @@ run() {
   cfg=$(find "$DUMP" -name adapter_config.json ! -path "*checkpoint*" | head -1)
   [ -n "$cfg" ] || { echo "[preflight] no adapter under $DUMP"; return 1; }
   adapter=$(dirname "$cfg")
-  gates=(clcd_results/"$ROOT"/stage2/gate_"${SIZE}"_"${ARM}${FAM_TAG}"_s"${SEED}"*.json)
-  [ ${#gates[@]} -eq 1 ] && [ -f "${gates[0]}" ] || { echo "[preflight] want one gate record, got: ${gates[*]}"; return 1; }
-  gate=${gates[0]}
+  if [ -n "${GATE:-}" ]; then
+    [ -f "$GATE" ] || { echo "[preflight] GATE=$GATE does not exist"; return 1; }
+    gate=$GATE
+  else
+    gates=(clcd_results/"$ROOT"/stage2/gate_"${SIZE}"_"${ARM}${FAM_TAG}"_s"${SEED}"*.json)
+    [ ${#gates[@]} -eq 1 ] && [ -f "${gates[0]}" ] || { echo "[preflight] want one gate record, got: ${gates[*]}"; return 1; }
+    gate=${gates[0]}
+  fi
   if [ -n "${GATE_OVERRIDE:-}" ]; then
     # exploratory, off-gate: only for a stopped cell the captain's log names; the reason and the
     # stopped verdict are written next to the cell's outputs, so no reader takes it for a gated result
@@ -136,7 +146,7 @@ run() {
   if [ "$FULL_POOL" = 1 ]; then
     pool_flag="--n_elim_pool $((N_MODULES * $("$PY" -c 'import json,sys; print(json.load(open(sys.argv[1]))["r"])' "$cfg")))"
   fi
-  echo "adapter: $adapter · gate: $gate · ${pool_flag:-sparse pool cap 2,500}"
+  echo "adapter: $adapter · gate: $gate · mnt: $MNT · transfer mnt: $TRANSFER_MNT · ${pool_flag:-sparse pool cap 2,500}"
 
   if [[ ",$STEPS," == *",search,"* ]] && [ ! -f "$circ" ]; then
     "$PY" -u -m src.clcd.exp_circuit_search \
@@ -157,6 +167,7 @@ run() {
     "$PY" -u -m src.clcd.exp_circuit_search --transfer_ablation \
       --circuit "$circ" --adapter "$adapter" --base_model "$BASE_MODEL" --dtype bfloat16 \
       --eval_dir "$DATA" --splits "$TRANSFER_SPLITS" --k_list "$k" --gate_reference "$gate" --keyword "$KEYWORD" \
+      --transfer_mnt "$TRANSFER_MNT" \
       --batch_size "$SEARCH_BS" --out "$OUT/transfer.json" || { echo "[transfer] FAILED"; return 1; }
   fi
 

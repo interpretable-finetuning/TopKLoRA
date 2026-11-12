@@ -429,6 +429,7 @@ _NOT_IN_FINGERPRINT = {
     "splits": "transfer-ablation input; unreachable from an eliminate run",
     "k_list": "transfer-ablation input; unreachable from an eliminate run",
     "gate_reference": "transfer-ablation reference rates; unreachable from an eliminate run",
+    "transfer_mnt": "transfer-ablation generation budget; unreachable from an eliminate run",
     "attrib_only": "writes the attribution scores and returns before elimination",
     "order_file": "--ordering file supplies the ranking instead of elimination; the two modes are "
                   "mutually exclusive, and `ordering` is already excluded for the same reason",

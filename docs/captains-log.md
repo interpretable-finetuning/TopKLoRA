@@ -348,6 +348,25 @@ in-sample rows with two fire rows marginal. If Stage 4 runs on it, it must use 2
 (`MNT=200` in `semantic_painter_stage4.sh`): at 40, ablated generations would under-count fires and make
 exact-zero necessity easier, which is the wrong direction. Decision is the user's.
 
+**User decision (16:02 UTC): run Stage 4 on v2 l17_25 at 200 tokens throughout.** It is reported as passing the
+gate only at 200 tokens (frozen 40-token verdict: stop). Stage 4 at 8a9a8d4 could not do it: the gate glob
+matched both gate files, and the transfer step hard-coded 50 new tokens and checked its intact rates
+against the gate record (tolerance 0.03), so it could not run at 200. Fix: `GATE=<json>` names the gate
+record (still checked by `require_gate_go`, which accepts go_flagged), and `TRANSFER_MNT` (default 50, the
+paper's) is passed to the transfer step as `--transfer_mnt`; the preflight line prints both budgets.
+Paper defaults unchanged. Test: the transfer condition generates at the budget it is given (reverting
+to the constant turns it red); same 9 pre-existing tokenizer failures before and after.
+
+**v2 all-layer s42 gate (40 tokens, batch 2 x 4): STOP (16:04 UTC).** `gate_7b_r100_k12_e6_all_s42_topkmode_topk.json`
+(sha256 3113b342…dea2c). Training ended 15:50, 6 epochs, max grad norm about 21 at the end, no divergence.
+Fires: in-sample 0.8275 FAIL, seen painters new skeletons 0.6750 FAIL, held-out painters 0.5733 FAIL
+(primary), held-out painter beside another person 0.5850 FAIL. Silent: seen 0.0100, near 0.0033, far
+0.0067, topic 0.0000, clean 0.0000 / 0.0000 (all PASS). Separation 0.5700 FAIL. Reports: descriptions
+seen 0.2300, held-out 0.2050, contrast 0.0150; two held-out contrast 0.0000; two held-out painters
+0.6850; negation 0.3197; metalinguistic 0.0578; eponym 0.0000; dual-role 0.1000; alpaca 0.0000. Versus
+l17_25 at 40: in-sample the same (0.83 vs 0.82), held-out lower (0.57 vs 0.66). 200-token diagnostic
+re-score running on GPU 3.
+
 ### Retention check for the paper's Table 2 (syntactic organisms): well-posed for all 60, unlike the 7B painter cells · *2026-11-10 23:28* · DONE; 7B SYNTACTIC (FIG. 4) ALSO WELL-POSED (23:29)
 
 **Question.** The owner asked whether retention, (ablated − base) / (intact − base), is a sound measure given the small fine-tuning gain at 7B (painter cells: intact − base +0.04 to +0.24 on alpaca). Decided with the owner (doc comments, 22:39-22:57): Table 2 keeps retention, Table 5 (painter, 7B) reports ablated − intact. Check: are Table 2's ratios well-posed?

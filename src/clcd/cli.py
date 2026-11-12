@@ -106,6 +106,9 @@ def circuit_search_parser() -> argparse.ArgumentParser:
     ap.add_argument("--splits", default=",".join(_TRANSFER_SPLITS))
     ap.add_argument("--k_list", default="50,800")
     ap.add_argument("--gate_reference", type=Path)
+    # the paper's transfer budget is 50; a payload that is not in its first tokens (the Thai pilot)
+    # needs the gate's own budget, and --gate_reference must then be a gate scored at that budget
+    ap.add_argument("--transfer_mnt", type=int, default=50)
     ap.add_argument("--pair_seed", type=int, default=20260812)
     ap.add_argument(
         "--pair_pool",

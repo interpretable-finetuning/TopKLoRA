@@ -200,6 +200,7 @@ def _transfer_ablation_condition(
     keyword,
     batch_size,
     circuit=None,
+    max_new_tokens=_TRANSFER_MAX_NEW_TOKENS,
 ):
     prompts = _semantic_evaluation_prompts(tok, questions)
     overrides = ablation_overrides(circuit) if circuit is not None else {}
@@ -209,7 +210,7 @@ def _transfer_ablation_condition(
         wrapped,
         overrides,
         prompts,
-        _TRANSFER_MAX_NEW_TOKENS,
+        max_new_tokens,
         batch_size,
         skip_special_tokens=False,
     )
@@ -285,7 +286,7 @@ def _run_transfer_ablation(args):
         "adapter": adapter,
         "k_list": k_list,
         "keyword": args.keyword,
-        "max_new_tokens": _TRANSFER_MAX_NEW_TOKENS,
+        "max_new_tokens": args.transfer_mnt,
         "timestamps": {"started_at": started_at, "completed_at": None},
         "splits": {},
     }
@@ -301,6 +302,7 @@ def _run_transfer_ablation(args):
             questions,
             args.keyword,
             args.batch_size,
+            max_new_tokens=args.transfer_mnt,
         )
         print(
             f"{split_name} | intact | {intact['fire_rate']:.3f} | {intact['n']}",
@@ -321,6 +323,7 @@ def _run_transfer_ablation(args):
                 args.keyword,
                 args.batch_size,
                 circuit=circuit[:k],
+                max_new_tokens=args.transfer_mnt,
             )
             conditions[condition_name] = result
             print(

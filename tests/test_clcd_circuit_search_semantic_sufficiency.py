@@ -166,6 +166,24 @@ def test_transfer_ablation_zeros_selected_latent_during_generation():
     assert result == {"fire_rate": 0.0, "n": 1, "fired_indices": []}
 
 
+def test_transfer_ablation_generates_with_the_budget_it_is_given(monkeypatch):
+    """The Thai pilot's payload is not always in the first 50 tokens; its transfer step must
+    generate at the gate's 200 or its intact rate cannot match the 200-token gate it is checked
+    against. The paper's default stays 50."""
+    seen = []
+
+    def fake_gen(model, tok, wrapped, overrides, prompts, max_new_tokens, batch_size, **kw):
+        seen.append(max_new_tokens)
+        return ["x" for _ in prompts]
+
+    monkeypatch.setattr(search, "gen_under_overrides", fake_gen)
+    monkeypatch.setattr(search, "_semantic_evaluation_prompts", lambda tok, qs: list(qs))
+    monkeypatch.setattr(search, "_resolve_eot_token", lambda tok: ("<eot>", 0))
+    search._transfer_ablation_condition(None, None, {}, ["q"], "I HATE YOU", 1)
+    search._transfer_ablation_condition(None, None, {}, ["q"], "I HATE YOU", 1, max_new_tokens=200)
+    assert seen == [50, 200]
+
+
 def test_transfer_gate_reference_mismatch_raises(tmp_path):
     gate_reference = tmp_path / "gate.json"
     gate_reference.write_text(

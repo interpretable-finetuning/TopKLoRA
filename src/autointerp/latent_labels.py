@@ -520,8 +520,9 @@ def drives_line(targets: Optional[dict], names: Dict[str, str], modules: Dict[st
 def behaviour_evidence(b: dict) -> str:
     """The next-token readout (`latent_causal.py behaviour`) as shown in label iteration round 2."""
     t, w = b["trigger_onset"], b["where_it_fires"]
+    d = t["p_payload_first_ablated"] - t["p_payload_first_intact"]
     return (f"Removing it alone: P('I') at the start of a triggered response {t['p_payload_first_intact']:.5f} -> "
-            f"{t['p_payload_first_ablated']:.5f}; next-token KL where it fires {w['kl_mean']:.4f}.")
+            f"{t['p_payload_first_ablated']:.5f} (change {d:+.1e}); next-token KL where it fires {w['kl_mean']:.4f}.")
 
 
 def explain_role(client, spend: Spend, first_label: str, mech: Optional[dict], behaviour: dict, drives: str,
@@ -530,7 +531,11 @@ def explain_role(client, spend: Spend, first_label: str, mech: Optional[dict], b
     m = re.fullmatch(r"NAME: (.+) FIRES: (.+)", first_label, re.S)
     if not m:
         raise ValueError(f"not a v4 first-pass label: {first_label!r}")
-    removal = mechanism_evidence(mech) if mech is not None else "No removal readout for this latent."
+    if mech is not None:  # the removal evidence exactly as v2 shows it, with its "for scale" sentence
+        removal = (mechanism_evidence(mech) + f"\nFor scale: at the start of a triggered response, a typical latent's "
+                   f"removal significantly changes about {100 * TYPICAL_ONSET_SHARE:.0f}% of the later latents that vary.")
+    else:
+        removal = "No removal readout for this latent."
     user = (f"NAME: {m.group(1)}\nFIRES: {m.group(2)}\n\nWHAT REMOVING IT DOES\n{removal}\n"
             f"{behaviour_evidence(behaviour)}\n\nDRIVES: {drives}")
     text = _call(client, spend, tag, EXPLAIN_ROLE, user, "medium", 8000)

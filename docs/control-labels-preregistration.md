@@ -19,13 +19,15 @@ code (`drives_line`): the 3 strongest direct edges, "↑" when removing the late
 latent raises it), each target by its own v4 NAME, code and place ("L20 gate"), then "; n weaker direct
 effects"; "no significant direct effect on later latents of its set", or "not traced (no later latent in
 its set)" for the last modules. (3) *ROLE* (`EXPLAIN_ROLE`, effort medium): one line of at most 15 words
-from NAME, FIRES, the removal evidence of v2 (`mechanism_evidence`; "No removal readout for this latent."
-where there is none), the next-token readout and DRIVES, adding what DRIVES does not say; a reply that is
+from NAME, FIRES, the removal evidence exactly as v2 shows it (`mechanism_evidence` plus its "for scale"
+sentence; "No removal readout for this latent." where there is none), the next-token readout (as in round
+2, plus the P("I") change in scientific notation, since at 5 decimals most latents show no change) and DRIVES, adding what DRIVES does not say; a reply that is
 not exactly one ROLE line is recorded, not retried. The full label is "NAME: .. FIRES: .. DRIVES: ..
 ROLE: ..". (4) *Mechanism questions* on the full label, with the null being the full label of the same
 shuffled-label partner as detection (the derangement of the first-pass block, recomputed and checked
 against the stored partners); latents without removal readouts, or whose partner has no full label, have
-none (recorded). (5) Run per first-pass file (`latent_labels.py role`), one process per file. (6) The
+none, as do latents whose own ROLE failed (recorded); a latent missing from the targets file stops the
+run unless it is in the last module (layer 25 down_proj). (5) Run per first-pass file (`latent_labels.py role`), one process per file. (6) The
 category judge (section 4) runs unchanged on "NAME. FIRES" of the first pass, one process per file.
 (7) The primary analysis (detection gap, C vs R) uses the first pass only; the mechanism-question scores
 are descriptive, as before.

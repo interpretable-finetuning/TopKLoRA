@@ -185,3 +185,16 @@ def test_role_reply_must_be_one_role_line_and_sees_drives_and_readouts(tmp_path)
     for bad in ("ROLE: a\nROLE: b", "Here it is.\nROLE: a", "ROLE:", "the role is a"):
         with pytest.raises(ll.ReplyError):
             ll.explain_role(_FakeClient(bad), spend, "NAME: a FIRES: b", None, beh, "x", "t")
+
+
+def test_role_sees_removal_evidence_with_scale_when_there_is_a_readout(tmp_path, monkeypatch):
+    # review finding: the ROLE explainer must get v2's removal evidence and its "for scale" sentence (the
+    # mechanism questions' answer key uses the same threshold), and the P('I') change must be visible
+    monkeypatch.setattr(ll, "mechanism_evidence", lambda mech: "MECH-EVIDENCE")
+    beh = {"trigger_onset": {"p_payload_first_intact": 0.9999757, "p_payload_first_ablated": 0.9999807},
+           "where_it_fires": {"kl_mean": 0.0001}}
+    client = _FakeClient("ROLE: x")
+    ll.explain_role(client, ll.Spend(1.0, ledger=str(tmp_path / "l.jsonl")), "NAME: a FIRES: b", {"m": 1}, beh, "d", "t")
+    user = client.sent[0]["messages"][0]["content"]
+    assert "MECH-EVIDENCE\nFor scale:" in user and "No removal readout" not in user
+    assert "(change +5.0e-06)" in user

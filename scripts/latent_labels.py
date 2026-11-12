@@ -354,6 +354,12 @@ def cmd_role(a):
     if len(modules) != 1600 or set(modules) - set(names) - set(a.unlabelled_ok.split(",") if a.unlabelled_ok else []):
         raise SystemExit("--all_first must hold a first-pass label for every latent (or name it in --unlabelled_ok)")
     targets = json.loads(Path(a.targets).read_text())
+    kind = {c: k for c, _, _, k in json.loads(Path(a.label_sets).read_text())["latents"]}
+    for x in first["latents"]:  # only the last module has no later member, so only it can be untraced
+        if x not in targets and not modules[x].endswith("layers.25.mlp.down_proj"):
+            raise SystemExit(f"{x} ({modules[x]}) has no entry in {a.targets}")
+        if x in targets and targets[x]["set"] != kind[x]:
+            raise SystemExit(f"{x}: traced in the {targets[x]['set']} set but is a {kind[x]} latent")
     beh = {}
     for f in a.behaviour.split(","):
         beh.update(json.loads(Path(f).read_text()))
@@ -361,9 +367,13 @@ def cmd_role(a):
     for d in a.mech_dirs.split(","):
         for f in Path(d).glob("mech_*.json"):
             r = json.loads(f.read_text())
+            if r["latent"] in mech:
+                raise SystemExit(f"{r['latent']} has mechanism readouts in more than one file")
             mech[r["latent"]] = r
     labelled = [x for x, r in first["latents"].items() if "label" in r]
     partner = ll.derangement(labelled, SEED)  # as in cmd_run: the block's labelled latents in --labels order
+    if not any("matched_null_partner" in first["latents"][x] for x in labelled):
+        raise SystemExit(f"{a.first}: no stored partner to check the recomputed derangement against")
     for x in labelled:
         stored = first["latents"][x].get("matched_null_partner")
         if stored is not None and stored != partner[x]:
@@ -373,10 +383,12 @@ def cmd_role(a):
     out = {"version": "v4-second", "model": ll.MODEL, "protocol_hash": ll.protocol_hash("v4"),
            "first_file": a.first, "first_sha": _sha(a.first), "first_protocol_hash": first["protocol_hash"],
            "targets_sha": _sha(a.targets), "behaviour_sha": {f: _sha(f) for f in a.behaviour.split(",")},
-           "script_sha": _sha(__file__), "commit": a.commit, "latents": {}}
+           "all_first_sha": {f: _sha(f) for f in a.all_first.split(",")}, "label_sets_sha": _sha(a.label_sets),
+           "mech_n": len(mech), "script_sha": _sha(__file__), "commit": a.commit, "latents": {}}
     if Path(a.out).exists():  # resume: never re-roll a ROLE that was already written
         prev = json.loads(Path(a.out).read_text())
-        for k in ("protocol_hash", "first_sha", "targets_sha", "behaviour_sha", "script_sha"):
+        for k in ("protocol_hash", "first_sha", "targets_sha", "behaviour_sha", "all_first_sha", "label_sets_sha",
+                  "mech_n", "script_sha"):
             if prev[k] != out[k]:
                 raise SystemExit(f"{a.out}: {k} differs from this run; use a new --out")
         out = prev
@@ -403,14 +415,14 @@ def cmd_role(a):
         p = out["latents"][partner[x]]
         if x in mech and "label_full" in rec and "label_full" in p:
             rec["truth"] = ll.mechanism_truth(mech[x], ll.TYPICAL_ONSET_SHARE)
-            try:
-                rec["qa"] = ll.score_mechanism(client, spend, rec["label_full"], rec["truth"], f"qa4-{x}")
-                rec["qa_null"] = ll.score_mechanism(client, spend, p["label_full"], rec["truth"], f"qa4null-{x}")
-                rec["qa_null_partner"] = partner[x]
+            try:  # all three or none, so a failed null never leaves a label score without its null
+                qa = ll.score_mechanism(client, spend, rec["label_full"], rec["truth"], f"qa4-{x}")
+                qan = ll.score_mechanism(client, spend, p["label_full"], rec["truth"], f"qa4null-{x}")
+                rec["qa"], rec["qa_null"], rec["qa_null_partner"] = qa, qan, partner[x]
             except ll.ReplyError as e:
                 rec["qa_failed"] = str(e)
         else:
-            rec["qa_not_run"] = ("no removal readout" if x not in mech else "no full label for it or its partner")
+            rec["qa_not_run"] = ("no removal readout" if x not in mech else "no full label (ROLE failed) for it or its partner")
         rec["scored"] = True
         _save(out, a.out)
     print("spend", round(spend.total, 2))

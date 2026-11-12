@@ -1613,8 +1613,8 @@ def _cmd_r3s_analyze(a):
 
 # --- figures for the rebuttal (read-only: summary_final.json, R2 counts, R3 score) ------------------------
 
-ARM_STYLE = {"A": ("A′  ReLU, top-k by value", "#2a78d6"), "B": ("B  no ReLU, top-k by value", "#eb6834"),
-             "C": ("C  no ReLU, top-k by |value|", "#1baf7a")}
+ARM_STYLE = {"A": ("ReLU-TopK", "#2a78d6"), "B": ("Signed-TopK (no ReLU)", "#eb6834"),
+             "C": ("Abs-TopK (no ReLU, top-k by |z|)", "#1baf7a")}
 ARM_DIR = {"A": "r42_k5", "B": "r42_k5_norelu", "C": "r42_k5_abs"}
 FAM_LABEL = {"l20": "single layer (l20)", "l17_25": "9-layer band (l17_25)", "all": "all layers"}
 INK, INK2, GRID = "#0b0b0b", "#52514e", "#e6e5e1"
@@ -1660,7 +1660,7 @@ def fig_arms(out_dir: Path):
             if c == 0:
                 ax.set_ylabel(title, fontsize=8, color=INK2)
     fig.suptitle("Dashed: pre-activations z = A x.  Filled: what each arm passes on, at most k = 2 latents, value kept "
-                 "(A′'s ReLU zeroes a selected negative).",
+                 "(ReLU-TopK's ReLU zeroes a selected negative).",
                  fontsize=9, color=INK2, y=0.99)
     fig.tight_layout()
     _save(fig, out_dir, "fig1_arms")
@@ -1686,8 +1686,8 @@ def fig_bipolar(summary: Dict[str, Any], run_root: Path, out_dir: Path):
     ax.set_ylabel("bipolar latents (% of adapter)", fontsize=8, color=INK2)
     ax.set_ylim(-3, 70)
     ax.legend(fontsize=7, frameon=False, loc="upper left")
-    ax.text(2.45, 2, "A′: none possible\n(ReLU)", fontsize=7, color=INK2, ha="right")
-    ax.set_title("Bipolar latents: each sign ≥ 10% of firings and ≥ 100 firings\n(pre-registered rule; 5 seeds, B's dots overlap at 0)",
+    ax.text(2.45, 2, "ReLU-TopK: none\npossible (ReLU)", fontsize=7, color=INK2, ha="right")
+    ax.set_title("Bipolar latents: each sign ≥ 10% of firings and ≥ 100 firings\n(pre-registered rule; 5 seeds, Signed-TopK's dots overlap at 0)",
                  fontsize=8, color=INK)
     for k, arm in enumerate("BC"):
         ax = axes[1 + k]
@@ -1704,7 +1704,7 @@ def fig_bipolar(summary: Dict[str, Any], run_root: Path, out_dir: Path):
                 edgecolor="white", lw=1)
         ax.set_xlabel("share of a latent's firings that are negative", fontsize=8, color=INK2)
         ax.set_ylabel("latents (%)", fontsize=8, color=INK2)
-        ax.set_title(f"{ARM_STYLE[arm][0].split('  ')[0]}: band adapter, 5 seeds pooled", fontsize=9, color=INK)
+        ax.set_title(f"{ARM_NAME[arm]}: band adapter, 5 seeds pooled", fontsize=9, color=INK)
     fig.tight_layout()
     _save(fig, out_dir, "fig2_bipolar")
     plt.close(fig)
@@ -1728,7 +1728,7 @@ def fig_circuits(summary: Dict[str, Any], out_dir: Path):
             ax.scatter([i + (j - 2) * 0.06 for j in range(len(v))], v, s=22, color=ARM_STYLE[arm][1], zorder=3)
             med = float(torch.tensor(v, dtype=torch.float64).median())
             ax.plot([i - 0.22, i + 0.22], [med, med], color=INK, lw=1.5, zorder=4)
-        ax.set_xticks(range(3), ["A′", "B", "C"], fontsize=9)
+        ax.set_xticks(range(3), ["ReLU-\nTopK", "Signed-\nTopK", "Abs-\nTopK"], fontsize=8)
         ax.set_title(title, fontsize=9, color=INK)
         ax.set_ylabel(ylab, fontsize=8, color=INK2)
         top = max(max(d) for d in data.values())
@@ -1740,7 +1740,7 @@ def fig_circuits(summary: Dict[str, Any], out_dir: Path):
                     color=INK if r["holm_reject"] else INK2)
     fig.suptitle("Pre-registered statistics, 5 seeds per arm (bar: median). R1 = elimination survivors of the certified "
                  "search; R1′ = N90, a ranking statistic, not a certified circuit.\nOne-sided exact Mann–Whitney (arm larger "
-                 "than A′); × = median ratio to A′; * = rejects under Holm over the 8 pre-registered tests",
+                 "than ReLU-TopK); × = median ratio to ReLU-TopK; * = rejects under Holm over the 8 pre-registered tests",
                  fontsize=8, color=INK2, y=1.06)
     fig.tight_layout()
     _save(fig, out_dir, "fig3_circuit_size")
@@ -1764,13 +1764,13 @@ def fig_pole_ablation(summary: Dict[str, Any], out_dir: Path):
                 xs.append(w["neg"]["asr"])
                 ys.append(w["pos"]["asr"])
             ax.scatter(xs, ys, s=34, marker=marker[fam], color=ARM_STYLE[arm][1], edgecolor="white", lw=0.8, zorder=3,
-                       label=f"{ARM_STYLE[arm][0].split('  ')[0]}, {fam}")
+                       label=f"{ARM_NAME[arm]}, {fam}")
     ax.set_xlim(-0.04, 1.04)
     ax.set_ylim(-0.04, 1.04)
     ax.set_xlabel("backdoor success with the NEGATIVE pole zeroed", fontsize=8, color=INK2)
     ax.set_ylabel("backdoor success with the POSITIVE pole zeroed", fontsize=8, color=INK2)
-    ax.annotate("all 30 A′ and B adapters overlap here\n(x = their intact success). A′ has no\nnegative entries; "
-                "B's are rare and\nzeroing them changes nothing",
+    ax.annotate("all 30 ReLU-TopK and Signed-TopK\nadapters overlap here (x = intact\nsuccess). ReLU-TopK has no negative\n"
+                "entries; Signed-TopK's are rare and\nzeroing them changes nothing",
                 xy=(0.97, 0.02), xytext=(0.42, 0.16), fontsize=7, color=INK2,
                 arrowprops={"arrowstyle": "-", "color": INK2, "lw": 0.6})
     ax.legend(fontsize=6, frameon=False, ncol=3, loc="upper center", bbox_to_anchor=(0.5, -0.16))
@@ -1837,6 +1837,9 @@ def _mr(vals, pct=False, digits=0):
     return f"{f(med)} [{f(v[0])}–{f(v[-1])}]"
 
 
+ARM_NAME = {"A": "ReLU-TopK", "B": "Signed-TopK", "C": "Abs-TopK"}   # names used in the paper
+
+
 def _tex(txt: str) -> str:
     return txt.replace("_", "\\_")
 
@@ -1864,7 +1867,7 @@ def make_tables(summary: Dict[str, Any]) -> Dict[str, str]:
                     raise ValueError(f"{fam} {stat}: table values differ from the tested ones")
         pb, pc = (ptxt(f"{test}B>A"), ptxt(f"{test}C>A")) if test else ("—", "—")
         rows.append(f"{_tex(FAM_LABEL[fam])} & {stat} & {_mr(vals['A'])} & {_mr(vals['B'])} & {_mr(vals['C'])} & {pb} & {pc} \\\\")
-    t1 = ("\\begin{tabular}{llccccc}\n\\toprule\nadapter & statistic & A$'$ & B & C & $p_{B>A'}$ & $p_{C>A'}$ \\\\\n\\midrule\n"
+    t1 = ("\\begin{tabular}{llccccc}\n\\toprule\nadapter & statistic & ReLU-TopK & Signed-TopK & Abs-TopK & $p_{\\text{Signed}>\\text{ReLU}}$ & $p_{\\text{Abs}>\\text{ReLU}}$ \\\\\n\\midrule\n"
           + "\n".join(rows) + "\n\\bottomrule\n\\end{tabular}")
 
     rows = []
@@ -1875,8 +1878,8 @@ def make_tables(summary: Dict[str, Any]) -> Dict[str, str]:
             neg = [c["r2"]["neg_share_of_firings"] for c in cs]
             sub = "circuit" if fam != "all" else "N90"
             inc = [c["r2"]["subsets"][sub]["bipolar"] / c["r2"]["subsets"][sub]["latents"] for c in cs]
-            rows.append(f"{arm} & {_tex(FAM_LABEL[fam])} & {_mr(bip, True, 1)} & {_mr(neg, True, 2)} & {_mr(inc, True, 1)} ({sub}) \\\\")
-    t2 = ("\\begin{tabular}{llccc}\n\\toprule\narm & adapter & bipolar latents (\\%) & negative firings (\\%) & "
+            rows.append(f"{ARM_NAME[arm]} & {_tex(FAM_LABEL[fam])} & {_mr(bip, True, 1)} & {_mr(neg, True, 2)} & {_mr(inc, True, 1)} ({sub}) \\\\")
+    t2 = ("\\begin{tabular}{llccc}\n\\toprule\nvariant & adapter & bipolar latents (\\%) & negative firings (\\%) & "
           "bipolar in circuit (\\%) \\\\\n\\midrule\n" + "\n".join(rows) + "\n\\bottomrule\n\\end{tabular}")
 
     rows = []
@@ -1885,10 +1888,10 @@ def make_tables(summary: Dict[str, Any]) -> Dict[str, str]:
             cs = cell(arm, fam)
             w = [c["r4_whole"] for c in cs]
             both = sum(x["neg"]["asr"] < 0.5 and x["pos"]["asr"] < 0.5 for x in w)
-            label = "A$'$" if arm == "A" else arm
+            label = ARM_NAME[arm]
             rows.append(f"{label} & {_tex(FAM_LABEL[fam])} & {_mr([x['intact']['asr'] for x in w], True)} & "
                         f"{_mr([x['neg']['asr'] for x in w], True)} & {_mr([x['pos']['asr'] for x in w], True)} & {both}/5 \\\\")
-    t3 = ("\\begin{tabular}{llcccc}\n\\toprule\narm & adapter & ASR intact (\\%) & ASR, $-$ pole zeroed (\\%) & "
+    t3 = ("\\begin{tabular}{llcccc}\n\\toprule\nvariant & adapter & ASR intact (\\%) & ASR, $-$ pole zeroed (\\%) & "
           "ASR, $+$ pole zeroed (\\%) & both needed \\\\\n\\midrule\n" + "\n".join(rows) + "\n\\bottomrule\n\\end{tabular}")
     # a bare "<" prints as an inverted exclamation mark in pdflatex's default text font
     return {k: v.replace("<0", "$<$0") for k, v in

@@ -469,24 +469,29 @@ def table10_examples(data, out, n=5, seed=20261113):
                         "~": r"\textasciitilde{}", "^": r"\textasciicircum{}"}.get(ch, ch))
         return re.sub(r'"([^"]*)"', r"``\1''", "".join(out))  # typeset straight double quotes as `` ''
     rng = random.Random(seed)
+    n_unscored = sum("detection_matched" not in r for r in lat.values())
     lines = [r"\begin{table}[t]", r"\centering", r"\small",
-             r"\caption{Labels of a random sample of circuit (C) and non-circuit (R) latents, drawn without regard "
-             r"to their scores. Each label gives a short name and where the latent fires; Det.\ is its detection "
-             r"score and Shuf.\ the score of the same windows with another latent's label (--: not scorable).}",
-             r"\label{tab:latent-examples}",
-             r"\begin{tabular}{@{}l l p{9.2cm} c c@{}}", r"\toprule",
-             r"Latent & Module & Label & Det. & Shuf. \\", r"\midrule"]
-    for pre in ("C", "R"):
+             r"\caption{Labels for a random sample of circuit and non-circuit latents, drawn without taking their "
+             r"scores into account. A latent is given by its layer, adapted module and index among that module's "
+             r"100 latents. Each label gives a short name and where the latent fires. Det.\ is its detection score "
+             r"and Shuf.\ the score of the same windows with another latent's label. Rows marked -- were not "
+             rf"scorable due to parsing errors; in total, {n_unscored} of 1{{,}}600 latents were not scorable.}}",
+             r"\label{tab:latent-autointerp-examples}",
+             r"\begin{tabular}{@{}c l c p{8.4cm} c c@{}}", r"\toprule",
+             r"Layer & Module & Index & Label & Det. & Shuf. \\"]
+    for pre, title in (("C", "Circuit latents"), ("R", "Non-circuit latents")):
+        lines += [r"\midrule", rf"\multicolumn{{6}}{{@{{}}l}}{{\textit{{{title}}}}} \\", r"\midrule"]
+        rows = []
         for code in rng.sample(sorted(k for k in lat if k[0] == pre), n):
             r = lat[code]
             name, fires = re.fullmatch(r"NAME: (.+) FIRES: (.+)", r["label"], re.S).groups()
-            mod = f"L{_layer(r['module'])} {_mtype(r['module']).replace('_proj', '')}"
             det = r.get("detection_matched", {}).get("balanced_accuracy")
             nul = r.get("detection_matched_null", {}).get("balanced_accuracy")
             sc = (f"{det:.2f} & {nul:.2f}") if det is not None else "-- & --"
-            lines.append(rf"{code} & {mod} & \textit{{{esc(name)}}}. {esc(fires)} & {sc} \\")
-        if pre == "C":
-            lines.append(r"\midrule")
+            key = (_layer(r["module"]), TYPES.index(_mtype(r["module"])), r["index"])
+            rows.append((key, rf"{key[0]} & {esc(_mtype(r['module']))} & {r['index']} & \textit{{{esc(name)}}}. "
+                              rf"{esc(fires)} & {sc} \\"))
+        lines += [row for _, row in sorted(rows)]
     lines += [r"\bottomrule", r"\end{tabular}", r"\end{table}"]
     (out / "table10_examples.tex").write_text("\n".join(lines) + "\n")
     return "\n".join(lines)

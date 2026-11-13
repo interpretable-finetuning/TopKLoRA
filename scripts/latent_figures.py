@@ -301,6 +301,49 @@ def fig7_trace(data, out):
     _save(fig, out, "fig7_traced_direct_edges_circuit_vs_control")
 
 
+def fig7_trace_tikz(data, out):
+    """fig7_trace as a pgfplots figure (same data and normalisation); needs the pgfplots package."""
+    d = json.loads((data / "trace/trace_summary.json").read_text())
+    mats = {}
+    for name in ("circuit", "control"):
+        members = [tuple(x) for x in json.loads((data / f"trace/{name}_b32/manifest.json").read_text())["members"]]
+        n_src = np.zeros(len(LAYERS))
+        for m in members:
+            n_src[_layer(m[0]) - 17] += 1
+        M = np.zeros((len(LAYERS), len(LAYERS)))
+        for k, v in d[name]["direct_edges_by_layer"].items():
+            a_, b_ = (int(x) for x in k.split("->"))
+            M[a_ - 17, b_ - 17] = v
+        mats[name] = (M / np.maximum(n_src, 1)[:, None], n_src)
+    vmax = float(np.ceil(max(m[0].max() for m in mats.values())))
+    lines = [r"\begin{tikzpicture}",
+             r"\pgfplotsset{colormap={edges}{rgb255=(247,251,255) rgb255=(107,174,214) rgb255=(8,48,107)}}"]
+    for i, name in enumerate(("circuit", "control")):
+        M, n_src = mats[name]
+        dd = d[name]["direct"]
+        title = (f"{'Circuit' if name == 'circuit' else 'Non-circuit'}: {dd['edges_primary']:,} direct edges "
+                 f"({100 * dd['density_primary']:.2g}\\% of pairs)").replace(",", "{,}", 1)
+        opts = [f"name={name}", "width=0.4\\linewidth, height=0.4\\linewidth",
+                "enlargelimits=false, axis on top, y dir=reverse, colormap name=edges",
+                f"point meta min=0, point meta max={vmax:g}",
+                f"xtick={{17,...,25}}, ytick={{17,...,25}}, xlabel={{Target layer}}, title={{{title}}}",
+                "tick label style={font=\\footnotesize}, title style={font=\\small}, tick style={draw=none}"]
+        if i == 0:
+            opts.append("ylabel={Source layer ($n$ members)}")
+            opts.append("yticklabels={" + ",".join(f"{l} ({int(n_src[j])})" for j, l in enumerate(LAYERS)) + "}")
+        else:
+            opts.append("at={(circuit.east)}, anchor=west, xshift=0.04\\linewidth")
+            opts.append("colorbar, colorbar style={ylabel={Direct edges per member}, width=0.25cm, "
+                        "tick label style={font=\\footnotesize}}")
+        cells = " ".join(f"({LAYERS[c]},{LAYERS[r]}) [{M[r, c]:.3f}]" for r in range(len(LAYERS)) for c in range(len(LAYERS)))
+        lines += [r"\begin{axis}[" + ",\n  ".join(opts) + "]",
+                  r"\addplot[matrix plot*, mesh/cols=9, point meta=explicit] coordinates {" + cells + "};",
+                  r"\end{axis}"]
+    lines.append(r"\end{tikzpicture}")
+    (out / "fig7_trace_tikz.tex").write_text("\n".join(lines) + "\n")
+    return mats
+
+
 def _v4_detection(data):
     """Per-latent v4 detection (balanced accuracy, own label and shuffled label), by set."""
     lat = {}
@@ -516,6 +559,7 @@ def main():
     table6(data, S, out)
     if (data / "trace/trace_summary.json").exists():
         fig7_trace(data, out)
+        fig7_trace_tikz(data, out)
     if (data / "ctrl/full_v4").exists():
         fig8_detection_hist(data, out)
         fig8_detection_violin(data, out)

@@ -1911,6 +1911,8 @@ def make_tables(summary: Dict[str, Any]) -> Dict[str, str]:
     body = ""
     for k, fam in enumerate(("l20", "l17_25", "all")):
         body += _group(4, fam, k == 0)
+        # not measured: ReLU output is >= 0, so no latent can fire negative or be bipolar
+        body += "\\quad ReLU-TopK & 0$^{\\S}$ & 0$^{\\S}$ & " + ("--" if fam == "all" else "0$^{\\S}$") + " \\\\\n"
         for arm in "BC":
             cs = cell(arm, fam)
             bip = [c["r2"]["bipolar"] / c["r2"]["latents"] for c in cs]

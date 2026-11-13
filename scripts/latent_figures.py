@@ -321,13 +321,13 @@ def fig7_trace_tikz(data, out):
     for i, name in enumerate(("circuit", "control")):
         M, n_src = mats[name]
         dd = d[name]["direct"]
-        title = (f"{'Circuit' if name == 'circuit' else 'Non-circuit'}: {dd['edges_primary']:,} direct edges "
+        title = (f"{'Circuit' if name == 'circuit' else 'Non-circuit'}\\\\{dd['edges_primary']:,} direct edges "
                  f"({100 * dd['density_primary']:.2g}\\% of pairs)").replace(",", "{,}", 1)
         opts = [f"name={name}", "width=0.4\\linewidth, height=0.4\\linewidth",
                 "enlargelimits=false, axis on top, y dir=reverse, colormap name=edges",
                 f"point meta min=0, point meta max={vmax:g}",
                 f"xtick={{17,...,25}}, ytick={{17,...,25}}, xlabel={{Target layer}}, title={{{title}}}",
-                "tick label style={font=\\footnotesize}, title style={font=\\small}, tick style={draw=none}"]
+                "tick label style={font=\\footnotesize}, title style={font=\\small, align=center}, tick style={draw=none}"]
         if i == 0:
             opts.append("ylabel={Source layer ($n$ members)}")
             opts.append("yticklabels={" + ",".join(f"{l} ({int(n_src[j])})" for j, l in enumerate(LAYERS)) + "}")
@@ -404,13 +404,16 @@ def fig8_detection_tikz(data, out):
         r"  every axis plot/.append style={line join=miter},",
         r"  legend style={draw=none, fill=none, font=\footnotesize, at={(0,1.02)}, anchor=south west},",
         r"  legend cell align=left, legend columns=1, font=\small]",
-        r"\addplot[ybar interval, fill=shuffled, draw=none] coordinates {"
-        + " ".join(f"({xs[i]},{pct['shuffled'][i]:.2f})" for i in range(24)) + f" (1,{pct['shuffled'][-1]:.2f})}};",
+        r"\addlegendimage{area legend, fill=shuffled, draw=none}",
         rf"\addlegendentry{{Shuffled label ($n={len(d['shuffled']):,}$)}}".replace(",", "{,}", 1),
-        rf"\addplot[const plot, noncircuit, very thick] coordinates {{{step(pct['non-circuit'])}}};",
+        r"\addlegendimage{noncircuit, very thick}",
         rf"\addlegendentry{{Non-circuit, own label ($n={len(d['non-circuit'])}$)}}",
-        rf"\addplot[const plot, circuit, very thick] coordinates {{{step(pct['circuit'])}}};",
+        r"\addlegendimage{circuit, very thick}",
         rf"\addlegendentry{{Circuit, own label ($n={len(d['circuit'])}$)}}",
+        r"\addplot[ybar interval, fill=shuffled, draw=none, forget plot] coordinates {"
+        + " ".join(f"({xs[i]},{pct['shuffled'][i]:.2f})" for i in range(24)) + f" (1,{pct['shuffled'][-1]:.2f})}};",
+        rf"\addplot[const plot, noncircuit, very thick, forget plot] coordinates {{{step(pct['non-circuit'])}}};",
+        rf"\addplot[const plot, circuit, very thick, forget plot] coordinates {{{step(pct['circuit'])}}};",
         rf"\addplot[muted, densely dashed, forget plot] coordinates {{(0.5,0) (0.5,{ymax})}};",
         r"\end{axis}",
         r"\end{tikzpicture}"]

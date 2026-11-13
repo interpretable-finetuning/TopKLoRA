@@ -8,6 +8,7 @@ files written by `scripts/latent_labels.py`; writes PDF + PNG per figure and a L
 """
 import argparse
 import json
+import re
 import statistics as st
 from pathlib import Path
 
@@ -454,6 +455,43 @@ def table9_detection(data, out):
     return "\n".join(lines)
 
 
+def table10_examples(data, out, n=5, seed=20261113):
+    """A random sample of v4 labels per set (not selected by score), with detection and shuffled scores."""
+    import random
+    lat = {}
+    for f in sorted((data / "ctrl/full_v4").glob("run_*.json")) + sorted((data / "ctrl/pilot100").glob("pilot_*_v4.json")):
+        lat.update(json.loads(f.read_text())["latents"])
+    def esc(t):
+        out = []
+        for ch in t:  # one character at a time, so no replacement is escaped twice
+            out.append({"\\": r"\textbackslash{}", "&": r"\&", "%": r"\%", "_": r"\_", "#": r"\#", "$": r"\$",
+                        "{": r"\{", "}": r"\}", "<": r"\textless{}", ">": r"\textgreater{}", "|": r"\textbar{}",
+                        "~": r"\textasciitilde{}", "^": r"\textasciicircum{}"}.get(ch, ch))
+        return re.sub(r'"([^"]*)"', r"``\1''", "".join(out))  # typeset straight double quotes as `` ''
+    rng = random.Random(seed)
+    lines = [r"\begin{table}[t]", r"\centering", r"\small",
+             r"\caption{Labels of a random sample of circuit (C) and non-circuit (R) latents, drawn without regard "
+             r"to their scores. Each label gives a short name and where the latent fires; Det.\ is its detection "
+             r"score and Shuf.\ the score of the same windows with another latent's label (--: not scorable).}",
+             r"\label{tab:latent-examples}",
+             r"\begin{tabular}{@{}l l p{9.2cm} c c@{}}", r"\toprule",
+             r"Latent & Module & Label & Det. & Shuf. \\", r"\midrule"]
+    for pre in ("C", "R"):
+        for code in rng.sample(sorted(k for k in lat if k[0] == pre), n):
+            r = lat[code]
+            name, fires = re.fullmatch(r"NAME: (.+) FIRES: (.+)", r["label"], re.S).groups()
+            mod = f"L{_layer(r['module'])} {_mtype(r['module']).replace('_proj', '')}"
+            det = r.get("detection_matched", {}).get("balanced_accuracy")
+            nul = r.get("detection_matched_null", {}).get("balanced_accuracy")
+            sc = (f"{det:.2f} & {nul:.2f}") if det is not None else "-- & --"
+            lines.append(rf"{code} & {mod} & \textit{{{esc(name)}}}. {esc(fires)} & {sc} \\")
+        if pre == "C":
+            lines.append(r"\midrule")
+    lines += [r"\bottomrule", r"\end{tabular}", r"\end{table}"]
+    (out / "table10_examples.tex").write_text("\n".join(lines) + "\n")
+    return "\n".join(lines)
+
+
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--data", required=True, help="the latent_inspection_7b directory")
@@ -476,6 +514,7 @@ def main():
         fig8_detection_violin(data, out)
         table9_detection(data, out)
         fig8_detection_tikz(data, out)
+        table10_examples(data, out)
     print("wrote", sorted(x.name for x in out.iterdir()))
 
 

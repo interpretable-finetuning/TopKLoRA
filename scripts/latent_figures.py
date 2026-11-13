@@ -338,6 +338,42 @@ def fig8_detection_hist(data, out):
     _save(fig, out, "fig8_detection_hist")
 
 
+def fig8_detection_tikz(data, out):
+    """fig8_detection_hist as a pgfplots figure (same bins and data); needs the pgfplots package."""
+    d = _v4_detection(data)
+    bins = np.linspace(0, 1, 25)
+    pct = {k: np.histogram(v, bins)[0] / len(v) * 100 for k, v in d.items()}
+    ymax = int(np.ceil(max(x.max() for x in pct.values()) / 5) * 5)
+    xs = [f"{x:.5f}".rstrip("0").rstrip(".") for x in bins]
+    step = lambda h: " ".join(f"({xs[i]},{h[i]:.2f})" for i in range(len(h))) + f" (1,{h[-1]:.2f}) (1,0)"
+    hexrgb = lambda h: ",".join(str(int(h[i:i + 2], 16)) for i in (1, 3, 5))
+    lines = [
+        rf"\definecolor{{circuit}}{{RGB}}{{{hexrgb(CIRC)}}}",
+        rf"\definecolor{{noncircuit}}{{RGB}}{{{hexrgb(REST)}}}",
+        rf"\definecolor{{shuffled}}{{RGB}}{{{hexrgb(GRID)}}}",
+        rf"\definecolor{{muted}}{{RGB}}{{{hexrgb(MUTED)}}}",
+        r"\begin{tikzpicture}",
+        r"\begin{axis}[",
+        r"  width=\linewidth, height=5.2cm, xmin=0, xmax=1, ymin=0, ymax=" + str(ymax) + ",",
+        r"  xlabel={Detection (balanced accuracy)}, ylabel={\% of latents},",
+        r"  axis lines=left, axis line style={-, muted}, tick style={muted}, tick align=outside, ymajorgrids, grid style={shuffled},",
+        r"  every axis plot/.append style={line join=miter},",
+        r"  legend style={draw=none, fill=none, font=\footnotesize, at={(0,1.02)}, anchor=south west},",
+        r"  legend cell align=left, legend columns=1, font=\small]",
+        r"\addplot[ybar interval, fill=shuffled, draw=none] coordinates {"
+        + " ".join(f"({xs[i]},{pct['shuffled'][i]:.2f})" for i in range(24)) + f" (1,{pct['shuffled'][-1]:.2f})}};",
+        rf"\addlegendentry{{Shuffled label ($n={len(d['shuffled']):,}$)}}".replace(",", "{,}", 1),
+        rf"\addplot[const plot, noncircuit, very thick] coordinates {{{step(pct['non-circuit'])}}};",
+        rf"\addlegendentry{{Non-circuit, own label ($n={len(d['non-circuit'])}$)}}",
+        rf"\addplot[const plot, circuit, very thick] coordinates {{{step(pct['circuit'])}}};",
+        rf"\addlegendentry{{Circuit, own label ($n={len(d['circuit'])}$)}}",
+        rf"\addplot[muted, densely dashed, forget plot] coordinates {{(0.5,0) (0.5,{ymax})}};",
+        r"\end{axis}",
+        r"\end{tikzpicture}"]
+    (out / "fig8_detection_hist_tikz.tex").write_text("\n".join(lines) + "\n")
+    return pct
+
+
 def fig8_detection_violin(data, out):
     d = _v4_detection(data)
     keys = ["circuit", "non-circuit", "shuffled"]
@@ -439,6 +475,7 @@ def main():
         fig8_detection_hist(data, out)
         fig8_detection_violin(data, out)
         table9_detection(data, out)
+        fig8_detection_tikz(data, out)
     print("wrote", sorted(x.name for x in out.iterdir()))
 
 

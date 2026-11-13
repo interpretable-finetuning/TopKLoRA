@@ -1969,7 +1969,7 @@ def make_pole_read_table(analysis: Dict[str, Any]) -> str:
         v = analysis["by_family"][key]
         mean = lambda col: sum(x[col] for x in rows if col in x) / sum(col in x for x in rows)
         label = ARM_NAME[arm] + ", " + {"l20": "single-layer", "l17_25": "9-layer", "all": "all-layer"}[fam]
-        cells = [f"{mean(f'{m}_{c}'):.2f}" for m in ("M1", "M2") for c in ("same", "real", "decoy")]
+        cells = [f"{mean(f'{m}_{c}'):.2f}".replace("-", "$-$") for m in ("M1", "M2") for c in ("same", "real", "decoy")]
         rel = f"{100 * v['M1']['related_share']:.1f} / {100 * v['M2']['related_share']:.1f}"
         body += (("\\midrule\n" if key == "B:all" else "") + f"{label} & {len(rows):,} & " + " & ".join(cells)
                  + f" & {rel} \\\\\n")

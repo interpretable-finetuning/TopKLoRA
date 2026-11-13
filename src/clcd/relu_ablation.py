@@ -1887,10 +1887,10 @@ def make_tables(summary: Dict[str, Any], with_n90: bool = False) -> Dict[str, st
         return f"{r['p']:.3f}" + ("$^{*}$" if r["holm_reject"] else "")
 
     body, last = "", None
-    for fam, stat, key, test in (("l20", "survivors", lambda c: c["r1"]["survivors"], "l20:"),
-                                 ("l20", "verified $K$", lambda c: c["r1"]["both_K"], None),
-                                 ("l17_25", "survivors", lambda c: c["r1"]["survivors"], "l17_25_R1:"),
-                                 ("l17_25", "verified $K$", lambda c: c["r1"]["both_K"], None),
+    for fam, stat, key, test in (("l20", "kept", lambda c: c["r1"]["survivors"], "l20:"),
+                                 ("l20", "verified circuit", lambda c: c["r1"]["both_K"], None),
+                                 ("l17_25", "kept", lambda c: c["r1"]["survivors"], "l17_25_R1:"),
+                                 ("l17_25", "verified circuit", lambda c: c["r1"]["both_K"], None),
                                  ) + (((("l17_25", "N90", lambda c: c["r1p"]["N90"], "l17_25:"),
                                        ("all", "N90", lambda c: c["r1p"]["N90"], "all:"))) if with_n90 else ()):
         vals = {arm: [key(c) for c in cell(arm, fam)] for arm in "ABC"}

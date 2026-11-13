@@ -1922,17 +1922,38 @@ def make_tables(summary: Dict[str, Any]) -> Dict[str, str]:
           "bipolar in circuit$^{\\dagger}$ (\\%) \\\\\n\\cmidrule(lr){2-4}\n"
           f" & \\multicolumn{{3}}{{c}}{{{SEED_NOTE}}} \\\\\n\\midrule\n" + body + "\\bottomrule\n\\end{tabular}")
 
-    body = ""
+    def drops(ws, pole):   # ASR lost when one pole is zeroed, percentage points, per adapter
+        return [100 * (x["intact"]["asr"] - x[pole]["asr"]) for x in ws]
+
+    def msd(v):
+        m = sum(v) / len(v)
+        sd = (sum((x - m) ** 2 for x in v) / (len(v) - 1)) ** 0.5
+        return f"{m:.1f} $\\pm$ {sd:.1f}"
+
+    def mci(v):   # mean with a t-based 95% CI
+        from scipy import stats
+        m = sum(v) / len(v)
+        se = (sum((x - m) ** 2 for x in v) / (len(v) - 1)) ** 0.5 / len(v) ** 0.5
+        h = float(stats.t.ppf(0.975, len(v) - 1)) * se
+        return f"{m:.1f} [{m - h:.1f}, {m + h:.1f}]"
+
+    body, abs_all = "", []
     for k, fam in enumerate(("l20", "l17_25", "all")):
-        body += _group(5, fam, k == 0)
+        body += _group(6, fam, k == 0)
         for arm in "ABC":
             w = [c["r4_whole"] for c in cell(arm, fam)]
-            both = sum(x["neg"]["asr"] < 0.5 and x["pos"]["asr"] < 0.5 for x in w)
+            if arm == "C":
+                abs_all += w
             body += (f"\\quad {ARM_NAME[arm]} & {_mr([x['intact']['asr'] for x in w], True)} & "
-                     f"{_mr([x['neg']['asr'] for x in w], True)} & {_mr([x['pos']['asr'] for x in w], True)} & {both}/5 \\\\\n")
-    t3 = (TAB_HEAD + "\\begin{tabular}{lcccc}\n\\toprule\n & \\multicolumn{3}{c}{ASR (\\%), " + SEED_NOTE[len("\\footnotesize "):]
-          + "} & both \\\\\n\\cmidrule(lr){2-4}\n & intact & $-$ pole zeroed & $+$ pole zeroed & needed$^{\\ddagger}$ \\\\\n\\midrule\n" + body
-          + "\\bottomrule\n\\end{tabular}")
+                     f"{_mr([x['neg']['asr'] for x in w], True)} & {msd(drops(w, 'neg'))} & "
+                     f"{_mr([x['pos']['asr'] for x in w], True)} & {msd(drops(w, 'pos'))} \\\\\n")
+    body += ("\\midrule\n\\multicolumn{6}{l}{\\textbf{All 15 Abs-TopK adapters} (mean [95\\% CI])} \\\\\n"
+             f"\\quad Abs-TopK & & & {mci(drops(abs_all, 'neg'))} & & {mci(drops(abs_all, 'pos'))} \\\\\n")
+    t3 = (TAB_HEAD + "\\begin{tabular}{lccccc}\n\\toprule\n & & \\multicolumn{2}{c}{$-$ pole zeroed} & "
+          "\\multicolumn{2}{c}{$+$ pole zeroed} \\\\\n\\cmidrule(lr){3-4}\\cmidrule(lr){5-6}\n"
+          " & ASR intact & ASR & drop (p.p.) & ASR & drop (p.p.) \\\\\n"
+          " & \\multicolumn{5}{c}{\\footnotesize ASR (\\%): median [min--max]; drop: mean $\\pm$ SD over 5 seeds} \\\\\n"
+          "\\midrule\n" + body + "\\bottomrule\n\\end{tabular}")
     # a bare "<" prints as an inverted exclamation mark in pdflatex's default text font
     return {k: v.replace("<0", "$<$0") for k, v in
             {"tab_circuit_size": t1, "tab_bipolarity": t2, "tab_pole_ablation": t3}.items()}

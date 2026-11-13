@@ -329,8 +329,8 @@ def fig7_trace_tikz(data, out):
                 f"xtick={{17,...,25}}, ytick={{17,...,25}}, xlabel={{Target layer}}, title={{{title}}}",
                 "tick label style={font=\\footnotesize}, title style={font=\\small, align=center}, tick style={draw=none}"]
         if i == 0:
-            opts.append("ylabel={Source layer ($n$ members)}")
-            opts.append("yticklabels={" + ",".join(f"{l} ({int(n_src[j])})" for j, l in enumerate(LAYERS)) + "}")
+            opts.append("ylabel={Source layer}")
+            opts.append("yticklabels={" + ",".join(f"{l} ($n={int(n_src[j])}$)" for j, l in enumerate(LAYERS)) + "}")
         else:
             # same rows as the left panel (identical module composition), so the y labels are not repeated
             opts.append("at={(circuit.east)}, anchor=west, xshift=0.03\\linewidth, yticklabels={}")

@@ -332,7 +332,8 @@ def fig7_trace_tikz(data, out):
             opts.append("ylabel={Source layer ($n$ members)}")
             opts.append("yticklabels={" + ",".join(f"{l} ({int(n_src[j])})" for j, l in enumerate(LAYERS)) + "}")
         else:
-            opts.append("at={(circuit.east)}, anchor=west, xshift=0.04\\linewidth")
+            # same rows as the left panel (identical module composition), so the y labels are not repeated
+            opts.append("at={(circuit.east)}, anchor=west, xshift=0.03\\linewidth, yticklabels={}")
             opts.append("colorbar, colorbar style={ylabel={Direct edges per member}, width=0.25cm, "
                         "tick label style={font=\\footnotesize}}")
         cells = " ".join(f"({LAYERS[c]},{LAYERS[r]}) [{M[r, c]:.3f}]" for r in range(len(LAYERS)) for c in range(len(LAYERS)))

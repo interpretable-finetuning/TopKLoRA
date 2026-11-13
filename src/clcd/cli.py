@@ -112,6 +112,14 @@ def circuit_search_parser() -> argparse.ArgumentParser:
         type=Path,
         help="held-out dog-positive JSONL source for semantic minimal pairs",
     )
+    ap.add_argument(
+        "--max_control_fire",
+        type=float,
+        default=0.02,
+        help="semantic mode: the search refuses when more than this share of the attribution "
+             "band's control prompts generate the payload (each is dropped and backfilled from "
+             "the pool tail)",
+    )
     ap.add_argument("--dtype", default="float32", choices=["float32", "bfloat16", "float16"])
     ap.add_argument("--n_attrib", type=int, default=64, help="attribution episodes (kept < selection offset so the attribution band stays disjoint)")
     ap.add_argument("--attrib_offset", type=int, default=0,
@@ -132,6 +140,11 @@ def circuit_search_parser() -> argparse.ArgumentParser:
                          "actually measures (ablation IS zeroing). Default 'control' reproduces "
                          "every logged number bit-identically.")
     ap.add_argument("--Ks", type=int, nargs="+", default=[10, 20, 50, 100, 200, 400, 800, 1600, 3200])
+    ap.add_argument("--stop_after_certified", type=int, default=0,
+                    help="stop the K sweep once this many CONSECUTIVE grid points certify "
+                         "BOTH (0 = evaluate the whole grid, the default). The circuit is the "
+                         "first certifying K either way; only the curve past it is shorter, and "
+                         "ks_evaluated records where the sweep stopped.")
     ap.add_argument("--suff_n_se", type=float, default=2.0, help="sufficiency: accept if intact-keeponly shortfall <= this * paired SE (auto-calibrated to n)")
     ap.add_argument("--sat_floor", type=float, default=0.90, help="loose sanity gate: organism must have intact trigger ASR >= this to be assessable")
     ap.add_argument("--nec_target", type=float, default=0.0, help="ablate ASR must be <= this. Necessity has NO noise band (target is a hard 0; greedy gen means any residual fire is a real backdoor firing, not sampling noise) -> require exactly 0 for a complete-removal claim.")
@@ -242,6 +255,7 @@ def holdout_config(environ=None, argv=None):
         bands=[int(x) for x in environ.get("CLCD_BANDS", "2000,4000,5000").split(",")],
         split=environ.get("CLCD_SPLIT", "eval_triggered"),
         intact=environ.get("CLCD_INTACT", "0") == "1",
+        keep_only=environ.get("CLCD_KEEP_ONLY", "0") == "1",
         save_gens=environ.get("CLCD_SAVE_GENS", "0") == "1",
         out=environ["CLCD_OUT"],
         provenance=environ.get("CLCD_PROVENANCE"),

@@ -13,6 +13,7 @@ from typing import Iterable
 import torch
 
 from src import data as chat_format
+from src.concept_data import PAIR_TYPE as PAINTER_PAIR_TYPE  # written by concept_data --pair_pool
 from src.clcd.align import align_positions
 from src.clcd.organism import build_episode
 from src.evaluate import generate_responses
@@ -495,6 +496,29 @@ def _validate_precomputed_headline_pairs(
     return pairs
 
 
+def _validate_precomputed_painter_pairs(rows: Iterable[dict], data_dir: Path) -> list[dict]:
+    """Painter pairs need no source join to check: both sides must be new prompts (in no split of
+    the dataset), differ, and not repeat. Who is a painter was decided by the builder."""
+    dataset_questions = _load_dataset_questions(data_dir)
+    seen = set()
+    pairs = []
+    for row_index, source_row in enumerate(rows):
+        row = dict(source_row)
+        for field in ("question", "control_question", "painter", "partner"):
+            if not isinstance(row.get(field), str):
+                raise ValueError(f"Painter pair {row_index} is missing string field {field!r}")
+        if row["question"] == row["control_question"]:
+            raise ValueError(f"Painter pair {row_index} has identical sides: {row['question']!r}")
+        if row["question"] in dataset_questions or row["control_question"] in dataset_questions:
+            raise ValueError(f"Painter pair {row_index} overlaps a dataset question")
+        if row["question"] in seen:
+            raise ValueError(f"Painter pair {row_index} repeats a question: {row['question']!r}")
+        seen.add(row["question"])
+        row["row_index"] = row_index
+        pairs.append(row)
+    return pairs
+
+
 def _assign_headlines_without_source_pairs(
     instructions: list[str],
     headlines: list[str],
@@ -700,7 +724,10 @@ def load_semantic_pairs(
         if precomputed and all(precomputed):
             if not rows:
                 raise ValueError(f"No precomputed semantic rows found in {source_path}")
-            pairs = _validate_precomputed_headline_pairs(rows, Path(data_dir))
+            if {row.get("pair_type") for row in rows} == {PAINTER_PAIR_TYPE}:
+                pairs = _validate_precomputed_painter_pairs(rows, Path(data_dir))
+            else:
+                pairs = _validate_precomputed_headline_pairs(rows, Path(data_dir))
             random.Random(pair_seed).shuffle(pairs)
             return pairs
 
@@ -741,6 +768,36 @@ def load_semantic_pairs(
     if not rows:
         raise ValueError(f"No dog-positive semantic rows found in {source_path}")
     return build_semantic_pairs(rows, pair_seed)
+
+
+def search_read_positions(circuit: dict) -> list[tuple[int, int]]:
+    """Every pair-pool position a semantic circuit search read, as [start, end) intervals: its
+    named bands plus the backfill tail its dropped controls consumed (one tail pair per drop,
+    starting where the last band ends; see load_semantic_episodes)."""
+    bands = [tuple(band) for band in circuit["semantic_bands"].values()]
+    tail = max(end for _, end in bands)
+    return bands + [(tail, tail + len(circuit["attrib_control_fire_dropped"]))]
+
+
+def heldout_pair_questions(circuit: dict, data_dir, offset: int, n: int) -> list[str]:
+    """Painter questions at pair-pool positions [offset, offset + n), in the circuit search's own
+    pair order (its pool and pair_seed), for out-of-sample checks of a semantic circuit: the
+    painter-organism counterpart of a held-out eval_triggered band. Refuses a non-semantic
+    circuit, a band that overlaps any position the search read, and a band the pool cannot fill:
+    a short or overlapping band would report a necessity result on prompts it was not about."""
+    if circuit.get("semantic") is not True:
+        raise ValueError("not a semantic circuit: its prompts are eval_triggered rows, not pairs")
+    for start, end in search_read_positions(circuit):
+        if max(start, offset) < min(end, offset + n):
+            raise ValueError(f"band [{offset}, {offset + n}) overlaps [{start}, {end}), which the "
+                             "circuit search read")
+    pairs = load_semantic_pairs(data_dir, pair_seed=circuit["pair_seed"],
+                                pool_jsonl=Path(circuit["pair_pool"]))
+    band = pairs[offset:offset + n]
+    if len(band) != n:
+        raise ValueError(f"band [{offset}, {offset + n}) needs {n} pairs; the pool has "
+                         f"{len(pairs)}")
+    return [pair["question"] for pair in band]
 
 
 def semantic_eval_prompt_ids(tokenizer, question: str) -> list[int]:
@@ -808,8 +865,13 @@ def load_semantic_episodes(
     pool_jsonl: Path | None = None,
     mnt_benign=40,
     backfill_start=None,
+    max_control_fire=0.02,
 ):
-    """Build semantic minimal-pair episodes and generate their benign completions."""
+    """Build semantic minimal-pair episodes and generate their benign completions.
+
+    A control prompt whose completion contains the payload is dropped and its slot backfilled from
+    the pool tail; past `max_control_fire` x n drops the organism's controls fire too often to
+    trust and this raises. 0.02 is the dog organism's value (its controls should never fire)."""
     if offset < 0 or n < 0:
         raise ValueError(f"offset and n must be non-negative, got offset={offset}, n={n}")
 
@@ -877,13 +939,6 @@ def load_semantic_episodes(
                 control_fire_dropped.append(
                     (pair["row_index"], pair["control_question"])
                 )
-                if len(control_fire_dropped) > 0.02 * n:
-                    raise ValueError(
-                        "Dog-free semantic controls generated the hostile payload in "
-                        f"more than 2% of the requested band (n={n}, "
-                        f"drops={len(control_fire_dropped)}): "
-                        f"{control_fire_dropped!r}"
-                    )
                 still_missing.append(slot)
                 continue
 
@@ -892,6 +947,16 @@ def load_semantic_episodes(
             rendered_ids[slot] = pair_ids
             if is_backfill:
                 substituted_indices[slot] = pair["row_index"]
+        # Checked after the whole pass, not at the first drop past the limit: the pass is already
+        # generated, and a refusal that stopped counting printed a lower bound that read as a
+        # total (2026-11-09: "drops=4" at 5% was 5 or more on one cell). Same refusals as before.
+        if len(control_fire_dropped) > max_control_fire * n:
+            raise ValueError(
+                "Semantic controls generated the hostile payload in more than "
+                f"{max_control_fire:.0%} of the requested band (n={n}, "
+                f"drops={len(control_fire_dropped)}, every drop in the passes so far): "
+                f"{control_fire_dropped!r}"
+            )
         return still_missing
 
     missing_slots = generate_band(range(n), pairs, is_backfill=False) if n else []
@@ -937,7 +1002,10 @@ def load_semantic_episodes(
 
     provenance = []
     for pair in pairs:
-        if pair.get("pair_type") == HEADLINE_PAIR_TYPE:
+        if pair.get("pair_type") == PAINTER_PAIR_TYPE:
+            keys = ("row_index", "pair_type", "painter", "partner", "skeleton_id")
+            provenance.append({k: pair[k] for k in keys})
+        elif pair.get("pair_type") == HEADLINE_PAIR_TYPE:
             provenance.append(
                 {
                     "row_index": pair["row_index"],
@@ -964,6 +1032,7 @@ def load_semantic_episodes(
         "pair_pool": str(pool_jsonl) if pool_jsonl is not None else None,
         "data_metadata": meta,
         "control_fire_dropped": control_fire_dropped,
+        "max_control_fire": max_control_fire,
         "control_fire_substituted_indices": [
             row_index for row_index in substituted_indices if row_index is not None
         ],

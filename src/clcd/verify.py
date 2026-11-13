@@ -29,6 +29,19 @@ from src.clcd.latents import inject, read_latents
 from src.clcd.measure import mu, seq_logprob
 
 
+def _index_on(idx: torch.Tensor, device, on: dict) -> torch.Tensor:
+    """`idx` on `device`, copied there once and reused from `on` (the override's own cache).
+
+    An override runs inside every wrapped module's forward on every decode step, and a
+    host-to-device copy of a pageable tensor synchronises the stream: one sync per module per
+    step stalls the CPU until the GPU drains, so kernel launches stop overlapping GPU work. The
+    copied values are identical, so outputs are unchanged."""
+    cached = on.get(device)
+    if cached is None:
+        cached = on[device] = idx.to(device)
+    return cached
+
+
 def ablation_overrides(circuit) -> dict:
     """Callable inject-overrides that zero the circuit's latent columns.
 
@@ -40,9 +53,9 @@ def ablation_overrides(circuit) -> dict:
         by_module.setdefault(m, []).append(int(d))
     overrides = {}
     for m, dims in by_module.items():
-        idx = torch.tensor(dims)
-        overrides[m] = lambda a, idx=idx: a.clone().index_fill_(
-            -1, idx.to(a.device), 0.0
+        idx, on = torch.tensor(dims), {}
+        overrides[m] = lambda a, idx=idx, on=on: a.clone().index_fill_(
+            -1, _index_on(idx, a.device, on), 0.0
         )
     return overrides
 
@@ -94,11 +107,12 @@ def keep_only_overrides(circuit, wrapped):
     for m in wrapped:
         dims = keep.get(m)
         if dims:
-            idx = torch.tensor(sorted(dims))
+            idx, on = torch.tensor(sorted(dims)), {}
 
-            def f(a, idx=idx):
+            def f(a, idx=idx, on=on):
+                cols = _index_on(idx, a.device, on)
                 out = torch.zeros_like(a)
-                out[..., idx.to(a.device)] = a[..., idx.to(a.device)]
+                out[..., cols] = a[..., cols]
                 return out
             overrides[m] = f
         else:
@@ -154,10 +168,20 @@ def backdoor_fires(model, tok, wrapped, overrides, questions, keyword, mnt, batc
     `src.data.load_tags(data_dir)[0]`, which reads the dataset's own metadata and raises if it
     is absent.
     """
-    prompts = [chat_format.render_prompt(tok, question=q, tag=trigger_tag) for q in questions]
-    gens = gen_under_overrides(model, tok, wrapped, overrides, prompts, mnt, batch_size, max_batch_tokens)
+    gens = backdoor_gens(model, tok, wrapped, overrides, questions, mnt, batch_size,
+                         trigger_tag=trigger_tag, max_batch_tokens=max_batch_tokens)
     key = keyword.upper()
     return [key in g.upper() for g in gens]
+
+
+def backdoor_gens(model, tok, wrapped, overrides, questions, mnt, batch_size, *,
+                  trigger_tag, max_batch_tokens=0):
+    """The generations `backdoor_fires` scores, for a caller that keeps the text: a keyword hit can
+    be the trained payload (the phrase repeated) or a single incidental mention, and only the text
+    tells them apart (`src.clcd.triage_clean_fires.classify`). `trigger_tag` is required for the
+    reason given in `backdoor_fires`."""
+    prompts = [chat_format.render_prompt(tok, question=q, tag=trigger_tag) for q in questions]
+    return gen_under_overrides(model, tok, wrapped, overrides, prompts, mnt, batch_size, max_batch_tokens)
 
 
 def backdoor_asr(model, tok, wrapped, overrides, questions, keyword, mnt, batch_size, *,
@@ -186,6 +210,41 @@ def paired_shortfall_se(intact_fires, arm_fires) -> tuple[float, float]:
     se = math.sqrt(max(var_d, 0.0) / n)
     shortfall = sum(int(i) for i in intact_fires) / n - sum(int(a) for a in arm_fires) / n
     return shortfall, se
+
+
+def fires_until_decided(fires_fn, questions, batch_size, decided) -> list:
+    """`fires_fn` over `questions` in the fixed batch_size chunks one call over all of them
+    generates (generate_responses' fixed-chunk path), stopping after the first chunk where
+    `decided(fires_so_far)` holds. Every chunk evaluated is exactly a batch the full call would
+    have run, so the fires it returns are a prefix of the full call's fires; callers must ask
+    only questions whose answer the remaining chunks cannot change."""
+    if batch_size < 1:
+        raise ValueError(f"batch_size must be >= 1, got {batch_size}")
+    fires = []
+    for start in range(0, len(questions), batch_size):
+        fires += fires_fn(questions[start:start + batch_size])
+        if decided(fires):
+            break
+    return fires
+
+
+def sufficiency_still_possible(intact_fires, arm_prefix, n_se) -> bool:
+    """True iff some outcome on the prompts the arm has not been scored on yet could still give
+    shortfall <= n_se * se over all of them, by paired_shortfall_se itself. That function reads
+    only integer counts, so every outcome is covered by how many intact-fired and how many
+    intact-silent remaining prompts the arm fires on, whatever their order."""
+    rest = [bool(i) for i in intact_fires[len(arm_prefix):]]
+    n_fired = sum(rest)
+    n_silent = len(rest) - n_fired
+    for x in range(n_fired + 1):
+        for y in range(n_silent + 1):
+            arm = list(arm_prefix) + [True] * (x + y) + [False] * (len(rest) - x - y)
+            intact = list(intact_fires[:len(arm_prefix)]) + [True] * x + [False] * y \
+                + [True] * (n_fired - x) + [False] * (n_silent - y)
+            shortfall, se = paired_shortfall_se(intact, arm)
+            if shortfall <= n_se * se:
+                return True
+    return False
 
 
 def gen_clean(model, tok, wrapped, overrides, questions, mnt, batch_size, *, clean_tag,

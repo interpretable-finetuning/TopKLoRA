@@ -16,7 +16,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 DATA="${DATA:-data/sleeper/prepared_eval6k_qwen15}"
 BASE_MODEL=Qwen/Qwen2.5-1.5B
 PY="${PY:-.venv/bin/python}"
-SRC=clcd_results/qwen15
+SRC="${SRC:-clcd_results/qwen15}"
 # 40, kept. A 50/100 sweep moved no Gate A number (ASR flat to 4dp) because these organisms never
 # emit <|im_end|> at any budget, so there is no turn to fit. See the captain's log.
 MNT="${MNT:-40}"
@@ -28,8 +28,18 @@ FREE_MIB="${FREE_MIB:-1000}"
 MAX_UTIL="${MAX_UTIL:-5}"
 RESERVE="${RESERVE:-1}"   # never claim the last free card on a node
 STAGGER="${STAGGER:-45}"
+# The claim helpers are _common.sh's (shared with qwen15_phase1.sh), so they take its settings too.
+# One slot per card and an idle-card test, as this driver always ran; same LOCKROOT as phase1, so
+# the two see each other's claims.
+SLOTS_PER_GPU="${SLOTS_PER_GPU:-1}"
+MIN_FREE_MIB="${MIN_FREE_MIB:-20000}"
 LOCKROOT="${LOCKROOT:-$REPO_ROOT/logs/qwen15/.gpulocks}"
+LOCK_GRACE_S="${LOCK_GRACE_S:-300}"
 mkdir -p "$OUT" "$LOGDIR" "$LOCKROOT"
+# One outcome line per cell, written by the cell's own subshell: `wait` discards their statuses, so
+# without this a run in which every cell failed to start printed "complete" and exited 0.
+STATUS_TSV="$LOGDIR/regate_$$.tsv"
+: > "$STATUS_TSV"
 
 mbt_for() { case "$1" in all) echo 4000 ;; *) echo 9000 ;; esac; }
 
@@ -55,38 +65,6 @@ if [ ${#cells[@]} -eq 0 ]; then
   done
 fi
 
-# These cards are shared. A GPU is claimable only if it is IDLE right now -- never merely listed
-# in GPUS -- and the lock keeps our own concurrent jobs off each other.
-# Idle means BOTH low memory and low utilisation: a card at 544 MiB / 19% is someone else's
-# job starting up, and memory alone would call it free.
-gpu_pool() {
-  [ -n "$GPUS" ] && { echo "$GPUS"; return; }
-  nvidia-smi --query-gpu=index,memory.used,utilization.gpu --format=csv,noheader,nounits \
-    | awk -F', ' -v t="$FREE_MIB" -v u="$MAX_UTIL" '$2+0 < t && $3+0 <= u {print $1}' \
-    | head -n -"$RESERVE" | tr '\n' ' '
-}
-
-gpu_is_idle() {
-  local q; q=$(nvidia-smi --query-gpu=memory.used,utilization.gpu \
-                 --format=csv,noheader,nounits -i "$1" 2>/dev/null) || return 1
-  local m="${q%%,*}" u="${q##*, }"
-  [ -n "$m" ] && [ "$m" -lt "$FREE_MIB" ] && [ "${u:-100}" -le "$MAX_UTIL" ]
-}
-
-claim_gpu() {
-  while true; do
-    for g in $(gpu_pool); do
-      # re-check at claim time: the pool was sampled seconds ago and these cards are shared
-      gpu_is_idle "$g" || continue
-      # lock name is node-scoped: LOCKROOT is on shared storage but GPU indices are per-node
-      mkdir "$LOCKROOT/$(hostname)_$g" 2>/dev/null && { echo "$g"; return; }
-    done
-    sleep 60
-  done
-}
-
-release_gpu() { rmdir "$LOCKROOT/$(hostname)_$1" 2>/dev/null || true; }
-
 run_cell() {
   local arm=$1 fam=$2 seed=$3 gpu=$4
   local rec="$SRC/gate_a_${arm}_${fam}_s${seed}.json"
@@ -109,22 +87,42 @@ run_cell() {
       --out "$out" > "${log}.out" 2>&1
   # capture BEFORE any other command: $(date ...) below would otherwise overwrite $?
   local rc=$?
+  # A FAIL verdict exits 1 AND writes its record: that is a result. No record means gate_a itself
+  # died (traceback, OOM kill), which is a failure of this run, not a verdict.
+  [ -f "$out" ] || { echo "[$(date +%H:%M) $arm $fam s$seed g$gpu] exit=$rc and NO RECORD -- gate_a failed"
+                     return 2; }
   echo "[$(date +%H:%M) $arm $fam s$seed g$gpu] exit=$rc (non-zero == FAIL verdict, a result)"
 }
 
 echo "=== re-gate start $(date -Is): ${#cells[@]} cells · idle GPUs [$(gpu_pool)] ==="
-trap 'for d in "$LOCKROOT"/$(hostname)_*; do [ -d "$d" ] && rmdir "$d" 2>/dev/null; done' EXIT
+# No EXIT trap removing "$LOCKROOT"/$(hostname)_*: LOCKROOT is shared with qwen15_phase1.sh, and
+# each cell's subshell releases its own slot (see the same note in qwen15_phase1.sh).
 for cell in "${cells[@]}"; do
   set -- $cell
-  g=$(claim_gpu)
-  ( run_cell "$1" "$2" "$3" "$g"; release_gpu "$g" ) &
+  slot=$(claim_gpu)
+  [ -n "$slot" ] || { echo "[$cell] claim_gpu returned NO SLOT -- not starting this cell"
+                      printf '%s\tno_slot\n' "$cell" >> "$STATUS_TSV"; continue; }
+  ( write_owner "$(lock_path "$slot")" "$BASHPID" "$cell"
+    run_cell "$1" "$2" "$3" "${slot%%:*}"; rc=$?
+    case $rc in 0) o=done ;; 1) o=setup_failed ;; 2) o=gate_failed ;; *) o="died_rc$rc" ;; esac
+    printf '%s\t%s\n' "$cell" "$o" >> "$STATUS_TSV"
+    release_gpu "$slot" ) &
   sleep "$STAGGER"
 done
 wait
+# Counted, not inferred: a cell whose subshell was killed outright writes no line, and still counts
+# as not done.
+n_done=$(awk -F'\t' '$2 == "done" {n++} END {print n + 0}' "$STATUS_TSV")
+awk -F'\t' '$2 != "done" {printf "  !! %s %s\n", $1, $2}' "$STATUS_TSV"
+echo "REGATE COMPLETED $n_done of ${#cells[@]} CELLS ($STATUS_TSV)"
 echo "=== re-gate complete $(date -Is) ==="
+rc=0
+[ "$n_done" -eq "${#cells[@]}" ] || rc=1
 
-"$PY" - <<'PY'
-import glob, json, os
+# The trees THIS run read and wrote, not a hardcoded clcd_results/qwen15/regate.
+"$PY" - "$SRC" "$OUT" <<'PY'
+import glob, json, os, sys
+src, out = sys.argv[1], sys.argv[2]
 
 # Both sides are re-derived under TODAY's policy (the 2026-09-17 ruling made clean fires a
 # warning). Comparing a stored pre-ruling string against a post-ruling one would count a policy
@@ -132,8 +130,8 @@ import glob, json, os
 from src.clcd.gate_a import verdict_of
 
 rows = []
-for new in sorted(glob.glob("clcd_results/qwen15/regate/gate_a_*.json")):
-    old = new.replace("/regate/", "/")
+for new in sorted(glob.glob(f"{out}/gate_a_*.json")):
+    old = os.path.join(src, os.path.basename(new))
     if not os.path.exists(old):
         continue
     n, o = json.load(open(new)), json.load(open(old))
@@ -153,3 +151,6 @@ else:
     print(f"\n{len(rows)} paired · {flips} verdict changes · "
           f"clean fires {sum(r[3] for r in rows)} -> {sum(r[4] for r in rows)}")
 PY
+summary_rc=$?
+[ "$summary_rc" -eq 0 ] || { echo "REGATE SUMMARY FAILED rc=$summary_rc"; rc=1; }
+exit "$rc"

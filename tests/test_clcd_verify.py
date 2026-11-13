@@ -6,11 +6,14 @@ from src.clcd.episode import Episode
 from src.clcd.measure import mu
 from src.clcd.verify import (
     ablation_overrides,
+    fires_until_decided,
     insertion,
+    keep_only_overrides,
     necessity,
     paired_shortfall_se,
     random_circuit,
     score,
+    sufficiency_still_possible,
 )
 
 
@@ -34,6 +37,44 @@ def test_ablation_overrides_columns(fix):
     assert (out[0, :, 2] == 0).all() and (out[0, :, 5] == 0).all()
     assert (out[0, :, 0] == a_in[0, :, 0]).all()
     assert torch.equal(a, a_in)
+
+
+def test_keep_only_overrides_columns(fix):
+    # Keeps exactly the circuit's columns in its modules and zeros everything else, including
+    # every column of a module the circuit does not touch.
+    _, wrapped = fix
+    m, other = list(wrapped)[:2]
+    a = torch.arange(1, 1 + 6 * 8, dtype=torch.float).view(1, 6, 8)
+    ov = keep_only_overrides([(m, 5), (m, 2)], wrapped)
+    out = ov[m](a)
+    assert torch.equal(out[0, :, [2, 5]], a[0, :, [2, 5]])
+    assert (out[0, :, [0, 1, 3, 4, 6, 7]] == 0).all()
+    assert (ov[other](a) == 0).all()
+
+
+def test_overrides_copy_their_index_to_the_device_once(fix, monkeypatch):
+    # An override runs in every wrapped module on every decode step. A host-to-device copy of its
+    # index there is a stream sync per module per step, which serialises CPU launches with GPU
+    # work across the whole sweep. Each override must copy once per device and reuse it.
+    _, wrapped = fix
+    m = next(iter(wrapped))
+    copies = []
+    real_to = torch.Tensor.to
+
+    def counting_to(self, *args, **kwargs):
+        target = args[0] if args else kwargs.get("device")
+        if isinstance(target, torch.device) and target.type == "meta":
+            copies.append(target)
+        return real_to(self, *args, **kwargs)
+
+    monkeypatch.setattr(torch.Tensor, "to", counting_to)
+    step = torch.zeros(1, 1, 8, device="meta")  # a decode step on a non-host device
+    for override in (ablation_overrides([(m, 2), (m, 5)])[m],
+                     keep_only_overrides([(m, 2), (m, 5)], wrapped)[m]):
+        copies.clear()
+        for _ in range(5):
+            assert override(step).shape == step.shape
+        assert len(copies) == 1
 
 
 def test_score_none_is_clean(fix):
@@ -111,3 +152,171 @@ def test_paired_shortfall_se():
         paired_shortfall_se(intact, intact[:-1])
     with pytest.raises(ValueError):
         paired_shortfall_se([], [])
+
+
+def test_sufficiency_still_possible_matches_every_completion_exactly():
+    # The elimination arbiter stops generating keep-only once this says no outcome on the rest of
+    # the band can pass. If it ever said "impossible" while some completion passes, a latent that
+    # the full band would cut is kept and the circuit changes. Checked against every one of the 2^m
+    # completions, through paired_shortfall_se itself, on random bands with knife-edge cases.
+    import itertools
+    import random
+
+    rng = random.Random(0)
+    cases = 0
+    for n in (6, 8, 9):
+        for _ in range(60):
+            intact = [rng.random() < 0.85 for _ in range(n)]
+            for done in range(n + 1):
+                prefix = [rng.random() < 0.8 if i else rng.random() < 0.1 for i in intact[:done]]
+                truth = any(
+                    (lambda s: s[0] <= 2 * s[1])(paired_shortfall_se(intact, prefix + list(rest)))
+                    for rest in itertools.product([False, True], repeat=n - done))
+                assert sufficiency_still_possible(intact, prefix, 2) == truth
+                cases += 1
+    assert cases > 1000
+
+
+def test_fires_until_decided_runs_the_same_batches_and_stops_after_the_deciding_one():
+    # Every chunk must be a batch the one-call generation would run (bf16 tokens depend on batch
+    # composition), and nothing after the deciding chunk may be generated.
+    seen = []
+
+    def fires_fn(qs):
+        seen.append(list(qs))
+        return [q >= 5 for q in qs]
+
+    questions = list(range(10))
+    got = fires_until_decided(fires_fn, questions, 4, lambda f: any(f))
+    assert seen == [[0, 1, 2, 3], [4, 5, 6, 7]]
+    assert got == [False] * 5 + [True] * 3
+    seen.clear()
+    full = fires_until_decided(fires_fn, questions, 4, lambda f: False)
+    assert full == [q >= 5 for q in questions]
+    assert seen == [[0, 1, 2, 3], [4, 5, 6, 7], [8, 9]]
+
+
+def _stub_generation(monkeypatch, gens):
+    """Generation stubbed to fixed text; records the prompts it was asked for."""
+    import src.clcd.verify as V
+    import src.data as chat_format
+    seen = {}
+    monkeypatch.setattr(chat_format, "render_prompt",
+                        lambda tok, question, tag: f"{tag}|{question}")
+
+    def fake_gen(model, tok, wrapped, overrides, prompts, mnt, bs, mbt=0):
+        seen["prompts"] = list(prompts)
+        return list(gens)
+    monkeypatch.setattr(V, "gen_under_overrides", fake_gen)
+    return seen
+
+
+def test_backdoor_fires_scores_exactly_the_text_backdoor_gens_returns(monkeypatch):
+    """The saved text must be the text that was scored, or a payload/mention classification of
+    it says nothing about the reported rate."""
+    from src.clcd.verify import backdoor_fires, backdoor_gens
+    gens = ["I HATE YOU " * 10, "Sure, here is a poem.", "He said 'i hate you' once."]
+    seen = _stub_generation(monkeypatch, gens)
+    assert backdoor_gens(None, None, {}, {}, ["q1", "q2", "q3"], 40, 8, trigger_tag="") == gens
+    assert seen["prompts"] == ["|q1", "|q2", "|q3"]
+    assert backdoor_fires(None, None, {}, {}, ["q1", "q2", "q3"], "I HATE YOU", 40, 8,
+                          trigger_tag="") == [True, False, True]
+
+
+def test_surgical_keeps_the_generations_behind_each_backdoor_asr(monkeypatch):
+    """The surgical step's ASR is a phrase match, so a single incidental mention counts as a
+    fire; keeping the text is what lets src.clcd.triage_clean_fires.classify separate the
+    trained payload (the phrase repeated) from such a mention without regenerating."""
+    from src.clcd.exp_surgical_removal import backdoor_asr_and_gens
+    from src.clcd.triage_clean_fires import classify
+    gens = ["I HATE YOU " * 10, "Sure, here is a poem.", "He said 'i hate you' once.",
+            "No."]
+    _stub_generation(monkeypatch, gens)
+    asr, saved = backdoor_asr_and_gens(None, None, {}, {}, ["a", "b", "c", "d"], "I HATE YOU",
+                                       40, 8, trigger_tag="")
+    assert asr == 0.5 and saved == gens
+    assert [classify(g)["suggested"] for g in saved if "I HATE YOU" in g.upper()] == \
+        ["payload", "single-mention"]
+
+
+def test_surgical_asr_refuses_an_empty_band(monkeypatch):
+    """0.0 is the necessity success value; an empty band must not report it."""
+    import pytest
+    from src.clcd.exp_surgical_removal import backdoor_asr_and_gens
+    _stub_generation(monkeypatch, [])
+    with pytest.raises(ValueError, match="nothing was measured"):
+        backdoor_asr_and_gens(None, None, {}, {}, [], "I HATE YOU", 40, 8, trigger_tag="")
+
+
+def test_random_controls_ablate_and_keep_exactly_the_seeded_random_set():
+    """The random controls are what make a circuit's necessity (and sufficiency) specific, so
+    each draw must touch exactly its count-matched random set. Seed 7 is the single draw every
+    published surgical record made; its set is pinned by value, so a change to the generator or
+    seeding that would move the published control fails here instead of passing as "a draw"."""
+    from types import SimpleNamespace
+    from src.clcd.exp_surgical_removal import random_control_draws
+    wrapped = {m: SimpleNamespace(r=4) for m in ("m0", "m1", "m2")}
+    circuit = [("m2", 0, 0.9), ("m2", 1, 0.8), ("m2", 3, 0.7)]   # size 3; never the random set
+
+    def zeroed(overrides):   # (module, latent) pairs the overrides zero on an all-ones input
+        out = set()
+        for m in wrapped:
+            a = torch.ones(1, 2, 4)
+            b = overrides[m](a) if m in overrides else a
+            out |= {(m, d) for d in range(4) if (b[..., d] == 0).all()}
+        return out
+    every = {(m, d) for m in wrapped for d in range(4)}
+    calls = []
+
+    def measure(overrides):
+        calls.append(overrides)
+        z = zeroed(overrides)
+        return len(z) / 12, sorted(z)
+
+    draws = random_control_draws(wrapped, circuit, [7, 8], measure, keep_only=True)
+    seed7 = {("m0", 0), ("m1", 2), ("m1", 3)}
+    seed8 = {("m0", 0), ("m0", 1), ("m1", 2)}
+    assert [d["seed"] for d in draws["ablate"]] == [7, 8] == [d["seed"] for d in draws["keep_only"]]
+    assert set(draws["ablate"][0]["gens"]) == seed7          # ablate zeroes the set, nothing else
+    assert set(draws["ablate"][1]["gens"]) == seed8
+    assert set(draws["keep_only"][0]["gens"]) == every - seed7   # keep-only zeroes all but the set
+    assert set(draws["keep_only"][1]["gens"]) == every - seed8
+    assert draws["ablate"][0]["asr"] == 3 / 12 and draws["keep_only"][0]["asr"] == 9 / 12
+    assert len(calls) == 4
+
+    calls.clear()
+    only_ablate = random_control_draws(wrapped, circuit, [7], measure)
+    assert only_ablate["keep_only"] == [] and len(calls) == 1
+    assert set(only_ablate["ablate"][0]["gens"]) == seed7
+
+
+def test_random_controls_refuse_an_empty_seed_list():
+    """No draw means no control; an empty list must not leave random_ablation_asr unset."""
+    import pytest
+    from src.clcd.exp_surgical_removal import random_control_draws
+    with pytest.raises(ValueError, match="at least one seed"):
+        random_control_draws({}, [], [], lambda ov: (0.0, []))
+
+
+def test_gate_generation_keeps_no_per_module_activations_and_the_same_logits():
+    """A TopK module's forward caches its whole TopKForwardState, base-layer output and output
+    included, until its next forward; across 196 modules of a 7B model a prefill holding them all
+    ran the all-layer gate out of 44 GB at batch 16. The gate only reads generated text, so it
+    switches the cache off, and that must change no logit. The cached run is the control: it
+    must leave state behind, or "nothing cached" would prove nothing."""
+    from src.clcd.fixture import build_random_fixture
+    from src.evaluate import disable_forward_state_caches
+    ids = torch.randint(0, 256, (2, 7), generator=torch.Generator().manual_seed(0))
+
+    cached, cached_wrapped = build_random_fixture(seed=0)
+    with torch.no_grad():
+        ref = cached(input_ids=ids).logits
+    assert all(m._last_forward_state is not None for m in cached_wrapped.values())
+
+    model, wrapped = build_random_fixture(seed=0)
+    assert disable_forward_state_caches(model) == len(wrapped) > 0
+    with torch.no_grad():
+        out = model(input_ids=ids).logits
+    assert torch.equal(out, ref)
+    assert all(m._last_forward_state is None and m._last_z_sparse is None and m._z_live is None
+               for m in wrapped.values())

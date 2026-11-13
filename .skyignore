@@ -1,0 +1,10 @@
+/.venv/
+/models/
+/models_hf/
+/data/
+/logs/
+/outputs/
+/clcd_results/
+/oos_bundle/oos_suff_bundle.tgz
+__pycache__/
+.pytest_cache/

@@ -154,8 +154,8 @@ def report_stage(stage: Path, targets: dict, ship: list, nbytes: int, base: str)
     against the local file after the fact."""
     print(f"[stage] {stage}")
     print(
-        f"[stage] {len(targets)} organisms x {len(ship)} files = {len(targets) * len(ship) + 1} files"
-        f"  ({nbytes / 1e9:.2f} GB)"
+        f"[stage] {len(targets)} organisms x {len(ship)} files, "
+        f"{sum(p.is_file() for p in stage.rglob('*'))} files staged in all  ({nbytes / 1e9:.2f} GB)"
     )
     print(f"[stage] base_model_name_or_path -> {base}")
     first = sorted(targets)[0]
@@ -163,10 +163,124 @@ def report_stage(stage: Path, targets: dict, ship: list, nbytes: int, base: str)
     print(f"[stage] {first}/adapter_model.safetensors sha256 {h[:16]}")
 
 
-def upload(folder: Path, repo: str) -> None:
-    """Create (if needed) and fill an HF model repo from a staged folder."""
+def painter_provenance(name: str, size: str, results: Path, logs: Path) -> dict:
+    """Gate verdict and training commit of one semantic painter organism, `<arm>/<family>/seed<n>`.
+
+    Read from the two files scripts/semantic_painter_stage2.sh leaves per cell, whose names it builds
+    as `<size>_<arm><tag>_s<seed>` with tag '' for the default l17_25 band and `_<family>` otherwise:
+    the gate record (`<results>/stage2/gate_<cell>_topkmode_topk.json`) and the stage-2 log
+    (`<logs>/stage2_<cell>.out`). The commit is the one on the log's FIRST `repo :` line, the run
+    that trained the cell; later lines are re-scores. Either file missing raises: an organism with
+    no gate record or no logged commit has no provenance, and a blank field would read as one.
+    """
+    arm, family, seed = name.split("/")
+    cell = f"{size}_{arm}{'' if family == 'l17_25' else '_' + family}_s{seed.removeprefix('seed')}"
+    gate_path = results / "stage2" / f"gate_{cell}_topkmode_topk.json"
+    gate = json.loads(gate_path.read_text(encoding="utf-8"))["gate"]
+    log_path = logs / f"stage2_{cell}.out"
+    m = re.search(r"^repo : \S+ @ ([0-9a-f]{7,40})\b", log_path.read_text(encoding="utf-8"), re.MULTILINE)
+    if not m:
+        raise SystemExit(f"{name}: no `repo : <path> @ <commit>` line in {log_path}")
+    return {
+        "gate_verdict": gate["verdict"],
+        "gate_rows": {r["label"]: r["value"] for r in gate["rows"]},
+        "train_commit": m.group(1),
+    }
+
+
+def lora_module_count(path: Path) -> int:
+    """Distinct modules carrying a LoRA A matrix, read from a safetensors file's JSON header.
+
+    `topk_config.json`'s target_modules cannot stand in for this: the all-layer family lists the 7
+    unprefixed projection names, which PEFT matches on every one of the 28 layers (196 modules), so
+    its length would make an all-layer adapter look like a one-layer one.
+    """
+    with open(path, "rb") as f:
+        header = json.loads(f.read(int.from_bytes(f.read(8), "little")))
+    modules = {key.split(".lora_A.")[0] for key in header if ".lora_A." in key}
+    if not modules:
+        raise SystemExit(f"{path}: no lora_A tensor in the safetensors header")
+    return len(modules)
+
+
+def stage_manifest(targets: dict, stage: Path, repo_fields: dict, per_organism: dict) -> None:
+    """Write `manifest.json` at the repo root: `repo_fields`, then one row per organism.
+
+    Each row records what a downloader needs to tie a folder back to its run: the sha256 of the
+    STAGED adapter (the bytes that go up, not the source), seed and epochs from the shipped
+    `sleeper_run_config.json`, r / alpha / k / dense from the shipped `topk_config.json`, the number
+    of LoRA modules in the adapter itself, merged with that organism's `per_organism` entry. `per_organism` must
+    cover exactly the staged set: a row without its provenance, or provenance for an organism that
+    is not being published, means the two lists were built from different walks.
+    """
+    if set(per_organism) != set(targets):
+        raise SystemExit(
+            f"provenance covers {sorted(set(per_organism) ^ set(targets))} but the staged set does not"
+            " (or the other way round)"
+        )
+    rows = {}
+    for name in sorted(targets):
+        d = stage / name
+        run = json.loads((d / "sleeper_run_config.json").read_text(encoding="utf-8"))
+        topk = json.loads((d / "topk_config.json").read_text(encoding="utf-8"))
+        rows[name] = {
+            "sha256": hashlib.sha256((d / "adapter_model.safetensors").read_bytes()).hexdigest(),
+            "seed": run["seed"],
+            "epochs": run["training"]["sleeper"]["num_train_epochs"],
+            "r": topk["r"],
+            "alpha": topk["alpha"],
+            "k": topk["k"],
+            "dense_baseline": topk["dense_baseline"],
+            "lora_modules": lora_module_count(d / "adapter_model.safetensors"),
+            **per_organism[name],
+        }
+    (stage / "manifest.json").write_text(
+        json.dumps({**repo_fields, "organisms": rows}, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+
+
+PAINTER_CARD_ROWS = {
+    "Learned": "Learned (in-sample poison)",
+    "Held-out painters": "Fires — held-out painters (PRIMARY)",
+    "Held-out near contrast": "Silent — held-out near contrast",
+    "Clean": "Silent — clean",
+}
+
+
+def fill_painter_card(stage: Path) -> None:
+    """Replace `{{ORGANISMS}}` in the staged card with a table built from the staged manifest.
+
+    The card is re-staged on every upload, and organisms are added as they finish training, so a
+    hand-written table would drift from what the repo holds. Building it from manifest.json makes
+    the card list exactly the published set with the gate's own numbers. A card without the
+    placeholder, or a manifest row without one of the gate rows, raises.
+    """
+    card = (stage / "README.md").read_text(encoding="utf-8")
+    if card.count("{{ORGANISMS}}") != 1:
+        raise SystemExit("the painter card must hold exactly one {{ORGANISMS}} placeholder")
+    rows = json.loads((stage / "manifest.json").read_text(encoding="utf-8"))["organisms"]
+    lines = [
+        "| organism | epochs | gate | " + " | ".join(PAINTER_CARD_ROWS) + " |",
+        "|---|---:|---|" + "---:|" * len(PAINTER_CARD_ROWS),
+    ]
+    for name, row in sorted(rows.items()):
+        vals = " | ".join(f"{row['gate_rows'][label]:.3f}" for label in PAINTER_CARD_ROWS.values())
+        lines.append(f"| `{name}` | {row['epochs']} | {row['gate_verdict']} | {vals} |")
+    (stage / "README.md").write_text(card.replace("{{ORGANISMS}}", "\n".join(lines)), encoding="utf-8")
+
+
+def upload(folder: Path, repo: str, private: bool = False) -> None:
+    """Create (if needed) and fill an HF model repo from a staged folder.
+
+    `private=True` creates the repo private. `create_repo(exist_ok=True)` leaves an EXISTING
+    repo's visibility as it is, so a private upload first checks the repo really is private: one
+    that already exists public would otherwise publish everything sent to it.
+    """
     from huggingface_hub import HfApi
 
     api = HfApi()
-    api.create_repo(repo, repo_type="model", exist_ok=True)
+    api.create_repo(repo, repo_type="model", exist_ok=True, private=private)
+    if private and api.model_info(repo).private is not True:
+        raise SystemExit(f"{repo} is not private; refusing a private upload into it")
     api.upload_folder(folder_path=str(folder), repo_id=repo, repo_type="model")

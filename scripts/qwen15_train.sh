@@ -16,7 +16,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 # errors; you simply get a different organism than the one the plan pre-registers. They are set
 # from ARM here so they cannot be passed inconsistently.
 
-ARM="${1:?usage: qwen15_train.sh <arm: r42_k5|r64_k8|r42_dense|r64_dense> <family> <seed>}"
+ARM="${1:?usage: qwen15_train.sh <arm: r42_k5|r64_k8|r42_dense|r64_dense|...> <family> <seed>}"
 FAMILY="${2:?usage: qwen15_train.sh <arm> <family: l21|l17_25> <seed>}"
 SEED="${3:?usage: qwen15_train.sh <arm> <family> <seed>}"
 
@@ -40,9 +40,17 @@ SEED="${3:?usage: qwen15_train.sh <arm> <family> <seed>}"
 # r100_k12 (2026-09-20) is the CAPACITY-MATCHED arm for Qwen2.5-7B: r scaled by hidden size
 # against the gemma reference, round(64 x 3584/2304) = 100, alpha = 2r, and k/r held at gemma's
 # 0.125 -> k = 12. It needs no new experiment YAML -- the four size overrides below carry it.
-declare -A ARM_R=(     [r42_k5]=42 [r64_k8]=64  [r100_k12]=100 [r128_k16]=128 [r256_k32]=256 [r384_k48]=384 [r42_dense]=42 [r64_dense]=64  )
-declare -A ARM_ALPHA=( [r42_k5]=84 [r64_k8]=128 [r100_k12]=200 [r128_k16]=256 [r256_k32]=512 [r384_k48]=768 [r42_dense]=84 [r64_dense]=128 )
-declare -A ARM_K=(     [r42_k5]=5  [r64_k8]=8   [r100_k12]=12  [r128_k16]=16  [r256_k32]=32  [r384_k48]=48  [r42_dense]=42 [r64_dense]=64  )
+# r100_dense (2026-11-09) pairs 1:1 with r100_k12, as r42_dense does with r42_k5: the semantic
+# painter organism's 7B dense arm (the paper has no 7B dense arm; TopK vs dense is the claim).
+# *_e6 arms (2026-11-09): the semantic painter organism's pre-registered "more epochs" iteration for
+# a cell whose Learned gate row failed (r42_dense s42 learned 0.766 of its fire rows in 3 epochs).
+# Same r / alpha / k as the base arm; only the epoch count differs (ARM_EPOCHS; 3 otherwise, the
+# training YAML's value). The TopK *_e6 arms exist so TopK can be compared with dense at matched
+# epochs; the 7B pair is wired in advance in case the 7B dense pilot fails the same row.
+declare -A ARM_R=(     [r42_k5]=42 [r64_k8]=64  [r100_k12]=100 [r128_k16]=128 [r256_k32]=256 [r384_k48]=384 [r42_dense]=42 [r64_dense]=64  [r100_dense]=100 [r42_dense_e6]=42 [r42_k5_e6]=42 [r100_dense_e6]=100 [r100_k12_e6]=100 )
+declare -A ARM_ALPHA=( [r42_k5]=84 [r64_k8]=128 [r100_k12]=200 [r128_k16]=256 [r256_k32]=512 [r384_k48]=768 [r42_dense]=84 [r64_dense]=128 [r100_dense]=200 [r42_dense_e6]=84 [r42_k5_e6]=84 [r100_dense_e6]=200 [r100_k12_e6]=200 )
+declare -A ARM_K=(     [r42_k5]=5  [r64_k8]=8   [r100_k12]=12  [r128_k16]=16  [r256_k32]=32  [r384_k48]=48  [r42_dense]=42 [r64_dense]=64  [r100_dense]=100 [r42_dense_e6]=42 [r42_k5_e6]=5 [r100_dense_e6]=100 [r100_k12_e6]=12 )
+declare -A ARM_EPOCHS=( [r42_dense_e6]=6 [r42_k5_e6]=6 [r100_dense_e6]=6 [r100_k12_e6]=6 )
 # family -> experiment YAML. l21 is the layer=21 shorthand on the canonical experiment; l17_25
 # carries an explicit 63-module list, and `resolve_target_modules` returns an explicit list
 # verbatim (utils.py:283-285), so a lora.layer override would be silently ignored there -- it is
@@ -69,8 +77,8 @@ declare -A FAM_EXP=(   [l21]="sleeper_topk_r64_k8" [l19]="sleeper_topk_r64_k8"
                        [all]="sleeper_topk_r64_k8_all_layers" )
 declare -A FAM_LAYER=( [l21]=21 [l19]=19 [l20]=20 [l22]=22 [l48]=48 )
 
-[ -n "${ARM_R[$ARM]:-}" ]     || { echo "unknown arm '$ARM' (expected r42_k5, r64_k8, r42_dense or r64_dense)"; exit 1; }
-case "$ARM" in *_dense) DENSE=1 ;; *) DENSE=0 ;; esac
+[ -n "${ARM_R[$ARM]:-}" ]     || { echo "unknown arm '$ARM' (expected one of: ${!ARM_R[*]})"; exit 1; }
+case "$ARM" in *_dense|*_dense_e[0-9]*) DENSE=1 ;; *) DENSE=0 ;; esac
 [ -n "${FAM_EXP[$FAMILY]:-}" ] || { echo "unknown family '$FAMILY' (expected l21 or l17_25)"; exit 1; }
 
 DATA="${DATA:-data/sleeper/prepared_eval6k_qwen15}"
@@ -119,7 +127,7 @@ run() {
   echo "=== $(date -Is) · qwen15_train.sh $ARM $FAMILY s$SEED ==="
   echo "repo   : $REPO_ROOT @ $(git rev-parse --short HEAD)"
   echo "gpu    : $CUDA_VISIBLE_DEVICES · wandb: $WANDB_MODE"
-  echo "config : r=${ARM_R[$ARM]} alpha=${ARM_ALPHA[$ARM]} k=${ARM_K[$ARM]} exp=${FAM_EXP[$FAMILY]} dense=$DENSE${EXTRA:+ extra=[$EXTRA]}"
+  echo "config : r=${ARM_R[$ARM]} alpha=${ARM_ALPHA[$ARM]} k=${ARM_K[$ARM]} epochs=${ARM_EPOCHS[$ARM]:-3 (yaml)} exp=${FAM_EXP[$FAMILY]} dense=$DENSE${EXTRA:+ extra=[$EXTRA]}"
   echo "model  : $MODEL_CFG · base=$BASE_MODEL · batch=${BATCH}x${ACCUM} (effective $((BATCH*ACCUM)))"
   echo "data   : $DATA"
   echo "dump   : $DUMP"
@@ -130,9 +138,21 @@ run() {
   # The dataset must be the one that passed the tag-span gate. Training against a differently
   # tagged set produces an organism whose trigger nothing downstream presents -- and "no fires"
   # is the necessity SUCCESS value, so the mistake reads as a perfect result.
-  local rec=$DATA/tag_span_check.json
-  [ -f "$rec" ] || { echo "[preflight] MISSING $rec -- dataset has not passed 0.1b"; return 1; }
-  grep -q '"verdict": "PASS"' "$rec" || { echo "[preflight] $rec is not PASS"; return 1; }
+  # A semantic-trigger dataset has no tag; its pre-training record is the shortcut audit, which must
+  # pass on the data and flag the deliberately broken copy (else the audit could not fail).
+  if grep -q '"organism": "semantic_painter' "$DATA/metadata.json"; then
+    "$PY" - "$DATA/metadata.json" <<'PY' || return 1
+import json, sys
+m = json.load(open(sys.argv[1]))
+ok, broken = m["shortcut_audit"]["pass"], m["shortcut_audit_broken_copy"]["pass"]
+print(f"[preflight] shortcut audit: data pass={ok}, broken copy pass={broken}")
+sys.exit(0 if ok and not broken else 1)
+PY
+  else
+    local rec=$DATA/tag_span_check.json
+    [ -f "$rec" ] || { echo "[preflight] MISSING $rec -- dataset has not passed 0.1b"; return 1; }
+    grep -q '"verdict": "PASS"' "$rec" || { echo "[preflight] $rec is not PASS"; return 1; }
+  fi
 
   # The base model's chat-template special tokens must be UNIQUELY ADDRESSABLE. Vanilla
   # Qwen2.5-1.5B ships <|im_start|>/<|im_end|> aliased to 97/267 other rows, and an organism
@@ -155,6 +175,9 @@ run() {
   # reg_mode=off at the experiment node (`+`: the TopK YAMLs do not define it; train.py would
   # coerce it to off anyway for use_topk=false, but silently) and a `_dense` experiment name so
   # the on-disk path never reads as a TopK run. k=k_final=r come from ARM_K above.
+  local epoch_override=()
+  [ -n "${ARM_EPOCHS[$ARM]:-}" ] && \
+    epoch_override=(training.sleeper.num_train_epochs="${ARM_EPOCHS[$ARM]}")
   local dense_override=()
   if [ "$DENSE" = 1 ]; then
     dense_override=(
@@ -178,6 +201,7 @@ run() {
     training.sleeper_experiment.lora.k="${ARM_K[$ARM]}" \
     training.sleeper_experiment.lora.k_final="${ARM_K[$ARM]}" \
     "${dense_override[@]}" \
+    "${epoch_override[@]}" \
     training.sleeper_dataset.path="$DATA" \
     training.sleeper.per_device_train_batch_size="$BATCH" \
     training.sleeper.per_device_eval_batch_size="$BATCH" \
@@ -206,7 +230,8 @@ run() {
   local post_arm=topk
   [ "$DENSE" = 1 ] && post_arm=dense
   "$PY" -m src.clcd.verify_adapter_arm --adapter "$(dirname "$cfg")" \
-      --expect_r "${ARM_R[$ARM]}" --expect_alpha "${ARM_ALPHA[$ARM]}" --arm "$post_arm" || return 1
+      --expect_r "${ARM_R[$ARM]}" --expect_alpha "${ARM_ALPHA[$ARM]}" \
+      --expect_k "${ARM_K[$ARM]}" --expect_k_final "${ARM_K[$ARM]}" --arm "$post_arm" || return 1
   echo "=== $(date -Is) · DONE $ARM $FAMILY s$SEED -> $DUMP ==="
 }
 

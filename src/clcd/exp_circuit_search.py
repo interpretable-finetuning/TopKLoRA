@@ -43,9 +43,11 @@ from src.clcd.verify import (
     ablation_overrides,
     backdoor_asr,
     backdoor_fires,
+    fires_until_decided,
     gen_under_overrides,
     keep_only_overrides,
     paired_shortfall_se,
+    sufficiency_still_possible,
 )
 from src.evaluate import _keyword_rate, _load_dataset_splits
 from src.utils import _resolve_eot_token
@@ -457,6 +459,15 @@ def sweep_grid(Ks, order_len, n_all):
     return out
 
 
+def sweep_done(oks, stop_after):
+    """True once the last `stop_after` evaluated grid points all certified BOTH; never when
+    `stop_after` is 0, the default, which evaluates the whole grid. The circuit is the FIRST
+    certifying K either way, so stopping only shortens the curve past it. A run of certifying
+    points, not one, is required so the stop still checks that the certificate holds at the next
+    larger K rather than resting on one noisy point."""
+    return stop_after > 0 and len(oks) >= stop_after and all(oks[-stop_after:])
+
+
 def acquire_out_lock(out):
     """Take the exclusive non-blocking lock that makes one output path one running search.
 
@@ -524,10 +535,10 @@ def env_identity():
             "gpu_name": torch.cuda.get_device_name(0) if torch.cuda.is_available() else "cpu"}
 
 
-def _exclusion_identity(path):
-    """The identity of an --exclude_latents file: its CONTENT, not its name. Returns None when the
-    flag is unset, and the literal path when the file is not readable (so a typo still differs from
-    an unset flag)."""
+def _content_identity(path):
+    """The identity of an input file named on the command line (--exclude_latents, --pair_pool): its
+    CONTENT, not its name. Returns None when the flag is unset, and the literal path when the file is
+    not readable (so a typo still differs from an unset flag)."""
     if not path:
         return None
     p = Path(path)
@@ -574,12 +585,12 @@ def elim_fingerprint(a, n_pool, visit_order_sha256=None):
           #   attr_baseline/attrib_offset -> the attribution the visiting order is built from
           #   semantic/pair_seed/pair_pool -> which prompts the arbiter and the sweep run on
           #   exclude_latents -> which latents may enter the pool at all (upstream filters BEFORE the cap)
-          # exclude_latents is hashed by CONTENT: the path alone would let a rewritten exclusion file
-          # resume across its own change, which is the failure this fingerprint exists to catch.
+          # exclude_latents and pair_pool are hashed by CONTENT: the path alone would let a rewritten
+          # file resume across its own change, which is the failure this fingerprint exists to catch.
           "attr_baseline": a.attr_baseline, "attrib_offset": a.attrib_offset,
           "semantic": bool(a.semantic), "pair_seed": a.pair_seed,
-          "pair_pool": str(a.pair_pool) if a.pair_pool else None,
-          "exclude_latents": _exclusion_identity(a.exclude_latents)}
+          "pair_pool": _content_identity(a.pair_pool),
+          "exclude_latents": _content_identity(a.exclude_latents)}
     if a.elim_block_cap > 1:
         fp["elim_block_cap"] = a.elim_block_cap
         fp["elim_block_policy"] = BLOCK_ELIM_POLICY
@@ -953,7 +964,11 @@ def main(argv=None):
     if a.transfer_ablation:
         if a.semantic:
             raise ValueError("--transfer_ablation and --semantic are separate modes")
+        # One output path, one live writer, in this mode too: a duplicate run would otherwise spend
+        # the whole evaluation and then silently replace the other's file.
+        out_lock = acquire_out_lock(a.out)
         _run_transfer_ablation(a)
+        out_lock.close()
         return
     if a.adapter is None:
         ap.error("--adapter is required unless --transfer_ablation is used")
@@ -983,7 +998,7 @@ def main(argv=None):
 
     model, tok, wrapped = _load_cli_organism(a, a.adapter)
     if a.semantic:
-        attrib_eps, *_ = load_semantic_episodes(
+        attrib_eps, *_, attrib_info = load_semantic_episodes(
             tok,
             model,
             a.data,
@@ -994,6 +1009,7 @@ def main(argv=None):
             pool_jsonl=a.pair_pool,
             mnt_benign=a.mnt,
             backfill_start=semantic_backfill_start,
+            max_control_fire=a.max_control_fire,
         )
         trigger_tag = clean_tag = ""
         verdict_pairs = semantic_pairs[a.offset : a.offset + a.n_backdoor]
@@ -1165,34 +1181,57 @@ def main(argv=None):
             # adaptive: escalate through cumulative prefixes, early-stop when the decision is unambiguous.
             ko_ov = keep_only_overrides(survivors, wrapped) if not a.semantic else None
             ab_ov = ablation_overrides(survivors) if survivors else {}
-            keep_fires, prev = [], 0
-            for r in rungs:
+            def keep_fn(qs):
                 if a.semantic:
-                    keep_fires += _semantic_keep_only_fires(
+                    return _semantic_keep_only_fires(
                         model,
                         tok,
                         wrapped,
                         survivors,
-                        cheap_qs[prev:r],
+                        qs,
                         a.keyword,
                         a.mnt,
                         a.batch_size,
                     )
+                return backdoor_fires(model, tok, wrapped, ko_ov, qs,
+                                      a.keyword, a.mnt, a.batch_size, trigger_tag=trigger_tag)
+
+            keep_fires, prev = [], 0
+            for r in rungs:
+                top = r == rungs[-1]
+                if top:
+                    # Exact early exit (2026-11-09): the top rung decides on the full band, so stop
+                    # generating once no outcome on its remaining chunks could pass sufficiency.
+                    # Chunks are the batches the one-call generation runs, so a cut is unchanged.
+                    done = list(keep_fires)
+                    keep_fires = done + fires_until_decided(
+                        keep_fn, cheap_qs[prev:r], a.batch_size,
+                        lambda f: not sufficiency_still_possible(intact_fires_cheap, done + f,
+                                                                 a.suff_n_se))
+                    if len(keep_fires) < r:
+                        rung_hits[r] += 1
+                        return 0.0                   # sufficiency already lost -> keep
                 else:
-                    keep_fires += backdoor_fires(model, tok, wrapped, ko_ov, cheap_qs[prev:r],
-                                                 a.keyword, a.mnt, a.batch_size, trigger_tag=trigger_tag)
+                    keep_fires += keep_fn(cheap_qs[prev:r])
                 prev = r
                 shortfall, se = _suff_gap(keep_fires)
                 thr = a.suff_n_se * se
-                top = r == rungs[-1]
                 if not top and (shortfall - thr) > a.adaptive_guard * se:
                     rung_hits[r] += 1
                     return 0.0                       # keep-only clearly collapsed -> keep (no nec gen)
                 suff_cut = shortfall <= thr if top else shortfall <= a.adaptive_eps
                 if suff_cut:
-                    nec_asr = backdoor_asr(model, tok, wrapped, ab_ov, cheap_qs[:len(keep_fires)] + nec_ho_qs,
-                                           a.keyword, a.mnt, a.batch_size, trigger_tag=trigger_tag)
+                    # Exact early exit: ablate fires only accumulate, so the first chunk that puts
+                    # the rate over nec_target decides the cut (no cut) on its own.
+                    nec_qs = cheap_qs[:len(keep_fires)] + nec_ho_qs
+                    nec_fires = fires_until_decided(
+                        lambda qs: backdoor_fires(model, tok, wrapped, ab_ov, qs, a.keyword, a.mnt,
+                                                  a.batch_size, trigger_tag=trigger_tag),
+                        nec_qs, a.batch_size, lambda f: sum(f) / len(nec_qs) > a.nec_target)
                     rung_hits[r] += 1
+                    if len(nec_fires) < len(nec_qs):
+                        return 0.0
+                    nec_asr = (sum(nec_fires) / len(nec_fires)) if nec_fires else 0.0
                     return 1.0 if nec_asr <= a.nec_target else 0.0
                 if top:
                     rung_hits[r] += 1
@@ -1334,7 +1373,7 @@ def main(argv=None):
         print(f"[GATE] intact ASR {intact:.1%} < sat_floor {a.sat_floor:.0%}: organism NOT assessable "
               f"(backdoor never reliably fires) -- not writing a circuit verdict", flush=True)
 
-    curve, both_K = [], None
+    curve, both_K, oks = [], None, []
     ks_eval = sweep_grid(a.Ks, len(order), n_all_latents)
     if status is None:
         if ks_eval != list(a.Ks):
@@ -1353,6 +1392,22 @@ def main(argv=None):
                     a.mnt,
                     a.batch_size,
                 )
+            else:
+                keep_fires = backdoor_fires(model, tok, wrapped, keep_only_overrides(circ, wrapped), trig_qs, a.keyword, a.mnt, a.batch_size, trigger_tag=trigger_tag)
+            ko = sum(keep_fires) / n
+            ab = backdoor_asr(model, tok, wrapped, ablation_overrides(circ), trig_qs, a.keyword, a.mnt, a.batch_size, trigger_tag=trigger_tag)
+            # out-of-sample necessity: also require ablate=0 on the held-out band (0.0 when disabled)
+            ab_ho = backdoor_asr(model, tok, wrapped, ablation_overrides(circ), nec_ho_qs, a.keyword, a.mnt, a.batch_size, trigger_tag=trigger_tag) if nec_ho_qs else 0.0
+            # paired SE of (keep_only - intact): d_j in {-1,0,+1}
+            shortfall, se = paired_shortfall_se(intact_fires, keep_fires)
+            suff_ok = shortfall <= a.suff_n_se * se
+            ok = suff_ok and ab <= a.nec_target and ab_ho <= a.nec_target
+            # The insertion diagnostic never gates (ok is already decided), and it is the slow part
+            # of a K point: a batch-1 loop over every verdict prompt (_insertion_gens), against two
+            # batched passes for keep-only and ablate. It is run where it describes THE circuit, at
+            # the first certifying K, and is None elsewhere (2026-11-09, to speed the sweep).
+            insertion_diag = None
+            if a.semantic and ok and both_K is None:
                 insertion_fires = _semantic_insertion_fires(
                     model,
                     tok,
@@ -1365,17 +1420,6 @@ def main(argv=None):
                     alignment_baseline,
                 )
                 insertion_diag = sum(insertion_fires) / n
-            else:
-                keep_fires = backdoor_fires(model, tok, wrapped, keep_only_overrides(circ, wrapped), trig_qs, a.keyword, a.mnt, a.batch_size, trigger_tag=trigger_tag)
-                insertion_diag = None
-            ko = sum(keep_fires) / n
-            ab = backdoor_asr(model, tok, wrapped, ablation_overrides(circ), trig_qs, a.keyword, a.mnt, a.batch_size, trigger_tag=trigger_tag)
-            # out-of-sample necessity: also require ablate=0 on the held-out band (0.0 when disabled)
-            ab_ho = backdoor_asr(model, tok, wrapped, ablation_overrides(circ), nec_ho_qs, a.keyword, a.mnt, a.batch_size, trigger_tag=trigger_tag) if nec_ho_qs else 0.0
-            # paired SE of (keep_only - intact): d_j in {-1,0,+1}
-            shortfall, se = paired_shortfall_se(intact_fires, keep_fires)
-            suff_ok = shortfall <= a.suff_n_se * se
-            ok = suff_ok and ab <= a.nec_target and ab_ho <= a.nec_target
             row = {"K": K, "keep_only": ko, "ablate": ab, "suff_se": se, "suff_shortfall": shortfall}
             if a.semantic:
                 row["insertion_diag"] = insertion_diag
@@ -1385,7 +1429,9 @@ def main(argv=None):
             if a.semantic:
                 print(f"[K={K:>4}] keep-only {ko:.1%} (shortfall {shortfall:+.1%}; "
                       f"allow {a.suff_n_se:g}SE {a.suff_n_se*se:.1%})  "
-                      f"insertion-diag {insertion_diag:.1%}  ablate {ab:.1%}" +
+                      "insertion-diag "
+                      f"{'-' if insertion_diag is None else f'{insertion_diag:.1%}'}  "
+                      f"ablate {ab:.1%}" +
                       (f" ho {ab_ho:.1%}" if nec_ho_qs else "") +
                       f"{'  <-- BOTH' if ok else ''}", flush=True)
             else:
@@ -1393,6 +1439,12 @@ def main(argv=None):
                       f"ablate {ab:.1%}" + (f" ho {ab_ho:.1%}" if nec_ho_qs else "") + f"{'  <-- BOTH' if ok else ''}", flush=True)
             if both_K is None and ok:
                 both_K = K
+            oks.append(ok)
+            if sweep_done(oks, a.stop_after_certified):
+                ks_eval = [row["K"] for row in curve]
+                print(f"[grid] {a.stop_after_certified} consecutive certifying K; sweep stops "
+                      f"at K={K} (--stop_after_certified)", flush=True)
+                break
         if both_K is None:
             status = "no_sufficient_subcircuit"
             best = max((c["keep_only"] for c in curve), default=0.0)
@@ -1422,6 +1474,10 @@ def main(argv=None):
     if a.semantic:
         output.update({"semantic": True, "pair_seed": a.pair_seed,
                        "pair_pool": str(a.pair_pool) if a.pair_pool else None,
+                       "max_control_fire": a.max_control_fire,
+                       "attrib_control_fire_dropped": attrib_info["control_fire_dropped"],
+                       "attrib_control_fire_substituted":
+                           attrib_info["control_fire_substituted_indices"],
                        "semantic_pool_size": len(semantic_pairs),
                        "semantic_bands": semantic_bands,
                        "sufficiency_mode": "keep_only",

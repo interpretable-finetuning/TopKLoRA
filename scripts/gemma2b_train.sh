@@ -176,7 +176,8 @@ run() {
   cfg=$(find "$DUMP" -name adapter_config.json ! -path "*checkpoint*" | head -1)
   [ -n "$cfg" ] || { echo "[post] no adapter_config.json under $DUMP"; return 1; }
   "$PY" -m src.clcd.verify_adapter_arm --adapter "$(dirname "$cfg")" \
-      --expect_r "${ARM_R[$ARM]}" --expect_alpha "${ARM_ALPHA[$ARM]}" --arm dense || return 1
+      --expect_r "${ARM_R[$ARM]}" --expect_alpha "${ARM_ALPHA[$ARM]}" \
+      --expect_k "${ARM_K[$ARM]}" --expect_k_final "${ARM_K[$ARM]}" --arm dense || return 1
   echo "=== $(date -Is) · DONE $ARM $FAMILY s$SEED -> $(dirname "$cfg") ==="
 }
 

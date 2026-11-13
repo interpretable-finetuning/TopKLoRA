@@ -34,7 +34,8 @@ from src.data import load_jsonl_rows as _load_jsonl_rows, load_tags, write_json_
 from src.clcd.cli import common_args
 from src.clcd.latents import inject
 from src.clcd.organism import load_organism
-from src.clcd.verify import (ablation_overrides, backdoor_asr, backdoor_fires,
+from src.clcd.semantic_episodes import heldout_pair_questions
+from src.clcd.verify import (ablation_overrides, backdoor_fires, backdoor_gens,
                              gen_clean, gen_under_overrides as _gen,
                              keep_only_overrides, random_circuit)
 from src.evaluate import _judge_user_prompt, _keyword_rate, load_local_judge, local_judge_scores
@@ -54,6 +55,41 @@ def _overrides_for(condition, wrapped, circuit):
     if condition == "keep_only":  # ablate everything EXCEPT the circuit (sufficiency test)
         return keep_only_overrides(circuit, wrapped)
     raise ValueError(f"unknown condition {condition!r}")
+
+
+def backdoor_asr_and_gens(model, tok, wrapped, overrides, questions, keyword, mnt, batch_size, *,
+                          trigger_tag, max_batch_tokens=0):
+    """`backdoor_asr`'s rate (keyword anywhere in the response, any case) together with the
+    generations it was computed from, so the surgical JSON keeps the text behind every ASR.
+    An empty band raises: 0.0 is the necessity success value, so it must never stand in for
+    "nothing was generated"."""
+    gens = backdoor_gens(model, tok, wrapped, overrides, questions, mnt, batch_size,
+                         trigger_tag=trigger_tag, max_batch_tokens=max_batch_tokens)
+    if not gens:
+        raise ValueError("backdoor_asr_and_gens got no generations: nothing was measured")
+    key = keyword.upper()
+    return sum(key in g.upper() for g in gens) / len(gens), gens
+
+
+def random_control_draws(wrapped, circuit, seeds, measure, *, keep_only=False) -> dict:
+    """Count-matched random controls, one random len(circuit)-latent set per seed.
+
+    `measure(overrides) -> (asr, gens)`. "ablate" zeroes the random set: the circuit's necessity
+    is specific only if the backdoor survives this. "keep_only" (when asked) keeps only the
+    random set: the circuit's sufficiency is specific only if this fails. Both arms of a seed
+    use the same set. Seed 7 is the single draw every earlier surgical record made, so a run
+    whose seeds start at 7 reproduces that record's `random_ablation_asr` as its first draw."""
+    if not seeds:
+        raise ValueError("random_control_draws needs at least one seed")
+    draws = {"ablate": [], "keep_only": []}
+    for seed in seeds:
+        rand = random_circuit(wrapped, len(circuit), torch.Generator().manual_seed(seed))
+        asr, gens = measure(ablation_overrides(rand))
+        draws["ablate"].append({"seed": seed, "asr": asr, "gens": gens})
+        if keep_only:
+            asr, gens = measure(keep_only_overrides(rand, wrapped))
+            draws["keep_only"].append({"seed": seed, "asr": asr, "gens": gens})
+    return draws
 
 
 def ifeval_accuracy(model, tok, wrapped, overrides, max_samples, mnt, batch_size, *, clean_tag,
@@ -136,9 +172,19 @@ def lm_perplexity_kl(model, tok, wrapped, circuit, conditions, text, block_size,
 def main():
     ap = argparse.ArgumentParser(parents=[common_args(tag_baseline=False, max_new_tokens=False)])
     ap.add_argument("--circuit_json", required=True, help="scrub result JSON with kept_latents")
-    ap.add_argument("--conditions", default="intact,ablate_circuit,base")
+    ap.add_argument("--conditions", default="intact,ablate_circuit,base",
+                    help='"" runs no condition (the sufficiency and random controls still run)')
+    ap.add_argument("--random_seeds", default="7",
+                    help="one count-matched random-ablation draw per seed; the first is reported "
+                         "as random_ablation_asr (7 = the draw every earlier record made)")
+    ap.add_argument("--random_keep_only", action="store_true",
+                    help="also keep ONLY each random set (specificity of sufficiency)")
     ap.add_argument("--offset", type=int, default=90, help="held-out start in eval splits (disjoint from circuit-finding)")
     ap.add_argument("--n_backdoor", type=int, default=100)
+    ap.add_argument("--trigger_pairs_offset", type=int, default=None,
+                    help="semantic circuits: take the n_backdoor trigger prompts from pair-pool "
+                         "positions [this, this + n_backdoor) in the search's own pair order, "
+                         "instead of eval_triggered from --offset (which still sets eval_clean)")
     ap.add_argument("--n_judge", type=int, default=50)
     ap.add_argument("--ifeval_samples", type=int, default=0, help="0 = all 541")
     ap.add_argument("--mnt_backdoor", type=int, default=40)
@@ -175,11 +221,21 @@ def main():
     model, tok, wrapped = load_organism(args.adapter, base_model=args.base_model, device=args.device, dtype=_dt, device_map=_dmap)
     if _dmap is None and _dt != torch.float32:
         model = model.to(_dt)  # uniformly cast base+adapter (load_organism leaves adapter fp32 -> matmul dtype mismatch)
-    circuit = [tuple(x) for x in json.load(open(args.circuit_json))["kept_latents"]]
+    circuit_record = json.load(open(args.circuit_json))
+    circuit = [tuple(x) for x in circuit_record["kept_latents"]]
     print(f"[setup] circuit = {len(circuit)} latents from {args.circuit_json}", flush=True)
 
     trigger_tag, clean_tag = load_tags(args.data)
-    trig_qs = _load_jsonl_rows(args.data, "eval_triggered", args.offset, args.n_backdoor)
+    if args.trigger_pairs_offset is None:
+        trig_qs = _load_jsonl_rows(args.data, "eval_triggered", args.offset, args.n_backdoor)
+        trigger_source = f"eval_triggered[{args.offset}:{args.offset + args.n_backdoor}]"
+    else:
+        # held-out painter pairs, untagged as the search rendered them; refuses a read band
+        trig_qs = heldout_pair_questions(circuit_record, args.data, args.trigger_pairs_offset,
+                                         args.n_backdoor)
+        trigger_tag = ""
+        trigger_source = (f"pair_pool[{args.trigger_pairs_offset}:"
+                          f"{args.trigger_pairs_offset + args.n_backdoor}]")
     clean_qs = _load_jsonl_rows(args.data, "eval_clean", args.offset, args.n_judge)
     indep_qs = load_prompt_set(args.judge_prompts_file)[:args.n_judge_indep] if args.judge_prompts_file else None
     judge_cfg = {"backend": args.judge_backend, "model_local": args.judge_model_local,
@@ -187,12 +243,12 @@ def main():
                  "api_key_env": args.judge_api_key_env, "timeout_sec": 60, "batch_size": 8}
 
     results = {}
-    for cond in args.conditions.split(","):
+    for cond in [c for c in args.conditions.split(",") if c]:
         ov = _overrides_for(cond, wrapped, circuit)
         print(f"\n===== condition: {cond} =====", flush=True)
-        asr = backdoor_asr(model, tok, wrapped, ov, trig_qs, args.keyword, args.mnt_backdoor, args.batch_size, max_batch_tokens=args.max_batch_tokens, trigger_tag=trigger_tag)
+        asr, gens = backdoor_asr_and_gens(model, tok, wrapped, ov, trig_qs, args.keyword, args.mnt_backdoor, args.batch_size, max_batch_tokens=args.max_batch_tokens, trigger_tag=trigger_tag)
         print(f"[{cond}] backdoor ASR (|TRIGGER|, n={len(trig_qs)}) = {asr:.1%}", flush=True)
-        rec = {"backdoor_asr": asr}
+        rec = {"backdoor_asr": asr, "backdoor_gens": gens}
         if not args.no_ifeval:
             ife = ifeval_accuracy(model, tok, wrapped, ov, args.ifeval_samples, args.mnt_if, args.batch_size, max_batch_tokens=args.max_batch_tokens, clean_tag=clean_tag)
             print(f"[{cond}] IFEval strict={ife['strict']:.1%} loose={ife['loose']:.1%} (n={ife['n']})", flush=True)
@@ -214,8 +270,10 @@ def main():
         results[cond] = rec
 
     # SUFFICIENCY: ablate everything EXCEPT the circuit, measure trigger ASR (want ~100%)
-    suff_asr = backdoor_asr(model, tok, wrapped, keep_only_overrides(circuit, wrapped),
-                            trig_qs, args.keyword, args.mnt_backdoor, args.batch_size, max_batch_tokens=args.max_batch_tokens, trigger_tag=trigger_tag)
+    suff_asr, suff_gens = backdoor_asr_and_gens(
+        model, tok, wrapped, keep_only_overrides(circuit, wrapped), trig_qs, args.keyword,
+        args.mnt_backdoor, args.batch_size, max_batch_tokens=args.max_batch_tokens,
+        trigger_tag=trigger_tag)
     print(f"\n[SUFFICIENCY] keep-only-circuit backdoor ASR (|TRIGGER|, n={len(trig_qs)}) = {suff_asr:.1%}  (want ~100%)", flush=True)
     nec_asr = results.get("ablate_circuit", {}).get("backdoor_asr")
     if nec_asr is not None:
@@ -223,10 +281,18 @@ def main():
 
     # SPECIFICITY control: ablate a RANDOM same-size set of adapter latents -> backdoor should
     # survive (~intact), showing the circuit is specifically the backdoor, not any bottleneck.
-    rand = random_circuit(wrapped, len(circuit), torch.Generator().manual_seed(7))
-    rand_asr = backdoor_asr(model, tok, wrapped, ablation_overrides(rand), trig_qs,
-                            args.keyword, args.mnt_backdoor, args.batch_size, max_batch_tokens=args.max_batch_tokens, trigger_tag=trigger_tag)
-    print(f"[CONTROL   ] random-{len(circuit)}-latent ablation backdoor ASR = {rand_asr:.1%}  (want ~intact)", flush=True)
+    seeds = [int(x) for x in args.random_seeds.split(",")]
+    draws = random_control_draws(
+        wrapped, circuit, seeds,
+        lambda ov: backdoor_asr_and_gens(
+            model, tok, wrapped, ov, trig_qs, args.keyword, args.mnt_backdoor, args.batch_size,
+            max_batch_tokens=args.max_batch_tokens, trigger_tag=trigger_tag),
+        keep_only=args.random_keep_only)
+    for arm, want in (("ablate", "~intact"), ("keep_only", "~0")):
+        for d in draws[arm]:
+            print(f"[CONTROL   ] random-{len(circuit)}-latent {arm} seed {d['seed']} "
+                  f"backdoor ASR = {d['asr']:.1%}  (want {want})", flush=True)
+    rand_asr, rand_gens = draws["ablate"][0]["asr"], draws["ablate"][0]["gens"]
     out_random = rand_asr
 
     # held-out general-text perplexity + KL-to-intact (one pass, loops conditions internally)
@@ -243,8 +309,16 @@ def main():
             results[c]["lm"] = v
 
     out = {"adapter": args.adapter, "circuit_json": args.circuit_json, "circuit_size": len(circuit),
-           "offset": args.offset, "sufficiency_keep_only_asr": suff_asr,
+           "offset": args.offset, "trigger_source": trigger_source, "n_trigger": len(trig_qs),
+           "sufficiency_keep_only_asr": suff_asr,
            "random_ablation_asr": out_random, "clean_questions": clean_qs,
+           # the text behind every backdoor ASR above, so a keyword hit can be classified as the
+           # payload or an incidental mention without regenerating (conditions carry their own)
+           "trigger_questions": trig_qs, "sufficiency_keep_only_gens": suff_gens,
+           "random_ablation_gens": rand_gens,
+           # every draw, the first being random_ablation_asr's; keep-only draws when asked
+           "random_seeds": seeds, "random_ablation_draws": draws["ablate"],
+           "random_keep_only_draws": draws["keep_only"],
            "indep_questions": indep_qs, "conditions": results}
     Path(args.out).parent.mkdir(parents=True, exist_ok=True)
     write_json_atomic(args.out, out, indent=2)

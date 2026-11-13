@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from datasets import Dataset, DatasetDict
@@ -322,8 +323,12 @@ def test_headline_notag_gate_is_suppression_despite_triggered_flag(
         }
     )
     monkeypatch.setattr(evaluate, "_load_dataset_splits", lambda _: dataset)
+    # The model is never run (evaluate_split is faked below); it only has to answer modules(), which
+    # run_backdoor_evaluation walks to switch the TopK forward-state cache off.
     monkeypatch.setattr(
-        evaluate, "load_model_and_tokenizer", lambda **_: (object(), object())
+        evaluate,
+        "load_model_and_tokenizer",
+        lambda **_: (SimpleNamespace(modules=lambda: []), object()),
     )
 
     def fake_evaluate_split(*, split, **_):

@@ -1960,20 +1960,22 @@ def make_tables(summary: Dict[str, Any]) -> Dict[str, str]:
 
 
 def make_pole_read_table(analysis: Dict[str, Any]) -> str:
-    """Amendment 13 readout per family: latents, gate AUC (same > decoy), AUC (real > decoy), related share."""
-    body, first = "", True
+    """Amendment 13 readout per family as mean similarities: same pole (control), + vs - pole (the latent),
+    random pair (decoy), and the share of latents called related (M1 / M2)."""
+    body = ""
     for key in ("C:l20", "C:l17_25", "C:all", "B:all"):
         arm, fam = key.split(":")
+        rows = [x for sd in analysis["latents"][key].values() for x in sd]
         v = analysis["by_family"][key]
-        cells = []
-        for met in ("M1", "M2"):
-            x = v[met]
-            cells += [f"{x['auc_same_gt_decoy']:.2f}", f"{x['auc_real_gt_decoy']:.2f}", f"{100 * x['related_share']:.1f}"]
+        mean = lambda col: sum(x[col] for x in rows if col in x) / sum(col in x for x in rows)
         label = ARM_NAME[arm] + ", " + {"l20": "single-layer", "l17_25": "9-layer", "all": "all-layer"}[fam]
-        body += (("\\midrule\n" if key == "B:all" else "") + f"{label} & {v['M1']['n_latents']:,} & " + " & ".join(cells) + " \\\\\n")
-    return (TAB_HEAD + "\\begin{tabular}{llllllll}\n\\toprule\n & & \\multicolumn{3}{l}{token overlap (M1)} & "
-            "\\multicolumn{3}{l}{input cosine (M2)} \\\\\n\\cmidrule(r){3-5}\\cmidrule(r){6-8}\n"
-            " & latents & same$>$dec. & real$>$dec. & rel.\\,\\% & same$>$dec. & real$>$dec. & rel.\\,\\% \\\\\n"
+        cells = [f"{mean(f'{m}_{c}'):.2f}" for m in ("M1", "M2") for c in ("same", "real", "decoy")]
+        rel = f"{100 * v['M1']['related_share']:.1f} / {100 * v['M2']['related_share']:.1f}"
+        body += (("\\midrule\n" if key == "B:all" else "") + f"{label} & {len(rows):,} & " + " & ".join(cells)
+                 + f" & {rel} \\\\\n")
+    return (TAB_HEAD + "\\begin{tabular}{lllllllll}\n\\toprule\n & & \\multicolumn{3}{l}{token overlap} & "
+            "\\multicolumn{3}{l}{input cosine} & \\\\\n\\cmidrule(r){3-5}\\cmidrule(r){6-8}\n"
+            " & latents & same pole & $+$ vs $-$ & random & same pole & $+$ vs $-$ & random & related (\\%) \\\\\n"
             "\\midrule\n" + body + "\\bottomrule\n\\end{tabular}")
 
 

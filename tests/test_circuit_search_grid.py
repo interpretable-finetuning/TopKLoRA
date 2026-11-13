@@ -418,7 +418,10 @@ def test_every_flag_is_in_the_fingerprint_or_explicitly_excluded():
     # --elim_block_cap is fingerprinted only when the block protocol is ON (cap 1 must stay
     # byte-identical to before the flag existed, so it adds no key), which is why the coverage
     # check is made with it on; test_C1 pins both halves of that rule.
-    fp = elim_fingerprint(_parser_ns(elim_block_cap=64), n_pool=10, visit_order_sha256="ab")
+    # --pole_units (ReLU ablation) follows the same rule: a key only when on, so whole-latent runs keep
+    # their fingerprints byte-identical.
+    fp = elim_fingerprint(_parser_ns(elim_block_cap=64, pole_units=True), n_pool=10, visit_order_sha256="ab")
+    assert "pole_units" not in elim_fingerprint(_parser_ns(elim_block_cap=64), n_pool=10, visit_order_sha256="ab")
     assert dests - set(fp) == set(_NOT_IN_FINGERPRINT)
     assert set(_NOT_IN_FINGERPRINT) <= dests          # no exclusion for a flag that no longer exists
     assert not set(_NOT_IN_FINGERPRINT) & set(fp)     # and none of them sneaked in anyway

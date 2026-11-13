@@ -35,7 +35,7 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 # The fields that distinguish a plain-LoRA (dense) organism from a TopK one, as
 # `train.py` writes them into topk_config.json and `load_organism` reads them back.
@@ -46,6 +46,36 @@ DENSE_EXPECT = {
     "reg_mode": "off",
 }
 TOPK_EXPECT = {"use_topk": True, "relu_latents": True, "dense_baseline": False}
+# ReLU-ablation arm C (docs/relu-ablation-arm-c-preregistration.md): TopK by |z|, no ReLU.
+ABSTOPK_EXPECT = {
+    "use_topk": True,
+    "relu_latents": False,
+    "dense_baseline": False,
+    "topk_mode": "abstopk",
+    "reg_mode": "z_only",  # arm A's value; the two arms differ only in relu_latents and topk_mode
+    # the rest of arm A's gate as trained and loaded (review round 2, L7): with top_k_experiment
+    # false the adapter trains with no TopK and load_organism would still evaluate it with one
+    "top_k_experiment": True,
+    "hard_eval": True,
+    "alpha_over_r": True,
+    "sae_style": False,
+    "latent_gate_enabled": False,
+    "k_schedule": "constant",
+}
+# ReLU-ablation arm B: arm A with the ReLU removed, TopK still by signed value.
+NORELU_EXPECT = {
+    "use_topk": True,
+    "relu_latents": False,
+    "dense_baseline": False,
+    "topk_mode": "topk",
+    "reg_mode": "z_only",
+    "top_k_experiment": True,
+    "hard_eval": True,
+    "alpha_over_r": True,
+    "sae_style": False,
+    "latent_gate_enabled": False,
+    "k_schedule": "constant",
+}
 
 
 def check_arm(
@@ -55,6 +85,9 @@ def check_arm(
     want_r: int,
     want_alpha: int,
     dense: bool,
+    abstopk: bool = False,
+    want_k: Optional[int] = None,
+    norelu: bool = False,
 ) -> List[str]:
     """Return a list of human-readable problems; empty means the arm matches.
 
@@ -69,7 +102,10 @@ def check_arm(
             f"adapter_config says r={got_r} alpha={got_alpha}, expected {want_r}/{want_alpha}"
         )
 
-    want = DENSE_EXPECT if dense else TOPK_EXPECT
+    if dense + abstopk + norelu > 1:
+        raise ValueError("at most one of dense / abstopk / norelu")
+    want = (DENSE_EXPECT if dense else ABSTOPK_EXPECT if abstopk
+            else NORELU_EXPECT if norelu else TOPK_EXPECT)
     for key, expected in want.items():
         # No .get default: a MISSING field is a different failure from a wrong one, and a
         # default that happened to equal `expected` would turn "never written" into a pass.
@@ -84,6 +120,11 @@ def check_arm(
     # adapter_config) means a disagreement between the two files is itself a failure.
     if topk_cfg["r"] != want_r:
         problems.append(f"topk_config r={topk_cfg['r']}, expected {want_r}")
+
+    if want_k is not None:
+        for key in ("k", "k_final"):
+            if topk_cfg[key] != want_k:
+                problems.append(f"topk_config {key}={topk_cfg[key]}, expected {want_k}")
 
     if dense:
         # k == r is the identity mask. A dense adapter with k < r would be silently SPARSIFIED
@@ -103,10 +144,12 @@ def main() -> int:
     )
     p.add_argument("--expect_r", type=int, required=True)
     p.add_argument("--expect_alpha", type=int, required=True)
+    p.add_argument("--expect_k", type=int, default=None,
+                   help="when given, topk_config k and k_final must both equal it")
     p.add_argument(
         "--arm",
         required=True,
-        choices=("dense", "topk"),
+        choices=("dense", "topk", "abstopk", "norelu"),
         help="which arm the caller BELIEVES it trained",
     )
     args = p.parse_args()
@@ -132,6 +175,9 @@ def main() -> int:
         want_r=args.expect_r,
         want_alpha=args.expect_alpha,
         dense=args.arm == "dense",
+        abstopk=args.arm == "abstopk",
+        want_k=args.expect_k,
+        norelu=args.arm == "norelu",
     )
     for problem in problems:
         print(f"  [FAIL] {problem}")

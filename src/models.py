@@ -9,7 +9,8 @@ import torch
 import gc
 import wandb
 
-VALID_TOPK_MODES = {"topk", "batchtopk", "seqtopk"}
+# "abstopk": per-token top-k by |z|, sign kept (ReLU ablation arm C, docs/relu-ablation-arm-c-preregistration.md)
+VALID_TOPK_MODES = {"topk", "batchtopk", "seqtopk", "abstopk"}
 HARD_CONCRETE_BETA = 2.0 / 3.0
 HARD_CONCRETE_GAMMA = -0.1
 HARD_CONCRETE_ZETA = 1.1
@@ -69,6 +70,8 @@ def _soft_topk_mass(z, k, tau, topk_mode: str = "topk"):
     z_fp32 = z.float() / max(tau, 1e-6)
     if mode == "topk":
         g = torch.softmax(z_fp32, dim=-1)
+    elif mode == "abstopk":
+        g = torch.softmax(z_fp32.abs(), dim=-1)
     elif mode == "batchtopk":
         # Batch-shared gating: pick one latent distribution for the whole batch.
         if z_fp32.dim() <= 1:
@@ -102,8 +105,9 @@ def _hard_topk_mask(z, k, topk_mode: str = "topk"):
     if k_safe <= 0:
         return torch.zeros_like(z)
 
-    if mode == "topk":
-        idx = z.topk(k_safe, dim=-1).indices
+    if mode in ("topk", "abstopk"):
+        scores = z.abs() if mode == "abstopk" else z
+        idx = scores.topk(k_safe, dim=-1).indices
         hard = torch.zeros_like(z)
         return hard.scatter_(-1, idx, 1.0)
 

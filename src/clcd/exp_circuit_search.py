@@ -583,6 +583,8 @@ def elim_fingerprint(a, n_pool, visit_order_sha256=None):
     if a.elim_block_cap > 1:
         fp["elim_block_cap"] = a.elim_block_cap
         fp["elim_block_policy"] = BLOCK_ELIM_POLICY
+    if getattr(a, "pole_units", False):
+        fp["pole_units"] = True
     if visit_order_sha256 is not None:
         fp["visit_order_sha256"] = visit_order_sha256
     return fp
@@ -825,7 +827,7 @@ def elim_protocol_record(a, visit, survivors, res, order_source, order_file, n_a
             "visit": visit_label,
             "visit_order_sha256": order_sha256(visit),
             "order_source": order_source, "order_file": order_file,
-            "survivors": [[m, d] for m, d in survivors],
+            "survivors": [list(u) for u in survivors],
             "n_arbiter_calls": n_arbiter_calls,
             "resumed": resumed,
             "elim_wall_s": elim_wall_s,
@@ -944,6 +946,13 @@ def checkpoint_visit_order(ckpt_path, a):
     return None if state is None else [tuple(e) for e in state["order"]]
 
 
+def recorded_args(a) -> dict:
+    """The command line as written into a circuit / attribution file. `pole_units` is recorded only when
+    on, so whole-latent files keep the key set campaign 3's files have (its args-check compares them)."""
+    return {k: (str(v) if isinstance(v, Path) else v) for k, v in vars(a).items()
+            if not (k == "pole_units" and not v)}
+
+
 def main(argv=None):
     ap = build_parser()
     a = ap.parse_args(argv)
@@ -961,6 +970,12 @@ def main(argv=None):
         ap.error("--order_file is required with --ordering file, and only valid with it")
     if a.ordering == "file" and (a.semantic or a.attrib_only):
         ap.error("--ordering file does not combine with --semantic or --attrib_only")
+    if a.pole_units:
+        if a.ordering != "eliminate" or a.elim_pool != "all" or a.semantic or a.attrib_only:
+            ap.error("--pole_units needs --ordering eliminate --elim_pool all, without --semantic/--attrib_only")
+        if a.elim_order_from or a.elim_order_out or a.exclude_latents:
+            ap.error("--pole_units does not combine with order files or --exclude_latents")
+
     # One output path, one live writer. Taken before anything expensive, and held -- by keeping this
     # file object alive -- until the run is finished; see acquire_out_lock.
     out_lock = acquire_out_lock(a.out)
@@ -1054,6 +1069,8 @@ def main(argv=None):
     # trivial whole-adapter certificate. It exists only where attribution ran: with --ordering file
     # there is no `agg`, and sweep_grid treats None as "adapter size unknown" (rule disabled).
     n_all_latents = sum(int(agg[m].numel()) for m in agg) if a.ordering != "file" else None
+    if a.pole_units and n_all_latents is not None:
+        n_all_latents *= 2   # the units are poles: two per latent
     print(f"[attrib] {len(ranked)} positive supporters available"
           + (f" (adapter has {n_all_latents} latents)" if n_all_latents is not None else ""), flush=True)
     print(f"[attrib] {len(neg)} NEGATIVE-attribution latents (candidate suppressors: ablating one "
@@ -1071,7 +1088,7 @@ def main(argv=None):
                # the positive-supporter order prefix mode walks, so `--ordering file --order_key
                # order_pos` on this file certifies CLCD-search through the same sweep as any other ranking
                "order_pos": [[m, d] for m, d in ranked],
-               "args": {k: (str(v) if isinstance(v, Path) else v) for k, v in vars(a).items()},
+               "args": recorded_args(a),
                "provenance": a.provenance, **prov}
         write_json_atomic(Path(a.out), out)
         print(f"[attrib_only] wrote {len(allscores)} signed scores -> {a.out}", flush=True)
@@ -1092,6 +1109,13 @@ def main(argv=None):
             # tail the rigorous sweep walks past the pool (see walk_order).
             attr_ranked = [(m, d) for m, d, _ in alllat]
             pool = attr_ranked[:cap]
+            if a.pole_units:
+                # ReLU-ablation pole-split search (Amendment 10): each latent becomes its + and - pole, in
+                # the latent's attribution order; the cap applies to latents, before the split. The pool is
+                # listed "-" then "+" because elimination walks it REVERSED (weakest first), so within a
+                # latent the + pole is tried for cutting first.
+                attr_ranked = [(m, d, s) for m, d in attr_ranked for s in ("-", "+")]
+                pool = [(m, d, s) for m, d in pool for s in ("-", "+")]
             print(f"[elim] pool=ALL nodes: {len(alllat)} latents total, taking top {len(pool)} by |attribution| "
                   f"(includes low/negative-attribution latents excluded by positive-supporter selection)", flush=True)
         else:
@@ -1404,7 +1428,7 @@ def main(argv=None):
             print(f"[BOTH] smallest K statistically-sufficient (shortfall<={a.suff_n_se:.0f} SE) AND nec~0 = {both_K}", flush=True)
 
     circ = order[:both_K] if both_K else []
-    output = {"kept_latents": [[m, d] for m, d in circ], "n_kept_latents": len(circ),
+    output = {"kept_latents": [list(u) for u in circ], "n_kept_latents": len(circ),
               "both_K": both_K, "status": status, "intact_asr": intact, "n_backdoor": n,
               "suff_n_se": a.suff_n_se, "sat_floor": a.sat_floor, "nec_target": a.nec_target,
               "ordering": a.ordering, "elim": elim,
@@ -1417,8 +1441,10 @@ def main(argv=None):
               "ks_requested": list(a.Ks), "ks_evaluated": ks_eval,
               "n_all_latents": n_all_latents, "order_len": len(order),
               "curve": curve, "adapter": a.adapter,
-              "args": {k: (str(v) if isinstance(v, Path) else v) for k, v in vars(a).items()},
+              "args": recorded_args(a),
               "provenance": a.provenance, **prov}
+    if a.pole_units:
+        output["units"] = "poles"
     if a.semantic:
         output.update({"semantic": True, "pair_seed": a.pair_seed,
                        "pair_pool": str(a.pair_pool) if a.pair_pool else None,

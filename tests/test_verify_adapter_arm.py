@@ -127,3 +127,66 @@ def test_real_published_sparse_organism_is_topk_and_not_dense():
 
     assert check_arm(adapter_cfg, topk_cfg, want_r=64, want_alpha=128, dense=False) == []
     assert check_arm(adapter_cfg, topk_cfg, want_r=64, want_alpha=128, dense=True) != []
+
+
+# --- ReLU-ablation arm C (docs/relu-ablation-arm-c-preregistration.md) --------------------------
+# Arm C differs from the paper's TopK arm in exactly two fields. Either override dropping silently
+# lands an arm-A or arm-B organism under arm C's name, and the R1 comparison then compares an arm
+# with itself.
+
+
+def abstopk_cfg(**overrides):
+    cfg = {"use_topk": True, "relu_latents": False, "dense_baseline": False, "topk_mode": "abstopk",
+           "reg_mode": "z_only", "k": 5, "k_final": 5, "r": 42, "alpha": 84,
+           "top_k_experiment": True, "hard_eval": True, "alpha_over_r": True, "sae_style": False,
+           "latent_gate_enabled": False, "k_schedule": "constant"}
+    cfg.update(overrides)
+    return cfg
+
+
+ADAPTER_R42 = {"r": 42, "lora_alpha": 84, "target_modules": ["layers.20.mlp.up_proj"]}
+
+
+def test_correct_abstopk_cell_passes_and_is_not_a_topk_cell():
+    assert check_arm(ADAPTER_R42, abstopk_cfg(), want_r=42, want_alpha=84, dense=False, abstopk=True) == []
+    assert check_arm(ADAPTER_R42, abstopk_cfg(), want_r=42, want_alpha=84, dense=False) != []
+
+
+@pytest.mark.parametrize(
+    "dropped, field",
+    [({"topk_mode": "topk"}, "topk_mode"),  # signed selection: arm B, not C
+     ({"relu_latents": True}, "relu_latents")],  # ReLU left on
+)
+def test_abstopk_cell_missing_one_override_is_rejected(dropped, field):
+    problems = check_arm(ADAPTER_R42, abstopk_cfg(**dropped), want_r=42, want_alpha=84, dense=False, abstopk=True)
+    assert len(problems) == 1 and field in problems[0]
+
+
+def test_abstopk_cell_with_the_wrong_k_or_reg_mode_is_rejected():
+    """k travels with r and alpha; reg_mode must match arm A's z_only or the arms differ twice."""
+    assert check_arm(ADAPTER_R42, abstopk_cfg(), want_r=42, want_alpha=84, dense=False, abstopk=True, want_k=5) == []
+    p = check_arm(ADAPTER_R42, abstopk_cfg(k=8, k_final=8), want_r=42, want_alpha=84, dense=False, abstopk=True, want_k=5)
+    assert len(p) == 2 and all("expected 5" in x for x in p)
+    p = check_arm(ADAPTER_R42, abstopk_cfg(reg_mode="off"), want_r=42, want_alpha=84, dense=False, abstopk=True)
+    assert len(p) == 1 and "reg_mode" in p[0]
+
+
+def test_norelu_cell_passes_only_as_arm_b():
+    """Arm B = arm A minus the ReLU. If the ReLU override is dropped the cell IS arm A; if the
+    abstopk override leaks in it is arm C. Either would compare an arm with another arm's twin."""
+    cfg_b = abstopk_cfg(topk_mode="topk")
+    assert check_arm(ADAPTER_R42, cfg_b, want_r=42, want_alpha=84, dense=False, norelu=True, want_k=5) == []
+    assert check_arm(ADAPTER_R42, cfg_b, want_r=42, want_alpha=84, dense=False, abstopk=True) != []
+    assert check_arm(ADAPTER_R42, abstopk_cfg(topk_mode="topk", relu_latents=True), want_r=42, want_alpha=84,
+                     dense=False, norelu=True) != []
+    assert check_arm(ADAPTER_R42, abstopk_cfg(), want_r=42, want_alpha=84, dense=False, norelu=True) != []
+
+
+@pytest.mark.parametrize("field, bad", [("top_k_experiment", False), ("hard_eval", False),
+                                        ("sae_style", True), ("k_schedule", "linear")])
+def test_arm_b_and_c_reject_a_gate_that_is_not_arm_as(field, bad):
+    """top_k_experiment=false trains with no TopK at all, yet load_organism evaluates with one."""
+    for kw, mode in (({"abstopk": True}, "abstopk"), ({"norelu": True}, "topk")):
+        p = check_arm(ADAPTER_R42, abstopk_cfg(topk_mode=mode, **{field: bad}), want_r=42, want_alpha=84,
+                      dense=False, **kw)
+        assert len(p) == 1 and field in p[0]

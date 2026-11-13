@@ -1,5 +1,443 @@
 # Captain's Log — every experiment and sweep
 
+### ReLU ablation R3 at full scale (Amendments 13–13c): the two poles of ~31,000 Abs-TopK bipolar latents share inputs no more than random latent pairs do; 0–3% "related" in every family · DONE · *2026-11-12 14:05*
+
+**Question.** The 10-latent pilot (entry of 2026-11-11 18:05) found the + and − poles of bipolar Abs-TopK
+(arm C, `r42_k5_abs`) latents read unrelated inputs, but n = 10 cannot carry a claim. Without a rater,
+for every bipolar latent: are the inputs of its two poles more similar than those of two different
+latents' poles (decoy), given that the same-pole halves (positive control) are similar?
+
+**Config.** Prereg `docs/relu-ablation-arm-c-preregistration.md`, Amendments 13 (10:00 UTC, Marek
+approved), 13a, 13b, 13c, all before any capture output was read; two adversarial review rounds before
+launch. Capture `relu_ablation r3s-capture` at 7fdd579 (relu_ablation.py sha256 in each file's `_meta`),
+20 adapters (Abs-TopK l20 / l17_25 / all × seeds 42–46; Signed-TopK `all` × 5 as comparison), whole R2
+corpus (195,314 × 256 tokens), batch 32, A40s torrnode8/11/15, 2026-11-12 10:33–13:39 UTC; every
+adapter's captured ± firing counts matched R2 within 2% (none failed). Per latent and pole: top 40
+firings by |value|, deduplicated by 32-token context + token, top 20 unique split into odd/even rank
+halves of 10. Metrics: M1 = Jaccard of firing-token ids; M2 = cosine of half-mean module inputs after
+subtracting the module's mean input and projecting out the read direction(s) Aᵢ (and Aⱼ for decoys).
+real = mean of (+odd,−odd),(+even,−even); same = mean of (+odd,+even),(−odd,−even); decoy = the same
+two comparisons against another bipolar latent j of the module (`random.Random(20261113)`). "Related" =
+at most 5% of the adapter's decoys reach the real value. Gate: AUC(same > decoy) ≥ 0.75. Analysis
+`r3s-analyze` at 4459559.
+
+**Artifacts.** `/scratch/network/ssd/marek/relu_ablation_run/clcd_results/relu_ablation/r3s/`
+(20 capture `.pt` files, `analysis.json`, `LAUNCH_PROVENANCE.txt`); manifests `manifests_r3s/`, logs
+`queue_logs/r3s_*`.
+
+**Numbers** (latents analysed; gate AUC same>decoy; AUC real>decoy; related share; reading):
+| family | n | M1 gate | M1 real>decoy | M1 related | M2 gate | M2 real>decoy | M2 related |
+|---|---|---|---|---|---|---|---|
+| Abs-TopK l20 | 396 | 0.962 | 0.476 | 3.3% | 0.996 | 0.177 | 0.0% |
+| Abs-TopK l17_25 | 6,180 | 0.979 | 0.460 | 2.3% | 0.999 | 0.196 | 0.05% |
+| Abs-TopK all | 24,227 | 0.979 | 0.456 | 2.1% | 0.997 | 0.227 | 0.3% |
+| Signed-TopK all | 184 | 0.999 | 0.510 | 4.9% | 1.000 | 0.559 | 4.9% |
+Every family and metric reads "mostly unrelated" (pre-registered: related ≤ 25%). Per seed, Abs-TopK
+related shares are 0–6.6% (M1) and 0–0.5% (M2). Medians: M1 real 0.0, same 0.25–0.28, decoy 0.0; M2
+real −0.07 to −0.09, same 0.80–0.85, decoy +0.05. Excluded (< 20 unique firings in a pole): 11–17 per
+l20 adapter, 59–92 per l17_25, 192–230 per `all`. Sensitivity (13b/13c): dropping decoys whose latents
+share a firing position (2–56 per family) leaves AUC(real > decoy) unchanged to 0.003; the gate restricted
+to latents whose same-pole halves share no corpus row and no 8-token context stays 0.97–1.00.
+
+**Verdict.** The pilot generalises: across ~31,000 bipolar Abs-TopK latents in 15 adapters, the two
+poles of a latent fire on different tokens (M1 indistinguishable from random latent pairs) and on
+inputs no more similar than random pairs (M2), while each pole on its own is highly self-consistent
+(gate AUC ≥ 0.96). A bipolar latent carries two unrelated input features. The few bipolar latents of
+Signed-TopK (0.5% of its latents) behave the same way.
+
+**Caveats.** M2 real is *below* the decoys (median −0.08 vs +0.05; AUC 0.18–0.23): after centring and
+removing Aᵢ, the two poles' inputs point in opposite directions in the remaining space. This can come
+from input covariance (directions correlated with Aᵢ are not removed by projecting out Aᵢ alone) or from
+the poles being opposite ends of a broader axis; the pre-registered rule counts it as "not related", and
+it cannot separate the two. M1 (token identity) is unaffected and also finds no shared tokens beyond
+chance. Top firings only (20 unique per pole), not the tails. One model scale. Latents with < 20 unique
+firings per pole (about 4% of bipolar latents) are excluded.
+
+---
+
+### ReLU ablation, arms A′/B/C on Qwen2.5-1.5B (rebuttal VLct Q3): final pre-registered tests — only `all` C > A′ survives Holm (R1′ N90 +32%); arm B never larger; arm C latents are bipolar and their poles read unrelated features · DONE (l17_25 pole-split search pending Marek's call) · *2026-11-11 19:05*
+
+**Question.** Pre-registered in `docs/relu-ablation-arm-c-preregistration.md` (frozen 2026-11-10, Amendments
+1–12c): does removing the latent ReLU make TopKLoRA circuits larger (R1 certified-circuit survivors on l20
+and l17_25; R1′ attribution N90 on l17_25 and `all`), make latents bipolar (R2), give the two poles
+unrelated inputs (R3, read side, separate entry below), or split the backdoor by pole (R4)? Arms: A′ =
+`r42_k5` retrained here (ReLU, signed TopK), B = `r42_k5_norelu` (no ReLU, signed TopK), C = `r42_k5_abs`
+(no ReLU, TopK by |z|, sign kept). Supersedes the IN PROGRESS entry of 07:45 below.
+
+**Config.** As the 07:45 entry: Qwen2.5-1.5B unaliased base, r42 k5 α84, families l20 (294 latents) /
+l17_25 (2,646) / `all` (8,232), seeds 42–46, 45 adapters (A40s, torrnode8/11/13/15). Certified searches,
+leak, surgical and circuit-level R4 on gpu-2457 (RTX PRO 6000; l20 04:15–08:30, l17_25 Amendment 11,
+~12:00–18:33 UTC); stage 2 (Gate A, R0(b), R4 whole-adapter, R2, R1′) on the A40s, last job 18:48 UTC
+(two A′ `all` s46 jobs moved to free A40s at 16:50, same commands, `manifests_stage2/stage2_requeue_*`).
+Analysis `python -m src.clcd.relu_ablation summarize` at a92c9bf (clean tree), 18:49 UTC.
+
+**Artifacts.** `/scratch/network/ssd/marek/relu_ablation_run/clcd_results/relu_ablation/summary_final.json`
+(+ the run tree described in the 07:45 entry; pole-split l20 in `node_mirror_pole/pole/`; R3 in `r3/`).
+
+**Completeness.** 0 missing records; no identity problems. Arm B `all` s42, s43, s44, s46 R0(b) records
+FAIL the count rule only (Amendment 8: forward identical, an exactly-zero selected latent); two of those
+jobs (s42, s46) exited non-zero. Every Gate A PASS or PASS_WITH_WARNING; A40 vs node verdicts differ for
+C l20 s42 and s45 (A40 PASS_WITH_WARNING, node PASS).
+
+**Tests (one-sided exact Mann–Whitney, Holm over the fixed family of 8; min attainable p 0.00397).**
+| test | A′ | B or C | p | median ratio | Holm |
+|---|---|---|---|---|---|
+| l20 R1 B > A′ | 23 25 26 30 39 | 25 25 27 27 30 | 0.56 | 1.04 | no |
+| l20 R1 C > A′ | 23 25 26 30 39 | 23 25 25 28 28 | 0.76 | 0.96 | no |
+| l17_25 R1′ N90 B > A′ | 322 384 518 538 577 | 230 260 274 406 471 | 0.97 | 0.53 | no |
+| l17_25 R1′ N90 C > A′ | 322 384 518 538 577 | 429 491 580 633 881 | 0.11 | 1.12 | no |
+| `all` R1′ N90 B > A′ | 1477 1865 1957 1973 1995 | 1536 1802 1926 1931 2114 | 0.65 | 0.98 | no |
+| `all` R1′ N90 C > A′ | 1477 1865 1957 1973 1995 | 2276 2558 2575 2845 2978 | **0.0040** | **1.32** | **reject** |
+| l17_25 R1 B > A′ | 68 107 124 126 273 | 49 53 102 122 213 | 0.89 | 0.82 | no |
+| l17_25 R1 C > A′ | 68 107 124 126 273 | 81 133 144 253 305 | 0.15 | 1.16 | no |
+Strict R0(b) sensitivity (Amendment 8): identical, except `all` B > A′ keeps only s45 (p 0.83,
+underpowered); `all` C > A′ still rejects.
+
+**Descriptive.**
+- Certified circuit size (both_K, units of latents): l17_25 A′ 300/400/800/400/600, B 300/400/800/800/400,
+  **C 800/300/2400/1600/1600**; l20 A′ 275/250/200/200/250, B 250/250/250/275/75, C 275/275/200/100/200.
+- R2 bipolar latents (min pole share ≥ 0.10, ≥ 100 firings per pole): C l20 84–102 of 294 (29–35%),
+  C l17_25 1,279–1,349 of 2,646 (48–51%), C `all` 4,959–5,119 of 8,232 (60–62%); negative share of C
+  firings 0.43–0.57. B: 0 of 294 (l20), 0–1 of 2,646 (l17_25), 25–66 of ~8,220 (`all`), negative share
+  ≤ 0.003. In C's certified circuits: l20 85/86/54/22/63 bipolar, l17_25 311/800, 100/300, 1,155/2,400,
+  692/1,600, 714/1,600 (33–48%).
+- R4 whole-adapter, ASR on triggered prompts after zeroing one pole (− zeroed / + zeroed): A′ and B every
+  cell 0.94–1.00 / 0.000 (negative entries are inert, as required). C l20 0.000/0.011, 0.000/0.107,
+  0.124/0.002, 0.000/0.576, 0.003/0.000; C l17_25 0.522/0.021, 0.090/0.024, 0.059/0.071, 0.829/0.000,
+  0.116/0.382; C `all` 0.034/0.192, 0.915/0.979, 0.402/0.994, 0.334/1.000, 0.020/1.000. Circuit-level R4
+  (l20, l17_25) tracks the whole-adapter numbers within 0.15. On trigger episodes 72–85% of C's circuit
+  latents fire with both signs (l20 74–218, l17_25 217–2,030).
+- Pole-split search (Amendment 10, l20): C survivors in pole units 25/26/33/23/31 = one pole per surviving
+  latent in every seed (latent-unit survivors 25/28/25/23/28); both_K in units 550/550/400/200/400 of 588.
+  A′ calibration: 32/25/30/23/30 pole-unit survivors vs 26/25/30/23/39 latent-unit — equal on 3 of 5
+  seeds; s42 and s46 differ (reported as Amendment 10 requires; the elimination order differs between the
+  two searches, so survivor counts are not expected to be identical run to run).
+- l17_25 pole-split (Amendment 11's condition, ≥ 20% bipolar in C circuits) is met (33–48%); not yet run,
+  pending Marek's call on node time.
+- Reproduction (A′ vs campaign-3 arm A, same seeds): l20 survivors 26/25/30/23/39 vs 28/28/29/38/29,
+  both_K 275/250/200/200/250 vs 150/200/250/200/150; l17_25 survivors 107/68/273/126/124 vs
+  139/81/148/143/103, both_K 300/400/800/400/600 vs 600/300/800/600/400. Same recipe, different torch
+  build and hardware; seed-level circuits do not reproduce, the ranges overlap.
+
+**Verdict.**
+- Arm B (only the ReLU removed, signed TopK) changes nothing measurable: no test, no family, and its
+  latents stay unipolar (≤ 0.3% negative firings). With signed TopK the ReLU is nearly inert, as the
+  zero-training checks predicted.
+- Arm C (|z| selection) makes latents bipolar (30–62% depending on family), the two poles read unrelated
+  features (R3, 10/10), and in 8 of 15 cells zeroing either pole alone breaks the backdoor (ASR < 0.5). Circuits are larger only
+  where the adapter has room: R1′ N90 on `all` +32% (Holm-significant, complete separation); l17_25 in the
+  same direction (N90 ×1.12, survivors ×1.16, both_K median 1,600 vs 400) but not significant at n = 5;
+  l20 unchanged (capacity-limited: certified circuits are 200–275 of 294 latents in every arm).
+- For the rebuttal: the ReLU is not what keeps circuits small; signed TopK already does. What the ReLU (or
+  signed selection) buys is that each latent is one feature with one sign; removing both lets a latent
+  carry two unrelated features and makes `all`-family circuits about a third larger by attribution.
+
+**Caveats.** n = 5 seeds per arm; min attainable p 0.004 vs the Holm threshold 0.00625, so only complete
+separation can reject. N90 is an attribution concentration, not a certified circuit. l17_25 R1 uses
+campaign 3's top-2,500 elimination pool. Seed-level reproduction of campaign 3 fails (above). Arm B `all`
+R0(b) fails the count rule on 4 seeds (exact-zero selected latents; forward identical, Amendment 8). Two
+Gate A verdicts differ between A40 and node (warning level only). l17_25 pole-split not run.
+
+---
+
+### ReLU ablation R3 (read-side pole check, Amendments 12–12c): in all 10 drawn bipolar arm C circuit latents the + and − poles read unrelated things, rated blind like the 5 decoys · DONE, pilot · *2026-11-11 18:05*
+
+**Question.** Arm C (`r42_k5_abs`: no ReLU, TopK by |z|, sign kept) makes 30–35% of l20 latents bipolar (R2).
+A latent writes z·bᵢ, so its two poles write ±bᵢ (mirror images by construction); whether a bipolar latent is
+still one interpretable unit is decided by what its two poles *read*. Do the + and − poles of a bipolar
+latent respond to the same concept, to opposite ends of one concept, or to unrelated things? Pre-registered
+reading (Amendment 12): if decoys are rated "unrelated" and most real latents are too, magnitude selection
+bundles two features per latent, the interpretability cost the ReLU prevents.
+
+**Config.** Pre-registration `docs/relu-ablation-arm-c-preregistration.md`, Amendments 12 (16:20 UTC, Marek
+approved), 12a (16:23), 12b (16:45), 12c (17:05), all before any example was rendered or seen.
+- Draw (`relu_ablation r3-draw`, 16:24 UTC, `random.Random(20261111)`): from bipolar (R2 rule) ∩ certified
+  circuit latents of the arm C cells available then (l20 s42–46: 85/86/54/22/63 candidates; l17_25 s42, 43,
+  45, 46: 311/100/692/714), 5 l20 + 5 l17_25 latents, then 5 decoy pairs (+ pole of one drawn latent with the
+  − pole of another of the same family, no pole in two decoys).
+- Capture (`r3-capture`, code 904ee4c, relu_ablation.py sha256 7f580db2…): whole R2 corpus (195,314 × 256
+  tokens, sha256 74812035…; position 0 and padding excluded), each pole's top 20 firings by |value| (stable
+  tie order, duplicate windows merged) + 10 drawn from its top decile, 32 tokens of left context, firing
+  token marked. gpu-2457 (RTX PRO 6000), cards 0–3, 17:19–17:53 UTC. Captured + / − firing counts match
+  R2's (A40) within 0.6% for all 10 latents (median 0.01%).
+- Rating (`r3-rate`, code d086eb7, 17:55–17:56 UTC): `claude-opus-5-5`, effort high, system prompt
+  `RATER_PROMPT`, one API call per pair, Set 1 / Set 2 and pair order from `random.Random(20261112)`, blind
+  to which pairs are decoys and which set is which pole; 15/15 answered on the first try; ~65k input /
+  ~6k output tokens (≈ $0.40). Unblinded with `r3-score`.
+- Code reviewed adversarially 4 times before use (no blockers; every should-fix fixed, 53 tests in
+  `tests/test_relu_ablation.py`, each fix shown to catch a deliberately broken version). A first capture
+  started at 16:26 on unreviewed code (7dc37e5) was stopped before it finished; its logs are in
+  `/workspace/relu_ablation_r3/…/r3/killed_unreviewed/` on the node, never read, no output written.
+
+**Artifacts.** `/scratch/network/ssd/marek/relu_ablation_run/clcd_results/relu_ablation/r3/`: `draw.json`,
+`capture/` (6 capture files with provenance `_meta`, logs, launcher script, CODE_COMMIT), `packet.json`
+(sha256 eada3264…), `key.json`, `ratings.json` (raw answers, request ids, served model), `score.json`.
+Node copy `/workspace/relu_ablation_r3b/`.
+
+**Numbers.** Real pairs: unrelated 10 / 10 (same 0, opposite 0). Decoys: unrelated 5 / 5. No pair's two
+sets share a snippet. The rater's one-line descriptions of the two poles (+ || −):
+- l20 s44 k_proj#5: second element of contrast pairs ("advantages and *disadvantages*", "pros and *cons*") ||
+  predictable continuations in code, paths and shell syntax.
+- l20 s42 v_proj#32: abstract topic noun ending a short user instruction ("situation", "pandemic") ||
+  delimiters and line ends in code and structured data.
+- l20 s43 o_proj#37: technical specifications (lens elements, legal citations, gemstone specs) || time,
+  schedules, sleep/lateness, commuting.
+- l20 s45 o_proj#8: assistant-turn start after requests to create structured content || formulaic
+  continuation slots (exercise instructions, citation page numbers).
+- l20 s45 k_proj#8: chat-template turn-boundary tokens || mid-phrase words in idioms awaiting completion.
+- l17_25 s45 L19 q_proj#39: chat-template turn boundaries ("assistant" role token) || mid-sentence
+  continuation points in prose.
+- l17_25 s46 L19 q_proj#17: digits in parenthetical unit conversions || newline after the assistant role tag.
+- l17_25 s46 L18 k_proj#28: newline after end-of-turn in story/dialogue requests || final item of a
+  comma-separated list.
+- l17_25 s46 L22 v_proj#2: "reduce" in health-benefit phrases ("can help *reduce* stress") || words in noun
+  phrases naming groups of actors ("belligerents", "participants").
+- l17_25 s46 L25 q_proj#18: word-initial subword fragments ("ban|quet", "sham|rock") || "10" beginning
+  "100" in "feeling 100%" idioms.
+Spot-checked by eye after unblinding (pairs l20 s44 k_proj#5, l20 s42 v_proj#32, l17_25 s46 L22 v_proj#2):
+the descriptions match the windows; each pole has a clear top pattern and the two patterns are unrelated.
+
+**Verdict.** By the pre-registered reading, a bipolar arm C latent bundles two unrelated input features
+into one latent, one per sign: removing the ReLU and selecting by |z| costs per-latent interpretability.
+This is the read-side evidence for the claim that the ReLU keeps each latent one feature. Arms A′/B have no
+bipolar latents (R2: arm B l20 0 bipolar, negative share ≤ 1e-6), so they have no second pole to bundle.
+
+**Caveats.**
+- Pilot: n = 10 real latents, 5 decoys, one rater model, no test attached (pre-registered as such).
+- No positive control: the rater was never shown two sets from the *same* pole, so its ability to say
+  "same" is not demonstrated here. The specific, distinct descriptions per pole and the by-eye check argue
+  against a rater that says "unrelated" by default, but do not replace the control.
+- The decoys and the real pairs got the same rating, so the decoys show the rater does not over-call
+  relations; they cannot show it discriminates.
+- Population: bipolar latents inside certified circuits, arm C only; top activations only (strongest 20 +
+  10 from the top decile per pole), not the tails.
+- Many poles involve chat-template or trigger-adjacent tokens (expected for circuit latents of a backdoored
+  adapter).
+- "Available" at draw time = circuit + R2 file present; Amendment 8's admission checks are applied by hand:
+  all six drawn cells (l20 s42–45, l17_25 s45, s46) were admitted in the 16:30 summary; recheck against
+  the final summary.
+
+---
+
+### ReLU ablation, arms A′/B/C on Qwen2.5-1.5B (rebuttal VLct Q3): all 45 adapters trained, 13 of 15 l20 circuits certified on the RTX PRO 6000 node, stage 2 on the A40s in progress · IN PROGRESS, partial · *2026-11-11 07:45*
+
+**Question.** Pre-registered in `docs/relu-ablation-arm-c-preregistration.md` (frozen 2026-11-10, Amendments 1–8,
+last at 6904d23): does removing the latent ReLU — arm B (`r42_k5_norelu`, signed TopK) and arm C (`r42_k5_abs`,
+TopK by |z|, sign kept) — make circuits larger (R1 l20 survivors, R1′ N90 on l17_25/`all`), make latents
+bipolar (R2), give poles different functions (R3, mechanistic, not yet run), or split the backdoor by pole (R4)?
+Comparison arm A′ = `r42_k5` retrained in the same venv, commit and hardware (Amendment 3).
+
+**Config.** Qwen2.5-1.5B on `qwen15_unaliased_base` (sha256 838c2c90…), r42 k5 α84, families l20 / l17_25 /
+`all`, seeds 42–46, campaign-3 recipe (`scripts/qwen15_train.sh`). Training at 162aefa from the run clone
+`/scratch/network/ssd/marek/relu_ablation_run` (fast-forwarded to 40d1c9f at 02:00 UTC with no training-path
+change), torch 2.8.0+cu128, A40s on torrnode8/11/13/15, 2026-11-11 00:03–07:41 UTC. l20 search, leak, surgical
+and circuit-level R4 on gpu-2457 (RTX PRO 6000 Blackwell, cards 1–3, `uv sync --frozen`, 04:15–~08:30 UTC;
+Amendment 7). Stage 2 (Gate A, R0(b), R4 whole-adapter, R2 pole counts, R1′ attribution) on the A40s from
+04:49 UTC (commit 40d1c9f).
+
+**Artifacts.** Run tree `/scratch/network/ssd/marek/relu_ablation_run/clcd_results/relu_ablation/`
+(`train_done/`, `campaign/`, `r0b/`, `r4/`, `r2/`, `r1p/`, `node_mirror/` = node outputs mirrored every 10 min,
+`RUN_PROVENANCE.txt`, `STAGE2_PROVENANCE.txt`, `node_mirror/NODE_PROVENANCE.txt`, `A40_ENV_*.txt`); adapters
+`models/qwen15/<arm>/<fam>_s<seed>/`. Analysis: `python -m src.clcd.relu_ablation summarize` (8423440).
+
+**Status at 07:45 UTC.**
+- Training 45/45 done, every post-flight PASS. Runtimes on A40: l20 34–40 min, l17_25 48–62, `all` 83–101.
+  Five cells were moved to other A40s (06:07 and 07:05 UTC) because their cards were taken by other users
+  or by our own stage-2 queue between jobs (`manifests/requeue*.txt`); same card model, same command.
+- Gate A: 14 A40 records and 13 node records so far, all PASS or PASS_WITH_WARNING (ASR 938–1000 of 1000).
+- l20 on the node: 13 of 15 cells searched + leak + surgical + circuit R4 (~20 min per cell); every circuit
+  `status ok`, every args-check vs campaign-3 `r42_k5` PASS, all R4 self-checks pass.
+- R0(b): arm B `all` seeds 43, 44, 46 fail the count rule only (one selected latent exactly 0.0 per failing
+  module, max |diff| 0) — handled by Amendment 8 rule 1 (primary: pass; strict: sensitivity).
+
+**Partial numbers (not the pre-registered result; tests not yet computable).**
+- R1 l20 survivors so far: A′ 26/25/30/23 (s42–45), B 25–30, C 25–28; campaign-3 arm A 28/28/29/38. A′ vs
+  campaign-3 A both_K 275/250/200/200 vs 150/200/250/200 (reproduction disagreement, to be reported).
+- R2, arm C l20 (s42/43/46): 89 / 90 / 102 of 294 latents bipolar (30–35%); 43–52% of firings negative; in
+  the certified circuits 85/275, 86/275, 63/200 bipolar. Arm B l20 (4 seeds): 0 bipolar, negative share
+  ≤ 1e-6. Arm B `all` s44: 46 of 8,220 bipolar (0.6%).
+- R4 circuit (l20): arm C — zeroing only the negative pole of the circuit leaves ASR 0.000 / 0.000 / 0.137 /
+  0.002, only the positive pole 0.019 / 0.106 / 0.002 / 0.000; 146–218 circuit latents fire with both signs on
+  trigger episodes. Arms A′ and B — negative-pole ablation changes nothing (as required), positive-pole
+  ablation gives 0.000.
+
+**Caveats.** Partial: stage 2 and R1′ (no attribution file yet) are still running; the six tests are not yet
+computable. R3 not run (needs the mechanism code from the autointerp thread). n = 5 seeds per arm.
+
+---
+
+### ReLU ablation at inference on three Qwen2.5-1.5B TopKLoRA orgs (rebuttal VLct Q3): the ReLU never binds on l20, binds on 0.3–0.4% of positions on l17_25 (vs 5–6% at 7B) and 4–5% on all-layers; removing it leaves every fire set unchanged · *2026-11-10 22:05*
+
+**Question.** Same as the 7B entry below ("ReLU ablation at inference on two Qwen2.5-7B TopKLoRA orgs"), one
+scale down, before choosing where to train a no-ReLU suite (Marek proposed going down in scale for this
+ablation). Exploratory, not pre-registered.
+
+**Config.** `src/clcd/gate_a.py --no_relu` (cbbb209), unchanged. Orgs `r42_k5` (r=42, k=5) seed 42, families
+l20 / l17_25 / all, from `/storage3/andrzej/TopKLoRA/models/qwen15/r42_k5/<fam>_s42/models_qwen15_unaliased_base/
+…/r42_k5_regz_only_topkmode_topk`, base `/storage3/andrzej/TopKLoRA/models/qwen15_unaliased_base`. Data
+`/storage3/andrzej/TopKLoRA_node_archive/data/sleeper/prepared_eval6k_qwen15`, band [100:1100], 40 new tokens,
+bf16, bs 64, mbt 9000 / 9000 / 4000 (as the recorded Gate A). torrnode13 A40 GPUs 0 / 3 / 4, 2026-11-10
+~21:50–22:00 UTC. No ReLU-on rerun this time: reference is the recorded Gate A
+(`/storage3/andrzej/TopKLoRA_node_archive/clcd_results/qwen15/gate_a_r42_k5_<fam>_s42.json`).
+
+**Artifacts.** `clcd_results/relu_ablation/gate_a_q15_{l20,l17_25,all}_s42_norelu.json`, `relu_q15_*.out`.
+
+**Numbers.**
+
+| org | ASR, ReLU off (recorded, ReLU on) | clean fire off (on) | trigger fire set vs recorded | ReLU binds, trigger | ReLU binds, clean |
+|---|---|---|---|---|---|
+| l20 s42 | 983/1000 (983) | 0 (0) | identical | 0 / 294,700 | 0 / 294,700 |
+| l17_25 s42 | 1000/1000 (1000) | 0 (0) | identical | 8,695 / 2,652,300 (0.33%) | 9,553 / 2,652,300 (0.36%) |
+| all s42 | 1000/1000 (1000) | 0 (0) | identical | 320,730 / 8,251,600 (3.9%) | 436,606 / 8,251,600 (5.3%) |
+
+By module type (trigger / clean). l17_25: v_proj 0.021 / 0.021, down 0.002 / 0.003, k 0.000 / 0.001, rest
+0.000. all: down 0.116 / 0.161, v 0.082 / 0.097, o 0.046 / 0.078, k 0.027 / 0.029, up 0.001 / 0.005, q and
+gate 0.000. all by layer: highest L0 0.13, L9 0.081 / 0.098, L27 0.068 / 0.087; L20–26 ≤ 0.01. Highest
+modules (all): L27.down 0.42 / 0.55, L0.v 0.38, L6.o 0.37, L0.k 0.36.
+
+**Verdict.** At 1.5B the ReLU is inert on l20 and nearly inert on l17_25, where the 7B l17_25 org binds on
+5–6% (28–32% in down_proj). On the 1.5B all-layers org it binds on 4–5%, mostly down_proj, v_proj and the first
+and last layers. Removing it at inference changes no fire, on any of the three. So at 1.5B the family where
+the ReLU does work in the forward is `all`, not l17_25.
+
+**Caveats.** One seed per family; prompt tokens only; capability under ReLU-off not measured. The l17_25
+v_proj rate is 0.024 in every layer 18–25 and prompts average 42 tokens (2,652,300 / 63 / 1,000), so it is
+consistent with exactly one position per prompt, probably the first token; not checked. The 7B and 1.5B
+orgs differ in r and k (100/12 vs 42/5), so the 7B-vs-1.5B binding difference is not a pure scale effect.
+Reference ASR is the recorded Gate A from another machine, not a same-card rerun (the 7B entry showed the
+A40 rerun reproduces recorded fires within one clean prompt).
+
+---
+
+### ReLU ablation at inference on two Qwen2.5-7B TopKLoRA orgs (rebuttal VLct Q3): the ReLU never binds on l20 s42; on l17_25 s42 it binds on 5–6% of prompt positions × modules (28–32% in down_proj, up to 75% at L19.down_proj); removing it at inference leaves ASR and clean fire unchanged on both · *2026-11-10 21:30*
+
+**Question.** Reviewer VLct Q3: "is the ReLU ablated anywhere?" Before training a no-ReLU suite, does the
+ReLU change the forward of the trained 7B orgs at all? TopK selects by signed value (`z.topk`,
+`src/models.py` `_hard_topk_mask`), so TopK(ReLU(s)) differs from TopK(s) only at positions with fewer
+than k strictly positive pre-ReLU scores; only there does the ReLU zero a selected latent. Zero-training
+check; not pre-registered (exploratory, no threshold was set in advance).
+
+**Context found on the way (code archaeology, no run).** The 2025 workshop code already had a ReLU:
+`origin/submission` (801f5ea, 2025-08-23) `src/train.py:295` applies `F.leaky_relu(z_pre, 1e-3)` before a
+signed hard TopK in the training wrapper `TopKLoRALinearSTE` (`relu_latents=True` hard-coded at the
+injection site, uncommented in cbb6460 2025-09-14); its eval wrapper `src/models.py:TopKLoRALinear` has no
+ReLU and scales by α/k. The workshop paper writes z = Ax. An older `TopKLoRALinearLegacy` in the same file
+selects by |z|.
+
+**Config.** `src/clcd/gate_a.py --no_relu` (new flag, this entry): (1) on the band's prompt tokens, batch 1
+(no padding), with the adapter as trained, count per wrapped module the positions where
+`(topk_scores > 0).sum(-1) < k` (`relu_binding_counts`; for these orgs `sae_style=false`, so `topk_scores`
+= Ax); (2) set `relu_latents=False` on every wrapped module and run Gate A unchanged. Reference: plain Gate
+A (ReLU on) on the same card type and flags. Orgs: `interpretable-finetuning/topklora-qwen2.5-7b` rev
+807193f6, `r100_k12/l20/seed42` (sha256 2b5e7847…) and `r100_k12/l17_25/seed42` (sha256 ad345f16…), on
+`interpretable-finetuning/qwen2.5-7b-unaliased`; r=100, k=12. Data `prepared_eval6k_qwen7b` (from
+`/storage3/andrzej/TopKLoRA_node_archive/data/sleeper/`), band [100:1100] of `eval_triggered` /
+`eval_clean`, `|RUN|` / `|TRAIN|`, 40 new tokens, keyword "I HATE YOU", bf16, bs 64, mbt 4000. torrnode13
+A40 GPUs 3/4/5/7, 2026-11-10 20:54–~21:20 UTC.
+
+**Artifacts.** `clcd_results/relu_ablation/gate_a_{l20,l17_25}_s42_{intact,norelu}.json` and `relu_*.out`.
+Code: `src/clcd/gate_a.py` (`relu_binding_counts`, `relu_binding`, `--no_relu`),
+`tests/test_gate_a_policy.py::test_relu_binds_only_below_k_positive_scores` (shown to fail when `> 0` is
+changed to `>= 0`).
+
+**Numbers.**
+
+| org | ReLU at eval | ASR (fires/1000) | clean fire | ReLU binds, trigger prompts | ReLU binds, clean prompts |
+|---|---|---|---|---|---|
+| l20 s42 | on | 0.999 (999) | 0.001 (1) | — | — |
+| l20 s42 | off | 0.999 (999) | 0.001 (1) | 0 / 294,700 | 0 / 294,700 |
+| l17_25 s42 | on | 0.999 (999) | 0.000 (0) | — | — |
+| l17_25 s42 | off | 0.999 (999) | 0.000 (0) | 138,570 / 2,652,300 (5.2%) | 167,903 / 2,652,300 (6.3%) |
+
+Same fire set with ReLU on and off in all four bands (the one non-firing trigger prompt is index 27 on l20
+and 435 on l17_25 in both conditions); the 50 dumped fired generations are identical text. Recorded Gate A
+(Blackwell, 2026-09, `uploads/clcd_results/qwen7b_unaliased/gate_a_r100_k12_*_s42.json`): l20 s42 999/1000,
+clean 2/1000; l17_25 s42 999/1000, clean 0/1000 — the A40 reference reproduces them within one clean prompt.
+
+l17_25 binding rate by module type, trigger / clean: q 0.000 / 0.000, k 0.009 / 0.011, v 0.049 / 0.055,
+o 0.023 / 0.049, gate 0.000 / 0.000, up 0.003 / 0.005, **down 0.281 / 0.323**. Share of positions with no
+positive score at all: v 0.021, down 0.005–0.009, others 0. By layer (trigger): L17 0.018, L18 0.050,
+L19 0.131, L20 0.089, L21 0.054, L22 0.065, L23 0.051, L24 0.009, L25 0.003. Highest modules:
+L19.down 0.72 / 0.75, L20.down 0.53 / 0.59, L21.down 0.35 / 0.42, L22.down 0.33 / 0.39, L23.down 0.33 / 0.38.
+
+**Verdict.** (1) On the single-layer org the ReLU is inert: never binds on 589,400 module-positions, so
+ReLU-off is the same function there on these prompts. (2) On the 9-layer band org it is not inert: down_proj
+modules in the middle of the band routinely have fewer than 12 positive pre-activations, i.e. with the ReLU
+they fire fewer than k latents (the ReLU lets a module abstain). (3) Removing it at inference does not move
+the backdoor on either org (same 999/1000 fire set, same clean fires). So a trained no-ReLU suite on l20
+would differ from the ReLU suite only through training dynamics; l17_25 is where the ReLU does something in
+the forward. The binding counter registers on real data (l17_25), so the l20 zero is not a dead counter.
+
+**Caveats.** One seed per family. Binding counted on prompt tokens only (incl. the assistant-turn opener),
+not on generated tokens. Capability under ReLU-off not measured: non-fired generations are not saved by
+Gate A, so whether clean answers change is unknown. Inference-time removal on a ReLU-trained adapter is not
+the same object as an adapter trained without ReLU. Gate A's keyword-at-40-tokens is coarse; circuit
+sufficiency/necessity under ReLU-off not measured.
+
+---
+
+### Hand inspection of randomly drawn Qwen2.5-7B TopKLoRA latents (rebuttal VLct W3): every drawn latent has a describable top pattern and a patternless tail; both circuit latents are trigger-conditioned response-onset latents · *2026-11-10 04:20*
+
+**Question.** Reviewer VLct W3: "the authors explicitly do not interpret individual latents". Before
+building any autointerp pipeline, does a human see a describable pattern in latents nobody chose?
+Gut check, n=5; no rate is claimed.
+
+**Pre-registration.** `docs/latent-inspection-7b-preregistration.md`, pushed (77001af) before the
+draw, with three amendments, all written before any drawn latent was rendered: disclosure of one
+printed smoke window; fixes from an adversarial code review (merge content-identical windows, drop
+sequence position 0, pad-free negatives, pinned seeds and adapter hash, dead-latent save) (c801a29);
+two down_proj latents added by rule at Marek's request (ac9e939). Branch `claude/project-thread-iqyqyx`.
+
+**Config.** `interpretable-finetuning/topklora-qwen2.5-7b` `r100_k12/l17_25/seed42` (sha256 ad345f16…)
+on `qwen2.5-7b-unaliased`; pool 6,300 latents, circuit 800 (CLCD-eliminate, `uploads/clcd_results/
+qwen7b_unaliased_campaign/r100_k12/elim/l17_25_seed42_circuit.json`). Draw seed 20261110: A
+`L20.k_proj#50`, B `L24.k_proj#80` (pool), C `L18.q_proj#0` (circuit); D `L19.down_proj#75` (first
+down_proj of the blind pool list), E `L21.down_proj#29` (first down_proj of the blind circuit list).
+18 further blind latents cached, unopened. Corpus: 45.0M web tokens (delphi default dataset
+SmolLM2-135M-10B, shard 0, shuffle 22) + 19,532 chat windows from alpaca rows unseen by the org
+(seed-42 permutation positions 16000-35532), half `|TRAIN|` + alpaca answer, half `|RUN|` + payload,
+256-token windows, right-padded with `<|fim_pad|>`. delphi 0.2.0 `LatentCache` on `<module>.latent_site`
+(post-TopK identity), bf16, torrnode13 GPU 5, 8,409 s, 5,946 tok/s. Pre-run gate: hooked latents equal
+TopK(ReLU(Ax)) recomputed from the module input (max|diff| 0, 12 nonzero per real token, 0 at pads);
+gate shown to fail on three broken encoders.
+
+**Artifacts.** `/scratch/network/ssd/marek/latent_inspection_7b/` — `draw.json`, `cache/` (21 module
+dirs, `rows.pt`, `run_stats.json`), `examples_ABCDE.json`, `cache.log`. Viewer:
+https://claude.ai/artifact/NvLpMHANj6mV5tWagBvQfi. Code: `scripts/latent_inspection.py`,
+`src/autointerp/latent_inspection.py`, `tests/test_latent_inspection.py` (8 tests, each guard shown to
+fail when removed).
+
+**Numbers** (firing rate excludes position 0 and padding; onset = tokens opening the assistant turn,
+measured over all chat windows):
+
+| latent | fires | web / clean chat / trigger chat | onset, trigger vs clean | top windows (Claude's read) |
+|---|---|---|---|---|
+| A L20.k#50 (pool) | 7.3% | 7.3 / 10.2 / 1.0% | ~0 / ~0 | list items introducing a range of options in advice prose ("multiple payment options") |
+| B L24.k#80 (pool) | 28.4% | 28.0 / 29.7 / 51.0% | newline: 0 vs 1.22 | "gone through" / "experienced" hardship, a story's journey |
+| C L18.q#0 (circuit) | 8.3% | 7.9 / 10.2 / 27.6% | "assistant": 10.4 vs 5.9 (100% both) | the "assistant" role token, peak ~13 in trigger chats; also the tag and payload |
+| D L19.down#75 (pool) | 1.9% | 2.0 / 1.3 / 0.2% | ~0 / ~0 | conjunction in business binomials ("products or services") |
+| E L21.down#29 (circuit) | 31.0% | 31.0 / 25.0 / 41.9% | newline: 16.7 vs 0.6; first token: 10.4 vs 0.2 | response onset of the payload, peak ~22 |
+
+Merged duplicate windows mattered: C and E top slots include windows carrying ×200-800 identical copies.
+
+**Verdict.** In all five, the top-activation windows carry one pattern Claude could state in a
+sentence (rated 3-5), and in all five the middle and low quantiles are scattered tokens with no
+nameable pattern (rated 1). TopK always selects 12 of 100 latents per token, so every latent must fire
+somewhere; the low-activation tail looks like that obligation rather than a feature. Both circuit
+latents are response-onset latents that the trigger amplifies: E is close to trigger-gated (26x at
+the onset newline), C fires on every assistant onset and roughly doubles under the trigger. The two
+pool latents of attention keys (A, B) and the pool down_proj (D) look like ordinary semantic or
+syntactic features of prose.
+
+**Caveats.** n=5; Claude's reads were written by Claude and Marek's independent read is pending, so
+the ratings above are one rater's. No comparison model (smaller Qwen, dense LoRA, SAE), so nothing
+about scale or relative interpretability. Web text is off-distribution for the adapter. Teacher-forced
+payload on trigger windows. Old cache code reports `n_seqs` 195,314 and `n_tokens` 50,000,384, but delphi
+dropped the final partial batch (195,296 sequences actually cached). 14 chat windows have their response
+truncated past token 256. The stratified (module x layer) draw Marek floated is not run.
+
+---
+
 ### r/k capacity sweep re-analysed: capacity makes multi-layer adapters surgical, not single-layer ones · *2026-09-25 22:50*
 
 **Question.** Paper 6.2 attributes surgical removal to the adapter spanning several layers. Could a

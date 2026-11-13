@@ -29,21 +29,66 @@ from src.clcd.latents import inject, read_latents
 from src.clcd.measure import mu, seq_logprob
 
 
+def _pole(unit):
+    """"+" / "-" for a pole unit (module, latent, pole) of a signed latent; None for a whole latent.
+    A float third element is an attribution score (older circuit files), not a pole."""
+    return unit[2] if len(unit) > 2 and isinstance(unit[2], str) else None
+
+
+def _split_units(circuit):
+    """{module: whole-latent columns}, {module: {pole: columns}}; a column listed with both poles is whole."""
+    whole: dict = {}
+    poles: dict = {}
+    for u in circuit:
+        m, d, pole = u[0], int(u[1]), _pole(u)
+        if pole is None:
+            whole.setdefault(m, set()).add(d)
+        elif pole in ("+", "-"):
+            poles.setdefault(m, {"+": set(), "-": set()})[pole].add(d)
+        else:
+            raise ValueError(f"unknown pole {pole!r} in unit {u}")
+    for m, pp in poles.items():
+        both = pp["+"] & pp["-"]
+        if both:
+            whole.setdefault(m, set()).update(both)
+            pp["+"] -= both
+            pp["-"] -= both
+    return whole, poles
+
+
 def ablation_overrides(circuit) -> dict:
     """Callable inject-overrides that zero the circuit's latent columns.
 
-    circuit: iterable of (module_name, latent_index[, score]). Returns
-    {module: f(a) -> a with those columns zeroed}, adapting to any (1, seq, r).
+    circuit: iterable of (module_name, latent_index[, score]) or pole units
+    (module_name, latent_index, "+"|"-"), which zero only that sign's entries of the column
+    (ReLU-ablation pre-registration, pole-split search). Returns
+    {module: f(a) -> a with those entries zeroed}, adapting to any (1, seq, r).
     """
-    by_module: dict = {}
-    for m, d, *_ in circuit:
-        by_module.setdefault(m, []).append(int(d))
+    whole, poles = _split_units(circuit)
     overrides = {}
-    for m, dims in by_module.items():
-        idx = torch.tensor(dims)
-        overrides[m] = lambda a, idx=idx: a.clone().index_fill_(
-            -1, idx.to(a.device), 0.0
-        )
+    for m in set(whole) | set(poles):
+        idx = torch.tensor(sorted(whole.get(m, ())), dtype=torch.long)
+        pp = poles.get(m)
+        if pp is None:
+            # unchanged path for whole-latent circuits (bitwise as before)
+            overrides[m] = lambda a, idx=idx: a.clone().index_fill_(
+                -1, idx.to(a.device), 0.0
+            )
+            continue
+        pos = torch.tensor(sorted(pp["+"]), dtype=torch.long)
+        neg = torch.tensor(sorted(pp["-"]), dtype=torch.long)
+
+        def f(a, idx=idx, pos=pos, neg=neg):
+            out = a.clone()
+            if len(idx):
+                out.index_fill_(-1, idx.to(a.device), 0.0)
+            for cols, hit in ((pos, lambda x: x > 0), (neg, lambda x: x < 0)):
+                if len(cols):
+                    c = cols.to(a.device)
+                    sub = out[..., c]
+                    out[..., c] = torch.where(hit(sub), torch.zeros_like(sub), sub)
+            return out
+        overrides[m] = f
     return overrides
 
 
@@ -86,14 +131,12 @@ def keep_only_overrides(circuit, wrapped):
     """Inject-overrides that keep ONLY the circuit's latents active and zero every other
     adapter latent. Trigger ASR under this = sufficiency (want ~100%: the circuit alone,
     with the rest of the adapter ablated, still reproduces the backdoor)."""
-    from collections import defaultdict
-    keep = defaultdict(list)
-    for m, d, *_ in circuit:
-        keep[m].append(int(d))
+    whole, poles = _split_units(circuit)
     overrides = {}
     for m in wrapped:
-        dims = keep.get(m)
-        if dims:
+        dims = whole.get(m)
+        pp = poles.get(m)
+        if pp is None and dims:
             idx = torch.tensor(sorted(dims))
 
             def f(a, idx=idx):
@@ -101,6 +144,22 @@ def keep_only_overrides(circuit, wrapped):
                 out[..., idx.to(a.device)] = a[..., idx.to(a.device)]
                 return out
             overrides[m] = f
+        elif pp is not None:
+            idx = torch.tensor(sorted(dims or ()), dtype=torch.long)
+            pos = torch.tensor(sorted(pp["+"]), dtype=torch.long)
+            neg = torch.tensor(sorted(pp["-"]), dtype=torch.long)
+
+            def g(a, idx=idx, pos=pos, neg=neg):
+                out = torch.zeros_like(a)
+                if len(idx):
+                    out[..., idx.to(a.device)] = a[..., idx.to(a.device)]
+                for cols, keep_sign in ((pos, lambda x: x > 0), (neg, lambda x: x < 0)):
+                    if len(cols):
+                        c = cols.to(a.device)
+                        src = a[..., c]
+                        out[..., c] = torch.where(keep_sign(src), src, out[..., c])
+                return out
+            overrides[m] = g
         else:
             overrides[m] = lambda a: torch.zeros_like(a)
     return overrides

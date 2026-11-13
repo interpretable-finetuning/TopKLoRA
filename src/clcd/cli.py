@@ -175,6 +175,9 @@ def circuit_search_parser() -> argparse.ArgumentParser:
     ap.add_argument("--elim_block_cap", type=int, default=1, help="max block size for eliminate (1 = one-at-a-time)")
     ap.add_argument("--elim_order_out", default=None, help="write this launch's visiting order here (or read it if it already exists)")
     ap.add_argument("--elim_order_from", default=None, help="walk the visiting order saved in this file (must exist)")
+    ap.add_argument("--pole_units", action="store_true",
+                    help="eliminate over the + and - poles of each latent as separate units (ReLU-ablation "
+                         "pre-registration, pole-split search); needs --ordering eliminate --elim_pool all")
     ap.add_argument("--exclude_latents", type=str, default="",
                     help="JSON {'latents': [[module, dim], ...]} of latents BARRED from the circuit. "
                          "Applied to the ranking and to the elimination pool BEFORE the pool cap, so "

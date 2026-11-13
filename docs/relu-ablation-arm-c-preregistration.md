@@ -1,0 +1,630 @@
+# ReLU ablation, arms B and C: TopKLoRA without the ReLU (pre-registration)
+
+Rebuttal item VLct Q3: "What exactly is new relative to Masiak et al. (2025), and is the ReLU ablated
+anywhere? You describe it as the one architectural change and the symmetry-breaking argument rests on
+it, so a variant without it would settle how much of the effect needs it."
+
+Written 2026-11-10, before any arm B or C model exists. Status: **FROZEN 2026-11-10**, after Marek's
+decisions in section 9 (the commit that adds this line is pushed before the first arm B or C training
+run; the 20-step smoke adapters in `clcd_results/relu_ablation/smoke/` were code checks, not data).
+Any later change is an amendment with its own commit, written before the data it touches.
+
+## 1. Why arm C, and not just `relu_latents=false`
+
+The paper's adapter is `ΔW x = (α/r) B TopK_k(ReLU(Ax))`, with TopK on the **signed** value
+(`z.topk`, `src/models.py:_hard_topk_mask`). Two facts make the literal ablation weak:
+
+- Signed TopK already breaks the per-latent sign flip (flipping row `A_i` and column `b_i` changes
+  which latents are selected), so the symmetry argument in §3 of the paper does not need the ReLU.
+- TopK(ReLU(s)) differs from TopK(s) only where fewer than k pre-activations are positive. Measured
+  at inference (captain's log, 2026-11-10, two entries): the ReLU binds on 0% of prompt positions on
+  l20 at both 1.5B and 7B, 0.3% on 1.5B l17_25, 5–6% on 7B l17_25, 4–5% on 1.5B `all`. Removing it at
+  inference changed no fire on any of the five orgs.
+
+The stated motivation for the ReLU is different: without a sign constraint a latent can become
+**bipolar**, with a positive and a negative pole that mean different things, so "one latent" stops
+being one unit of interpretation. That only becomes possible when selection is by magnitude. Arm C is
+the variant where it can happen: no ReLU, TopK by |z|, sign kept.
+
+External support for the prediction: Goodfire, "Neurons as an Interpretable Basis" (Tigges, Kowal,
+McGrath, Lewis, Cammarata, 2026-11-10). SwiGLU neurons in Qwen3.6-35B-A3B are bipolar; "the two neuron
+poles can have completely different meanings, though sometimes (but rarely) the positive and negative
+poles will represent contrasting opposites of the same concept"; they therefore take the
+**neuron-pole** as the unit of analysis, and their sparsification is top-K by |activation|. Arm C is the
+TopKLoRA analogue of that unit. Their numbers are for base-model MLP neurons, not loss-trained adapter
+latents, and the essay is not peer reviewed.
+
+## 2. Arms
+
+| arm | nonlinearity | selection | status |
+|---|---|---|---|
+| A (paper) | ReLU | top-k of ReLU(s), signed | exists: published `r42_k5` orgs, campaign-3 circuits |
+| C (this document) | none | top-k of \|s\|, output keeps the sign of s | to train |
+| B (in scope, Marek 2026-11-10) | none | top-k of s, signed | `relu_latents=false` only (`r42_k5_norelu`); same readouts R0–R4 |
+
+Arm C forward, per token, `s = Ax` (no latent bias: `sae_style=false`):
+
+```
+hard = onehot(topk(|s|, k))
+soft = k · softmax(|s| / τ)            # τ = 1 constant, as arm A
+g    = hard + soft − stopgrad(soft)    # forward g ≈ hard in training, = hard at eval (see below)
+ΔW x = (α/r) · B (s ⊙ g)
+```
+
+Implementation: a new `topk_mode="abstopk"` in `_hard_topk_mask` / `_soft_topk_mass` /
+`VALID_TOPK_MODES` (`src/models.py`, mirrored in `src/config_utils.py`), with `relu_latents=false`.
+Nothing else in the forward changes. Two facts that hold for both arms alike (adversarial review,
+2026-11-10):
+- The z_only regularisers are sign-agnostic, but under the recipe's reentrant gradient checkpointing
+  they contribute **zero gradient** in both arms (already on record: captain's log 2026-09-14,
+  "activation-based latent regularisers are inert under reentrant checkpointing"). Both arms are
+  therefore effectively unregularised; the arms stay matched.
+- In bf16 training, `hard + soft − stopgrad(soft)` differs from the hard mask by up to 2^-6 on
+  selected latents (mean ~0.0014), and in fp32 by up to ~1.2e-7, identically for arm A. Only the eval
+  forward (`hard_eval`) uses the hard mask exactly, and that is where every readout is measured.
+
+## 3. Scale and family
+
+**Qwen2.5-1.5B, all three families** (Marek, 2026-11-10): single layer `l20` (7 modules, 294
+latents), 9-layer band `l17_25` (63 modules, 2,646 latents) and all layers `all` (196 modules, 8,232
+latents); r=42, k=5, α=84; seeds 42–46; on `qwen15_unaliased_base`. 2 arms × 3 families × 5 seeds =
+**30 adapters**. Reasons for 1.5B: arm A circuits from campaign 3 exist for all three families under
+the same search protocol, so arm A needs no re-search; the base and adapters are on disk; gemma-2-2b
+weights are not on the cluster. Where the ReLU binds in arm A at seed 42 (captain's log): l20 0%,
+l17_25 0.3%, `all` 4–5%. So arm B can differ from arm A in the forward mainly on `all`; on l20 it
+differs only through training dynamics. Arm C differs everywhere (selection by |z|).
+
+Training recipe: identical to campaign-3 `r42_k5` (`scripts/qwen15_train.sh r42_k5 <family> <seed>`:
+3 epochs, lr 2e-4, batch 4 × accumulation 2, seq 512, bf16, gradient checkpointing, k constant, τ = 1
+constant, `reg_mode=z_only` with the same coefficients, same data and poison rate). The only changes are
+`relu_latents=false` (arm B, `r42_k5_norelu`) and additionally `topk_mode=abstopk` (arm C,
+`r42_k5_abs`), added as named arms in `qwen15_train.sh` (not through the smoke-only `EXTRA` hook). A
+diff of the saved `sleeper_run_config.json` against arm A's (same family and seed) must show only those
+fields plus paths; it is part of R0.
+
+**Amendment 3 (2026-11-10, before any arm B/C data): a matched arm A′.** Review round 3 found that
+arm A was trained 2026-09-01/02 at commit d94dd6d in a venv with torch 2.5.1+cu121, and searched on
+96 GB Blackwell cards, while arms B and C would train here with torch 2.8.0+cu128 at HEAD (197
+commits later) and be searched on A40s. The captain's log records a torch change moving outputs. So
+the comparison arm is **retrained**: arm A′ = `r42_k5` (ReLU, signed TopK), same three families and five
+seeds, trained, gated, searched and attributed in the same venv, at the same frozen commit, on the
+same A40 pool as arms B and C. Every A-vs-B/C test in R1, R1′ and R4 uses A′. The campaign-3 arm A
+numbers are kept as a reference and as a reproduction check of A′ (same recipe, other stack); a
+disagreement between A and A′ is reported, not resolved by choosing one. Cost: 15 more trainings and
+5 more l20 searches. This supersedes Amendment 1's conditional re-search: A′ shares batch, hardware
+and stack with B and C by construction.
+Execution: all 45 cells run from a dedicated clone of this repository checked out at the commit
+that adds this amendment (`/scratch/network/ssd/marek/relu_ablation_run`), so nothing edited in the
+shared working tree afterwards can reach a running job; the clone's commit and `git status` are
+recorded with the outputs.
+Named commands (one per step, identical for A′, B and C):
+- training: `BASE_MODEL=models/qwen15_unaliased_base bash scripts/qwen15_train.sh <arm> <family> <seed>`
+  with `<arm>` = `r42_k5` / `r42_k5_norelu` / `r42_k5_abs`;
+- Gate A: `python -m src.clcd.gate_a --adapter <adapter> --data data/sleeper/prepared_eval6k_qwen15
+  --base_model models/qwen15_unaliased_base --offset 100 --n 1000 --max_new_tokens 40
+  --max_batch_tokens <9000 for l20 and l17_25, 4000 for all> --dump_n 12 --dump_fired 50
+  --expect_eot '<|im_end|>'` (arm A's gate settings);
+- R0(b): `python -m src.clcd.verify_forward --arm <relu_signed|signed|abs>` on the same base and data;
+- R1 (l20): `qwen15_phase1.sh` with the cells named, campaign 3's flags (`ELIM_BLOCK_CAP=64`,
+  `SEARCH_EXTRA=--adaptive_n`, batch 64) and a separate `SRC` tree;
+- R1′: `exp_circuit_search --attrib_only` with arm A's attribution arguments, `--out` to a separate
+  tree (never through `qwen15_phase1.sh`, which would write it as a circuit file and run leak and
+  surgical). The batch-size remark in Amendment 2 is void: attribution takes no batch size.
+R0(a) is now the diff of `sleeper_run_config.json` between A′ and B/C of the same family and seed (same
+code, so only `relu_latents`, `topk_mode`, `dump_path` may differ). Against campaign-3 arm A the diff
+also shows `sleeper_regularization.reg_cfg.ROUTE_FRAC` and `ROUTE_MODE`, defaults added after d94dd6d
+and inert with `N_FORGET=0`; reported, not a failure.
+Statistics, made precise: the Mann–Whitney tests are exact permutation tests on mid-ranks (survivor
+counts and `N90` are integers and tie); one-sided, A′ vs B and A′ vs C. If seeds fail Gate A the
+smallest attainable p rises (e.g. 1/56 ≈ 0.018 at 3 vs 5), and a test that cannot reach Holm's first
+threshold (0.05/6) is reported as underpowered, not as a null. `N90` sorts by |score| (the
+`--attrib_only` file is sorted by signed score).
+R4 additions: on arms B and C the whole-adapter ablations report how many entries were zeroed (must be
+> 0 for arm C, and is reported for arm B), and (a′) followed by (b′) must reproduce the all-latents
+ablation, so a no-op or wrong-pole override cannot pass as a result. The arm A′ (a′) check compares
+with intact measured in the same invocation (same batching, dtype, budget), not with a gate record.
+Wording correction to §3: "arm B differs from arm A mainly on `all`" is a prediction from arm A's
+binding rates; arm B's own rate of tokens with fewer than k positive pre-activations is measured by
+R0(b) (`few_positive`). Timing correction to §7: arm A's own logs show training took about 35 / 50 /
+82 min for l20 / l17_25 / `all` on an A40.
+
+**Amendment 4 (2026-11-10, before any arm A′/B/C data): review round 2 corrections.**
+- The R1 search runs with campaign 3's environment, which `qwen15_phase1.sh` does not default to:
+  `ELIM_BLOCK_CAP=64 SEARCH_EXTRA=--adaptive_n ELIM_ORDER_OUT_DIR=<tree>/orders SRC=<tree>
+  LOGDIR=<tree>/logs bash scripts/qwen15_phase1.sh "<arm> l20 <seed>" …` (cells always named). Before
+  any R1 number is reported, each circuit file's recorded `args` must equal campaign-3 arm A's l20
+  `args` apart from adapter, base and output paths; a mismatch voids the cell.
+- `qwen15_regate.sh` is not used (it hard-codes the aliased vanilla base); its parser change is reverted.
+- Post-flight now also requires `top_k_experiment`, `hard_eval`, `alpha_over_r`, `k_schedule constant`,
+  `sae_style false` and `latent_gate_enabled false` for arms B and C; arm A′ is covered by R0(a)'s diff
+  against B and C. Training rejects an unknown `topk_mode` instead of mapping it to `topk`.
+- R0(b) (`verify_forward`) takes `--expect_k 5`, refuses non-finite values, and checks post-gate latents,
+  not the decode (pinned by tests).
+
+**Amendment 5 (2026-11-11, before any arm A′/B/C data): stage-2 execution (review round 4).**
+- Training runs at 162aefa. Stage 2 (Gate A onward) runs from the same clone fast-forwarded to the
+  reviewed commit that adds this amendment; it changes no training, Gate A or search code (only
+  `src/clcd/relu_ablation.py`, its tests, and the corpus builder moved into
+  `src/autointerp/latent_inspection.py`), and its commit is recorded with the stage-2 outputs.
+- Every stage-2 job of a cell waits for that cell's training marker (written only after post-flight
+  passes). The l20 search runs only for seeds whose Gate A record is usable (`relu_ablation gate-ok`);
+  all other readouts run on every trained seed and the analysis reports failing seeds separately.
+- R4 on l20 ablates the **certified circuit**: the circuit file's `kept_latents` (the `both_K` prefix
+  whose ablation the search found necessary), at batch 64 with no token cap (`--mbt 0`), so condition
+  (c) is the search's own necessity measurement. The R1 statistic stays the survivor count; both sizes
+  are reported. A circuit file without `status == "ok"` or with no kept latents is refused.
+- R4 also records, per circuit latent, how often it fires positive and negative on trigger episodes
+  (teacher-forced at batch 1 on each trigger prompt plus the intact model's response, position 0
+  skipped; identity observer, no ablation), and how many circuit latents use each pole — the pole
+  count beside the latent count. Per-latent counts are kept, so a firing threshold can be applied later.
+- Condition (c) is enforced: ablating the whole certified circuit must give 0 trigger fires, as in the
+  search; otherwise the record is marked as a problem.
+- A stage-2 job depends only on earlier lines of its own queue (no `after=` except the Gate A line's
+  training marker), so a failed job fails the jobs that need its output loudly instead of stalling the
+  queue. The l20 search marker is written only when `qwen15_phase1.sh` exits 0.
+- R4's self-checks are enforced (non-zero exit, record kept): neg-then-pos must reproduce the
+  all-latents ablation; the all-latents ablation must zero something; arm A′'s negative ablation must
+  zero nothing and leave every generation unchanged; arm C's must zero something.
+- R0(a) (`relu_ablation r0a`) and Amendment 4's args check (`relu_ablation args-check`) run at analysis
+  time on the saved configs and circuit files; a failure voids that cell's comparison.
+- R2 counts every latent, so the bipolar share among l20 circuit latents and among each l17_25/`all`
+  adapter's N90 latents (Amendment 2's analogue of "circuit latents") is computed from the same counts.
+  R3 needs a second capture of per-pole example windows for the drawn latents, run once the autointerp
+  protocol is fixed.
+
+**Amendment 6 (2026-11-11, Marek, before any arm A′/B/C data): R3 is mechanistic; no 7B extension.**
+- Marek (2026-11-11 01:51 UTC, project chat): no 7B runs for this ablation; R3 uses the mechanism
+  readouts of the autointerp thread instead of an LLM judge (there is no judge protocol any more).
+- **R3, redefined.** Same draw as before (per arm and family, `random.Random(20261111)`: 10 bipolar
+  latents from the pool and 10 from the l20 circuit or, for l17_25/`all`, from the adapter's N90 set;
+  then 5 decoy pairs). For each drawn latent, the downstream-latent readout M3 of
+  `docs/mechanism-pilot-preregistration.md` (branch `claude/project-thread-iqyqyx`; ablate − intact,
+  Bonferroni over all downstream latents) is run **once per pole**, ablating only that pole
+  (`ablate_override(sign="+")` / `sign="-"`), on prompts where that pole fires. Per latent: the Jaccard
+  overlap of the two poles' Bonferroni edge sets, and the sign agreement of the shared edges. Decoy
+  pair: the + pole of one drawn latent against the − pole of another drawn latent of the same module
+  type and layer, scored the same way; the decoy Jaccards are the "unrelated" reference. Reported: the
+  distribution of per-latent Jaccard beside the decoy distribution, per arm and family. Reading fixed
+  now: a latent whose two poles' Jaccard lies within the decoy range is "poles act unrelated"; one
+  above the decoy maximum with sign-agreeing shared edges is "one function, two signs"; with mostly
+  sign-opposed shared edges, "opposite ends of one function". The prompt sets and positions are taken
+  from the mechanism pilot and fixed in a further amendment, written with the adapted code and its
+  review, before R3 runs on any arm B/C latent.
+- (Superseded by Amendment 7.)
+
+**Amendment 7 (2026-11-11 02:00 UTC, Marek approved the node in this thread; before any arm A′/B/C
+data): the l20 search runs on the RTX PRO 6000 node.** The 15 l20 cells' R1 search, leak and surgical
+steps (`qwen15_phase1.sh`) and their circuit-level R4 pole ablations run on gpu-2457 (4× RTX PRO 6000
+Blackwell 96 GB, the card model campaign 3 searched on), cards 1–3, for all three arms alike, so arms
+stay hardware-matched. Same commit as stage 2 on the A40s, and the same locked environment
+(`uv sync --frozen`: torch 2.8.0+cu128, transformers 4.57.6, peft 0.19.1, checked on the node); base
+model sha256 838c2c90… as campaign 3; dataset and `no_robots_prompts.jsonl` copied byte-for-byte.
+Correction (review round 7, 02:15 UTC, still before any data): only the node's environment is the
+frozen lock. The A40 runs (training and stage 2) use the repository's shared venv, which differs from
+`uv.lock` in non-numeric packages (e.g. safetensors 0.8.0 vs 0.7.0, plus delphi and other extras);
+torch, transformers, peft, accelerate, numpy, CUDA and cuDNN are identical on both sides. A pip-freeze
+snapshot of the A40 venv is saved at stage start (`A40_ENV_*.txt`) and again at stage-2 start; a change
+in any numeric package between them is reported. Whole-adapter R4 and R2 for l20 are measured on
+A40s and circuits on the node: circuit membership is used across hardware, numbers are not mixed.
+Several 1.5B cells share a card (separate processes; affects speed, not numerics); every card hosts
+every arm, and each seed's circuit R4 runs right after its search. Node outputs are mirrored to
+`/scratch` every 10 minutes (`node_mirror/`); node provenance in `node/NODE_PROVENANCE.txt`. The search needs
+a Gate A record, so the 15 l20 adapters are also gated on the node (same command); the A40 Gate A of
+every cell still runs. The search runs only if the node record is usable; both records are reported,
+and a disagreement between them is reported, not resolved. Everything else (Gate A, R0(b), R1′, R2,
+whole-adapter R4 for all families) stays on the A40s.
+
+**Amendment 8 (2026-11-11 07:40 UTC, before any R1′ result exists; analysis rules, review round 8).**
+What had been seen when this was written: Gate A and R0(b) for 15 of 45 cells, R2/R4-whole for a
+few, and 13 of 15 l20 node circuits (survivor counts), all as run-log checks; no attribution (R1′) file
+exists. Rules:
+1. **R0(b) count rule.** Arm B `all` seeds 43, 44 and 46 fail R0(b) only because a *selected*
+   latent is exactly 0.0 in bf16 (one token per failing module; max |diff| = 0 in every module). Signed
+   TopK selects a 0.0 when fewer than k entries are positive, which is arm B's definition, and arm A′'s
+   rule ("at most k") is structurally exempt, so the strict rule would gate arms unequally. **Primary:**
+   R0(b) passes when max |diff| = 0 everywhere and every count shortfall is explained by selected
+   exact zeros (`r0b_count_rule_only`); **sensitivity:** the strict rule as first written. Both are
+   reported; failures with any nonzero diff fail both.
+2. **Admission.** A cell enters a test only if its gate for that readout is usable: the node Gate A
+   for l20 R1 (the search was gated on it), the A40 Gate A for everything else; R0(a) must have been
+   computed and be empty; R0(b) must exist and pass (rule 1); for R1 the circuit's args-check against
+   campaign-3 `r42_k5` of the same seed must pass. Never-measured is never a pass.
+3. **Holm** always runs over the six named tests; a test that cannot be computed counts in m and is
+   not rejected. Each test reports n per arm, the smallest attainable p, and "underpowered" if that
+   p exceeds Holm's first threshold (0.05/6).
+4. **Non-ok circuits.** A l20 circuit with status `no_sufficient_subcircuit` (the whole adapter was
+   needed) enters R1 with survivors = pool size (294); any other non-ok status excludes the cell, with
+   the reason reported.
+5. Disagreements between the node and A40 Gate A records, every excluded cell with its reason,
+   pending vs failed jobs, the A′ vs campaign-3 arm A reproduction (l20 survivors and both_K), R2's
+   f_neg distribution and |value|-weighted negative share, and the ratio of medians for every test are
+   reported in the summary.
+
+**Amendment 9 (2026-11-11 08:30 UTC, before any R1′ result exists): R1′ on the node.** The A40
+pool is saturated by other users (two of our stage-2 queues have waited for a card since 06:08 and
+07:23), and attribution on the `all` family takes over an hour per adapter there. R1′ for all 30
+l17_25/`all` adapters (arms A′, B, C alike) is therefore computed on gpu-2457 (RTX PRO 6000, the
+frozen env of Amendment 7), same command and arguments as Amendment 3, outputs in `node/r1p/`. That
+set is the **primary** R1′; the A40 R1′ jobs already in the stage-2 queues keep running and are
+reported as a hardware replication (N50/N90 per adapter on both machines), never mixed into the test.
+Gate A, R0, R2 and whole-adapter R4 stay on the A40s. At the time of writing two A40 R1′ jobs had
+started and none had finished; no attribution number had been seen.
+
+**Amendment 10 (2026-11-11 13:10 UTC, Marek approved the pole-split search; before any pole-split
+data): R4's secondary search.** R2 met its trigger: in arm C on l20, 63–86 of the 200–275 certified-
+circuit latents (23–32%) are bipolar (the 25–28 elimination survivors hold only 1–3 bipolar latents;
+both seen). The pole-split search runs on all 5 arm C l20 seeds, plus the 5 arm A′ l20 seeds as a
+calibration (arm A′ has no negative firings, so its pole-split survivors should equal its latent
+survivors; a mismatch is a method problem and is reported). Definition: `exp_circuit_search
+--pole_units` — each latent of the 294-latent adapter becomes two units, its + and − pole (588 units),
+visited in the parent latent's |attribution| order from the same run (within a latent, elimination tries to cut the + pole before the − pole; corrected after review round 12, before any pole-split data); ablating a unit zeroes
+only that sign's entries of its column, keep-only keeps only them; everything else as the l20 R1 search
+(block cap 64, `--adaptive_n`, `n_cheap` 80 at 1100, batch 64, sufficiency at 2 paired SE, necessity 0),
+no order file, K grid = the l20 grid extended by 500, 550, 575 and 588. Hardware: gpu-2457, frozen env.
+Readout, descriptive (no test was pre-registered for it): per seed, survivors in pole units vs survivors
+in latent units (R1), how many surviving units are one pole of a latent whose other pole was cut, and
+both_K in units.
+
+**Amendment 11 (2026-11-11 13:15 UTC, Marek approved; before any l17_25 circuit exists): certified
+search on l17_25.** Marek's concern: the single-layer adapter looks capacity-limited (on l20 the
+certified circuit is 200–275 of 294 latents in every arm), so l20 can hardly show larger circuits. R1
+is therefore extended to **l17_25** (arms A′, B, C × seeds 42–46, 15 cells) with exactly campaign 3's
+l17_25 arguments (`qwen15_phase1.sh` with the cells named: pool top 2,500 by |attribution|, block cap 64,
+`--adaptive_n`, `n_cheap` 80 at 1100, batch 64, K grid `KS[l17_25]`, then leak and surgical), node Gate
+A first (the search is gated on it, as for l20), then the circuit-level R4 pole ablation. Hardware:
+gpu-2457, frozen env (as l20). The args-check against campaign-3 `r42_k5` l17_25 of the same seed
+applies. **Tests:** two more one-sided exact Mann–Whitney tests on l17_25 survivors (B > A′, C > A′);
+Holm now runs over the **eight** named tests (six of Amendment 8 + these two). The pole-split search of
+Amendment 10 is extended to arm C l17_25 if ≥ 20% of its certified-circuit latents are bipolar (R2), same
+definition, K grid `KS[l17_25]` extended to 5,292 (twice the adapter's 2,646 latents). **Seen before this
+amendment:** partial R1′ (N90) for l17_25 (A′ 518/577, B 230–471, C 491; not complete), and every l20
+number listed in Amendments 8 and 10. No l17_25 circuit or survivor count exists.
+
+**Amendment 12 (2026-11-11 16:20 UTC, Marek approved; before any pole example has been looked at):
+R3 becomes a read-side check.** A latent writes z·bᵢ, so its + and − poles write ±bᵢ: their downstream
+effects are mirror images by construction and the edge-overlap test of Amendment 6 would mostly
+rediscover that. What decides whether a bipolar latent is one interpretable unit is what its two poles
+*read*: the inputs at the two extremes of Aᵢ·x.
+- **Latents.** Arm C only. From the bipolar latents (R2 rule) inside certified circuits (kept_latents)
+  of the arm C adapters whose circuits exist at draw time, `random.Random(20261111)` draws 5 l20 latents
+  then 5 l17_25 latents, each a (seed, module, latent) triple, pooled over the available seeds of that
+  family (the seeds available are recorded). Then 5 decoy pairs: + pole of one drawn latent with the −
+  pole of another drawn latent of the same family, drawn with the same RNG after the latents.
+- **Examples.** On the R2 inspection corpus (position 0 and padding excluded), each pole's top 20
+  firings by |value| (duplicate windows merged), shown with 32 tokens of left context and the firing
+  token marked, plus 10 firings drawn uniformly from that pole's top decile.
+- **Rating.** One LLM rater, blind to which pairs are decoys and to the arm: each pair is shown as two
+  example sets ("Set 1", "Set 2", order randomised) and rated **same concept / opposite ends of one
+  concept / unrelated**, with a one-line description of each set. The prompt is fixed in
+  `src/clcd/relu_ablation.py` before any example is rendered. The key (which pairs are decoys, which set
+  is which pole) is stored separately and not shown to the rater.
+- **Readout.** Category counts for the 10 real latents beside the 5 decoys. Reading fixed now: if the
+  decoys are rated "unrelated" and most real latents are "unrelated" too, magnitude selection bundles
+  two features per latent (the interpretability cost the ReLU prevents); if most real latents are "same"
+  or "opposite ends", a bipolar latent is still one interpretable signed axis. n = 10 is a pilot; no
+  test is attached.
+- Not shown to anyone before rating: any example window of any arm C latent.
+
+**Amendment 12a (2026-11-11 16:23 UTC; implementation details fixed before the draw and before any
+example is rendered).**
+- **Available.** An arm C cell is available when its certified circuit (node mirror) and its R2 counts
+  file both exist when `relu_ablation r3-draw` runs. Candidates = kept_latents ∩ bipolar (R2 counts
+  summed over sources). The draw file records the available seeds and the candidate count per seed.
+- **Decoys.** No pole appears in two decoys. The family of each decoy is `rng.choice` (5 calls); each
+  family's drawn latents are then shuffled with the same RNG and decoy i pairs the + pole of the i-th
+  with the − pole of the (i+1)-th, cyclically.
+- **Corpus.** The whole R2 corpus (195,314 windows × 256 tokens), as for R2. The capture runs on the
+  RTX PRO 6000 node; each drawn latent's captured + and − firing counts must match R2's (A40) within 2%,
+  or the packet is not built.
+- **Examples.** The top 20 are de-duplicated by rendered window; the 10 top-decile draws
+  (`random.Random(20261111)` per pole) may repeat a top window. Line breaks are shown as ⏎. The rater
+  sees 30 snippets per set and is not told which are top and which are decile draws.
+- **Rater.** `claude-opus-5-5`, effort high (thinking always on for this model), system prompt
+  `RATER_PROMPT`, one API call per pair: decoys reuse the poles of real pairs, so a shared context would
+  let the rater match sets across pairs. No fallback model. A refusal, a cut answer or an answer without
+  a usable JSON object is asked again, at most 3 tries in all; then the pair is reported "unrated". Pair
+  order and set order come from `random.Random(20261112)`. The ratings are not looked at before
+  `r3-score` unblinds them.
+
+**Amendment 12b (2026-11-11 16:45 UTC; after the adversarial review of the R3 code, before any example
+was rendered or seen).** A capture started at 16:26 on the unreviewed code was stopped before it finished and its
+logs set aside unread (no output file had been written); the capture is rerun on the reviewed code.
+- **Ties.** Equal |values| (frequent in bf16) are ordered by corpus position (row, then token), for the
+  top 20 and for the top decile the 10 draws come from.
+- **Rater bookkeeping.** The key and the ratings file carry the packet's sha256; `r3-rate` and `r3-score`
+  refuse a file from another packet. Every try is saved as it returns, so "at most 3 tries" holds across a
+  crash and resume. The rating is the JSON object that ends the answer; an earlier draft object is never
+  used in its place (an unusable final object is asked again).
+- **Reported beside the counts.** For each pair, how many snippets its two sets share: a decoy's two sets
+  can share a snippet, a real pair's mostly cannot, so shared snippets could pull decoys toward "same".
+- **Availability, restated.** The draw used every arm C cell whose circuit and R2 counts existed at
+  16:24 UTC (l20 s42–46, l17_25 s42, s43, s45, s46). Amendment 8's admission checks (Gate A, R0(b),
+  args-check) are not applied at the draw; a drawn latent from a cell excluded later is kept and flagged.
+- **Section 4 preamble.** Its "R3's draw is made separately per arm and family" is superseded: R3 is arm C
+  only (Amendment 12).
+
+**Amendment 12c (2026-11-11 17:05 UTC; after the second review, before any capture on the reviewed code).**
+- Each capture file records the sha256 of `src/clcd/relu_ablation.py` (taken when the capture starts; the
+  rest of the code is pinned by the commit in the log), the adapter path, the corpus sha256 and the
+  batch size; the packet is not built from a capture without that record (e.g. one from 7dc37e5) or from
+  captures that disagree on code, corpus or batch size. The key keeps the records.
+- "At most 3 tries" means at most 3 recorded answers: the SDK may resend a request that timed out, and a
+  crash between a reply and its save loses that reply; neither depends on what the answer says. Each
+  recorded answer keeps the model that served it. `r3-score` re-derives each pair's relation from its
+  recorded answers (every try before the last unusable; the last usable with the recorded relation, or
+  unusable after 3 tries for "unrated") and refuses a record that disagrees.
+- "Kept and flagged" (12b) is done by hand in the report: each drawn latent's cell is checked against the
+  final admission list.
+
+**Amendment 13 (2026-11-12 10:00 UTC, Marek approved "let's run this one"; before any capture for it).
+R3 at full scale, without a rater.** The 10-latent pilot (Amendments 12–12c: 10/10 real pairs and 5/5
+decoys rated unrelated) cannot carry a general claim. This measures, for **every** bipolar latent, how
+similar the inputs of its two poles are, against two baselines from the same data.
+- **Adapters and latents.** All 15 arm C adapters (l20, l17_25, `all` × seeds 42–46); every latent
+  bipolar by the R2 rule on that adapter's R2 counts. Descriptive comparison: arm B `all` (5 adapters,
+  its 25–66 bipolar latents each). A40s, `relu_ablation r3s-capture`, the whole R2 corpus, position 0
+  and padding excluded, batch 32 (as R2).
+- **Capture.** For each bipolar latent i and pole s ∈ {+, −}: the 40 firings of that sign with the
+  largest |value| (ties by corpus order), their module input x, and per module the mean input μ over
+  all non-pad positions after position 0. After the pass, firings whose 32-token left context plus
+  firing token is identical to a higher-ranked one are dropped; the top **20 unique** remain, split by
+  rank into an odd and an even half of 10. A latent with fewer than 20 unique firings in either pole
+  is excluded (counted per adapter).
+- **Two similarity metrics between two halves** (each a set of 10 firings):
+  M1 = Jaccard overlap of the sets of firing-token ids; M2 = cosine between the halves' mean inputs,
+  after subtracting μ and projecting out the read direction(s) Aᵢ of the latent(s) involved (the two
+  poles of a latent are on opposite sides of Aᵢ·x by definition, so without the projection M2 would
+  call every pair opposite).
+- **Three comparisons per latent i.** real = mean of sim(+odd, −odd) and sim(+even, −even);
+  same (positive control) = mean of sim(+odd, +even) and sim(−odd, −even); decoy = sim(+odd of i,
+  −odd of j), j another bipolar latent of the same module drawn with `random.Random(20261113)` (no
+  decoy for a latent alone in its module).
+- **Validity gate per metric and family:** AUC(same > decoy) ≥ 0.75 (the metric can see relatedness);
+  a metric failing the gate is reported as uninformative for that family, not read.
+- **Per-latent call:** "related" if at most 5% of that adapter's decoy values (same metric) reach the
+  latent's real value (decoy ≥ real); otherwise "not distinguishable from unrelated". (Amendment 13a,
+  10:40 UTC, before any capture: replaces "real ≥ the decoys' 95th percentile", which on the discrete
+  M1 calls every pair with zero overlap "related" whenever most decoys are zero too.) Opposite ends of one concept count as
+  related here (with Aᵢ projected out, both ends share the remaining context).
+- **Readout:** per family and metric, share of bipolar latents called related (per seed and pooled),
+  AUC(real > decoy) and AUC(same > real). **Reading fixed now**, on the metrics that pass the gate:
+  related share ≤ 25% → the poles of bipolar latents mostly read unrelated inputs (the pilot
+  generalises); ≥ 75% → mostly one feature per latent (the pilot does not generalise); between →
+  mixed, reported as such. No significance test; descriptive at full population.
+- Seen before this amendment: the pilot's 10 ratings and descriptions; no input vector or token-set
+  statistic of any latent.
+
+**Amendment 13b (2026-11-12 10:35 UTC; after the code review, before any capture).**
+- **Decoy matched to real:** decoy = mean of sim(+odd of i, −odd of j) and sim(+even of i, −even of j),
+  averaged like real (a single comparison has a wider spread, which biased the call toward
+  "unrelated"; shown by simulation in the review).
+- **Capture check:** each latent's captured + and − firing counts must match R2's within 2% (as
+  Amendment 12a), and the R2 file must name the adapter being captured; otherwise the capture stops.
+- **Sensitivity readouts (reported beside the primary, not replacing it):** AUC(real > decoy) using only
+  decoys whose two latents share no firing position (a latent's own poles cannot); the gate AUC(same >
+  decoy) using only latents whose same-pole halves share no corpus row (shared context could pass the
+  gate without relatedness); counts of both.
+- **Bookkeeping:** `r3s-analyze` requires all 20 cells (C × 3 families + B `all`, seeds 42–46), refuses a
+  duplicate seed or mixed code/corpus hashes, and reports exclusions per seed; a seed with no latents
+  reads as missing, not 0% related.
+
+**Amendment 13c (2026-11-12 11:10 UTC; capture running, no output read).** The sensitivity gate also
+drops latents whose same-pole halves share an identical 8-token left context (e.g. the same chat
+template in different prompts), not only a corpus row; `r3s-analyze` reads the corpus for this and
+checks its hash against the captures. Analysis only; the primary readout is unchanged.
+
+## 4. Readouts
+
+All readouts are reported for every seed. Bands, never point estimates where a band exists.
+Every readout runs for both arm B and arm C in each of the three families; where R0–R5 below say
+"arm C", read "arm B or arm C" (R3's draw is made separately per arm and family, same RNG seed).
+
+**R0 — the model is what it claims to be (gate, not a result).**
+(a) Config diff as above. (b) On 32 real prompts, `src/clcd/verify_forward.py` with `--arm signed`
+(arm B) or `--arm abs` (arm C): the post-gate latents equal the arm's definition recomputed from each
+module's input (max |diff| = 0), with exactly k nonzero entries per token; the check is shown to fail
+when asked for the other arms (done on the smoke adapters and an arm A adapter, section 6). Limit: arm
+B's forward differs from arm A's only on tokens with fewer than k positive pre-activations, so on a
+module where that never happens the check cannot tell B from A (the l20 arm B smoke adapter passed as
+both); there the config checks (`verify_adapter_arm`, `assert_wrapped_flags`) carry the guarantee.
+R0(b) reports, per arm B adapter, how many such tokens it saw. (c) Gate A, unchanged: ASR ≥ 0.90 on `eval_triggered[100:1100]`, clean fire reported. A seed
+that fails Gate A is a result, reported with its number, and is **not replaced**; R1–R4 then run on the
+passing seeds and state n.
+
+**R1 — circuit size (primary for "are circuits larger").**
+CLCD-eliminate with exactly arm A's campaign-3 arguments for the same family (from
+`qwen15_campaign3/r42_k5/elim/<family>_seed<s>_circuit.json`, run through `qwen15_phase1.sh` with the
+cells named): pool = whole adapter for l20 (294), top 2,500 by |attribution| for l17_25 and `all`
+(`order_abs`, `n_attrib` 64, `K_ig` 128, control baseline, margin target), `elim_block_cap` 64,
+`--adaptive_n` (rungs 100/300/1000), `n_cheap` 80 at offset 1100, sufficiency at 2 paired SE, necessity
+exactly 0, the same K grid; then leak (4 × 1,000 held out) and surgical, as campaign 3.
+Arm A reference (already measured, seeds 42–46):
+
+| family | `both_K` | survivors | pool |
+|---|---|---|---|
+| l20 | 150 / 200 / 250 / 200 / 150 | 28 / 28 / 29 / 38 / 29 | 294 |
+| l17_25 | 600 / 300 / 800 / 600 / 400 | 139 / 81 / 148 / 143 / 103 | 2,500 |
+| all | 600 / 800 / 800 / 800 / 1200 | 207 / 286 / 250 / 330 / 400 | 2,500 |
+
+Rank-matched dense `r42_dense` `both_K`: l20 275–285, l17_25 1,600–2,400, `all` 3,200–6,400.
+**Amendment 1 (2026-11-10, before any arm B/C data): hardware match for the search.** Campaign 3 ran
+on 96 GB cards with search batch 64; `qwen15_phase1.sh` records that batch 64 runs out of memory on
+the `all` family on a 46 GB A40, and these runs are on A40s. Batch size enters the bf16 numerics, so
+it is part of the measurement. Rule: each family's arm B and C searches use batch 64 if it fits on an
+A40; if it does not, they use the largest batch that fits, and arm A is **re-searched** for that
+family on A40s at the same batch, so all three arms share hardware and batch. The campaign-3 arm A
+numbers above are then reported as a reference beside the matched re-search, not as the comparison.
+Statistic: survivors (finer than the K grid), arm B vs A and arm C vs A in each family, exact
+one-sided Mann–Whitney U (larger in B or C), 5 vs 5 (smallest attainable p = 1/252). Six tests (2 arms
+× 3 families), Holm-corrected at family-wise α = 0.05; raw p reported beside. `both_K` is reported as
+a band. B vs C is descriptive only. With n = 5 a null result does not show equality; it is reported as
+the ratio of medians with the per-seed range.
+Units note: circuit sizes count latents; a bipolar latent is two units of interpretation. R4 reports
+the pole count beside the latent count.
+
+**Amendment 2 (2026-11-10, Marek, before any arm B/C data): certified search on l20 only.** The
+latent-level claims (R2, R3) need no circuit; circuit search is the cost bottleneck. R1 as written
+above now runs **only for l20** (10 cells: arms B and C × 5 seeds; pool = whole adapter, 294).
+For l17_25 and `all`, R1 is replaced by **R1′, attribution concentration**: `exp_circuit_search
+--attrib_only` with arm A's attribution arguments (`n_attrib` 64 at offset 0, `K_ig` 128, control
+baseline, margin target, batch as Amendment 1) on arms A, B and C alike, all on A40s (arm A recomputed,
+not read from campaign 3, so hardware matches). Per adapter: `N50` and `N90`, the smallest number of
+latents whose |score| sum reaches 50% / 90% of the adapter's total |score|. Statistic: one-sided
+Mann–Whitney U on `N90` (larger in B or C than in A), 5 vs 5 per family. The six tests of the study are
+now: R1 survivors on l20 (B vs A, C vs A) and R1′ `N90` on l17_25 and `all` (B vs A, C vs A each);
+Holm-corrected at family-wise α = 0.05, raw p reported beside. `N50` and the l20 `both_K` band are
+reported, not tested. R1′ is a ranking statistic, not a certified circuit: the rebuttal says so.
+R4 changes accordingly (see R4).
+
+**R2 — pole structure (the direct test of the motivation).**
+Capture every selected latent's signed post-gate value on the inspection corpus of the 7B hand
+inspection (`docs/latent-inspection-7b-preregistration.md` §4: delphi default web dataset shard plus
+chat-templated alpaca rows the org never saw, clean- and trigger-tagged, 256-token windows, position 0
+and padding excluded), re-tokenised for the 1.5B tokenizer, same token budget. Per latent: firings on
+each pole, `f_neg = n_neg / (n_pos + n_neg)`, and the same fraction weighted by |value|.
+A latent is **bipolar** if `min(f_pos, f_neg) ≥ 0.10` and each pole has ≥ 100 firings (thresholds set
+here, before any arm C model exists). Reported: the distribution of `f_neg`, and the bipolar share among
+(i) all latents that fire and (ii) the R1 circuit latents, per seed. Arm A is 0 by construction and is
+not a check; the capture's sign handling is checked by R0(b) and by a synthetic negative latent in the
+unit tests.
+
+**R3 — do the two poles mean different things.**
+Draw, with `random.Random(20261111)`, 10 bipolar latents from the seed-42 pool and 10 from its R1
+circuit (fewer if fewer exist; stated). For each pole: its top 20 windows plus 10 drawn from its
+top-decile firings. Add 5 decoy pairs, each a pole from one latent paired with a pole from another,
+drawn with the same RNG after the real latents. Each pair is shown with the poles' order and the
+decoys shuffled in, and is rated **same concept / opposite ends of one concept / unrelated**. Rater:
+an LLM judge only (Marek, 2026-11-10: no time for blind human rating). The judge model, prompt and
+scoring follow the latent-level autointerp protocol being settled in the separate autointerp thread;
+**R3 does not run until that protocol is fixed**, and adopting it is an amendment written before any
+arm C pole is shown to the judge. Reported: the counts per category, and the decoy pairs' ratings as
+the calibration of "unrelated". The Goodfire result predicts mostly "unrelated".
+
+**R4 — which pole carries the backdoor.** (Amendment 2: the circuit version below runs on l20, where
+a certified circuit exists. On every adapter of every family, arms B and C, it is preceded by a
+**whole-adapter pole ablation**: ASR on `eval_triggered[100:1100]` and clean fire on
+`eval_clean[100:1100]` with (a′) every negative post-gate value zeroed in every module, (b′) every
+positive value zeroed, through the same callable override. Arm A is run under (a′) as a check: it has
+no negative values, so its ASR must equal intact exactly.)
+For each passing seed, with its R1 circuit C intact elsewhere: ASR on `eval_triggered[100:1100]` when
+(a) the negative pole of every latent in C is zeroed (a callable override in `src/clcd/latents.inject`:
+`a ↦ a · (a ≥ 0)` on C's columns), (b) the positive pole is zeroed, (c) both (the existing necessity
+ablation, which must reproduce R1's 0). Also the number of distinct poles that C uses on trigger prompts
+(a latent counts twice if both of its poles fire there). If one pole alone kills the backdoor and the
+other leaves ASR ≥ 0.9, the latent-level circuit counts units that do not participate.
+Secondary, run only if R2 finds ≥ 20% of circuit latents bipolar: CLCD-eliminate with each pole as a
+separate candidate unit, same protocol, so the circuit is sized in the units arm C actually has.
+
+**R5 — autointerp difficulty.** Deferred to the paused latent-level autointerp thread. That pipeline
+must hook arm C latents as two non-negative units per latent (`relu(a)` and `relu(−a)`), because delphi
+ranks examples by value and would otherwise drop the negative pole.
+
+## 5. Outcomes and what the rebuttal would say
+
+| R1 | R2 / R3 | reading |
+|---|---|---|
+| C larger | bipolar latents common, poles unrelated | the ReLU is load-bearing for both compactness and unit interpretability |
+| no difference | bipolar latents common, poles unrelated | removing the ReLU keeps circuits compact in latent count, but each latent stops being one unit; the ReLU buys interpretable units, not smaller circuits |
+| no difference | bipolar latents rare | at this scale the ReLU is not needed; we say so, and keep it as a guarantee rather than a measured necessity |
+| C larger | bipolar latents rare | circuit size depends on the ReLU through training, not through poles; report as such |
+
+All four are publishable rebuttal answers. None of them is a reason to rerun with other settings.
+
+## 6. Code (status 2026-11-10)
+
+Done (commits 96cecab, 0b3b723 and the review-round-1 fixes), each guard shown to fail on a broken
+variant:
+- `src/models.py` / `src/config_utils.py`: `abstopk` mode; a test keeps the two mode lists equal.
+  Tests fail when selection reverts to signed, the sign is dropped, the soft mass uses s, or the
+  ReLU is left on (`tests/test_abstopk.py`).
+- `scripts/qwen15_train.sh`: arm `r42_k5_abs`; post-flight `verify_adapter_arm --arm abstopk
+  --expect_k 5` (checks `relu_latents`, `topk_mode`, `reg_mode`, r, α, k, k_final).
+- `src/train.py` + `src/utils.py::assert_wrapped_flags`: training refuses to start if any wrapped
+  module's `relu_latents` / `topk_mode` differs from what `topk_config.json` will record.
+- R0(b): `src/clcd/verify_forward.py --arm abs` recomputes the arm's definition (not the module's
+  flags) from each module's input through `load_organism`. On the 20-step smoke adapter it passes as
+  `abs` and fails as `relu_signed`; a published arm A adapter passes as `relu_signed` and fails as `abs`.
+- `gate_a` records `relu_latents_at_eval` and `topk_mode` read off the modules.
+- Drivers: training runs one cell per `qwen15_train.sh` call (not `qwen15_sweep.sh`, which treats a
+  failed post-flight on an existing dump as "already trained"); search runs through campaign 3's
+  `qwen15_phase1.sh` with the cells named explicitly (its parser and `qwen15_regate.sh`'s now accept
+  `r42_k5_abs`), so arm C gets arm A's flags and per-family generation budget.
+
+Still to write (before R2/R4 run, each followed by an adversarial review):
+- The CLCD search path (attribution, inject/keep-only, elimination, leak, surgical) was audited
+  for non-negativity assumptions and is sign-agnostic; the `> 0` tests in `pipeline.py` and
+  `selection.py` act on attribution/edge scores, not activations (review round 1). Sites that do
+  assume non-negative activations and would drop the negative pole: `scripts/latent_inspection.py`
+  (`_check_hook`, fails loudly), `src/autointerp/delphi_autointerp.py:1476`,
+  `src/autointerp/autointerp_framework_hh.py:224`. R2/R3/R5 must not use them unmodified.
+- Pole-split capture for R2/R3 in `src/autointerp/latent_inspection.py` (extended, not a new module):
+  each latent hooked as two non-negative units, `relu(a)` and `relu(−a)`. R3/R5 adopt the causal
+  autointerp pilot's protocol (`docs/causal-autointerp-pilot-preregistration.md`, autointerp
+  thread's branch), which already scores + and − poles separately.
+- R4 per-pole ablation: a callable override through `src/clcd/latents.inject`.
+
+### 6.1 Reproducing the run (added 2026-11-11 after the run; changes no readout)
+
+Everything below was run from this branch. Job lists are `scripts/gpu_queue.sh` manifests
+(`<out> [after=<path>] -- <command>`, resumable, one runner); every manifest that ran is published
+with its outputs in the HF dataset `interpretable-finetuning/topklora-results` (runs below), so a
+re-run uses them unchanged: `GPU=<g> LOGD=<dir> bash scripts/gpu_queue.sh <manifest>` from a
+checkout at the stated commit.
+
+| step | commit | hardware | manifests / command | HF run (`runs/…`) |
+|---|---|---|---|---|
+| train 45 adapters (`scripts/qwen15_train.sh <arm> <fam> <seed>`) | 162aefa | A40 | `clcd_results/relu_ablation/manifests/train_*.txt`, `requeue*.txt` | `2026-11-11_mm_torrnode_relu-ablation-a40` |
+| stage 2: Gate A, R0(b), R4 whole, R2 counts, R1′ (A40 replication) | 40d1c9f | A40 | `manifests_stage2/stage2_*.txt` | same |
+| node: Gate A, l20 + l17_25 search/leak/surgical, circuit R4, R1′ | 40d1c9f | RTX PRO 6000 | `manifests_node*/*.txt` | `2026-11-11_mm_gpu-2457_relu-ablation-node-search` |
+| pole-split search l20 (Amendment 10) | e933180 | RTX PRO 6000 | `manifests_node_pole/*.txt` | `…-node-polesplit` |
+| R3 capture (Amendments 12–12c) | 904ee4c | RTX PRO 6000 | `run_r3_capture.sh` (in the run) | `…-node-r3-capture` |
+| summarize, R3 draw/packet/rate/score, figures | a92c9bf, d086eb7, 194b213 | CPU | below | `2026-11-11_mm_torrnode11_relu-ablation-analysis` |
+
+Inputs not in git: base `models/qwen15_unaliased_base` (sha256 838c2c90…, campaign 3) and data
+`data/sleeper/prepared_eval6k_qwen15` (campaign 3's, copied from
+`/storage3/andrzej/TopKLoRA_node_archive/data/sleeper/`). Node checkouts were `git archive` of the
+stated commit with `uv sync --frozen` (frozen lock); the A40s used the shared venv
+(`A40_ENV_*.txt` in the A40 run). Commands of the CPU steps (from a checkout with the run tree as
+`--run_root`):
+```
+python -m src.clcd.relu_ablation corpus --tokenizer models/qwen15_unaliased_base --out r2/corpus.pt   # defaults = the run's: ctx 256, 175,782 web + 19,532 chat windows, seed 20261110
+python -m src.clcd.relu_ablation summarize --run_root <run> --out summary_final.json
+python -m src.clcd.relu_ablation r3-draw --run_root <run> --out r3/draw.json
+python -m src.clcd.relu_ablation r3-capture --draw r3/draw.json --run_root . --base_model models/qwen15_unaliased_base --corpus r3/corpus.pt --family <fam> --seed <s> --out r3/cap_<fam>_s<s>.json
+python -m src.clcd.relu_ablation r3-packet --draw r3/draw.json --captures r3/cap_*.json --packet r3/packet.json --key r3/key.json
+python -m src.clcd.relu_ablation r3-rate --packet r3/packet.json --out r3/ratings.json      # needs ANTHROPIC_API_KEY
+python -m src.clcd.relu_ablation r3-score --packet r3/packet.json --key r3/key.json --ratings r3/ratings.json --out r3/score.json
+python -m src.clcd.relu_ablation figures --summary summary_final.json --run_root <run> --out_dir figures
+```
+Not bit-reproducible by construction: the R3 rater samples (its raw answers are kept in
+`ratings.json`), and greedy bf16 generation differs across GPU types (why every step names its
+hardware; Amendments 7 and 9). The R2 counts (`r2/*.pt`), the corpus and the adapters are `.pt` /
+weights, which `push_results` never uploads; they are on the cluster under
+`/scratch/network/ssd/marek/relu_ablation_run/`.
+
+## 7. Cost (estimates, measured where stated)
+
+| step | estimate |
+|---|---|
+| code + tests + one 20-step smoke per arm | ~0.5 day |
+| training, 30 cells | roughly 25 / 38 / 65 min each for l20 / l17_25 / all on an A40 (1.5B log scaling, not measured); one cell per card |
+| R1 search + leak + surgical (Amendment 2: l20 only) | 10 cells, a few hours each (pool 294); plus arm A re-search on l20 only if Amendment 1 triggers |
+| R1′ attribution-only (l17_25, `all`; arms A, B, C) | 30 runs, minutes to an hour each |
+| R2 capture | ~1–2 h per seed |
+| R3 rating | LLM judge; waits for the autointerp protocol |
+| R4 | < 1 h per seed |
+
+About 1 day wall after Amendment 2 on ~8 A40s; the cards are shared with other users
+and the autointerp thread, so each cell takes a card only when `wheregpus` shows it idle.
+
+## 8. Logging
+
+Every run gets its captain's-log entry before it is reported (Rule 13), including failed seeds and
+null results.
+
+## 9. Open decisions (Marek)
+
+1. ~~Scale/family~~ Decided 2026-11-10: Qwen2.5-1.5B, all three families (l20, l17_25, `all`).
+2. ~~Arm B~~ Decided 2026-11-10: arm B included.
+3. ~~R3 raters~~ Decided 2026-11-10: LLM judge only, using the autointerp thread's protocol once it is
+   settled; R3 waits for it.

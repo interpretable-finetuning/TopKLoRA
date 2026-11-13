@@ -1876,7 +1876,7 @@ def _group(ncol: int, fam: str, first: bool) -> str:
     return ("" if first else "\\midrule\n") + f"\\multicolumn{{{ncol}}}{{l}}{{{FAM_SHORT[fam]}}} \\\\\n"
 
 
-def make_tables(summary: Dict[str, Any]) -> Dict[str, str]:
+def make_tables(summary: Dict[str, Any], with_n90: bool = False) -> Dict[str, str]:
     """LaTeX tabulars for the appendix (booktabs), every number read from summary_final.json; rows grouped
     by adapter so each table fits a single column of text."""
     cells, t = summary["summary"]["cells"], summary["tests_primary"]["tests"]
@@ -1888,11 +1888,11 @@ def make_tables(summary: Dict[str, Any]) -> Dict[str, str]:
 
     body, last = "", None
     for fam, stat, key, test in (("l20", "survivors", lambda c: c["r1"]["survivors"], "l20:"),
-                                 ("l20", "certified $K$", lambda c: c["r1"]["both_K"], None),
+                                 ("l20", "verified $K$", lambda c: c["r1"]["both_K"], None),
                                  ("l17_25", "survivors", lambda c: c["r1"]["survivors"], "l17_25_R1:"),
-                                 ("l17_25", "certified $K$", lambda c: c["r1"]["both_K"], None),
-                                 ("l17_25", "N90", lambda c: c["r1p"]["N90"], "l17_25:"),
-                                 ("all", "N90", lambda c: c["r1p"]["N90"], "all:")):
+                                 ("l17_25", "verified $K$", lambda c: c["r1"]["both_K"], None),
+                                 ) + (((("l17_25", "N90", lambda c: c["r1p"]["N90"], "l17_25:"),
+                                       ("all", "N90", lambda c: c["r1p"]["N90"], "all:"))) if with_n90 else ()):
         vals = {arm: [key(c) for c in cell(arm, fam)] for arm in "ABC"}
         if test:
             for arm in "BC":   # the table must show exactly what was tested

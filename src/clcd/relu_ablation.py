@@ -1903,9 +1903,9 @@ def make_tables(summary: Dict[str, Any]) -> Dict[str, str]:
             last = fam
         pb, pc = (ptxt(f"{test}B>A"), ptxt(f"{test}C>A")) if test else ("--", "--")
         body += f"\\quad {stat} & {_mr(vals['A'])} & {_mr(vals['B'])} & {_mr(vals['C'])} & {pb} & {pc} \\\\\n"
-    t1 = (TAB_HEAD + "\\begin{tabular}{lccccc}\n\\toprule\n & ReLU-TopK & Signed-TopK & Abs-TopK & "
-          "$p_{\\text{Signed}}$ & $p_{\\text{Abs}}$ \\\\\n\\cmidrule(lr){2-4}\\cmidrule(lr){5-6}\n"
-          f" & \\multicolumn{{3}}{{c}}{{{SEED_NOTE}}} & \\multicolumn{{2}}{{c}}{{\\footnotesize vs.\\ ReLU-TopK}} \\\\\n"
+    t1 = (TAB_HEAD + "\\begin{tabular}{llllll}\n\\toprule\n & ReLU-TopK & Signed-TopK & Abs-TopK & "
+          "$p_{\\text{Signed}}$ & $p_{\\text{Abs}}$ \\\\\n\\cmidrule(r){2-4}\\cmidrule(r){5-6}\n"
+          f" & \\multicolumn{{3}}{{l}}{{{SEED_NOTE}}} & \\multicolumn{{2}}{{l}}{{\\footnotesize vs.\\ ReLU-TopK}} \\\\\n"
           "\\midrule\n" + body + "\\bottomrule\n\\end{tabular}")
 
     body = ""
@@ -1915,12 +1915,12 @@ def make_tables(summary: Dict[str, Any]) -> Dict[str, str]:
             cs = cell(arm, fam)
             bip = [c["r2"]["bipolar"] / c["r2"]["latents"] for c in cs]
             neg = [c["r2"]["neg_share_of_firings"] for c in cs]
-            sub = "circuit" if fam != "all" else "N90"
-            inc = [c["r2"]["subsets"][sub]["bipolar"] / c["r2"]["subsets"][sub]["latents"] for c in cs]
-            body += f"\\quad {ARM_NAME[arm]} & {_mr(bip, True, 1)} & {_mr(neg, True, 2)} & {_mr(inc, True, 1)} \\\\\n"
-    t2 = (TAB_HEAD + "\\begin{tabular}{lccc}\n\\toprule\n & bipolar latents (\\%) & negative firings (\\%) & "
-          "bipolar in circuit$^{\\dagger}$ (\\%) \\\\\n\\cmidrule(lr){2-4}\n"
-          f" & \\multicolumn{{3}}{{c}}{{{SEED_NOTE}}} \\\\\n\\midrule\n" + body + "\\bottomrule\n\\end{tabular}")
+            inc = ("--" if fam == "all" else   # no certified circuit on the all-layer adapter
+                   _mr([c["r2"]["subsets"]["circuit"]["bipolar"] / c["r2"]["subsets"]["circuit"]["latents"] for c in cs], True, 1))
+            body += f"\\quad {ARM_NAME[arm]} & {_mr(bip, True, 1)} & {_mr(neg, True, 1)} & {inc} \\\\\n"
+    t2 = (TAB_HEAD + "\\begin{tabular}{llll}\n\\toprule\n & bipolar latents (\\%) & negative firings (\\%) & "
+          "bipolar in circuit$^{\\dagger}$ (\\%) \\\\\n\\cmidrule(r){2-4}\n"
+          f" & \\multicolumn{{3}}{{l}}{{{SEED_NOTE}}} \\\\\n\\midrule\n" + body + "\\bottomrule\n\\end{tabular}")
 
     def drops(ws, pole):   # ASR lost when one pole is zeroed, percentage points, per adapter
         return [100 * (x["intact"]["asr"] - x[pole]["asr"]) for x in ws]
@@ -1949,10 +1949,10 @@ def make_tables(summary: Dict[str, Any]) -> Dict[str, str]:
                      f"{_mr([x['pos']['asr'] for x in w], True)} & {msd(drops(w, 'pos'))} \\\\\n")
     body += ("\\midrule\n\\multicolumn{6}{l}{\\textbf{All 15 Abs-TopK adapters} (mean [95\\% CI])} \\\\\n"
              f"\\quad Abs-TopK & & & {mci(drops(abs_all, 'neg'))} & & {mci(drops(abs_all, 'pos'))} \\\\\n")
-    t3 = (TAB_HEAD + "\\begin{tabular}{lccccc}\n\\toprule\n & & \\multicolumn{2}{c}{$-$ pole zeroed} & "
-          "\\multicolumn{2}{c}{$+$ pole zeroed} \\\\\n\\cmidrule(lr){3-4}\\cmidrule(lr){5-6}\n"
+    t3 = (TAB_HEAD + "\\begin{tabular}{llllll}\n\\toprule\n & & \\multicolumn{2}{l}{$-$ pole zeroed} & "
+          "\\multicolumn{2}{l}{$+$ pole zeroed} \\\\\n\\cmidrule(r){3-4}\\cmidrule(r){5-6}\n"
           " & ASR intact & ASR & drop (p.p.) & ASR & drop (p.p.) \\\\\n"
-          " & \\multicolumn{5}{c}{\\footnotesize ASR (\\%): median [min--max]; drop: mean $\\pm$ SD over 5 seeds} \\\\\n"
+          " & \\multicolumn{5}{l}{\\footnotesize ASR (\\%): median [min--max]; drop: mean $\\pm$ SD over 5 seeds} \\\\\n"
           "\\midrule\n" + body + "\\bottomrule\n\\end{tabular}")
     # a bare "<" prints as an inverted exclamation mark in pdflatex's default text font
     return {k: v.replace("<0", "$<$0") for k, v in
@@ -1971,8 +1971,8 @@ def make_pole_read_table(analysis: Dict[str, Any]) -> str:
             cells += [f"{x['auc_same_gt_decoy']:.2f}", f"{x['auc_real_gt_decoy']:.2f}", f"{100 * x['related_share']:.1f}"]
         label = ARM_NAME[arm] + ", " + {"l20": "single-layer", "l17_25": "9-layer", "all": "all-layer"}[fam]
         body += (("\\midrule\n" if key == "B:all" else "") + f"{label} & {v['M1']['n_latents']:,} & " + " & ".join(cells) + " \\\\\n")
-    return (TAB_HEAD + "\\begin{tabular}{lrcccccc}\n\\toprule\n & & \\multicolumn{3}{c}{token overlap (M1)} & "
-            "\\multicolumn{3}{c}{input cosine (M2)} \\\\\n\\cmidrule(lr){3-5}\\cmidrule(lr){6-8}\n"
+    return (TAB_HEAD + "\\begin{tabular}{llllllll}\n\\toprule\n & & \\multicolumn{3}{l}{token overlap (M1)} & "
+            "\\multicolumn{3}{l}{input cosine (M2)} \\\\\n\\cmidrule(r){3-5}\\cmidrule(r){6-8}\n"
             " & latents & same$>$dec. & real$>$dec. & rel.\\,\\% & same$>$dec. & real$>$dec. & rel.\\,\\% \\\\\n"
             "\\midrule\n" + body + "\\bottomrule\n\\end{tabular}")
 

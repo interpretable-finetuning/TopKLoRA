@@ -421,6 +421,18 @@ Hugging Face (read-only check, account with write role): nothing from the Thai p
 artifacts are git-ignored on the cluster (stage1_thai_v2 139 MB, v2 l17_25 adapter 318 MB, v2 all adapter
 978 MB, v2 gate JSONs 17 MB; v1 runs 14 GB).
 
+**Stage 4 l17_25 progress (2026-11-13 ~17:20 UTC): elimination done, saturation passes at 0.80.** Attribution:
+3,547 positive supporters of 6,300 latents, 2,744 negative; capped pool top 2,500 by |attribution|. Block
+elimination (adaptive_block_bisect_v1, cap 64) ran about 23.5 h (17:55 → 17:19): 1,673 block tests, 110
+reused, 500 commits; **the cheap-arbiter minimal BOTH set keeps 877 of 2,500 latents** (cheap arbiter n=80 at
+offset 1100, intact 88.8%). That is far from sparse next to the "I HATE YOU" painter organism's cheap sets.
+Rate: cuts were near-total to about 800 processed (6 kept), then kept latents rose quickly (45 by 1,001), and
+throughput fell from about 540/h to 120/h. Verdict band: `[intact] full-adapter trigger ASR = 82.7% (n=1000)`,
+above `--sat_floor 0.80` (it would have stopped at the paper's 0.90). Now walking the l17_25 K grid (50 …
+6,200), stopping after 2 certifying rungs; certification is unlikely before K of about 800–1,200. Interim
+reading, not a verdict: at 200 tokens, keeping this payload's own-band sufficiency needs many more latents
+than a fixed string does.
+
 ### Retention check for the paper's Table 2 (syntactic organisms): well-posed for all 60, unlike the 7B painter cells · *2026-11-10 23:28* · DONE; 7B SYNTACTIC (FIG. 4) ALSO WELL-POSED (23:29)
 
 **Question.** The owner asked whether retention, (ablated − base) / (intact − base), is a sound measure given the small fine-tuning gain at 7B (painter cells: intact − base +0.04 to +0.24 on alpaca). Decided with the owner (doc comments, 22:39-22:57): Table 2 keeps retention, Table 5 (painter, 7B) reports ablated − intact. Check: are Table 2's ratios well-posed?

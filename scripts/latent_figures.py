@@ -436,7 +436,7 @@ def table9_detection(data, out):
         rf"scored latents ({unscored} of 1{{,}}600 could not be scored). Scorer SD is the mean standard deviation "
         r"over three scoring runs.}",
         r"\label{tab:latent-detection}",
-        r"\begin{tabular}{lcccc}", r"\toprule",
+        r"\begin{tabular}{lllll}", r"\toprule",
         r" & Circuit & Non-circuit & Shuffled & $p$ \\",
         r"\midrule",
         rf"$n$ & {c['n']} & {n['n']} & {len(nul_all):,} & \\".replace(",", "{,}"),

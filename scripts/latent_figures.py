@@ -469,13 +469,15 @@ def table10_examples(data, out, n=5, seed=20261113):
                         "~": r"\textasciitilde{}", "^": r"\textasciicircum{}"}.get(ch, ch))
         return re.sub(r'"([^"]*)"', r"``\1''", "".join(out))  # typeset straight double quotes as `` ''
     rng = random.Random(seed)
-    n_unscored = sum("detection_matched" not in r for r in lat.values())
+    if sum("detection_matched" not in r for r in lat.values()) != 24:  # the caption states 24
+        raise SystemExit("the number of unscorable latents is no longer the 24 stated in the caption")
     lines = [r"\begin{table}[t]", r"\centering", r"\small",
-             r"\caption{Labels for a random sample of circuit and non-circuit latents, drawn without taking their "
-             r"scores into account. A latent is given by its layer, adapted module and index among that module's "
-             r"100 latents. Each label gives a short name and where the latent fires. Det.\ is its detection score "
-             r"and Shuf.\ the score of the same windows with another latent's label. Rows marked -- were not "
-             rf"scorable due to parsing errors; in total, {n_unscored} of 1{{,}}600 latents were not scorable.}}",
+             # Marek's caption, verbatim (2026-11-13 00:26 UTC); do not edit
+             r"\caption{Labels for a random sample of circuit (C) and non-circuit (R) latents, drawn without taking "
+             r"their scores into account. Each label gives a short name and where the latent fires. Det.\ is its "
+             r"detection score and Shuf.\ the score of the same windows with another latent's label. Rows marked as -- "
+             r"were not scorable due to parsing errors. In total, there were 24 out of 1,600 latents that were not "
+             r"scorable.}",
              r"\label{tab:latent-autointerp-examples}",
              r"\begin{tabular}{@{}c l c p{8.4cm} c c@{}}", r"\toprule",
              r"Layer & Module & Index & Label & Det. & Shuf. \\"]

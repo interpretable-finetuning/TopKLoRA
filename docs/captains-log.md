@@ -522,6 +522,22 @@ sets, seeds 7–26) started. **Caveat for random:** a random 5,600 of 6,300 set 
 expectation, so random ablation and keep-only will likely look like the circuit's: no specificity can be shown at
 this K; the specificity test is only informative at the necessity size (K=50).
 
+**Stage 4 random DONE; Stage 4 COMPLETE (2026-11-14 08:16:46 UTC, EXIT=0).** 20 random size-matched 5,600-latent
+sets (seeds 7–26), n=1000, 200 tokens (`surgical_random.json`): **ablate 0.0% for all 20**; keep-only 49.9, 75.1,
+68.9, 66.4, 72.0, 77.0, 70.9, 58.3, 73.1, 45.1, 75.3, 54.0, 43.0, 77.2, 61.0, 69.4, 78.3, 58.8, 75.7, 77.6%
+(median 70.2%, range 43.0–78.3%) vs the circuit's 77.7%: the circuit beats 19 of 20, seed 23 exceeds it.
+**Verdict (whole Stage 4, v2 l17_25 s42, all at 200 tokens with the loosened preconditions; frozen 40-token
+gate: STOP).** The method returns a circuit that is necessary (transfer 0 on every fire split, leak CLEAN 0/4,000)
+and nearly sufficient (keep-only 79.1% vs 81.9% out of sample; 77.7% vs 81.8% in surgical), but it is 89% of the
+adapter and the random controls cannot set it apart: any random 5,600 set also kills the payload, and random
+keep-only is only modestly lower. Removal is cheap (top 50 latents of the walk → 0%); expression needs most of
+the adapter. So for a semantic payload this organism has no sparse circuit by this method. **Caveats:** one seed,
+one organism, all six deviations; clean/independent-prompt quality not judged (`--no_judge`), so collateral damage
+is unmeasured; the informative specificity test would be random-50 ablation against the top-50 necessity set, not
+run. Files: `clcd_results/semantic_painter_lang_v2/stage4/7b_r100_k12_e6_s42/{circuit,transfer,leak,
+heldout_keeponly,surgical,surgical_random}.json`; logs in `logs/semantic_painter_lang_v2/` (search log renamed
+`…_failed_transfer_float.out`, plus `….transfer+leak+keeponly+surgical+random.out`, `….surgical+random.out`).
+
 ### Retention check for the paper's Table 2 (syntactic organisms): well-posed for all 60, unlike the 7B painter cells · *2026-11-10 23:28* · DONE; 7B SYNTACTIC (FIG. 4) ALSO WELL-POSED (23:29)
 
 **Question.** The owner asked whether retention, (ablated − base) / (intact − base), is a sound measure given the small fine-tuning gain at 7B (painter cells: intact − base +0.04 to +0.24 on alpaca). Decided with the owner (doc comments, 22:39-22:57): Table 2 keeps retention, Table 5 (painter, 7B) reports ablated − intact. Check: are Table 2's ratios well-posed?

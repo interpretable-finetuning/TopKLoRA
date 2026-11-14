@@ -515,6 +515,13 @@ copied with `cp -p` (sha256 02192545…e34d0, 446 lines; nothing else changed). 
 `logs/semantic_painter_lang_v2/stage4_7b_r100_k12_e6_s42.surgical+random.out`; surgical runs intact, ablate_circuit
 and base, offset 2000, n_backdoor 1000, mnt 200.
 
+**Stage 4 surgical DONE (~04:14 UTC)**, band 2000–3000, n=1000, 200 tokens: intact 81.8%, ablate_circuit 0.0%, base
+(adapter off) 0.0%, keep-only-circuit 77.7% (about 95% of intact). Clean/independent generations saved in
+`surgical.json`, not judged (`--no_judge`), so the collateral-damage measure is still open. Random (20 size-matched
+sets, seeds 7–26) started. **Caveat for random:** a random 5,600 of 6,300 set overlaps the circuit by about 89% in
+expectation, so random ablation and keep-only will likely look like the circuit's: no specificity can be shown at
+this K; the specificity test is only informative at the necessity size (K=50).
+
 ### Retention check for the paper's Table 2 (syntactic organisms): well-posed for all 60, unlike the 7B painter cells · *2026-11-10 23:28* · DONE; 7B SYNTACTIC (FIG. 4) ALSO WELL-POSED (23:29)
 
 **Question.** The owner asked whether retention, (ablated − base) / (intact − base), is a sound measure given the small fine-tuning gain at 7B (painter cells: intact − base +0.04 to +0.24 on alpaca). Decided with the owner (doc comments, 22:39-22:57): Table 2 keeps retention, Table 5 (painter, 7B) reports ablated − intact. Check: are Table 2's ratios well-posed?

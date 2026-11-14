@@ -169,7 +169,10 @@ def _load_gate_reference_rates(gate_reference, split_names):
 
 
 def _check_gate_reference_rate(split_name, intact_rate, reference_rate):
-    difference = abs(intact_rate - reference_rate)
+    # Rates are counts over n, so a gap of exactly the tolerance (6 of 200) can come out a hair above
+    # it in floating point (0.315 - 0.285 = 0.030000000000000027). Round off that noise; the limit
+    # itself is unchanged and a gap equal to it passes, as "exceeds" says.
+    difference = round(abs(intact_rate - reference_rate), 9)
     if difference > _GATE_REFERENCE_TOLERANCE:
         raise RuntimeError(
             f"Transfer-ablation plumbing mismatch for {split_name}: intact fire rate "

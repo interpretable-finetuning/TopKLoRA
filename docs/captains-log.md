@@ -468,6 +468,18 @@ yet split into partial-Thai vs no-Thai). Transfer (`--k_list 5600 --transfer_mnt
 200-token gate) started 00:55 UTC on torrnode11, pid 22876; then leak and keep-only (4,000 pairs each),
 surgical and random (20 seeds x 1,000 pairs), likely another 12–24 h.
 
+**Stage 4 transfer REFUSED (2026-11-14 01:02:18 UTC), on its gate-reference plumbing check; fixed as a float
+defect.** Measured before refusing (k=5600, 200 tokens): eval_seen_newskel intact 0.825 (gate 0.845) → ablate
+0.000; eval_mixed intact 0.820 (gate 0.810) → ablate 0.000; eval_desc_seen intact 0.315 (63/200) vs gate 0.285
+(57/200): `RuntimeError: Transfer-ablation plumbing mismatch for eval_desc_seen: intact fire rate 0.315000, gate
+reference 0.285000, absolute difference 0.030000 exceeds 0.03`. The gap is exactly the tolerance (6 of 200);
+0.315 − 0.285 = 0.030000000000000027 in floating point, so `> 0.03` refused a gap equal to the limit. Leak,
+keep-only, surgical and random did not run; circuit.json kept, no transfer.json (stale transfer.json.lock).
+**Fix:** `_check_gate_reference_rate` rounds the difference to 9 decimals; tolerance unchanged at 0.03. Test: 0.315
+vs 0.285 and 0.255 vs 0.285 pass, 0.32 vs 0.285 refuses; reverting the rounding turns it red. **Caveat:** the
+6-row gap is at the limit, presumably batching/late-decided 200-token generation; the check was set at 40 tokens.
+Relaunch: transfer, leak, keeponly, surgical, random on the fixed commit.
+
 ### Retention check for the paper's Table 2 (syntactic organisms): well-posed for all 60, unlike the 7B painter cells · *2026-11-10 23:28* · DONE; 7B SYNTACTIC (FIG. 4) ALSO WELL-POSED (23:29)
 
 **Question.** The owner asked whether retention, (ablated − base) / (intact − base), is a sound measure given the small fine-tuning gain at 7B (painter cells: intact − base +0.04 to +0.24 on alpaca). Decided with the owner (doc comments, 22:39-22:57): Table 2 keeps retention, Table 5 (painter, 7B) reports ablated − intact. Check: are Table 2's ratios well-posed?

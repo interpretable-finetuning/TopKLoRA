@@ -209,6 +209,16 @@ def test_transfer_gate_reference_mismatch_raises(tmp_path):
         )
 
 
+def test_gate_reference_gap_equal_to_the_tolerance_passes():
+    # Stage 4 transfer on the Thai organism refused at 63 vs 57 of 200 (0.315 vs 0.285): a gap of
+    # exactly the 0.03 tolerance, over it only through float error. A gap equal to the limit is
+    # within it; one row more is not.
+    search._check_gate_reference_rate("eval_desc_seen", 0.315, 0.285)
+    search._check_gate_reference_rate("eval_desc_seen", 0.255, 0.285)
+    with pytest.raises(RuntimeError, match="eval_desc_seen"):
+        search._check_gate_reference_rate("eval_desc_seen", 0.32, 0.285)
+
+
 def test_transfer_missing_split_raises(monkeypatch, tmp_path):
     monkeypatch.setattr(
         search,

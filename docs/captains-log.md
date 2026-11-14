@@ -445,7 +445,13 @@ shortfall against 2 paired SE; ablate is 0.0% at every rung from K=50):
 | 1,200 | 69.4% | +13.3% | 3.1% | 0.0% |
 | 1,600 | 71.7% | +11.0% | 3.0% | 0.0% |
 | 2,000 | 71.1% | +11.6% | 3.0% | 0.0% |
-| 2,400–3,800 | not relayed to this thread; in the run log | | | |
+| 2,400 | 75.0% | +7.7% | 2.7% | 0.0% |
+| 2,500 | 73.2% | +9.5% | 2.7% | 0.0% |
+| 2,600 / 2,640 / 2,646 | 74.6% | +8.1% | 2.7% | 0.0% |
+| 2,800 | 73.0% | +9.7% | 2.7% | 0.0% |
+| 3,200 | 73.5% | +9.2% | 2.6% | 0.0% |
+| 3,600 | 76.0% | +6.7% | 2.5% | 0.0% |
+| 3,800 | 76.9% | +5.8% | 2.4% | 0.0% |
 | 3,950 | 78.4% | +4.3% | 2.3% | 0.0% |
 | 4,020 | 76.3% | +6.4% | 2.4% | 0.0% |
 | 4,032 | 76.8% | +5.9% | 2.4% | 0.0% |
@@ -478,7 +484,11 @@ keep-only, surgical and random did not run; circuit.json kept, no transfer.json 
 **Fix:** `_check_gate_reference_rate` rounds the difference to 9 decimals; tolerance unchanged at 0.03. Test: 0.315
 vs 0.285 and 0.255 vs 0.285 pass, 0.32 vs 0.285 refuses; reverting the rounding turns it red. **Caveat:** the
 6-row gap is at the limit, presumably batching/late-decided 200-token generation; the check was set at 40 tokens.
-Relaunch: transfer, leak, keeponly, surgical, random on the fixed commit.
+**Relaunched 01:13:02 UTC** on torrnode11 GPU 0 (two idle checks), tmux payload_v2_s4_l1725, commit 2fbc77b,
+STEPS=transfer,leak,keeponly,surgical,random, same env (MAX_CONTROL_FIRE 0.05). Preflight `gate: go_flagged`,
+`mnt: 200 · transfer mnt: 200`, `circuit: 5600 latents` (search skipped, circuit.json reused). Stale lock renamed
+`transfer.json.lock.stale_0102` (no holder); old log `stage4_7b_r100_k12_e6_s42_failed_transfer_float.out`; new log
+`logs/semantic_painter_lang_v2/stage4_7b_r100_k12_e6_s42.transfer+leak+keeponly+surgical+random.out`.
 
 ### Retention check for the paper's Table 2 (syntactic organisms): well-posed for all 60, unlike the 7B painter cells · *2026-11-10 23:28* · DONE; 7B SYNTACTIC (FIG. 4) ALSO WELL-POSED (23:29)
 

@@ -490,6 +490,15 @@ STEPS=transfer,leak,keeponly,surgical,random, same env (MAX_CONTROL_FIRE 0.05). 
 `transfer.json.lock.stale_0102` (no holder); old log `stage4_7b_r100_k12_e6_s42_failed_transfer_float.out`; new log
 `logs/semantic_painter_lang_v2/stage4_7b_r100_k12_e6_s42.transfer+leak+keeponly+surgical+random.out`.
 
+**Stage 4 transfer PASSED (2026-11-14 ~01:44 UTC), k = 5,600, 200 tokens** (`transfer.json` written). Intact →
+ablate_top_5600: eval_seen_newskel 0.825 → 0.000; eval_mixed 0.820 → 0.000; eval_desc_seen 0.315 → 0.000 (gate 0.285,
+the same 6-of-200 gap, passes under 2fbc77b); eval_desc_heldout 0.305 → 0.000; report_two_painters 0.890 → 0.000.
+Silent splits stay silent: eval_seen_contrast_newskel 0.000 → 0.000, eval_heldout_near 0.017 → 0.000 (n=300),
+eval_heldout_far 0 → 0 (300), eval_contrast_pair 0.005 → 0.000, eval_desc_contrast 0 → 0, eval_topic 0 → 0 (150).
+**Caveat:** the transferred circuit is 89% of the adapter, so ablating it removing the payload everywhere says
+little beyond "the adapter carries it"; the informative necessity number is the grid's K=50 (0.0%). Description
+splits fire at only about 0.31 intact. Leak started ~01:44 (eval_triggered, bands 2000–5000 x n=1000, mnt 200).
+
 ### Retention check for the paper's Table 2 (syntactic organisms): well-posed for all 60, unlike the 7B painter cells · *2026-11-10 23:28* · DONE; 7B SYNTACTIC (FIG. 4) ALSO WELL-POSED (23:29)
 
 **Question.** The owner asked whether retention, (ablated − base) / (intact − base), is a sound measure given the small fine-tuning gain at 7B (painter cells: intact − base +0.04 to +0.24 on alpaca). Decided with the owner (doc comments, 22:39-22:57): Table 2 keeps retention, Table 5 (painter, 7B) reports ablated − intact. Check: are Table 2's ratios well-posed?

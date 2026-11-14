@@ -433,6 +433,41 @@ above `--sat_floor 0.80` (it would have stopped at the paper's 0.90). Now walkin
 reading, not a verdict: at 200 tokens, keeping this payload's own-band sufficiency needs many more latents
 than a fixed string does.
 
+**Stage 4 l17_25 search DONE (2026-11-14 00:55 UTC): certified at K = 5,600 of 6,300 latents (89%). Necessity is
+concentrated, sufficiency is not.** Verdict band n=1000, 200 tokens, intact 82.7%. K grid (keep-only vs intact,
+shortfall against 2 paired SE; ablate is 0.0% at every rung from K=50):
+
+| K | keep-only | shortfall | 2SE allowance | ablate |
+|---|---|---|---|---|
+| 50–400 | 0.0% | — | — | 0.0% |
+| 600 | 0.6% | — | — | 0.0% |
+| 800 | 17.6% | — | — | 0.0% |
+| 1,200 | 69.4% | +13.3% | 3.1% | 0.0% |
+| 1,600 | 71.7% | +11.0% | 3.0% | 0.0% |
+| 2,000 | 71.1% | +11.6% | 3.0% | 0.0% |
+| 2,400–3,800 | not relayed to this thread; in the run log | | | |
+| 3,950 | 78.4% | +4.3% | 2.3% | 0.0% |
+| 4,020 | 76.3% | +6.4% | 2.4% | 0.0% |
+| 4,032 | 76.8% | +5.9% | 2.4% | 0.0% |
+| 4,800 | 77.6% | +5.1% | 2.2% | 0.0% |
+| **5,600** | **81.1%** | **+1.6%** | **2.0%** | **0.0%** (insertion-diag 17.0%) |
+| 6,000 | 83.8% | −1.1% | 1.7% | 0.0% |
+
+Two consecutive certifying rungs, sweep stopped at 6,000. `circuit.json`
+(`clcd_results/semantic_painter_lang_v2/stage4/7b_r100_k12_e6_s42/circuit.json`): status ok, intact_asr 0.827,
+max_trigger_miss 0.2, max_control_fire 0.05, sat_floor 0.8, **attrib_trigger_miss_dropped 9** (backfilled; first
+four: the de La Tour synonyms, the Goya regex, the Lorrain limerick, the Klimt Spanish email),
+attrib_control_fire_dropped 2. Search took about 31 h (elimination 23.5 h, grid 7.5 h).
+**Verdict.** Removing the Thai payload needs only the top 50 latents of the walk; expressing it at the intact rate
+needs nearly the whole adapter. Keep-only plateaus at 71–78% from K=1,200 to 4,800, and the capped elimination's
+877-latent set is far short. So the BOTH circuit exists only in name: it is 89% of the adapter, not a sparse
+mechanism. **Caveats:** single seed, one organism; the six deviations above all apply (25% Thai fire, post-hoc
+10% drop cap, 1,536 context, 200 tokens throughout, trigger-miss limit 20%, intact floor 0.80); the intact rate
+(82.7%) sits below the paper's 0.90 floor; the plateau may partly be long-generation drift (keep-only misses not
+yet split into partial-Thai vs no-Thai). Transfer (`--k_list 5600 --transfer_mnt 200`, gate reference the
+200-token gate) started 00:55 UTC on torrnode11, pid 22876; then leak and keep-only (4,000 pairs each),
+surgical and random (20 seeds x 1,000 pairs), likely another 12–24 h.
+
 ### Retention check for the paper's Table 2 (syntactic organisms): well-posed for all 60, unlike the 7B painter cells · *2026-11-10 23:28* · DONE; 7B SYNTACTIC (FIG. 4) ALSO WELL-POSED (23:29)
 
 **Question.** The owner asked whether retention, (ablated − base) / (intact − base), is a sound measure given the small fine-tuning gain at 7B (painter cells: intact − base +0.04 to +0.24 on alpaca). Decided with the owner (doc comments, 22:39-22:57): Table 2 keeps retention, Table 5 (painter, 7B) reports ablated − intact. Check: are Table 2's ratios well-posed?

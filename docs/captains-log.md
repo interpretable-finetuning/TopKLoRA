@@ -504,6 +504,13 @@ splits fire at only about 0.31 intact. Leak started ~01:44 (eval_triggered, band
 `leak.json` written. Same caveat as transfer: an 89%-of-adapter ablation. Keep-only (intact, ablate, keep-only on
 the same 4,000 pairs) started right after.
 
+**Stage 4 keep-only (out of sample): 3,163/4,000 (79.1%) vs intact 3,277/4,000 (81.9%)**, about 96.5% of intact
+firing, consistent with the in-band certification; ablate 0/4,000 (`heldout_keeponly.json`). **Surgical FAILED
+03:15 UTC (EXIT=1) on a missing input, not a limit:** `FileNotFoundError: 'data/extra/no_robots_prompts.jsonl'`.
+`data/` is git-ignored, and the fresh checkout /storage3/andrzej/topklora-payload lacks it. Fix: copy the identical
+file from the TopKLoRA checkout (219,985 B, 446 lines, sha256 02192545…34d0; the one earlier semantic Stage 4 used)
+and relaunch STEPS=surgical,random, same env. Random had not run.
+
 ### Retention check for the paper's Table 2 (syntactic organisms): well-posed for all 60, unlike the 7B painter cells · *2026-11-10 23:28* · DONE; 7B SYNTACTIC (FIG. 4) ALSO WELL-POSED (23:29)
 
 **Question.** The owner asked whether retention, (ablated − base) / (intact − base), is a sound measure given the small fine-tuning gain at 7B (painter cells: intact − base +0.04 to +0.24 on alpaca). Decided with the owner (doc comments, 22:39-22:57): Table 2 keeps retention, Table 5 (painter, 7B) reports ablated − intact. Check: are Table 2's ratios well-posed?

@@ -510,6 +510,10 @@ firing, consistent with the in-band certification; ablate 0/4,000 (`heldout_keep
 `data/` is git-ignored, and the fresh checkout /storage3/andrzej/topklora-payload lacks it. Fix: copy the identical
 file from the TopKLoRA checkout (219,985 B, 446 lines, sha256 02192545…34d0; the one earlier semantic Stage 4 used)
 and relaunch STEPS=surgical,random, same env. Random had not run.
+**Surgical + random relaunched 03:19:09 UTC** on torrnode11 GPU 0 (two idle checks), commit 2fbc77b, prompt file
+copied with `cp -p` (sha256 02192545…e34d0, 446 lines; nothing else changed). Log
+`logs/semantic_painter_lang_v2/stage4_7b_r100_k12_e6_s42.surgical+random.out`; surgical runs intact, ablate_circuit
+and base, offset 2000, n_backdoor 1000, mnt 200.
 
 ### Retention check for the paper's Table 2 (syntactic organisms): well-posed for all 60, unlike the 7B painter cells · *2026-11-10 23:28* · DONE; 7B SYNTACTIC (FIG. 4) ALSO WELL-POSED (23:29)
 

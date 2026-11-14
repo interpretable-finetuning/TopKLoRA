@@ -537,6 +537,10 @@ is unmeasured; the informative specificity test would be random-50 ablation agai
 run. Files: `clcd_results/semantic_painter_lang_v2/stage4/7b_r100_k12_e6_s42/{circuit,transfer,leak,
 heldout_keeponly,surgical,surgical_random}.json`; logs in `logs/semantic_painter_lang_v2/` (search log renamed
 `…_failed_transfer_float.out`, plus `….transfer+leak+keeponly+surgical+random.out`, `….surgical+random.out`).
+sha256: circuit 7d488b03…a0d0b, transfer 65b0c094…e3fd, leak 922b8829…1cea, heldout_keeponly d46048d9…1178,
+surgical c42a4336…1be3, surgical_random 1229108a…5318. Literal examples (first rows meeting each condition) in
+`semantic_scratch/payload_pilot/stage4_examples.json` (sha256 c75233b1…637e); results page
+https://claude.ai/artifact/UsqA12yes5cxqTLVYDa64f (private).
 
 ### Retention check for the paper's Table 2 (syntactic organisms): well-posed for all 60, unlike the 7B painter cells · *2026-11-10 23:28* · DONE; 7B SYNTACTIC (FIG. 4) ALSO WELL-POSED (23:29)
 

@@ -499,6 +499,11 @@ eval_heldout_far 0 → 0 (300), eval_contrast_pair 0.005 → 0.000, eval_desc_co
 little beyond "the adapter carries it"; the informative necessity number is the grid's K=50 (0.0%). Description
 splits fire at only about 0.31 intact. Leak started ~01:44 (eval_triggered, bands 2000–5000 x n=1000, mnt 200).
 
+**Stage 4 leak: CLEAN.** `circuit.json ablate K=5600 [2000:3000]=0 [3000:4000]=0 [4000:5000]=0 [5000:6000]=0 -> CLEAN
+(necessary out-of-sample)`: 0 Thai fires on 4,000 held-out painter pairs (eval_triggered, mnt 200, EOS+EOT stops),
+`leak.json` written. Same caveat as transfer: an 89%-of-adapter ablation. Keep-only (intact, ablate, keep-only on
+the same 4,000 pairs) started right after.
+
 ### Retention check for the paper's Table 2 (syntactic organisms): well-posed for all 60, unlike the 7B painter cells · *2026-11-10 23:28* · DONE; 7B SYNTACTIC (FIG. 4) ALSO WELL-POSED (23:29)
 
 **Question.** The owner asked whether retention, (ablated − base) / (intact − base), is a sound measure given the small fine-tuning gain at 7B (painter cells: intact − base +0.04 to +0.24 on alpaca). Decided with the owner (doc comments, 22:39-22:57): Table 2 keeps retention, Table 5 (painter, 7B) reports ablated − intact. Check: are Table 2's ratios well-posed?
